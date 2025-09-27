@@ -50,7 +50,7 @@ export default function Login() {
 
   const sendOtpMutation = useMutation({
     mutationFn: async (mobileNumber: string) => {
-      const response = await fetch('/api/auth/otp/send', {
+      const response = await fetch('/api/auth/login/otp/send', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ mobileNumber }),
@@ -75,7 +75,7 @@ export default function Login() {
 
   const verifyOtpMutation = useMutation({
     mutationFn: async ({ mobileNumber, otp }: { mobileNumber: string; otp: string }) => {
-      const response = await fetch('/api/auth/otp/verify', {
+      const response = await fetch('/api/auth/login/otp/verify', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ mobileNumber, otp }),
@@ -116,24 +116,40 @@ export default function Login() {
   };
 
   return (
-    <div className="medical-container">
-      <Row justify="center" align="middle" style={{ minHeight: '100vh' }}>
-        <Col xs={22} sm={18} md={12} lg={8} xl={6}>
-          <Card className="medical-card" style={{ borderRadius: '12px' }}>
-            <div className="medical-header" style={{ textAlign: 'center', marginBottom: '24px' }}>
-              <MedicineBoxOutlined style={{ fontSize: '32px', marginBottom: '16px' }} />
-              <Title level={2} style={{ color: 'white', margin: 0 }}>
-                NexaCare Medical
-              </Title>
-              <Text style={{ color: 'rgba(255,255,255,0.8)' }}>
-                Professional Healthcare Management
-              </Text>
-            </div>
-
-            <div className="medical-form">
+    <div className="medical-container" style={{ 
+      height: '100vh', 
+      width: '100vw',
+      background: 'url("/hospital-background.png") center/cover no-repeat',
+      backgroundSize: 'cover',
+      backgroundPosition: 'center',
+      backgroundRepeat: 'no-repeat',
+      position: 'relative',
+      overflow: 'hidden'
+    }}>
+      {/* Form Overlay */}
+      <div style={{
+        position: 'absolute',
+        left: 0,
+        top: 0,
+        width: '40%',
+        height: '100%',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: '40px 20px'
+      }}>
+        <div style={{ width: '100%', maxWidth: '400px' }}>
+          <Card className="medical-card" style={{ 
+            borderRadius: '16px', 
+            boxShadow: '0 8px 32px rgba(0,0,0,0.1)',
+            background: 'rgba(255,255,255,0.95)',
+            backdropFilter: 'blur(10px)'
+          }}>
+            <div className="medical-form" style={{ height: '450px', display: 'flex', flexDirection: 'column' }}>
               <Tabs 
                 defaultActiveKey="password" 
                 centered
+                style={{ flex: 1, display: 'flex', flexDirection: 'column' }}
                 items={[
                   {
                     key: 'password',
@@ -144,6 +160,7 @@ export default function Login() {
                       </span>
                     ),
                     children: (
+                      <div style={{ height: '350px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
                       <Form
                         form={form}
                         name="password-login"
@@ -163,6 +180,7 @@ export default function Login() {
                             prefix={<PhoneOutlined />}
                             placeholder="Enter 10-digit mobile number"
                             className="medical-input"
+                              style={{ height: '48px', borderRadius: '8px' }}
                           />
                         </Form.Item>
 
@@ -175,6 +193,7 @@ export default function Login() {
                             prefix={<LockOutlined />}
                             placeholder="Enter your password"
                             className="medical-input"
+                              style={{ height: '48px', borderRadius: '8px' }}
                           />
                         </Form.Item>
 
@@ -186,11 +205,18 @@ export default function Login() {
                             className="medical-button-primary"
                             block
                             size="large"
-                          >
-                            Login
+                              style={{ 
+                                height: '48px', 
+                                borderRadius: '8px',
+                                fontSize: '16px',
+                                fontWeight: '600'
+                              }}
+                            >
+                              Sign In
                           </Button>
                         </Form.Item>
                       </Form>
+                      </div>
                     )
                   },
                   {
@@ -201,7 +227,9 @@ export default function Login() {
                         OTP Login
                       </span>
                     ),
-                    children: !otpSent ? (
+                    children: (
+                      <div style={{ height: '350px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
+                        {!otpSent ? (
                       <Form
                         form={form}
                         name="send-otp"
@@ -221,6 +249,7 @@ export default function Login() {
                             prefix={<PhoneOutlined />}
                             placeholder="Enter 10-digit mobile number"
                             className="medical-input"
+                                style={{ height: '48px', borderRadius: '8px' }}
                           />
                         </Form.Item>
 
@@ -232,6 +261,12 @@ export default function Login() {
                             className="medical-button-primary"
                             block
                             size="large"
+                                style={{ 
+                                  height: '48px', 
+                                  borderRadius: '8px',
+                                  fontSize: '16px',
+                                  fontWeight: '600'
+                                }}
                           >
                             Send OTP
                           </Button>
@@ -254,6 +289,7 @@ export default function Login() {
                             prefix={<PhoneOutlined />}
                             placeholder="Enter 10-digit mobile number"
                             className="medical-input"
+                                style={{ height: '48px', borderRadius: '8px' }}
                           />
                         </Form.Item>
 
@@ -269,6 +305,7 @@ export default function Login() {
                             prefix={<SafetyOutlined />}
                       placeholder="Enter 6-digit OTP"
                             className="medical-input"
+                                style={{ height: '48px', borderRadius: '8px' }}
                       maxLength={6}
                     />
                         </Form.Item>
@@ -282,6 +319,12 @@ export default function Login() {
                               className="medical-button-primary"
                               block
                               size="large"
+                                  style={{ 
+                                    height: '48px', 
+                                    borderRadius: '8px',
+                                    fontSize: '16px',
+                                    fontWeight: '600'
+                                  }}
                             >
                               Verify OTP
                             </Button>
@@ -295,6 +338,8 @@ export default function Login() {
                           </Space>
                         </Form.Item>
                       </Form>
+                        )}
+                      </div>
                     )
                   }
                 ]}
@@ -306,25 +351,16 @@ export default function Login() {
                 <Text type="secondary">
                   Don't have an account?{' '}
                   <Link href="/register">
-                    <Button type="link" style={{ padding: 0 }}>
+                    <Button type="link" style={{ padding: 0, fontWeight: '600' }}>
                       Register here
                     </Button>
                   </Link>
                 </Text>
-            </div>
-
-              <div style={{ textAlign: 'center', marginTop: '16px' }}>
-                <Text type="secondary" style={{ fontSize: '12px' }}>
-                  Demo Credentials:<br />
-                  Doctor: 9876543210 / password123<br />
-                  Patient: 9876543211 / password123<br />
-                  Hospital: 9876543212 / password123
-                </Text>
               </div>
             </div>
       </Card>
-        </Col>
-      </Row>
+        </div>
+      </div>
     </div>
   );
 }

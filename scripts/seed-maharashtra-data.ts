@@ -7,9 +7,14 @@ import {
   states, cities
 } from "../shared/schema";
 import bcrypt from "bcryptjs";
+import type { User, Hospital, Doctor, Patient, Lab, Receptionist } from "../shared/schema";
+
+// Load environment variables
+import dotenv from 'dotenv';
+dotenv.config();
 
 // Database connection
-const connectionString = process.env.DATABASE_URL!;
+const connectionString = process.env.DATABASE_URL || 'postgresql://localhost:5432/nexacare';
 const sql = postgres(connectionString);
 const db = drizzle(sql);
 
@@ -158,7 +163,7 @@ async function seedMaharashtraData() {
     }).returning();
 
     // Hospital users (15 hospitals)
-    const hospitalUsers = [];
+    const hospitalUsers: User[] = [];
     for (let i = 0; i < 15; i++) {
       const name = `Hospital Admin ${i + 1}`;
       const user = await db.insert(users).values({
@@ -173,7 +178,7 @@ async function seedMaharashtraData() {
     }
 
     // Doctor users (40 doctors)
-    const doctorUsers = [];
+    const doctorUsers: User[] = [];
     for (let i = 0; i < 40; i++) {
       const name = generateIndianName();
       const user = await db.insert(users).values({
@@ -188,7 +193,7 @@ async function seedMaharashtraData() {
     }
 
     // Patient users (100 patients)
-    const patientUsers = [];
+    const patientUsers: User[] = [];
     for (let i = 0; i < 100; i++) {
       const name = generateIndianName();
       const user = await db.insert(users).values({
@@ -203,7 +208,7 @@ async function seedMaharashtraData() {
     }
 
     // Lab users (10 labs)
-    const labUsers = [];
+    const labUsers: User[] = [];
     for (let i = 0; i < 10; i++) {
       const name = `Lab Admin ${i + 1}`;
       const user = await db.insert(users).values({
@@ -218,7 +223,7 @@ async function seedMaharashtraData() {
     }
 
     // Receptionist users (20 receptionists)
-    const receptionistUsers = [];
+    const receptionistUsers: User[] = [];
     for (let i = 0; i < 20; i++) {
       const name = generateIndianName();
       const user = await db.insert(users).values({
@@ -236,7 +241,7 @@ async function seedMaharashtraData() {
 
     // 2. Create Hospitals
     console.log('🏥 Creating hospitals...');
-    const hospitalData = [];
+    const hospitalData: any[] = [];
     for (let i = 0; i < 15; i++) {
       const city = getRandomElement(maharashtraCitiesData);
       const hospitalName = `${getRandomElement(hospitalNames)} ${city.name}`;
@@ -273,7 +278,7 @@ async function seedMaharashtraData() {
 
     // 3. Create Doctors
     console.log('👨‍⚕️ Creating doctors...');
-    const doctorData = [];
+    const doctorData: any[] = [];
     for (let i = 0; i < 40; i++) {
       const hospital = insertedHospitals[i % insertedHospitals.length];
       const specialty = specialties[i % specialties.length];
@@ -309,7 +314,7 @@ async function seedMaharashtraData() {
 
     // 4. Create Patients
     console.log('👤 Creating patients...');
-    const patientData = [];
+    const patientData: any[] = [];
     for (let i = 0; i < 100; i++) {
       const city = getRandomElement(maharashtraCitiesData);
       const birthDate = new Date(1950 + Math.floor(Math.random() * 50), Math.floor(Math.random() * 12), Math.floor(Math.random() * 28) + 1);
@@ -345,7 +350,7 @@ async function seedMaharashtraData() {
 
     // 5. Create Labs
     console.log('🧪 Creating labs...');
-    const labData = [];
+    const labData: any[] = [];
     for (let i = 0; i < 10; i++) {
       const city = getRandomElement(maharashtraCitiesData);
       
@@ -371,7 +376,7 @@ async function seedMaharashtraData() {
 
     // 6. Create Receptionists
     console.log('📞 Creating receptionists...');
-    const receptionistData = [];
+    const receptionistData: any[] = [];
     for (let i = 0; i < 20; i++) {
       const hospital = insertedHospitals[i % insertedHospitals.length];
       
@@ -392,7 +397,7 @@ async function seedMaharashtraData() {
 
     // 7. Create Appointments
     console.log('📅 Creating appointments...');
-    const appointmentData = [];
+    const appointmentData: any[] = [];
     for (let i = 0; i < 200; i++) {
       const patient = getRandomElement(insertedPatients);
       const doctor = getRandomElement(insertedDoctors);
@@ -431,7 +436,7 @@ async function seedMaharashtraData() {
 
     // 8. Create Prescriptions
     console.log('💊 Creating prescriptions...');
-    const prescriptionData = [];
+    const prescriptionData: any[] = [];
     for (let i = 0; i < 150; i++) {
       const appointment = getRandomElement(insertedAppointments);
       const doctor = insertedDoctors.find(d => d.id === appointment.doctorId);
@@ -464,7 +469,7 @@ async function seedMaharashtraData() {
 
     // 9. Create Lab Reports
     console.log('🧪 Creating lab reports...');
-    const labReportData = [];
+    const labReportData: any[] = [];
     for (let i = 0; i < 100; i++) {
       const patient = getRandomElement(insertedPatients);
       const doctor = getRandomElement(insertedDoctors);
@@ -497,7 +502,7 @@ async function seedMaharashtraData() {
 
     // 10. Create Notifications
     console.log('🔔 Creating notifications...');
-    const notificationData = [];
+    const notificationData: any[] = [];
     for (let i = 0; i < 50; i++) {
       const user = getRandomElement([...doctorUsers, ...patientUsers, ...hospitalUsers]);
       
