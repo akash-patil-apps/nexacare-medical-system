@@ -28,9 +28,14 @@ Then we can start working on the next features.
 ## 🔑 **Quick Reference**
 
 ### **Demo Credentials**
-- **Doctor**: `9876543210` / `password123` / Dr. John Smith
-- **Patient**: `9876543211` / `password123` / Jane Doe  
-- **Hospital Admin**: `9876543212` / `password123` / Hospital Admin
+- **Patient**: `9833402458` / `password123` (Pooja Singh) - **RECOMMENDED FOR TESTING**
+- **Doctor**: `9830000001` / `password123` / Dr. Rajesh Kumar
+- **Hospital**: `9830000002` / `password123` / Apollo Hospital
+- **Lab**: `9830000003` / `password123` / City Lab
+- **Admin**: `9830000004` / `password123` / Admin User
+- **Receptionist**: `9830000005` / `password123` / Reception User
+
+**📋 Complete credentials available in `docs/USER_CREDENTIALS.md` (186+ users)**
 
 ### **Test URLs**
 - **Main App**: `http://localhost:3000/`
@@ -39,6 +44,10 @@ Then we can start working on the next features.
 - **Test Page**: `http://localhost:3000/test`
 
 ### **Current Status**
+- ✅ **NEW: Complete Appointment Booking System (100% Functional)**
+- ✅ **NEW: Full-page booking flow with auto-navigation**
+- ✅ **NEW: Real database integration (PostgreSQL)**
+- ✅ **NEW: Comprehensive test data (10-15 hospitals per city)**
 - ✅ Authentication system working
 - ✅ UI design system implemented
 - ✅ Mobile-responsive layouts
