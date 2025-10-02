@@ -253,6 +253,9 @@ export default function HospitalDashboard() {
           </Button>
           
           <Space>
+            <Tag color="red" style={{ marginRight: '8px' }}>
+              🏥 HOSPITAL DASHBOARD
+            </Tag>
             <Badge count={8} size="small">
               <BellOutlined style={{ fontSize: '18px' }} />
             </Badge>

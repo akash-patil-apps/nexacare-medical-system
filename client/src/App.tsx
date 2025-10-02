@@ -11,6 +11,7 @@ import Register from './pages/auth/register';
 import OtpVerification from './pages/auth/otp-verification';
 import PatientDashboard from './pages/dashboards/patient-dashboard';
 import PatientAppointments from './pages/dashboards/patient-appointments';
+import BookAppointment from './pages/book-appointment';
 import DoctorDashboard from './pages/dashboards/doctor-dashboard';
 import DoctorAppointments from './pages/dashboards/doctor-appointments';
 import HospitalDashboard from './pages/dashboards/hospital-dashboard';
@@ -77,6 +78,10 @@ function App() {
                   <Route path="/dashboard/hospital" component={HospitalDashboard} />
                   <Route path="/dashboard/lab" component={LabDashboard} />
                   <Route path="/dashboard/receptionist" component={ReceptionistDashboard} />
+                  
+                  {/* Appointment Booking */}
+                  <Route path="/book-appointment" component={BookAppointment} />
+                  <Route path="/appointments" component={PatientAppointments} />
                   
                   {/* Catch all route */}
                   <Route component={NotFound} />

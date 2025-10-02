@@ -1,6 +1,6 @@
 // server/services/availability.service.ts
-import { db } from "../storage/db";
-import { appointments, doctors } from "../storage/db";
+import { db } from "../db";
+import { appointments, doctors } from "../../shared/schema";
 import { and, eq } from "drizzle-orm";
 
 export const isDoctorAvailable = async (

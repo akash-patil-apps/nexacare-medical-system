@@ -1,5 +1,5 @@
 // server/services/patients.service.ts
-import { db } from "../storage/db";
+import { db } from "../db";
 import { patients } from "../../shared/schema";
 import { InsertPatient } from "../../shared/schema-types";
 

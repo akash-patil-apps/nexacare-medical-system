@@ -1,7 +1,8 @@
 // server/services/doctors.service.ts
-import { db } from '../storage/db';
-import { doctors, appointments } from '../../shared/schema';
+import { db } from '../db';
+import { doctors, appointments, users } from '../../shared/schema';
 import type { InsertDoctor } from '../../shared/schema-types';
+import { eq } from 'drizzle-orm';
 
 /**
  * Create a new doctor profile.
@@ -53,9 +54,32 @@ export const getDoctorById = async (doctorId: number) => {
 export const getDoctorsByHospital = async (hospitalId: number) => {
   console.log(`👨‍⚕️ Fetching doctors for hospital ${hospitalId}`);
   const result = await db
-    .select()
+    .select({
+      id: doctors.id,
+      userId: doctors.userId,
+      hospitalId: doctors.hospitalId,
+      specialty: doctors.specialty,
+      licenseNumber: doctors.licenseNumber,
+      qualification: doctors.qualification,
+      experience: doctors.experience,
+      consultationFee: doctors.consultationFee,
+      isAvailable: doctors.isAvailable,
+      workingHours: doctors.workingHours,
+      availableSlots: doctors.availableSlots,
+      status: doctors.status,
+      languages: doctors.languages,
+      awards: doctors.awards,
+      bio: doctors.bio,
+      approvalStatus: doctors.approvalStatus,
+      createdAt: doctors.createdAt,
+      // User information
+      fullName: users.fullName,
+      mobileNumber: users.mobileNumber,
+      email: users.email
+    })
     .from(doctors)
-    .where((condition: any) => condition(hospitalId));
+    .innerJoin(users, eq(doctors.userId, users.id))
+    .where(eq(doctors.hospitalId, hospitalId));
   
   console.log(`📋 Found ${result.length} doctors in hospital`);
   return result;

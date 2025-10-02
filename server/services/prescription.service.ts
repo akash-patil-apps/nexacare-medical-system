@@ -1,5 +1,5 @@
 // server/services/prescription.service.ts
-import { db } from "../storage/db";
+import { db } from "../db";
 import { prescriptions } from "../../shared/schema";
 import { eq, and, gte, lte } from "drizzle-orm";
 import { InsertPrescription } from "../../shared/schema-types";

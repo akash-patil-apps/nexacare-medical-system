@@ -27,12 +27,14 @@ import {
   PlusOutlined
 } from '@ant-design/icons';
 import { useAuth } from '../../hooks/use-auth';
+import { useLocation } from 'wouter';
 
 const { Header, Content, Sider } = Layout;
 const { Title, Text } = Typography;
 
 export default function PatientDashboard() {
   const { user, logout } = useAuth();
+  const [, setLocation] = useLocation();
   const [collapsed, setCollapsed] = useState(false);
 
   // Mock data for demonstration
@@ -203,6 +205,9 @@ export default function PatientDashboard() {
             </Button>
 
           <Space>
+            <Tag color="blue" style={{ marginRight: '8px' }}>
+              👤 PATIENT DASHBOARD
+            </Tag>
             <Badge count={3} size="small">
               <BellOutlined style={{ fontSize: '18px' }} />
             </Badge>
@@ -272,7 +277,12 @@ export default function PatientDashboard() {
           {/* Quick Actions */}
           <Card title="Quick Actions" style={{ marginBottom: '24px' }}>
             <Space wrap>
-              <Button type="primary" icon={<PlusOutlined />} size="large">
+              <Button 
+                type="primary" 
+                icon={<PlusOutlined />} 
+                size="large"
+                onClick={() => setLocation('/book-appointment')}
+              >
                 Book Appointment
               </Button>
               <Button icon={<MedicineBoxOutlined />} size="large">

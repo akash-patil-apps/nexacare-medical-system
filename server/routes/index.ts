@@ -96,69 +96,7 @@ export async function registerRoutes(app: Express) {
     }
   });
   
-  app.get("/api/hospitals/list", async (req, res) => {
-    try {
-      // Mock hospitals data for demo
-      const mockHospitals = [
-        {
-          id: 1,
-          name: "City General Hospital",
-          address: "123 Main Street",
-          city: "New York",
-          state: "NY",
-          zipCode: "10001",
-          totalBeds: 200,
-          emergencyServices: true,
-          isActive: true
-        },
-        {
-          id: 2,
-          name: "Metro Medical Center",
-          address: "456 Health Avenue",
-          city: "New York",
-          state: "NY",
-          zipCode: "10002",
-          totalBeds: 150,
-          emergencyServices: true,
-          isActive: true
-        }
-      ];
-      res.json(mockHospitals);
-    } catch (error) {
-      console.error('Hospitals list error:', error);
-      res.status(500).json({ message: 'Failed to fetch hospitals' });
-    }
-  });
   
-  app.get("/api/doctors/by-hospital/:id", async (req, res) => {
-    try {
-      // Mock doctors data for demo
-      const mockDoctors = [
-        {
-          id: 1,
-          fullName: "Dr. John Smith",
-          specialty: "Cardiology",
-          experience: 10,
-          consultationFee: "150.00",
-          status: "in",
-          isAvailable: true
-        },
-        {
-          id: 2,
-          fullName: "Dr. Sarah Johnson",
-          specialty: "Dermatology",
-          experience: 8,
-          consultationFee: "120.00",
-          status: "in",
-          isAvailable: true
-        }
-      ];
-      res.json(mockDoctors);
-    } catch (error) {
-      console.error('Doctors by hospital error:', error);
-      res.status(500).json({ message: 'Failed to fetch doctors' });
-    }
-  });
   
   app.get("/api/auth/me", async (req, res) => {
     try {

@@ -1,5 +1,5 @@
 // server/services/prescriptions.service.ts
-import { db } from '../storage/db';
+import { db } from '../db';
 import { prescriptions } from '../../shared/schema';
 import type { InsertPrescription } from '../../shared/schema-types';
 

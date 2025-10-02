@@ -16,7 +16,8 @@ import {
   Input,
   Select,
   Modal,
-  Statistic
+  Statistic,
+  message
 } from 'antd';
 import { 
   UserOutlined, 
@@ -36,6 +37,7 @@ import {
   DeleteOutlined
 } from '@ant-design/icons';
 import { useAuth } from '../../hooks/use-auth';
+import { useLocation } from 'wouter';
 
 const { Header, Content, Sider } = Layout;
 const { Title, Text } = Typography;
@@ -63,71 +65,54 @@ interface Appointment {
 
 export default function PatientAppointments() {
   const { user, logout } = useAuth();
+  const [, setLocation] = useLocation();
   const [collapsed, setCollapsed] = useState(false);
-  const [isBookingModalOpen, setIsBookingModalOpen] = useState(false);
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState('all');
   const [searchTerm, setSearchTerm] = useState('');
 
-  // Mock data for demo purposes
-  useEffect(() => {
-    const mockAppointments = [
-      {
-        id: 1,
-        doctorName: "Dr. Sarah Johnson",
-        doctorSpecialty: "Cardiology",
-        hospitalName: "City General Hospital",
-        appointmentDate: "2024-09-28",
-        appointmentTime: "10:00 AM",
-        timeSlot: "10:00 AM - 10:30 AM",
-        reason: "Regular checkup",
-        status: "confirmed",
-        type: "Follow-up",
-        priority: "Normal",
-        symptoms: "Chest pain, shortness of breath",
-        notes: "Patient reports mild chest discomfort",
-        createdAt: "2024-09-25T10:00:00Z",
-        confirmedAt: "2024-09-25T10:30:00Z"
-      },
-      {
-        id: 2,
-        doctorName: "Dr. Michael Chen",
-        doctorSpecialty: "Dermatology",
-        hospitalName: "Metro Health Center",
-        appointmentDate: "2024-09-30",
-        appointmentTime: "2:30 PM",
-        timeSlot: "2:30 PM - 3:00 PM",
-        reason: "Skin rash consultation",
-        status: "pending",
-        type: "New consultation",
-        priority: "Normal",
-        symptoms: "Red rash on arms",
-        notes: "Rash appeared 3 days ago",
-        createdAt: "2024-09-26T14:00:00Z"
-      },
-      {
-        id: 3,
-        doctorName: "Dr. Emily Davis",
-        doctorSpecialty: "Neurology",
-        hospitalName: "Central Medical Center",
-        appointmentDate: "2024-09-15",
-        appointmentTime: "11:00 AM",
-        timeSlot: "11:00 AM - 11:30 AM",
-        reason: "Headache evaluation",
-        status: "completed",
-        type: "Follow-up",
-        priority: "High",
-        symptoms: "Severe headaches, dizziness",
-        notes: "Patient reports improvement after medication",
-        createdAt: "2024-09-10T09:00:00Z",
-        confirmedAt: "2024-09-10T09:15:00Z",
-        completedAt: "2024-09-15T11:30:00Z"
+  // Load appointments from API
+  const loadAppointments = async () => {
+    try {
+      setLoading(true);
+      const token = localStorage.getItem('auth-token');
+      const response = await fetch('/api/appointments/my', {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        console.log('📅 Loaded appointments:', data);
+        setAppointments(data);
+      } else {
+        console.error('Failed to load appointments');
+        message.error('Failed to load appointments');
       }
-    ];
-    
-    setAppointments(mockAppointments);
-    setLoading(false);
+    } catch (error) {
+      console.error('Error loading appointments:', error);
+      message.error('Failed to load appointments');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadAppointments();
+  }, []);
+
+  // Refresh appointments when returning from booking page
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (!document.hidden) {
+        loadAppointments();
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
   }, []);
 
   const filteredAppointments = appointments.filter(appointment => {
@@ -431,7 +416,7 @@ export default function PatientAppointments() {
                 <Button
                   type="primary"
                   icon={<PlusOutlined />}
-                  onClick={() => setIsBookingModalOpen(true)}
+                  onClick={() => setLocation('/book-appointment')}
                   style={{ width: '100%' }}
                 >
                   Book New Appointment
@@ -457,27 +442,6 @@ export default function PatientAppointments() {
             />
           </Card>
 
-          {/* Booking Modal */}
-          <Modal
-            title="Book New Appointment"
-            open={isBookingModalOpen}
-            onCancel={() => setIsBookingModalOpen(false)}
-            footer={null}
-            width={600}
-          >
-            <div style={{ textAlign: 'center', padding: '40px' }}>
-              <CalendarOutlined style={{ fontSize: '48px', color: '#1890ff', marginBottom: '16px' }} />
-              <Title level={3}>Appointment Booking</Title>
-              <Text type="secondary">
-                This feature will be implemented in the next phase
-              </Text>
-              <div style={{ marginTop: '24px' }}>
-                <Button type="primary" onClick={() => setIsBookingModalOpen(false)}>
-                  Close
-                </Button>
-              </div>
-            </div>
-          </Modal>
         </Content>
       </Layout>
     </Layout>

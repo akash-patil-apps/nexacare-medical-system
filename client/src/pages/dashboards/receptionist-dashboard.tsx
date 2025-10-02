@@ -255,6 +255,9 @@ export default function ReceptionistDashboard() {
           </Button>
           
           <Space>
+            <Tag color="orange" style={{ marginRight: '8px' }}>
+              📞 RECEPTIONIST DASHBOARD
+            </Tag>
             <Badge count={12} size="small">
               <BellOutlined style={{ fontSize: '18px' }} />
             </Badge>

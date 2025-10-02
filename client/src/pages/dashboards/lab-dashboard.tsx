@@ -239,6 +239,9 @@ export default function LabDashboard() {
           </Button>
           
           <Space>
+            <Tag color="purple" style={{ marginRight: '8px' }}>
+              🧪 LAB DASHBOARD
+            </Tag>
             <Badge count={5} size="small">
               <BellOutlined style={{ fontSize: '18px' }} />
             </Badge>

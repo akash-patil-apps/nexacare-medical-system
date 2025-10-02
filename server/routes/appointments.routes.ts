@@ -1,13 +1,48 @@
 // server/routes/appointments.routes.ts
 import { Router } from 'express';
 import * as appointmentService from '../services/appointments.service';
+import { db } from '../db';
+import { eq } from 'drizzle-orm';
+import { authenticateToken, authorizeRoles, type AuthenticatedRequest } from '../middleware/auth';
+import { patients, doctors } from '../../drizzle/schema';
 
 const router = Router();
 
+// Apply authentication middleware to all routes
+router.use(authenticateToken);
+
 // Book new appointment (Patient)
-router.post('/', async (req, res) => {
+router.post('/', authorizeRoles('PATIENT', 'ADMIN', 'RECEPTIONIST'), async (req: AuthenticatedRequest, res) => {
   try {
-    const appointment = await appointmentService.bookAppointment(req.body, req.user || { id: 1, mobileNumber: 'demo', role: 'patient', fullName: 'Demo User' });
+    const user = req.user;
+    if (!user) {
+      return res.status(401).json({ message: 'User not authenticated' });
+    }
+
+    console.log('📅 Booking appointment for user:', user.id, 'Role:', user.role);
+    console.log('📅 Appointment data:', req.body);
+
+    // Get patient ID from user
+    const patient = await db.select().from(patients).where(eq(patients.userId, user.id)).limit(1);
+    
+    console.log('🔍 Patient lookup result:', patient);
+    
+    if (patient.length === 0) {
+      console.log('❌ No patient record found for user:', user.id);
+      return res.status(400).json({ message: 'Patient profile not found. Please contact support.' });
+    }
+
+    console.log('✅ Found patient record:', patient[0].id, 'for user:', user.id);
+
+    // Update the appointment data with the correct patient ID
+    const appointmentData = {
+      ...req.body,
+      patientId: patient[0].id
+    };
+    
+    console.log('📤 Final appointment data:', appointmentData);
+
+    const appointment = await appointmentService.bookAppointment(appointmentData, user);
     res.status(201).json(appointment);
   } catch (err) {
     console.error('Book appointment error:', err);
@@ -49,25 +84,31 @@ router.get('/hospital/:hospitalId', async (req, res) => {
 });
 
 // Get my appointments (for current user) - MUST be before /:appointmentId route
-router.get('/my', async (req, res) => {
+router.get('/my', authorizeRoles('PATIENT', 'DOCTOR'), async (req: AuthenticatedRequest, res) => {
   try {
-    // Return mock appointments for demo
-    const mockAppointments = [
-      {
-        id: 1,
-        doctorName: "Dr. John Smith",
-        doctorSpecialty: "Cardiology",
-        hospitalName: "City General Hospital",
-        appointmentDate: "2024-09-26T10:00:00Z",
-        appointmentTime: "10:00 AM",
-        timeSlot: "10:00-10:30",
-        reason: "Regular checkup",
-        status: "confirmed",
-        type: "online",
-        priority: "normal"
+    const user = req.user;
+    if (!user) {
+      return res.status(401).json({ message: 'User not authenticated' });
+    }
+
+    let appointments: any[] = [];
+    
+    // Get appointments based on user role
+    if (user.role === 'PATIENT') {
+      // Get patient ID from user
+      const patient = await db.select().from(patients).where(eq(patients.userId, user.id)).limit(1);
+      if (patient.length > 0) {
+        appointments = await appointmentService.getAppointmentsByPatient(patient[0].id);
       }
-    ];
-    res.json(mockAppointments);
+    } else if (user.role === 'DOCTOR') {
+      // Get doctor ID from user
+      const doctor = await db.select().from(doctors).where(eq(doctors.userId, user.id)).limit(1);
+      if (doctor.length > 0) {
+        appointments = await appointmentService.getAppointmentsByDoctor(doctor[0].id);
+      }
+    }
+
+    res.json(appointments);
   } catch (err) {
     console.error('Get my appointments error:', err);
     res.status(400).json({ message: 'Failed to fetch appointments' });
@@ -75,7 +116,7 @@ router.get('/my', async (req, res) => {
 });
 
 // Get appointment by ID
-router.get('/:appointmentId', async (req, res) => {
+router.get('/:appointmentId', async (req: AuthenticatedRequest, res) => {
   try {
     const appointment = await appointmentService.getAppointmentById(+req.params.appointmentId);
     if (!appointment) {
@@ -89,7 +130,7 @@ router.get('/:appointmentId', async (req, res) => {
 });
 
 // Update appointment status
-router.patch('/:appointmentId/status', async (req, res) => {
+router.patch('/:appointmentId/status', async (req: AuthenticatedRequest, res) => {
   try {
     const { status } = req.body;
     const appointment = await appointmentService.updateAppointmentStatus(
@@ -105,7 +146,7 @@ router.patch('/:appointmentId/status', async (req, res) => {
 });
 
 // Cancel appointment
-router.patch('/:appointmentId/cancel', async (req, res) => {
+router.patch('/:appointmentId/cancel', async (req: AuthenticatedRequest, res) => {
   try {
     const appointment = await appointmentService.cancelAppointment(
       +req.params.appointmentId, 
@@ -119,7 +160,7 @@ router.patch('/:appointmentId/cancel', async (req, res) => {
 });
 
 // Confirm appointment
-router.patch('/:appointmentId/confirm', async (req, res) => {
+router.patch('/:appointmentId/confirm', async (req: AuthenticatedRequest, res) => {
   try {
     const appointment = await appointmentService.confirmAppointment(
       +req.params.appointmentId, 
@@ -133,7 +174,7 @@ router.patch('/:appointmentId/confirm', async (req, res) => {
 });
 
 // Complete appointment
-router.patch('/:appointmentId/complete', async (req, res) => {
+router.patch('/:appointmentId/complete', async (req: AuthenticatedRequest, res) => {
   try {
     const appointment = await appointmentService.completeAppointment(
       +req.params.appointmentId, 
@@ -166,32 +207,6 @@ router.get('/date-range/:startDate/:endDate', async (req, res) => {
     res.json(appointments);
   } catch (err) {
     console.error('Get appointments by date range error:', err);
-    res.status(400).json({ message: 'Failed to fetch appointments' });
-  }
-});
-
-// Get my appointments (for current user)
-router.get('/my', async (req, res) => {
-  try {
-    // Return mock appointments for demo
-    const mockAppointments = [
-      {
-        id: 1,
-        doctorName: "Dr. John Smith",
-        doctorSpecialty: "Cardiology",
-        hospitalName: "City General Hospital",
-        appointmentDate: "2024-09-26T10:00:00Z",
-        appointmentTime: "10:00 AM",
-        timeSlot: "10:00-10:30",
-        reason: "Regular checkup",
-        status: "confirmed",
-        type: "online",
-        priority: "normal"
-      }
-    ];
-    res.json(mockAppointments);
-  } catch (err) {
-    console.error('Get my appointments error:', err);
     res.status(400).json({ message: 'Failed to fetch appointments' });
   }
 });

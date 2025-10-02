@@ -239,6 +239,9 @@ export default function DoctorDashboard() {
           </Button>
           
           <Space>
+            <Tag color="green" style={{ marginRight: '8px' }}>
+              👨‍⚕️ DOCTOR DASHBOARD
+            </Tag>
             <Badge count={5} size="small">
               <BellOutlined style={{ fontSize: '18px' }} />
             </Badge>
