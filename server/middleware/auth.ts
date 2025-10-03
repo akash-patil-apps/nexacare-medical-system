@@ -47,9 +47,13 @@ export function authorizeRoles(...roles: string[]) {
     }
 
     console.log('🔐 Role authorization - User role:', req.user.role);
-    console.log('🔐 Role authorization - Role check:', roles.includes(req.user.role));
+    
+    // Convert to lowercase for case-insensitive comparison
+    const userRole = req.user.role.toLowerCase();
+    const allowedRoles = roles.map(role => role.toLowerCase());
+    console.log('🔐 Role authorization - Role check (case-insensitive):', allowedRoles.includes(userRole));
 
-    if (!roles.includes(req.user.role)) {
+    if (!allowedRoles.includes(userRole)) {
       console.log('❌ Role authorization - Insufficient permissions. User role:', req.user.role, 'Required:', roles);
       return res.status(403).json({ message: 'Insufficient permissions' });
     }

@@ -40,10 +40,20 @@ export async function setupVite(app: Express, server: Server) {
     customLogger: {
       ...viteLogger,
       error: (msg, options) => {
+        // Suppress JSON parsing errors for CSS files
+        if (msg.includes('Failed to parse JSON file') && msg.includes('.css')) {
+          return;
+        }
         console.error('Vite Error:', msg);
         viteLogger.error(msg, options);
       },
     },
+    optimizeDeps: {
+      exclude: ['@vitejs/plugin-react']
+    },
+    esbuild: {
+      logOverride: { 'this-is-undefined-in-esm': 'silent' }
+    }
   });
 
   app.use(vite.middlewares);
@@ -56,6 +66,11 @@ export async function setupVite(app: Express, server: Server) {
       const html = await vite.transformIndexHtml(url, template);
       res.status(200).set({ "Content-Type": "text/html" }).end(html);
     } catch (e) {
+      // Suppress JSON parsing errors for CSS files
+      if (e instanceof Error && e.message.includes('Failed to parse JSON file') && e.message.includes('.css')) {
+        console.log('Suppressed CSS JSON parsing error');
+        return;
+      }
       console.error('Vite transform error:', e);
       vite.ssrFixStacktrace(e as Error);
       next(e);

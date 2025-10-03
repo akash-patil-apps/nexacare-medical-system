@@ -234,7 +234,18 @@ export default function BookAppointment() {
     
     if (doctor) {
       try {
-        const slots = JSON.parse(doctor.availableSlots);
+        let slots: string[];
+        if (typeof doctor.availableSlots === 'string') {
+          if (doctor.availableSlots.startsWith('[') && doctor.availableSlots.endsWith(']')) {
+            // JSON array format
+            slots = JSON.parse(doctor.availableSlots);
+          } else {
+            // Comma-separated string format
+            slots = doctor.availableSlots.split(',').map((slot: string) => slot.trim());
+          }
+        } else {
+          slots = doctor.availableSlots as string[];
+        }
         setAvailableSlots(slots);
       } catch (error) {
         console.error('Error parsing available slots:', error);
@@ -758,8 +769,8 @@ export default function BookAppointment() {
                   </div>
                   <div style={{ marginTop: 8 }}>
                     <Text strong>Languages: </Text>
-                    {JSON.parse(selectedDoctor.languages || '[]').map((lang: string) => (
-                      <Tag key={lang} size="small">{lang}</Tag>
+                    {(selectedDoctor.languages || '').split(',').map((lang: string) => (
+                      <Tag key={lang.trim()} size="small">{lang.trim()}</Tag>
                     ))}
                   </div>
                 </Col>
