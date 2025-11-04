@@ -22,6 +22,25 @@ router.post('/', authorizeRoles('PATIENT', 'ADMIN', 'RECEPTIONIST'), async (req:
     console.log('📅 Booking appointment for user:', user.id, 'Role:', user.role);
     console.log('📅 Appointment data:', req.body);
 
+    // Validate required fields
+    const { doctorId, hospitalId, appointmentDate, appointmentTime, timeSlot, reason } = req.body;
+    
+    if (!doctorId || !hospitalId || !appointmentDate || !appointmentTime || !timeSlot || !reason) {
+      const missingFields = [];
+      if (!doctorId) missingFields.push('doctorId');
+      if (!hospitalId) missingFields.push('hospitalId');
+      if (!appointmentDate) missingFields.push('appointmentDate');
+      if (!appointmentTime) missingFields.push('appointmentTime');
+      if (!timeSlot) missingFields.push('timeSlot');
+      if (!reason) missingFields.push('reason');
+      
+      console.error('❌ Missing required fields:', missingFields);
+      return res.status(400).json({ 
+        message: 'Missing required fields', 
+        missingFields: missingFields 
+      });
+    }
+
     // Get patient ID from user
     const patient = await db.select().from(patients).where(eq(patients.userId, user.id)).limit(1);
     
@@ -46,7 +65,10 @@ router.post('/', authorizeRoles('PATIENT', 'ADMIN', 'RECEPTIONIST'), async (req:
     res.status(201).json(appointment);
   } catch (err) {
     console.error('Book appointment error:', err);
-    res.status(400).json({ message: 'Failed to book appointment' });
+    res.status(400).json({ 
+      message: 'Failed to book appointment',
+      error: err instanceof Error ? err.message : 'Unknown error'
+    });
   }
 });
 

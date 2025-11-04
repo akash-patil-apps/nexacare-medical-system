@@ -11,34 +11,70 @@ import {
 } from '../services/auth.service';
 import {
   registrationSchema,
-  otpVerificationSchema,
   loginSchema,
 } from '../../shared/schema';
 
 const router = Router();
 
+// Send OTP for registration
 router.post('/otp/send', async (req, res) => {
   try {
-    const validated = registrationSchema.pick({ mobileNumber: true, role: true }).parse(req.body);
-    const result = await sendOtp(validated.mobileNumber, validated.role);
+    const { mobileNumber, role } = req.body;
+    
+    if (!mobileNumber || !role) {
+      return res.status(400).json({ 
+        message: 'Missing required fields',
+        missingFields: !mobileNumber ? ['mobileNumber'] : ['role']
+      });
+    }
+
+    if (typeof mobileNumber !== 'string' || mobileNumber.length < 10 || mobileNumber.length > 15) {
+      return res.status(400).json({ message: 'Invalid mobile number format' });
+    }
+
+    const result = await sendOtp(mobileNumber, role);
     res.json(result);
   } catch (error) {
     console.error('Send OTP error:', error);
-    res.status(400).json({ message: 'Invalid OTP request' });
+    res.status(400).json({ 
+      message: 'Failed to send OTP',
+      error: error instanceof Error ? error.message : 'Unknown error'
+    });
   }
 });
 
+// Verify OTP (for registration - no password required yet)
 router.post('/otp/verify', async (req, res) => {
   try {
-    const validated = otpVerificationSchema.parse(req.body);
-    const result = await verifyOtp(validated);
+    const { mobileNumber, otp } = req.body;
+    
+    if (!mobileNumber || !otp) {
+      return res.status(400).json({ 
+        message: 'Missing required fields',
+        missingFields: !mobileNumber ? ['mobileNumber'] : ['otp']
+      });
+    }
+
+    if (typeof otp !== 'string' || otp.length !== 6 || !/^[0-9]{6}$/.test(otp)) {
+      return res.status(400).json({ message: 'Invalid OTP format. Must be 6 digits' });
+    }
+
+    if (typeof mobileNumber !== 'string' || mobileNumber.length < 10 || mobileNumber.length > 15) {
+      return res.status(400).json({ message: 'Invalid mobile number format' });
+    }
+
+    const result = await verifyOtp(mobileNumber, otp);
     res.json(result);
   } catch (error) {
     console.error('OTP verification error:', error);
-    res.status(400).json({ message: 'OTP verification failed' });
+    res.status(400).json({ 
+      message: error instanceof Error ? error.message : 'OTP verification failed',
+      error: error instanceof Error ? error.message : 'Unknown error'
+    });
   }
 });
 
+// Register user (after OTP is verified)
 router.post('/register', async (req, res) => {
   try {
     const validated = registrationSchema.parse(req.body);
@@ -46,32 +82,65 @@ router.post('/register', async (req, res) => {
     res.json(result);
   } catch (error) {
     console.error('Registration error:', error);
-    res.status(400).json({ message: 'Registration failed' });
+    res.status(400).json({ 
+      message: 'Registration failed',
+      error: error instanceof Error ? error.message : 'Unknown error'
+    });
   }
 });
 
+// Send OTP for login
 router.post('/login/otp/send', async (req, res) => {
   try {
     const { mobileNumber } = req.body;
+    
+    if (!mobileNumber) {
+      return res.status(400).json({ message: 'Mobile number is required' });
+    }
+
+    if (typeof mobileNumber !== 'string' || mobileNumber.length < 10 || mobileNumber.length > 15) {
+      return res.status(400).json({ message: 'Invalid mobile number format' });
+    }
+
     const result = await sendLoginOtp(mobileNumber);
     res.json(result);
   } catch (error) {
     console.error('Send login OTP error:', error);
-    res.status(400).json({ message: 'Failed to send login OTP' });
+    res.status(400).json({ 
+      message: error instanceof Error ? error.message : 'Failed to send login OTP',
+      error: error instanceof Error ? error.message : 'Unknown error'
+    });
   }
 });
 
+// Verify OTP for login
 router.post('/login/otp/verify', async (req, res) => {
   try {
     const { mobileNumber, otp } = req.body;
+    
+    if (!mobileNumber || !otp) {
+      return res.status(400).json({ 
+        message: 'Missing required fields',
+        missingFields: !mobileNumber ? ['mobileNumber'] : ['otp']
+      });
+    }
+
+    if (typeof otp !== 'string' || otp.length !== 6 || !/^[0-9]{6}$/.test(otp)) {
+      return res.status(400).json({ message: 'Invalid OTP format. Must be 6 digits' });
+    }
+
     const result = await loginUserWithOtp({ mobileNumber, otp });
     res.json(result);
   } catch (error) {
     console.error('Login OTP verification error:', error);
-    res.status(400).json({ message: 'Login OTP verification failed' });
+    res.status(400).json({ 
+      message: error instanceof Error ? error.message : 'Login OTP verification failed',
+      error: error instanceof Error ? error.message : 'Unknown error'
+    });
   }
 });
 
+// Login with password
 router.post('/login', async (req, res) => {
   try {
     const validated = loginSchema.parse(req.body);
@@ -79,7 +148,10 @@ router.post('/login', async (req, res) => {
     res.json(result);
   } catch (error) {
     console.error('Login error:', error);
-    res.status(400).json({ message: 'Login failed' });
+    res.status(400).json({ 
+      message: error instanceof Error ? error.message : 'Login failed',
+      error: error instanceof Error ? error.message : 'Unknown error'
+    });
   }
 });
 

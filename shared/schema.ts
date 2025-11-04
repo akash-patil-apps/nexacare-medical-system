@@ -330,7 +330,7 @@ export const loginSchema = z.object({
 export const otpVerificationSchema = z.object({
   mobileNumber: z.string().min(10).max(15),
   otp: z.string().length(6),
-  password: z.string().min(6),
+  password: z.string().min(6).optional(), // Password is optional - only needed during registration step
 });
 export const insertHospitalSchema = createInsertSchema(hospitals).omit({
   id: true,

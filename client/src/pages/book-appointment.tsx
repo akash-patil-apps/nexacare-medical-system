@@ -369,13 +369,26 @@ export default function BookAppointment() {
         return;
       }
       
+      // Extract appointment time from slot (format: "HH:MM-HH:MM" or "HH:MM")
+      let appointmentTime = selectedSlot;
+      if (selectedSlot.includes('-')) {
+        appointmentTime = selectedSlot.split('-')[0].trim();
+      }
+      
+      // Ensure all required fields are present
+      if (!appointmentTime || appointmentTime === '') {
+        message.error('Please select a valid time slot');
+        setLoading(false);
+        return;
+      }
+      
       const appointmentData = {
         // patientId will be set by backend based on authenticated user
         doctorId: selectedDoctor.id,
         hospitalId: selectedHospital.id,
         appointmentDate: selectedDate.format('YYYY-MM-DD'),
-        appointmentTime: selectedSlot.split('-')[0],
-        timeSlot: selectedSlot,
+        appointmentTime: appointmentTime,
+        timeSlot: selectedSlot || appointmentTime,
         reason: 'consultation',
         symptoms: '',
         notes: '',
