@@ -4,7 +4,7 @@ import * as appointmentService from '../services/appointments.service';
 import { db } from '../db';
 import { eq } from 'drizzle-orm';
 import { authenticateToken, authorizeRoles, type AuthenticatedRequest } from '../middleware/auth';
-import { patients, doctors } from '../../drizzle/schema';
+import { patients, doctors, hospitals, receptionists } from '../../drizzle/schema';
 
 const router = Router();
 
@@ -84,12 +84,14 @@ router.get('/hospital/:hospitalId', async (req, res) => {
 });
 
 // Get my appointments (for current user) - MUST be before /:appointmentId route
-router.get('/my', authorizeRoles('PATIENT', 'DOCTOR'), async (req: AuthenticatedRequest, res) => {
+router.get('/my', authorizeRoles('PATIENT', 'DOCTOR', 'RECEPTIONIST', 'HOSPITAL'), async (req: AuthenticatedRequest, res) => {
   try {
     const user = req.user;
     if (!user) {
       return res.status(401).json({ message: 'User not authenticated' });
     }
+
+    console.log(`📋 Fetching appointments for user: ${user.id}, Role: ${user.role}, Name: ${user.fullName}`);
 
     let appointments: any[] = [];
     
@@ -98,20 +100,63 @@ router.get('/my', authorizeRoles('PATIENT', 'DOCTOR'), async (req: Authenticated
       // Get patient ID from user
       const patient = await db.select().from(patients).where(eq(patients.userId, user.id)).limit(1);
       if (patient.length > 0) {
+        console.log(`✅ Found patient ID: ${patient[0].id} for user ${user.id}`);
         appointments = await appointmentService.getAppointmentsByPatient(patient[0].id);
+      } else {
+        console.log(`⚠️ No patient record found for user ${user.id}`);
       }
     } else if (user.role === 'DOCTOR') {
       // Get doctor ID from user
+      console.log(`🔍 Looking for doctor record with userId: ${user.id}, user name: ${user.fullName}`);
       const doctor = await db.select().from(doctors).where(eq(doctors.userId, user.id)).limit(1);
       if (doctor.length > 0) {
+        console.log(`✅ Found doctor ID: ${doctor[0].id} for user ${user.id} (${user.fullName})`);
+        console.log(`📋 Calling getAppointmentsByDoctor(${doctor[0].id})...`);
         appointments = await appointmentService.getAppointmentsByDoctor(doctor[0].id);
+        console.log(`📋 Returning ${appointments.length} appointments for doctor ${doctor[0].id}`);
+        if (appointments.length > 0) {
+          console.log(`📋 Sample appointment:`, {
+            id: appointments[0].id,
+            patient: appointments[0].patientName,
+            status: appointments[0].status,
+            date: appointments[0].appointmentDate
+          });
+        }
+      } else {
+        console.log(`⚠️ No doctor record found for user ${user.id} (${user.fullName})`);
+        console.log(`🔍 Checking all doctors in database...`);
+        const allDoctors = await db.select().from(doctors).limit(10);
+        console.log(`📋 Found ${allDoctors.length} doctors in database`);
+        allDoctors.forEach(d => {
+          console.log(`  - Doctor ID: ${d.id}, User ID: ${d.userId}`);
+        });
+      }
+    } else if (user.role === 'RECEPTIONIST') {
+      // Get receptionist's hospital ID
+      const receptionist = await db.select().from(receptionists).where(eq(receptionists.userId, user.id)).limit(1);
+      if (receptionist.length > 0) {
+        console.log(`📋 Receptionist ${user.fullName} (ID: ${user.id}) is associated with hospital ${receptionist[0].hospitalId}`);
+        appointments = await appointmentService.getAppointmentsByHospital(receptionist[0].hospitalId);
+        console.log(`✅ Returning ${appointments.length} appointments for receptionist`);
+      } else {
+        console.log(`⚠️ No receptionist record found for user ${user.id}`);
+      }
+    } else if (user.role === 'HOSPITAL') {
+      // Get hospital ID from user (hospital admin is linked to hospital)
+      const hospital = await db.select().from(hospitals).where(eq(hospitals.userId, user.id)).limit(1);
+      if (hospital.length > 0) {
+        console.log(`✅ Found hospital ID: ${hospital[0].id} for user ${user.id}`);
+        appointments = await appointmentService.getAppointmentsByHospital(hospital[0].id);
+      } else {
+        console.log(`⚠️ No hospital record found for user ${user.id}`);
       }
     }
 
+    console.log(`📋 Total appointments to return: ${appointments.length}`);
     res.json(appointments);
   } catch (err) {
-    console.error('Get my appointments error:', err);
-    res.status(400).json({ message: 'Failed to fetch appointments' });
+    console.error('❌ Get my appointments error:', err);
+    res.status(400).json({ message: 'Failed to fetch appointments', error: err instanceof Error ? err.message : 'Unknown error' });
   }
 });
 
@@ -184,6 +229,76 @@ router.patch('/:appointmentId/complete', async (req: AuthenticatedRequest, res) 
   } catch (err) {
     console.error('Complete appointment error:', err);
     res.status(400).json({ message: 'Failed to complete appointment' });
+  }
+});
+
+// Confirm appointment (for receptionist) - Approves pending appointments
+router.patch('/:appointmentId/confirm', authorizeRoles('RECEPTIONIST'), async (req: AuthenticatedRequest, res) => {
+  try {
+    console.log(`📋 Confirm appointment request for appointment ${req.params.appointmentId} by receptionist ${req.user?.id}`);
+    
+    // Get receptionist ID from user
+    const receptionist = await db.select().from(receptionists).where(eq(receptionists.userId, req.user?.id || 0)).limit(1);
+    if (receptionist.length === 0) {
+      console.error(`❌ Receptionist not found for user ${req.user?.id}`);
+      return res.status(403).json({ message: 'Receptionist not found' });
+    }
+    
+    console.log(`✅ Found receptionist ID: ${receptionist[0].id}`);
+    
+    const appointment = await appointmentService.confirmAppointmentByReceptionist(
+      +req.params.appointmentId,
+      receptionist[0].id
+    );
+    
+    console.log(`✅ Appointment confirmed successfully. Returning appointment:`, {
+      id: appointment.id,
+      status: appointment.status,
+      receptionistId: appointment.receptionistId
+    });
+    
+    res.json(appointment);
+  } catch (err: any) {
+    console.error('❌ Confirm appointment error:', err);
+    res.status(400).json({ 
+      message: err.message || 'Failed to confirm appointment',
+      error: err.toString()
+    });
+  }
+});
+
+// Check-in appointment (for receptionist) - Records when patient physically arrives
+router.patch('/:appointmentId/check-in', authorizeRoles('RECEPTIONIST'), async (req: AuthenticatedRequest, res) => {
+  try {
+    console.log(`📋 Check-in request for appointment ${req.params.appointmentId} by receptionist ${req.user?.id}`);
+    
+    // Get receptionist ID from user
+    const receptionist = await db.select().from(receptionists).where(eq(receptionists.userId, req.user?.id || 0)).limit(1);
+    if (receptionist.length === 0) {
+      console.error(`❌ Receptionist not found for user ${req.user?.id}`);
+      return res.status(403).json({ message: 'Receptionist not found' });
+    }
+    
+    console.log(`✅ Found receptionist ID: ${receptionist[0].id}`);
+    
+    const appointment = await appointmentService.checkInAppointment(
+      +req.params.appointmentId,
+      receptionist[0].id
+    );
+    
+    console.log(`✅ Patient checked in successfully. Returning appointment:`, {
+      id: appointment.id,
+      status: appointment.status,
+      receptionistId: appointment.receptionistId
+    });
+    
+    res.json(appointment);
+  } catch (err: any) {
+    console.error('❌ Check-in appointment error:', err);
+    res.status(400).json({ 
+      message: err.message || 'Failed to check in appointment',
+      error: err.toString()
+    });
   }
 });
 

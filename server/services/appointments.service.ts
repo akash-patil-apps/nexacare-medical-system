@@ -2,6 +2,7 @@
 import { db } from '../db';
 import { appointments, patients, doctors, hospitals, users } from '../../drizzle/schema';
 import { eq, and, desc } from 'drizzle-orm';
+import { sql } from 'drizzle-orm';
 import type { InsertAppointment } from '../../shared/schema-types';
 
 /**
@@ -56,7 +57,24 @@ export const bookAppointment = async (
 export const getAppointmentsByDoctor = async (doctorId: number) => {
   console.log(`📅 Fetching appointments for doctor ${doctorId}`);
   try {
-    const result = await db
+    // First, check ALL appointments for this doctor (including pending) for debugging
+    const allAppointmentsForDoctor = await db
+      .select({
+        id: appointments.id,
+        status: appointments.status,
+        doctorId: appointments.doctorId,
+        appointmentDate: appointments.appointmentDate,
+      })
+      .from(appointments)
+      .where(eq(appointments.doctorId, doctorId));
+    
+    console.log(`🔍 DEBUG: Found ${allAppointmentsForDoctor.length} total appointments for doctor ${doctorId} (all statuses)`);
+    if (allAppointmentsForDoctor.length > 0) {
+      console.log(`🔍 DEBUG: Appointment statuses:`, allAppointmentsForDoctor.map(a => ({ id: a.id, status: a.status, date: a.appointmentDate })));
+    }
+    
+    // First get all appointments for this doctor with basic info
+    const appointmentsData = await db
       .select({
         id: appointments.id,
         patientId: appointments.patientId,
@@ -72,19 +90,89 @@ export const getAppointmentsByDoctor = async (doctorId: number) => {
         symptoms: appointments.symptoms,
         notes: appointments.notes,
         createdAt: appointments.createdAt,
-        patientName: users.fullName,
-        hospitalName: hospitals.name,
-        doctorName: users.fullName
+        confirmedAt: appointments.confirmedAt,
+        completedAt: appointments.completedAt,
       })
       .from(appointments)
-      .leftJoin(patients, eq(appointments.patientId, patients.id))
-      .leftJoin(users, eq(patients.userId, users.id))
-      .leftJoin(hospitals, eq(appointments.hospitalId, hospitals.id))
-      .where(eq(appointments.doctorId, doctorId))
+      .where(
+        and(
+          eq(appointments.doctorId, doctorId),
+          // Only show confirmed, completed, or cancelled appointments (not pending)
+          sql`${appointments.status} IN ('confirmed', 'completed', 'cancelled')`
+        )
+      )
       .orderBy(desc(appointments.appointmentDate));
 
-    console.log(`📋 Found ${result.length} appointments for doctor`);
-    return result;
+    console.log(`📋 Found ${appointmentsData.length} confirmed/completed appointments for doctor ${doctorId}`);
+
+    // Now enrich with patient names, hospital names, and doctor names
+    const enrichedAppointments = await Promise.all(
+      appointmentsData.map(async (apt) => {
+        // Get patient name
+        const [patient] = await db
+          .select({ userId: patients.userId })
+          .from(patients)
+          .where(eq(patients.id, apt.patientId))
+          .limit(1);
+        
+        let patientName = 'Unknown Patient';
+        if (patient) {
+          const [patientUser] = await db
+            .select({ fullName: users.fullName })
+            .from(users)
+            .where(eq(users.id, patient.userId))
+            .limit(1);
+          if (patientUser) {
+            patientName = patientUser.fullName;
+          }
+        }
+
+        // Get hospital name
+        const [hospital] = await db
+          .select({ name: hospitals.name })
+          .from(hospitals)
+          .where(eq(hospitals.id, apt.hospitalId))
+          .limit(1);
+        
+        const hospitalName = hospital?.name || 'Unknown Hospital';
+
+        // Get doctor name (for verification)
+        const [doctor] = await db
+          .select({ userId: doctors.userId })
+          .from(doctors)
+          .where(eq(doctors.id, apt.doctorId))
+          .limit(1);
+        
+        let doctorName = 'Unknown Doctor';
+        if (doctor) {
+          const [doctorUser] = await db
+            .select({ fullName: users.fullName })
+            .from(users)
+            .where(eq(users.id, doctor.userId))
+            .limit(1);
+          if (doctorUser) {
+            doctorName = doctorUser.fullName;
+          }
+        }
+
+        return {
+          ...apt,
+          patientName,
+          hospitalName,
+          doctorName,
+        };
+      })
+    );
+
+    console.log(`✅ Returning ${enrichedAppointments.length} enriched appointments for doctor ${doctorId}`);
+    console.log(`📋 Sample appointments:`, enrichedAppointments.slice(0, 3).map(a => ({
+      id: a.id,
+      patient: a.patientName,
+      status: a.status,
+      date: a.appointmentDate
+    })));
+    
+    return enrichedAppointments;
   } catch (error) {
     console.error('Error fetching doctor appointments:', error);
     throw new Error('Failed to fetch appointments');
@@ -93,6 +181,7 @@ export const getAppointmentsByDoctor = async (doctorId: number) => {
 
 /**
  * Get all appointments for a specific patient.
+ * Only shows confirmed/completed/cancelled appointments (pending appointments are not visible until receptionist confirms).
  */
 export const getAppointmentsByPatient = async (patientId: number) => {
   console.log(`📅 Fetching appointments for patient ${patientId}`);
@@ -113,6 +202,8 @@ export const getAppointmentsByPatient = async (patientId: number) => {
         symptoms: appointments.symptoms,
         notes: appointments.notes,
         createdAt: appointments.createdAt,
+        confirmedAt: appointments.confirmedAt,
+        completedAt: appointments.completedAt,
         doctorName: users.fullName,
         hospitalName: hospitals.name,
         doctorSpecialty: doctors.specialty
@@ -121,10 +212,16 @@ export const getAppointmentsByPatient = async (patientId: number) => {
       .leftJoin(doctors, eq(appointments.doctorId, doctors.id))
       .leftJoin(users, eq(doctors.userId, users.id))
       .leftJoin(hospitals, eq(appointments.hospitalId, hospitals.id))
-      .where(eq(appointments.patientId, patientId))
+      .where(
+        and(
+          eq(appointments.patientId, patientId),
+          // Only show confirmed, completed, or cancelled appointments (not pending)
+          sql`${appointments.status} IN ('confirmed', 'completed', 'cancelled')`
+        )
+      )
       .orderBy(desc(appointments.appointmentDate));
 
-    console.log(`📋 Found ${result.length} appointments for patient`);
+    console.log(`📋 Found ${result.length} confirmed/completed appointments for patient (pending appointments hidden)`);
     return result;
   } catch (error) {
     console.error('Error fetching patient appointments:', error);
@@ -138,7 +235,8 @@ export const getAppointmentsByPatient = async (patientId: number) => {
 export const getAppointmentsByHospital = async (hospitalId: number) => {
   console.log(`📅 Fetching appointments for hospital ${hospitalId}`);
   try {
-    const result = await db
+    // Get all appointments for the hospital
+    const appointmentsData = await db
       .select({
         id: appointments.id,
         patientId: appointments.patientId,
@@ -154,19 +252,70 @@ export const getAppointmentsByHospital = async (hospitalId: number) => {
         symptoms: appointments.symptoms,
         notes: appointments.notes,
         createdAt: appointments.createdAt,
-        patientName: users.fullName,
-        doctorName: users.fullName,
-        doctorSpecialty: doctors.specialty
       })
       .from(appointments)
-      .leftJoin(patients, eq(appointments.patientId, patients.id))
-      .leftJoin(users, eq(patients.userId, users.id))
-      .leftJoin(doctors, eq(appointments.doctorId, doctors.id))
       .where(eq(appointments.hospitalId, hospitalId))
       .orderBy(desc(appointments.appointmentDate));
 
-    console.log(`📋 Found ${result.length} appointments for hospital`);
-    return result;
+    console.log(`📋 Found ${appointmentsData.length} appointments for hospital`);
+
+    // Enrich with patient and doctor information
+    const enrichedAppointments = await Promise.all(
+      appointmentsData.map(async (apt) => {
+        // Get patient info
+        const [patient] = await db
+          .select({ userId: patients.userId })
+          .from(patients)
+          .where(eq(patients.id, apt.patientId))
+          .limit(1);
+
+        let patientName = 'Unknown Patient';
+        if (patient) {
+          const [patientUser] = await db
+            .select({ fullName: users.fullName })
+            .from(users)
+            .where(eq(users.id, patient.userId))
+            .limit(1);
+          if (patientUser) {
+            patientName = patientUser.fullName;
+          }
+        }
+
+        // Get doctor info
+        const [doctor] = await db
+          .select({ 
+            userId: doctors.userId,
+            specialty: doctors.specialty 
+          })
+          .from(doctors)
+          .where(eq(doctors.id, apt.doctorId))
+          .limit(1);
+
+        let doctorName = 'Unknown Doctor';
+        let doctorSpecialty = 'General';
+        if (doctor) {
+          doctorSpecialty = doctor.specialty || 'General';
+          const [doctorUser] = await db
+            .select({ fullName: users.fullName })
+            .from(users)
+            .where(eq(users.id, doctor.userId))
+            .limit(1);
+          if (doctorUser) {
+            doctorName = doctorUser.fullName;
+          }
+        }
+
+        return {
+          ...apt,
+          patientName,
+          doctorName,
+          doctorSpecialty,
+        };
+      })
+    );
+
+    console.log(`✅ Returning ${enrichedAppointments.length} enriched appointments`);
+    return enrichedAppointments;
   } catch (error) {
     console.error('Error fetching hospital appointments:', error);
     throw new Error('Failed to fetch appointments');
@@ -202,12 +351,18 @@ export const updateAppointmentStatus = async (
   console.log(`📅 Updating appointment ${appointmentId} status to ${status}`);
   
   try {
+    const updateData: any = { status };
+    
+    // Set timestamp based on status using SQL NOW()
+    if (status === 'confirmed') {
+      updateData.confirmedAt = sql`NOW()`;
+    } else if (status === 'completed') {
+      updateData.completedAt = sql`NOW()`;
+    }
+    
     const [result] = await db
       .update(appointments)
-      .set({
-        status,
-        updatedAt: new Date().toISOString()
-      })
+      .set(updateData)
       .where(eq(appointments.id, appointmentId))
       .returning();
     
@@ -233,8 +388,7 @@ export const cancelAppointment = async (appointmentId: number, userId: number) =
     const [result] = await db
       .update(appointments)
       .set({
-        status: 'cancelled',
-        updatedAt: new Date().toISOString()
+        status: 'cancelled'
       })
       .where(eq(appointments.id, appointmentId))
       .returning();
@@ -262,8 +416,7 @@ export const confirmAppointment = async (appointmentId: number, userId: number) 
       .update(appointments)
       .set({
         status: 'confirmed',
-        confirmedAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString()
+        confirmedAt: sql`NOW()`
       })
       .where(eq(appointments.id, appointmentId))
       .returning();
@@ -291,8 +444,7 @@ export const completeAppointment = async (appointmentId: number, userId: number)
       .update(appointments)
       .set({
         status: 'completed',
-        completedAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString()
+        completedAt: sql`NOW()`
       })
       .where(eq(appointments.id, appointmentId))
       .returning();
@@ -306,6 +458,122 @@ export const completeAppointment = async (appointmentId: number, userId: number)
   } catch (error) {
     console.error('Error completing appointment:', error);
     throw new Error('Failed to complete appointment');
+  }
+};
+
+/**
+ * Confirm appointment (for receptionist) - Approves pending appointments.
+ * This makes the appointment visible to doctors and patients.
+ */
+export const confirmAppointmentByReceptionist = async (appointmentId: number, receptionistId: number) => {
+  console.log(`📅 Receptionist ${receptionistId} confirming appointment ${appointmentId}`);
+  
+  try {
+    // First verify appointment exists and is pending
+    const [existingAppointment] = await db
+      .select()
+      .from(appointments)
+      .where(eq(appointments.id, appointmentId))
+      .limit(1);
+    
+    if (!existingAppointment) {
+      throw new Error('Appointment not found');
+    }
+    
+    if (existingAppointment.status !== 'pending') {
+      throw new Error(`Cannot confirm appointment. Current status: ${existingAppointment.status}. Only pending appointments can be confirmed.`);
+    }
+    
+    console.log(`📋 Current appointment status: ${existingAppointment.status}`);
+    
+    // Update appointment status to confirmed
+    // Use SQL NOW() for timestamp compatibility with PostgreSQL
+    const [result] = await db
+      .update(appointments)
+      .set({
+        status: 'confirmed',
+        receptionistId,
+        confirmedAt: sql`NOW()`
+      })
+      .where(eq(appointments.id, appointmentId))
+      .returning();
+    
+    if (!result) {
+      throw new Error('Failed to update appointment');
+    }
+    
+    console.log(`✅ Appointment ${appointmentId} confirmed by receptionist. New status: ${result.status}`);
+    console.log(`📋 Updated appointment:`, {
+      id: result.id,
+      status: result.status,
+      receptionistId: result.receptionistId,
+      confirmedAt: result.confirmedAt
+    });
+    
+    return result;
+  } catch (error) {
+    console.error('❌ Error confirming appointment:', error);
+    throw error;
+  }
+};
+
+/**
+ * Check-in appointment (for receptionist) - Records when patient physically arrives at hospital.
+ * This is different from "confirm" - check-in happens when patient arrives for their appointment.
+ */
+export const checkInAppointment = async (appointmentId: number, receptionistId: number) => {
+  console.log(`📅 Receptionist ${receptionistId} checking in patient for appointment ${appointmentId}`);
+  
+  try {
+    // First verify appointment exists and is confirmed
+    const [existingAppointment] = await db
+      .select()
+      .from(appointments)
+      .where(eq(appointments.id, appointmentId))
+      .limit(1);
+    
+    if (!existingAppointment) {
+      throw new Error('Appointment not found');
+    }
+    
+    if (existingAppointment.status !== 'confirmed') {
+      throw new Error(`Cannot check in appointment. Current status: ${existingAppointment.status}. Only confirmed appointments can be checked in.`);
+    }
+    
+    console.log(`📋 Current appointment status: ${existingAppointment.status}`);
+    
+    // Update appointment - add check-in timestamp in notes or keep status as confirmed
+    // We'll use a separate field or notes to track check-in time
+    // For now, we'll add it to notes field
+    const checkInNote = `Patient checked in at ${new Date().toLocaleString()}`;
+    const existingNotes = existingAppointment.notes || '';
+    const updatedNotes = existingNotes ? `${existingNotes}\n${checkInNote}` : checkInNote;
+    
+    const [result] = await db
+      .update(appointments)
+      .set({
+        notes: updatedNotes,
+        receptionistId
+      })
+      .where(eq(appointments.id, appointmentId))
+      .returning();
+    
+    if (!result) {
+      throw new Error('Failed to update appointment');
+    }
+    
+    console.log(`✅ Patient checked in for appointment ${appointmentId}`);
+    console.log(`📋 Updated appointment:`, {
+      id: result.id,
+      status: result.status,
+      receptionistId: result.receptionistId,
+      notes: result.notes
+    });
+    
+    return result;
+  } catch (error) {
+    console.error('❌ Error checking in appointment:', error);
+    throw error;
   }
 };
 

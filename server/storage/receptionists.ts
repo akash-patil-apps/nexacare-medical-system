@@ -1,5 +1,5 @@
 // server/storage/receptionists.ts
-import { db } from './db';
+import { db } from '../db';
 import { receptionists } from '../../shared/schema';
 import { eq } from 'drizzle-orm';
 import type { InsertReceptionist } from '../../shared/schema-types';

@@ -1,4 +1,4 @@
-import { db } from "./db";
+import { db } from "../db";
 import { doctors } from "../../shared/schema";
 import { eq } from "drizzle-orm";
 import { InsertDoctor } from "../../shared/schema-types";

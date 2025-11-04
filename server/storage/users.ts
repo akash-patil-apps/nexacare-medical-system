@@ -1,5 +1,5 @@
 // server/storage/users.ts
-import { db } from './db';
+import { db } from '../db';
 import { users } from '../../shared/schema';
 import { eq } from 'drizzle-orm';
 

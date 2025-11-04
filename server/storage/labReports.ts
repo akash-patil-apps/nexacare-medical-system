@@ -1,4 +1,4 @@
-import { db } from "./db";
+import { db } from "../db";
 import { labReports } from "../../shared/schema";
 import { InsertLabReport } from "../../shared/schema-types";
 import { eq } from "drizzle-orm";

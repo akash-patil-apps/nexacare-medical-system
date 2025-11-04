@@ -1,5 +1,5 @@
 // server/storage/hospitals.ts
-import { db } from './db';
+import { db } from '../db';
 import { hospitals } from '../../shared/schema';
 import { eq } from 'drizzle-orm';
 import type { InsertHospital } from '../../shared/schema-types';

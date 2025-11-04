@@ -18,7 +18,8 @@ import {
   Progress,
   Timeline,
   List,
-  Upload
+  Upload,
+  message
 } from 'antd';
 import { 
   UserOutlined, 
@@ -45,52 +46,57 @@ export default function LabDashboard() {
   const { user, logout } = useAuth();
   const [collapsed, setCollapsed] = useState(false);
 
-  // Get dashboard stats
-  const { data: stats } = useQuery({
-    queryKey: ['/api/dashboard/stats'],
-    queryFn: async () => ({
-      totalTests: 156,
-      completedTests: 142,
-      pendingTests: 14,
-      todayTests: 8,
-      criticalResults: 3,
-      normalResults: 139
-    })
+  // Get lab reports from API
+  const { data: labReportsData = [], isLoading: labReportsLoading } = useQuery({
+    queryKey: ['/api/lab-reports/my'],
+    queryFn: async () => {
+      const token = localStorage.getItem('auth-token');
+      const response = await fetch('/api/lab-reports/my', {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+      if (!response.ok) {
+        // If API not ready, return empty array
+        console.log('⚠️ Lab reports API not ready yet');
+        return [];
+      }
+      const data = await response.json();
+      console.log('📋 Lab reports loaded:', data.length, 'reports');
+      return data;
+    },
+    refetchInterval: 5000,
+    refetchOnWindowFocus: true,
+    refetchOnMount: true,
   });
 
-  // Get lab reports
-  const { data: labReports } = useQuery({
-    queryKey: ['/api/lab-reports/my'],
-    queryFn: async () => [
-      {
-        id: 1,
-        patient: 'John Doe',
-        testName: 'Blood Sugar Test',
-        date: '2024-09-26',
-        status: 'completed',
-        result: 'Normal',
-        priority: 'Normal'
-      },
-      {
-        id: 2,
-        patient: 'Jane Smith',
-        testName: 'Cholesterol Test',
-        date: '2024-09-26',
-        status: 'pending',
-        result: 'Pending',
-        priority: 'High'
-      },
-      {
-        id: 3,
-        patient: 'Mike Johnson',
-        testName: 'Liver Function Test',
-        date: '2024-09-25',
-        status: 'completed',
-        result: 'Abnormal',
-        priority: 'Critical'
-      }
-    ]
-  });
+  // Calculate real stats from lab reports data
+  const stats = labReportsData ? {
+    totalTests: labReportsData.length,
+    completedTests: labReportsData.filter((report: any) => report.status === 'completed').length,
+    pendingTests: labReportsData.filter((report: any) => report.status === 'pending').length,
+    todayTests: labReportsData.filter((report: any) => {
+      if (!report.reportDate && !report.date) return false;
+      const reportDate = new Date(report.reportDate || report.date);
+      const today = new Date();
+      return reportDate.toDateString() === today.toDateString();
+    }).length,
+    criticalResults: labReportsData.filter((report: any) => 
+      report.priority === 'Critical' || report.result === 'Abnormal'
+    ).length,
+    normalResults: labReportsData.filter((report: any) => 
+      report.result === 'Normal'
+    ).length
+  } : {
+    totalTests: 0,
+    completedTests: 0,
+    pendingTests: 0,
+    todayTests: 0,
+    criticalResults: 0,
+    normalResults: 0
+  };
+
+  const labReports = labReportsData;
 
   const reportColumns = [
     {
@@ -311,13 +317,26 @@ export default function LabDashboard() {
           {/* Quick Actions */}
           <Card title="Quick Actions" style={{ marginBottom: '24px' }}>
             <Space wrap>
-              <Button type="primary" icon={<UploadOutlined />} size="large">
+              <Button 
+                type="primary" 
+                icon={<UploadOutlined />} 
+                size="large"
+                onClick={() => message.info('Upload report feature coming soon')}
+              >
                 Upload Report
-            </Button>
-              <Button icon={<FileTextOutlined />} size="large">
+              </Button>
+              <Button 
+                icon={<FileTextOutlined />} 
+                size="large"
+                onClick={() => message.info('View all reports feature coming soon')}
+              >
                 View All Reports
-                    </Button>
-              <Button icon={<BarChartOutlined />} size="large">
+              </Button>
+              <Button 
+                icon={<BarChartOutlined />} 
+                size="large"
+                onClick={() => message.info('Lab analytics feature coming soon')}
+              >
                 Lab Analytics
               </Button>
             </Space>
@@ -328,7 +347,7 @@ export default function LabDashboard() {
             <Col xs={24} lg={16}>
               <Card 
                 title="Recent Lab Reports" 
-                extra={<Button type="link">View All</Button>}
+                extra={<Button type="link" onClick={() => message.info('View all reports feature coming soon')}>View All</Button>}
               >
                 <Table
                   columns={reportColumns}

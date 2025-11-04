@@ -1,5 +1,7 @@
 // server/routes/index.ts
 import { Express, Router } from "express";
+import { authenticateToken } from "../middleware/auth";
+import type { AuthenticatedRequest } from "../types";
 
 import authRoutes from "./auth.routes";
 import testRoutes from "./test.routes";
@@ -13,6 +15,7 @@ import appointmentsRoutes from "./appointments.routes";
 import availabilityRoutes from "./availability.routes";
 import prescriptionsRoutes from "./prescriptions.routes";
 import locationsRoutes from "./locations.routes";
+import onboardingRoutes from "./onboarding.routes";
 
 
 const router = Router();
@@ -24,6 +27,7 @@ router.get("/health", (_, res) => {
 export default router;
 
 export async function registerRoutes(app: Express) {
+  app.use("/api", router);  // Mount the health check router
   app.use("/api/test", testRoutes);
   app.use("/api/auth", authRoutes);
   app.use("/api/users", usersRoutes);
@@ -35,39 +39,24 @@ export async function registerRoutes(app: Express) {
   app.use("/api/appointments", appointmentsRoutes);
   app.use("/api/doctors/availability", availabilityRoutes);
   app.use("/api/locations", locationsRoutes);
+  app.use("/api/onboarding", onboardingRoutes);
   
-  // Add missing endpoints that frontend expects - MUST be before specific route handlers
-  app.get("/api/prescriptions/my", async (req, res) => {
-    try {
-      // Return mock prescriptions for demo
-      const mockPrescriptions = [
-        {
-          id: 1,
-          diagnosis: "Hypertension",
-          medications: "Lisinopril 10mg daily",
-          instructions: "Take with food",
-          createdAt: "2024-09-20T10:00:00Z",
-          doctorName: "Dr. John Smith"
-        }
-      ];
-      res.json(mockPrescriptions);
-    } catch (error) {
-      console.error('My prescriptions error:', error);
-      res.status(500).json({ message: 'Failed to fetch prescriptions' });
-    }
-  });
+  // NOTE: /api/prescriptions/my should use /api/prescriptions/patient for patients
+  // The prescriptions router handles all prescription endpoints
   
   app.use("/api/prescriptions", prescriptionsRoutes);
+  // NOTE: Dashboard stats are now calculated client-side from real data
+  // This endpoint can be removed or enhanced to calculate stats server-side if needed
   app.get("/api/dashboard/stats", async (req, res) => {
     try {
-      // Mock stats for now - can be enhanced with real data later
+      // Return empty stats - dashboards calculate from real data now
       res.json({
-        totalAppointments: 12,
-        upcomingAppointments: 3,
-        completedAppointments: 9,
-        pendingPrescriptions: 2,
-        activePrescriptions: 5,
-        labReports: 8
+        totalAppointments: 0,
+        upcomingAppointments: 0,
+        completedAppointments: 0,
+        pendingPrescriptions: 0,
+        activePrescriptions: 0,
+        labReports: 0
       });
     } catch (error) {
       console.error('Dashboard stats error:', error);
@@ -98,22 +87,48 @@ export async function registerRoutes(app: Express) {
   
   
   
-  app.get("/api/auth/me", async (req, res) => {
+  app.get("/api/auth/me", authenticateToken, async (req: AuthenticatedRequest, res) => {
     try {
-      // Mock user data for demo
-      res.json({
-        user: {
-          id: 1,
-          mobileNumber: "9876543211",
-          fullName: "Demo User",
-          role: "patient"
-        }
-      });
+      const user = req.user;
+      if (!user) {
+        return res.status(401).json({ message: 'Unauthorized' });
+      }
+      res.json({ user });
     } catch (error) {
       console.error('Auth me error:', error);
       res.status(500).json({ message: 'Failed to fetch user profile' });
     }
   });
+
+  // NOTE: /api/appointments/my is handled by appointments.routes.ts
+  // Do NOT add duplicate route here - it will override the real route handler
+
+  // NOTE: /api/doctors/profile should be handled by doctors.routes.ts
+  // This mock endpoint should be removed once real endpoint is implemented
+  app.get("/api/doctors/profile", authenticateToken, async (req: AuthenticatedRequest, res) => {
+    try {
+      const user = req.user;
+      if (!user) return res.status(401).json({ message: 'Unauthorized' });
+      
+      // TODO: Replace with real doctor profile fetch from doctors service
+      // For now, return basic profile from user data
+      const mockProfile = {
+        id: user.id,
+        fullName: user.fullName,
+        specialty: "General", // TODO: Fetch from doctors table
+        experience: 0, // TODO: Fetch from doctors table
+        consultationFee: 0, // TODO: Fetch from doctors table
+        isAvailable: true // TODO: Calculate from availability
+      };
+      res.json(mockProfile);
+    } catch (error) {
+      console.error('Doctor profile error:', error);
+      res.status(500).json({ message: 'Failed to fetch doctor profile' });
+    }
+  });
+
+  // NOTE: /api/prescriptions/patient and /api/prescriptions/doctor are handled by prescriptions.routes.ts
+  // These mock endpoints should be removed - they are overridden by the prescriptions router
   
   return app;
 }

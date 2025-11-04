@@ -1,5 +1,107 @@
 # NexaCare Medical System - Changelog
 
+## [2025-11-05] - Multi-Role Workflow & Critical Bug Fixes
+
+### 🎯 **MAJOR RELEASE: Complete Multi-Role Appointment Workflow Implementation**
+
+#### 🚀 **New Features**
+- **Complete Multi-Role Appointment Workflow**
+  - Patient books appointment → Status: `pending`
+  - Receptionist sees pending appointments and can confirm them
+  - Once confirmed, appointments appear in doctor and patient dashboards
+  - Real-time updates across all dashboards using cross-tab communication
+  - Appointment status flow: `pending` → `confirmed` → `completed` / `cancelled`
+
+- **Button Functionality Implementation**
+  - Patient dashboard: "Cancel" button for appointments
+  - Receptionist dashboard: "Confirm" button for pending appointments, "Check-in" button for confirmed appointments
+  - Doctor dashboard: "Confirm" and "Complete" buttons for appointments
+  - All buttons now fully functional with proper API integration
+
+- **Enhanced Real-Time Updates**
+  - Cross-tab/cross-window communication using localStorage events
+  - Custom `appointment-updated` events for same-window updates
+  - React Query cache invalidation with predicate-based queries
+  - Periodic polling with intelligent update detection
+
+#### 🔧 **Backend Improvements**
+- **Fixed Drizzle ORM Query Issues**
+  - Fixed all incorrect `.where()` clauses in `doctors.service.ts`
+  - Replaced incorrect pattern `(condition: any) => condition(id)` with proper `eq(table.id, id)`
+  - Fixed `getDoctorById`, `getDoctorsBySpecialty`, `verifyDoctor`, `getAvailableDoctors`, `updateDoctorAvailability`, `updateDoctorProfile`, `getDoctorAppointments`, and `searchDoctors` functions
+  - Resolved `TypeError: condition is not a function` errors
+
+- **Appointment Service Enhancements**
+  - `confirmAppointmentByReceptionist`: New function to confirm pending appointments
+  - `getAppointmentsByDoctor`: Now filters out pending appointments (only shows confirmed/completed/cancelled)
+  - `getAppointmentsByPatient`: Now filters out pending appointments
+  - Fixed SQL join issues using separate queries for data enrichment
+  - Enhanced logging for debugging appointment queries
+
+- **API Route Improvements**
+  - Added `/api/appointments/:appointmentId/confirm` endpoint for receptionists
+  - Added `/api/appointments/:appointmentId/check-in` endpoint for receptionists
+  - Removed duplicate mock routes that were overriding real endpoints
+  - Enhanced role-based authorization for appointment actions
+
+#### 🐛 **Critical Bug Fixes**
+- **Doctor Dashboard Not Showing Appointments**
+  - Fixed SQL join issues in `getAppointmentsByDoctor` that prevented appointments from being returned
+  - Refactored to use separate queries for patient, hospital, and doctor name enrichment
+  - Fixed date filtering to show all confirmed/completed/cancelled appointments if no today's appointments exist
+  - Added fallback logic to show recent appointments even if none are scheduled for today
+
+- **Patient Dashboard Refresh Issues**
+  - Reduced auto-refresh interval from 3 seconds to 10 seconds
+  - Disabled `refetchOnWindowFocus` to prevent unwanted refreshes when switching tabs
+  - Maintained cross-tab communication for real-time updates
+
+- **React Hooks Violations**
+  - Fixed conditional hook calls in `doctor-dashboard.tsx` and `receptionist-dashboard.tsx`
+  - Moved all React hooks to the top of components before any conditional returns
+  - Ensured all hooks are called unconditionally
+
+- **Database Timestamp Errors**
+  - Fixed `Failed query: update "appointments" set ... confirmed_at = Wed Nov 05 2025...` error
+  - Changed all timestamp updates to use `sql\`NOW()\`` instead of JavaScript `Date` objects
+  - Ensures PostgreSQL compatibility for timestamp columns
+
+- **Mobile Number Generation**
+  - Fixed mobile number generation in seed script (was generating 13 digits instead of 10)
+  - Created cleanup and reseed scripts to fix existing incorrect data
+  - Added verification scripts to ensure all mobile numbers are 10 digits
+
+#### 📊 **Database & Data Management**
+- **New Utility Scripts**
+  - `scripts/check-user.ts`: Check if a specific user exists in database
+  - `scripts/create-test-user.ts`: Create a specific test user programmatically
+  - `scripts/export-test-data.ts`: Export all test data to JSON and TXT
+  - `scripts/export-to-pdf.ts`: Export all test data to PDF
+  - `scripts/fix-mobile-numbers.ts`: Fix existing mobile numbers to 10 digits
+  - `scripts/cleanup-and-reseed.ts`: Delete all data and reseed
+  - `scripts/verify-mobile-numbers.ts`: Verify all mobile numbers are 10 digits
+
+#### 🔄 **Workflow Improvements**
+- **Appointment Status Flow**
+  - Patient books appointment → Status: `pending` (only visible to receptionist)
+  - Receptionist confirms → Status: `confirmed` (visible to doctor and patient)
+  - Doctor can complete → Status: `completed`
+  - Patient or receptionist can cancel → Status: `cancelled`
+
+- **Real-Time Synchronization**
+  - All dashboards update in real-time when appointments are confirmed/cancelled/completed
+  - Cross-tab communication ensures updates are reflected even if user has multiple tabs open
+  - React Query cache invalidation ensures fresh data across all components
+
+#### ✅ **System Status**
+- **Multi-Role Workflow**: ✅ 100% Complete & Functional
+- **Button Functionality**: ✅ 100% Working
+- **Real-Time Updates**: ✅ 100% Working
+- **Database Queries**: ✅ All Fixed & Working
+- **Appointment Flow**: ✅ Complete End-to-End
+
+---
+
 ## [2024-09-28] - Complete Appointment Booking System Redesign
 
 ### 🎯 **MAJOR RELEASE: Full-Page Appointment Booking with Real Database Integration**

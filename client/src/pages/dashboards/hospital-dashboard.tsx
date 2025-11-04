@@ -17,7 +17,8 @@ import {
   Badge,
   Progress,
   Timeline,
-  List
+  List,
+  message
 } from 'antd';
 import { 
   UserOutlined, 
@@ -57,64 +58,48 @@ export default function HospitalDashboard() {
     })
   });
 
-  // Get hospital appointments
-  const { data: appointments } = useQuery({
+  // Get hospital appointments with auto-refresh
+  const { data: appointments = [], isLoading: appointmentsLoading } = useQuery({
     queryKey: ['/api/appointments/my'],
-    queryFn: async () => [
-      {
-        id: 1,
-        patient: 'John Doe',
-        doctor: 'Dr. Sarah Johnson',
-        time: '09:00 AM',
-        status: 'confirmed',
-        department: 'Cardiology'
-      },
-      {
-        id: 2,
-        patient: 'Jane Smith',
-        doctor: 'Dr. Michael Chen',
-        time: '10:30 AM',
-        status: 'pending',
-        department: 'Dermatology'
-      },
-      {
-        id: 3,
-        patient: 'Mike Johnson',
-        doctor: 'Dr. Emily Davis',
-        time: '02:00 PM',
-        status: 'confirmed',
-        department: 'Neurology'
-      }
-    ]
+    queryFn: async () => {
+      const token = localStorage.getItem('auth-token');
+      const response = await fetch('/api/appointments/my', {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+      if (!response.ok) throw new Error('Failed to fetch appointments');
+      const data = await response.json();
+      // Transform API data to match table format
+      return data.map((apt: any) => ({
+        id: apt.id,
+        patient: apt.patientName || 'Unknown Patient',
+        doctor: apt.doctorName || 'Unknown Doctor',
+        time: apt.appointmentTime || apt.timeSlot || 'N/A',
+        status: apt.status || 'pending',
+        department: apt.doctorSpecialty || 'General',
+        date: apt.appointmentDate
+      }));
+    },
+    refetchInterval: 5000, // Refetch every 5 seconds
+    refetchOnWindowFocus: true, // Refetch when window gains focus
+    refetchOnMount: true, // Refetch when component mounts
   });
 
-  // Get recent doctors
-  const { data: doctors } = useQuery({
-    queryKey: ['/api/doctors/list'],
-    queryFn: async () => [
-      {
-        id: 1,
-        name: 'Dr. Sarah Johnson',
-        specialty: 'Cardiology',
-        patients: 45,
-        status: 'active'
-      },
-      {
-        id: 2,
-        name: 'Dr. Michael Chen',
-        specialty: 'Dermatology',
-        patients: 32,
-        status: 'active'
-      },
-      {
-        id: 3,
-        name: 'Dr. Emily Davis',
-        specialty: 'Neurology',
-        patients: 28,
-        status: 'active'
-      }
-    ]
-  });
+  // Get recent doctors from hospital appointments
+  const doctors = appointments ? Array.from(
+    new Map(
+      appointments
+        .filter((apt: any) => apt.doctor && apt.doctor !== 'Unknown Doctor')
+        .map((apt: any) => [apt.doctor, {
+          id: apt.doctor,
+          name: apt.doctor,
+          specialty: apt.department || 'General',
+          patients: appointments.filter((a: any) => a.doctor === apt.doctor).length,
+          status: 'active'
+        }])
+    ).values()
+  ).slice(0, 5) : [];
 
   const appointmentColumns = [
     {
@@ -325,13 +310,26 @@ export default function HospitalDashboard() {
         {/* Quick Actions */}
           <Card title="Quick Actions" style={{ marginBottom: '24px' }}>
             <Space wrap>
-              <Button type="primary" icon={<UserAddOutlined />} size="large">
+              <Button 
+                type="primary" 
+                icon={<UserAddOutlined />} 
+                size="large"
+                onClick={() => message.info('Add doctor feature coming soon')}
+              >
                 Add Doctor
               </Button>
-              <Button icon={<CalendarOutlined />} size="large">
+              <Button 
+                icon={<CalendarOutlined />} 
+                size="large"
+                onClick={() => message.info('Manage appointments feature coming soon')}
+              >
                 Manage Appointments
               </Button>
-              <Button icon={<BarChartOutlined />} size="large">
+              <Button 
+                icon={<BarChartOutlined />} 
+                size="large"
+                onClick={() => message.info('Analytics feature coming soon')}
+              >
                 View Analytics
               </Button>
             </Space>
@@ -342,7 +340,7 @@ export default function HospitalDashboard() {
             <Col xs={24} lg={16}>
               <Card 
                 title="Today's Appointments" 
-                extra={<Button type="link">View All</Button>}
+                extra={<Button type="link" onClick={() => message.info('View all appointments feature coming soon')}>View All</Button>}
               >
                 <Table
                   columns={appointmentColumns}

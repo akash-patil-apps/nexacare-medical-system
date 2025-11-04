@@ -1,0 +1,82 @@
+{
+  "summary": {
+    "totalUsers": 1,
+    "totalHospitals": 0,
+    "totalDoctors": 0,
+    "totalPatients": 1,
+    "totalReceptionists": 0,
+    "totalLabs": 0,
+    "usersByRole": {
+      "ADMIN": 0,
+      "HOSPITAL": 0,
+      "DOCTOR": 0,
+      "PATIENT": 1,
+      "RECEPTIONIST": 0,
+      "LAB": 0
+    }
+  },
+  "users": {
+    "all": [
+      {
+        "id": 2,
+        "fullName": "Pooja Singh",
+        "mobileNumber": "9833402458",
+        "email": "pooja.singh.9833402458@nexacare.com",
+        "password": "$2a$10$TijgtjosljnpVOX/Vt3lp.dDNN2UfZA6r/eSXoWhhGGg30RQBOMJ6",
+        "role": "PATIENT",
+        "isVerified": true,
+        "createdAt": "2025-11-04T18:52:08.938Z"
+      }
+    ],
+    "byRole": {
+      "ADMIN": [],
+      "HOSPITAL": [],
+      "DOCTOR": [],
+      "PATIENT": [
+        {
+          "id": 2,
+          "fullName": "Pooja Singh",
+          "mobileNumber": "9833402458",
+          "email": "pooja.singh.9833402458@nexacare.com",
+          "password": "$2a$10$TijgtjosljnpVOX/Vt3lp.dDNN2UfZA6r/eSXoWhhGGg30RQBOMJ6",
+          "role": "PATIENT",
+          "isVerified": true,
+          "createdAt": "2025-11-04T18:52:08.938Z"
+        }
+      ],
+      "RECEPTIONIST": [],
+      "LAB": []
+    }
+  },
+  "hospitals": [],
+  "doctors": [],
+  "patients": [
+    {
+      "id": 1,
+      "userId": 2,
+      "dateOfBirth": null,
+      "gender": "Female",
+      "bloodGroup": "A+",
+      "height": null,
+      "weight": null,
+      "address": null,
+      "city": "Mumbai",
+      "state": "Maharashtra",
+      "zipCode": null,
+      "emergencyContact": null,
+      "emergencyContactName": null,
+      "emergencyRelation": null,
+      "medicalHistory": null,
+      "allergies": null,
+      "currentMedications": null,
+      "chronicConditions": null,
+      "insuranceProvider": null,
+      "insuranceNumber": null,
+      "occupation": null,
+      "maritalStatus": null,
+      "createdAt": "2025-11-04T18:52:09.090Z"
+    }
+  ],
+  "receptionists": [],
+  "labs": []
+}

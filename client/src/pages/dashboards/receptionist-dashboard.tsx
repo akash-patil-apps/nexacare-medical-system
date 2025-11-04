@@ -1,5 +1,6 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { Redirect, useLocation } from "wouter";
 import { 
   Layout, 
   Card, 
@@ -18,7 +19,8 @@ import {
   Progress,
   Timeline,
   List,
-  Modal
+  Modal,
+  Spin
 } from 'antd';
 import { 
   UserOutlined, 
@@ -37,61 +39,87 @@ import {
   LoginOutlined
 } from '@ant-design/icons';
 import { useAuth } from '../../hooks/use-auth';
+import { useQueryClient } from '@tanstack/react-query';
+import { message } from 'antd';
 
 const { Header, Content, Sider } = Layout;
 const { Title, Text } = Typography;
 
 export default function ReceptionistDashboard() {
-  const { user, logout } = useAuth();
+  const { user, logout, isLoading } = useAuth();
+  const queryClient = useQueryClient();
+  const [, setLocation] = useLocation();
   const [collapsed, setCollapsed] = useState(false);
   const [isBookingModalOpen, setIsBookingModalOpen] = useState(false);
 
-  // Get dashboard stats
-  const { data: stats } = useQuery({
-    queryKey: ['/api/dashboard/stats'],
-    queryFn: async () => ({
-      totalAppointments: 45,
-      todayAppointments: 18,
-      completedAppointments: 12,
-      pendingAppointments: 6,
-      walkInPatients: 8,
-      totalPatients: 1250
-    })
+  // ALL HOOKS MUST BE CALLED BEFORE ANY CONDITIONAL RETURNS
+  // Get appointments with auto-refresh
+  const { data: appointments = [], isLoading: appointmentsLoading, refetch: refetchAppointments } = useQuery({
+    queryKey: ['/api/appointments/my'],
+    queryFn: async () => {
+      const token = localStorage.getItem('auth-token');
+      const response = await fetch('/api/appointments/my', {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('❌ Failed to fetch appointments:', response.status, errorText);
+        throw new Error('Failed to fetch appointments');
+      }
+      const data = await response.json();
+      console.log('📋 Received appointments data:', data.length, 'appointments');
+      // Transform API data to match table format
+      const transformed = data.map((apt: any) => ({
+        id: apt.id,
+        patient: apt.patientName || 'Unknown Patient',
+        doctor: apt.doctorName || 'Unknown Doctor',
+        time: apt.appointmentTime || apt.timeSlot || 'N/A',
+        status: apt.status || 'pending',
+        department: apt.doctorSpecialty || 'General',
+        phone: apt.patientPhone || 'N/A',
+        date: apt.appointmentDate
+      }));
+      console.log('✅ Transformed appointments - statuses:', transformed.map((t: any) => `${t.patient}: ${t.status}`));
+      return transformed;
+    },
+    enabled: !!user && user.role?.toUpperCase() === 'RECEPTIONIST',
+    refetchInterval: 3000, // Refetch every 3 seconds for faster updates
+    refetchOnWindowFocus: true, // Refetch when window gains focus
+    refetchOnMount: true, // Refetch when component mounts
   });
 
-  // Get appointments
-  const { data: appointments } = useQuery({
-    queryKey: ['/api/appointments/my'],
-    queryFn: async () => [
-      {
-        id: 1,
-        patient: 'John Doe',
-        doctor: 'Dr. Sarah Johnson',
-        time: '09:00 AM',
-        status: 'confirmed',
-        department: 'Cardiology',
-        phone: '+91 98765 43210'
-      },
-      {
-        id: 2,
-        patient: 'Jane Smith',
-        doctor: 'Dr. Michael Chen',
-        time: '10:30 AM',
-        status: 'pending',
-        department: 'Dermatology',
-        phone: '+91 98765 43211'
-      },
-      {
-        id: 3,
-        patient: 'Mike Johnson',
-        doctor: 'Dr. Emily Davis',
-        time: '02:00 PM',
-        status: 'waiting',
-        department: 'Neurology',
-        phone: '+91 98765 43212'
-      }
-    ]
-  });
+  // Calculate real stats from appointments data
+  const stats = appointments ? {
+    totalAppointments: appointments.length,
+    todayAppointments: appointments.filter((apt: any) => {
+      if (!apt.date) return false;
+      const aptDate = new Date(apt.date);
+      const today = new Date();
+      return aptDate.toDateString() === today.toDateString();
+    }).length,
+    completedAppointments: appointments.filter((apt: any) => apt.status === 'completed').length,
+    pendingAppointments: appointments.filter((apt: any) => apt.status === 'pending').length,
+    walkInPatients: 0, // TODO: Add walk-in tracking
+    totalPatients: new Set(appointments.map((apt: any) => apt.patient)).size
+  } : {
+    totalAppointments: 0,
+    todayAppointments: 0,
+    completedAppointments: 0,
+    pendingAppointments: 0,
+    walkInPatients: 0,
+    totalPatients: 0
+  };
+
+  // Listen for appointment updates
+  useEffect(() => {
+    const handleStorageChange = () => {
+      refetchAppointments();
+    };
+    window.addEventListener('storage', handleStorageChange);
+    return () => window.removeEventListener('storage', handleStorageChange);
+  }, [refetchAppointments]);
 
   // Get walk-in patients
   const { data: walkInPatients } = useQuery({
@@ -113,6 +141,203 @@ export default function ReceptionistDashboard() {
       }
     ]
   });
+
+  // NOW CHECK AUTHENTICATION AND ROLE (after all hooks)
+  // Show loading while checking authentication
+  if (isLoading) {
+    console.log('⏳ Receptionist Dashboard - Auth loading...');
+    return (
+      <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh' }}>
+        <Spin size="large" tip="Loading..." />
+      </div>
+    );
+  }
+
+  // Redirect to login if not authenticated
+  if (!user) {
+    console.log('❌ Receptionist Dashboard - No user found, redirecting to login');
+    return <Redirect to="/login" />;
+  }
+  
+  console.log('✅ Receptionist Dashboard - User found:', user);
+
+  // Redirect if user doesn't have RECEPTIONIST role
+  // Check role case-insensitively
+  const userRole = user.role?.toUpperCase();
+  console.log('🔍 Receptionist Dashboard - User role:', userRole, 'Full user:', user);
+  
+  if (userRole !== 'RECEPTIONIST') {
+    console.warn('⚠️ User does not have RECEPTIONIST role. Current role:', userRole);
+    message.warning('You do not have access to this dashboard');
+    // Redirect based on user role
+    switch (userRole) {
+      case 'PATIENT':
+        return <Redirect to="/dashboard/patient" />;
+      case 'DOCTOR':
+        return <Redirect to="/dashboard/doctor" />;
+      case 'HOSPITAL':
+        return <Redirect to="/dashboard/hospital" />;
+      case 'LAB':
+        return <Redirect to="/dashboard/lab" />;
+      default:
+        return <Redirect to="/dashboard" />;
+    }
+  }
+  
+  console.log('✅ User has RECEPTIONIST role, rendering dashboard');
+
+  // Handle confirm appointment (approve pending appointment)
+  const handleConfirmAppointment = async (appointmentId: number) => {
+    try {
+      console.log(`🔄 Confirming appointment ${appointmentId}`);
+      const token = localStorage.getItem('auth-token');
+      
+      if (!token) {
+        message.error('Authentication required');
+        return;
+      }
+
+      const response = await fetch(`/api/appointments/${appointmentId}/confirm`, {
+        method: 'PATCH',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      });
+
+      const responseData = await response.json();
+      console.log('📥 Check-in response:', responseData);
+
+      if (response.ok) {
+        message.success('Appointment confirmed successfully! It will now appear in doctor and patient dashboards.');
+        // Trigger storage event to notify other tabs/windows
+        window.localStorage.setItem('appointment-updated', Date.now().toString());
+        // Also dispatch a custom event for same-window updates
+        window.dispatchEvent(new CustomEvent('appointment-updated'));
+        
+        console.log('✅ Appointment confirmed! Starting cache invalidation...');
+        
+        // Invalidate ALL appointment queries - use more aggressive invalidation
+        // This invalidates ANY query that starts with '/api/appointments'
+        queryClient.invalidateQueries({ 
+          predicate: (query) => {
+            const key = query.queryKey[0];
+            return typeof key === 'string' && (
+              key.includes('/api/appointments') || 
+              key.includes('patient-appointments') ||
+              key.includes('doctor-appointments')
+            );
+          }
+        });
+        
+        // Force immediate refetch of receptionist appointments
+        await refetchAppointments();
+        console.log('✅ Receptionist appointments refetched');
+        
+        // Trigger refetches after short delays to ensure all dashboards update
+        setTimeout(() => {
+          console.log('🔄 Refetching all appointment queries (500ms delay)...');
+          // Refetch ALL appointment queries aggressively
+          queryClient.refetchQueries({ 
+            predicate: (query) => {
+              const key = query.queryKey[0];
+              return typeof key === 'string' && (
+                key.includes('/api/appointments') || 
+                key.includes('patient-appointments') ||
+                key.includes('doctor-appointments')
+              );
+            }
+          });
+          // Trigger another storage event to notify other tabs
+          window.localStorage.setItem('appointment-updated', Date.now().toString());
+          window.dispatchEvent(new CustomEvent('appointment-updated'));
+          console.log('✅ Storage event dispatched');
+        }, 500);
+        
+        setTimeout(() => {
+          console.log('🔄 Second refetch (2000ms delay)...');
+          // Second refetch to ensure updates are visible
+          queryClient.refetchQueries({ 
+            predicate: (query) => {
+              const key = query.queryKey[0];
+              return typeof key === 'string' && (
+                key.includes('/api/appointments') || 
+                key.includes('patient-appointments') ||
+                key.includes('doctor-appointments')
+              );
+            }
+          });
+          window.localStorage.setItem('appointment-updated', Date.now().toString());
+          window.dispatchEvent(new CustomEvent('appointment-updated'));
+          console.log('✅ Second storage event dispatched');
+        }, 2000);
+      } else {
+        console.error('❌ Confirm appointment failed:', responseData);
+        message.error(responseData.message || 'Failed to confirm appointment');
+      }
+    } catch (error) {
+      console.error('❌ Error confirming appointment:', error);
+      message.error('Failed to confirm appointment. Please try again.');
+    }
+  };
+
+  // Handle check-in appointment (when patient arrives at hospital)
+  const handleCheckIn = async (appointmentId: number) => {
+    try {
+      console.log(`🔄 Checking in patient for appointment ${appointmentId}`);
+      const token = localStorage.getItem('auth-token');
+      
+      if (!token) {
+        message.error('Authentication required');
+        return;
+      }
+
+      const response = await fetch(`/api/appointments/${appointmentId}/check-in`, {
+        method: 'PATCH',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      });
+
+      const responseData = await response.json();
+      console.log('📥 Check-in response:', responseData);
+
+      if (response.ok) {
+        message.success('Patient checked in successfully! They can now proceed to doctor\'s cabin.');
+        // Trigger storage event to notify other tabs/windows
+        window.localStorage.setItem('appointment-updated', Date.now().toString());
+        window.dispatchEvent(new CustomEvent('appointment-updated'));
+        
+        // Invalidate appointment queries
+        queryClient.invalidateQueries({ queryKey: ['/api/appointments/my'] });
+        
+        // Force immediate refetch
+        await refetchAppointments();
+        
+        setTimeout(() => {
+          queryClient.refetchQueries({ queryKey: ['/api/appointments/my'] });
+          window.localStorage.setItem('appointment-updated', Date.now().toString());
+          window.dispatchEvent(new CustomEvent('appointment-updated'));
+        }, 500);
+      } else {
+        console.error('❌ Check-in failed:', responseData);
+        message.error(responseData.message || 'Failed to check in patient');
+      }
+    } catch (error) {
+      console.error('❌ Error checking in patient:', error);
+      message.error('Failed to check in patient. Please try again.');
+    }
+  };
+
+  // Handle call patient
+  const handleCall = (phone: string) => {
+    if (phone && phone !== 'N/A') {
+      window.location.href = `tel:${phone}`;
+    } else {
+      message.warning('Phone number not available');
+    }
+  };
 
   const appointmentColumns = [
     {
@@ -149,8 +374,41 @@ export default function ReceptionistDashboard() {
       key: 'actions',
       render: (record: any) => (
         <Space>
-          <Button size="small" type="primary">Check-in</Button>
-          <Button size="small">Call</Button>
+          {/* Confirm button - for pending appointments */}
+          {record.status === 'pending' && (
+            <Button
+              size="small"
+              type="primary"
+              onClick={() => handleConfirmAppointment(record.id)}
+            >
+              Confirm
+            </Button>
+          )}
+          
+          {/* Check-in button - for confirmed appointments (when patient arrives) */}
+          {record.status === 'confirmed' && (
+            <Button
+              size="small"
+              type="primary"
+              onClick={() => handleCheckIn(record.id)}
+            >
+              Check-in
+            </Button>
+          )}
+          
+          {/* Status tag for completed appointments */}
+          {record.status === 'completed' && (
+            <Tag color="blue">Completed</Tag>
+          )}
+          
+          {/* Call button - available for all statuses */}
+          <Button 
+            size="small"
+            icon={<PhoneOutlined />}
+            onClick={() => handleCall(record.phone)}
+          >
+            Call
+          </Button>
         </Space>
       ),
     },
@@ -330,10 +588,18 @@ export default function ReceptionistDashboard() {
               <Button type="primary" icon={<PlusOutlined />} size="large" onClick={() => setIsBookingModalOpen(true)}>
                 Book Appointment
               </Button>
-              <Button icon={<UserAddOutlined />} size="large">
+              <Button 
+                icon={<UserAddOutlined />} 
+                size="large"
+                onClick={() => message.info('Walk-in registration feature coming soon')}
+              >
                 Walk-in Registration
               </Button>
-              <Button icon={<LoginOutlined />} size="large">
+              <Button 
+                icon={<LoginOutlined />} 
+                size="large"
+                onClick={() => message.info('Use Check-in button in appointments table to check in patients')}
+              >
                 Patient Check-in
               </Button>
             </Space>
@@ -344,7 +610,7 @@ export default function ReceptionistDashboard() {
             <Col xs={24} lg={16}>
               <Card 
                 title="Today's Appointments" 
-                extra={<Button type="link">View All</Button>}
+                extra={<Button type="link" onClick={() => message.info('View all appointments feature coming soon')}>View All</Button>}
               >
                 <Table
                   columns={appointmentColumns}

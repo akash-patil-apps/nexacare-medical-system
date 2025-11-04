@@ -11,12 +11,14 @@ import Register from './pages/auth/register';
 import OtpVerification from './pages/auth/otp-verification';
 import PatientDashboard from './pages/dashboards/patient-dashboard';
 import PatientAppointments from './pages/dashboards/patient-appointments';
+import PatientPrescriptions from './pages/dashboards/patient-prescriptions';
 import BookAppointment from './pages/book-appointment';
 import DoctorDashboard from './pages/dashboards/doctor-dashboard';
 import DoctorAppointments from './pages/dashboards/doctor-appointments';
 import HospitalDashboard from './pages/dashboards/hospital-dashboard';
 import LabDashboard from './pages/dashboards/lab-dashboard';
 import ReceptionistDashboard from './pages/dashboards/receptionist-dashboard';
+import PatientOnboarding from './pages/onboarding/patient-onboarding';
 import NotFound from './pages/not-found';
 
 // Create a client
@@ -69,10 +71,14 @@ function App() {
                   <Route path="/register" component={Register} />
                   <Route path="/otp-verification" component={OtpVerification} />
                   
+                  {/* Onboarding Routes */}
+                  <Route path="/onboarding/patient" component={PatientOnboarding} />
+                  
                   {/* Dashboard Routes */}
                   <Route path="/dashboard" component={DashboardRedirect} />
                   <Route path="/dashboard/patient" component={PatientDashboard} />
                   <Route path="/dashboard/patient/appointments" component={PatientAppointments} />
+                  <Route path="/dashboard/patient/prescriptions" component={PatientPrescriptions} />
                   <Route path="/dashboard/doctor" component={DoctorDashboard} />
                   <Route path="/dashboard/doctor/appointments" component={DoctorAppointments} />
                   <Route path="/dashboard/hospital" component={HospitalDashboard} />

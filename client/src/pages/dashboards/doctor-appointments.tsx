@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { 
   Layout, 
   Card, 
@@ -20,7 +21,8 @@ import {
   Input,
   Select,
   Modal,
-  Divider
+  Divider,
+  message
 } from 'antd';
 import { 
   UserOutlined, 
@@ -53,97 +55,88 @@ const { Option } = Select;
 
 export default function DoctorAppointments() {
   const { user, logout } = useAuth();
-  const [appointments, setAppointments] = useState([]);
-  const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState('all'); // all, pending, confirmed, completed
   const [searchTerm, setSearchTerm] = useState('');
   const [collapsed, setCollapsed] = useState(false);
 
-  // Mock data for demo purposes
-  useEffect(() => {
-    const mockAppointments = [
-      {
-        id: 1,
-        patientName: "Jane Doe",
-        patientAge: 28,
-        patientGender: "Female",
-        appointmentDate: "2024-09-26T10:00:00Z",
-        appointmentTime: "10:00 AM",
-        timeSlot: "10:00-10:30",
-        reason: "Regular checkup",
-        status: "confirmed",
-        type: "online",
-        priority: "normal",
-        symptoms: "None",
-        notes: "First appointment",
-        medicalHistory: "No significant medical history",
-        allergies: "None known",
-        createdAt: "2024-09-25T08:00:00Z"
-      },
-      {
-        id: 2,
-        patientName: "John Smith",
-        patientAge: 45,
-        patientGender: "Male",
-        appointmentDate: "2024-09-26T11:00:00Z",
-        appointmentTime: "11:00 AM",
-        timeSlot: "11:00-11:30",
-        reason: "Chest pain consultation",
-        status: "pending",
-        type: "online",
-        priority: "high",
-        symptoms: "Chest pain, shortness of breath",
-        notes: "Urgent consultation needed",
-        medicalHistory: "Hypertension, diabetes",
-        allergies: "Penicillin",
-        createdAt: "2024-09-25T09:00:00Z"
-      },
-      {
-        id: 3,
-        patientName: "Sarah Wilson",
-        patientAge: 32,
-        patientGender: "Female",
-        appointmentDate: "2024-09-25T14:00:00Z",
-        appointmentTime: "2:00 PM",
-        timeSlot: "14:00-14:30",
-        reason: "Follow-up consultation",
-        status: "completed",
-        type: "online",
-        priority: "normal",
-        symptoms: "Headache",
-        notes: "Follow-up from previous visit",
-        medicalHistory: "Migraine history",
-        allergies: "None known",
-        createdAt: "2024-09-24T10:00:00Z",
-        completedAt: "2024-09-25T14:30:00Z"
-      },
-      {
-        id: 4,
-        patientName: "Mike Johnson",
-        patientAge: 55,
-        patientGender: "Male",
-        appointmentDate: "2024-09-24T09:00:00Z",
-        appointmentTime: "9:00 AM",
-        timeSlot: "09:00-09:30",
-        reason: "Blood pressure check",
-        status: "completed",
-        type: "online",
-        priority: "normal",
-        symptoms: "High blood pressure",
-        notes: "Routine checkup",
-        medicalHistory: "Hypertension, heart disease",
-        allergies: "None known",
-        createdAt: "2024-09-23T08:00:00Z",
-        completedAt: "2024-09-24T09:30:00Z"
-      }
-    ];
+  // Get appointments from API with auto-refresh
+  const { data: appointmentsData = [], isLoading: loading, refetch: refetchAppointments } = useQuery({
+    queryKey: ['/api/appointments/my'],
+    queryFn: async () => {
+      const token = localStorage.getItem('auth-token');
+      const response = await fetch('/api/appointments/my', {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+      if (!response.ok) throw new Error('Failed to fetch appointments');
+      const data = await response.json();
+      console.log('📅 Doctor appointments loaded:', data.length, 'appointments');
+      // Transform API data to match expected format
+      return data.map((apt: any) => ({
+        id: apt.id,
+        patientName: apt.patientName || 'Unknown Patient',
+        patientAge: 0, // Not available in API response
+        patientGender: 'Unknown', // Not available in API response
+        appointmentDate: apt.appointmentDate || new Date().toISOString(),
+        appointmentTime: apt.appointmentTime || apt.timeSlot?.split('-')[0] || 'N/A',
+        timeSlot: apt.timeSlot || `${apt.appointmentTime}-${apt.appointmentTime}`,
+        reason: apt.reason || 'Consultation',
+        status: apt.status || 'pending',
+        type: apt.type || 'online',
+        priority: apt.priority || 'normal',
+        symptoms: apt.symptoms || '',
+        notes: apt.notes || '',
+        medicalHistory: '', // Not available in API response
+        allergies: '', // Not available in API response
+        createdAt: apt.createdAt || new Date().toISOString(),
+        completedAt: apt.completedAt
+      }));
+    },
+    refetchInterval: 3000, // Refetch every 3 seconds for faster updates
+    refetchOnWindowFocus: true,
+    refetchOnMount: true,
+  });
 
-    // Simulate API call
-    setTimeout(() => {
-      setAppointments(mockAppointments);
-      setLoading(false);
-    }, 1000);
-  }, []);
+  // Listen for appointment updates from other tabs/windows
+  useEffect(() => {
+    const handleStorageChange = (e: StorageEvent) => {
+      if (e.key === 'appointment-updated') {
+        console.log('🔄 Appointment updated detected in doctor appointments, refreshing...');
+        refetchAppointments();
+      }
+    };
+    
+    // Also listen for custom events (same-window updates)
+    const handleCustomEvent = () => {
+      console.log('🔄 Custom appointment update event in doctor appointments');
+      refetchAppointments();
+    };
+    
+    window.addEventListener('storage', handleStorageChange);
+    window.addEventListener('appointment-updated', handleCustomEvent);
+    
+    // Also check periodically for updates
+    const interval = setInterval(() => {
+      const lastUpdate = window.localStorage.getItem('appointment-updated');
+      if (lastUpdate) {
+        const updateTime = parseInt(lastUpdate);
+        const now = Date.now();
+        // If update happened within last 5 seconds, refetch
+        if (now - updateTime < 5000) {
+          refetchAppointments();
+        }
+      }
+    }, 2000);
+    
+    return () => {
+      window.removeEventListener('storage', handleStorageChange);
+      window.removeEventListener('appointment-updated', handleCustomEvent);
+      clearInterval(interval);
+    };
+  }, [refetchAppointments]);
+
+  const appointments = appointmentsData;
 
   const userMenuItems = [
     {
@@ -246,24 +239,58 @@ export default function DoctorAppointments() {
     return matchesFilter && matchesSearch;
   });
 
-  const handleConfirmAppointment = (appointmentId: number) => {
-    setAppointments((prev: any[]) => 
-      prev.map((apt: any) => 
-        apt.id === appointmentId 
-          ? { ...apt, status: 'confirmed', confirmedAt: new Date().toISOString() }
-          : apt
-      )
-    );
+  const handleConfirmAppointment = async (appointmentId: number) => {
+    try {
+      const token = localStorage.getItem('auth-token');
+      const response = await fetch(`/api/appointments/${appointmentId}/confirm`, {
+        method: 'PATCH',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      });
+
+      if (response.ok) {
+        message.success('Appointment confirmed successfully');
+        // Trigger storage event to notify other tabs
+        window.localStorage.setItem('appointment-updated', Date.now().toString());
+        // Refetch appointments
+        refetchAppointments();
+      } else {
+        const errorData = await response.json();
+        message.error(errorData.message || 'Failed to confirm appointment');
+      }
+    } catch (error) {
+      console.error('Error confirming appointment:', error);
+      message.error('Failed to confirm appointment');
+    }
   };
 
-  const handleCompleteAppointment = (appointmentId: number) => {
-    setAppointments((prev: any[]) => 
-      prev.map((apt: any) => 
-        apt.id === appointmentId 
-          ? { ...apt, status: 'completed', completedAt: new Date().toISOString() }
-          : apt
-      )
-    );
+  const handleCompleteAppointment = async (appointmentId: number) => {
+    try {
+      const token = localStorage.getItem('auth-token');
+      const response = await fetch(`/api/appointments/${appointmentId}/complete`, {
+        method: 'PATCH',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      });
+
+      if (response.ok) {
+        message.success('Appointment completed successfully');
+        // Trigger storage event to notify other tabs
+        window.localStorage.setItem('appointment-updated', Date.now().toString());
+        // Refetch appointments
+        refetchAppointments();
+      } else {
+        const errorData = await response.json();
+        message.error(errorData.message || 'Failed to complete appointment');
+      }
+    } catch (error) {
+      console.error('Error completing appointment:', error);
+      message.error('Failed to complete appointment');
+    }
   };
 
   return (

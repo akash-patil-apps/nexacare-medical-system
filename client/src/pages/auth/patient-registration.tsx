@@ -36,7 +36,7 @@ export default function PatientRegistration() {
 
   const registrationMutation = useMutation({
     mutationFn: async (data: any) => {
-      return apiRequest('POST', '/auth/register/patient', data);
+      return apiRequest('POST', '/api/patients/register', data);
     },
     onSuccess: () => {
       message.success('Registration successful! Please check your phone for OTP verification.');

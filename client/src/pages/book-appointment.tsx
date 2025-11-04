@@ -36,6 +36,7 @@ import {
 } from '@ant-design/icons';
 import { useAuth } from '../hooks/use-auth';
 import { useLocation } from 'wouter';
+import { useQueryClient } from '@tanstack/react-query';
 import dayjs from 'dayjs';
 
 const { Option } = Select;
@@ -83,6 +84,7 @@ interface Doctor {
 export default function BookAppointment() {
   const { user } = useAuth();
   const [, setLocation] = useLocation();
+  const queryClient = useQueryClient();
   const [form] = Form.useForm();
   const [currentStep, setCurrentStep] = useState(0);
   const [loading, setLoading] = useState(false);
@@ -401,6 +403,11 @@ export default function BookAppointment() {
       if (response.ok) {
         const result = await response.json();
         console.log('✅ Appointment booked successfully:', result);
+        
+        // Invalidate all appointment queries to refresh dashboards
+        queryClient.invalidateQueries({ queryKey: ['/api/appointments/my'] });
+        queryClient.invalidateQueries({ queryKey: ['patient-appointments'] });
+        
         message.success('Appointment booked successfully! Please wait for confirmation.');
         setLocation('/appointments');
       } else {

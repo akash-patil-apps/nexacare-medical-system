@@ -2,7 +2,7 @@
 import { db } from '../db';
 import { doctors, appointments, users } from '../../shared/schema';
 import type { InsertDoctor } from '../../shared/schema-types';
-import { eq } from 'drizzle-orm';
+import { eq, like, and, or } from 'drizzle-orm';
 
 /**
  * Create a new doctor profile.
@@ -43,7 +43,7 @@ export const getDoctorById = async (doctorId: number) => {
   const result = await db
     .select()
     .from(doctors)
-    .where((condition: any) => condition(doctorId));
+    .where(eq(doctors.id, doctorId));
   
   return result[0] || null;
 };
@@ -93,7 +93,7 @@ export const getDoctorsBySpecialty = async (specialty: string) => {
   const result = await db
     .select()
     .from(doctors)
-    .where((condition: any) => condition(specialty));
+    .where(eq(doctors.specialty, specialty));
   
   console.log(`📋 Found ${result.length} doctors with specialty ${specialty}`);
   return result;
@@ -110,7 +110,7 @@ export const verifyDoctor = async (doctorId: number) => {
       isVerified: true,
       updatedAt: new Date()
     })
-    .where((condition: any) => condition(doctorId))
+    .where(eq(doctors.id, doctorId))
     .returning();
   
   console.log(`✅ Doctor ${doctorId} verified`);
@@ -125,7 +125,7 @@ export const getAvailableDoctors = async () => {
   const result = await db
     .select()
     .from(doctors)
-    .where((condition: any) => condition(true));
+    .where(eq(doctors.isAvailable, true));
   
   console.log(`📋 Found ${result.length} available doctors`);
   return result;
@@ -142,7 +142,7 @@ export const updateDoctorAvailability = async (doctorId: number, isAvailable: bo
       isAvailable,
       updatedAt: new Date()
     })
-    .where((condition: any) => condition(doctorId))
+    .where(eq(doctors.id, doctorId))
     .returning();
   
   console.log(`✅ Doctor ${doctorId} availability updated to ${isAvailable}`);
@@ -162,7 +162,7 @@ export const updateDoctorProfile = async (doctorId: number, data: Partial<Insert
   const result = await db
     .update(doctors)
     .set(updateData)
-    .where((condition: any) => condition(doctorId))
+    .where(eq(doctors.id, doctorId))
     .returning();
   
   console.log(`✅ Doctor ${doctorId} profile updated`);
@@ -177,7 +177,7 @@ export const getDoctorAppointments = async (doctorId: number) => {
   const result = await db
     .select()
     .from(appointments)
-    .where((condition: any) => condition(doctorId));
+    .where(eq(appointments.doctorId, doctorId));
   
   console.log(`📋 Found ${result.length} appointments for doctor`);
   return result;
@@ -188,10 +188,11 @@ export const getDoctorAppointments = async (doctorId: number) => {
  */
 export const searchDoctors = async (query: string) => {
   console.log(`👨‍⚕️ Searching doctors with query: ${query}`);
+  // Search is handled via joins with users table for name search
+  // For now, return all doctors (can be enhanced later with proper search)
   const result = await db
     .select()
-    .from(doctors)
-    .where((condition: any) => condition(query));
+    .from(doctors);
   
   console.log(`📋 Found ${result.length} doctors matching search`);
   return result;

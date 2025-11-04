@@ -162,8 +162,18 @@ export const loginUser = async ({
   mobileNumber: string;
   password: string;
 }) => {
+  console.log(`🔍 Attempting to login user with mobile: ${mobileNumber}`);
   const [user] = await db.select().from(users).where(eq(users.mobileNumber, mobileNumber)).limit(1);
-  if (!user) throw new Error('User not found');
+  
+  if (!user) {
+    console.error(`❌ User not found: ${mobileNumber}`);
+    // Check if any users exist in database
+    const userCount = await db.select().from(users).limit(1);
+    console.log(`📊 Total users in database: ${userCount.length > 0 ? 'Some users exist' : 'No users found - database may need seeding'}`);
+    throw new Error('User not found');
+  }
+  
+  console.log(`✅ User found: ${user.fullName} (${user.role})`);
 
   const valid = await comparePasswords(password, user.password);
   if (!valid) throw new Error('Invalid password');

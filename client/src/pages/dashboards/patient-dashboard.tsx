@@ -14,7 +14,8 @@ import {
   Avatar,
   Menu,
   Dropdown,
-  Badge
+  Badge,
+  message
 } from 'antd';
 import { 
   UserOutlined, 
@@ -28,6 +29,7 @@ import {
 } from '@ant-design/icons';
 import { useAuth } from '../../hooks/use-auth';
 import { useLocation } from 'wouter';
+import { useOnboardingCheck } from '../../hooks/use-onboarding-check';
 
 const { Header, Content, Sider } = Layout;
 const { Title, Text } = Typography;
@@ -36,42 +38,53 @@ export default function PatientDashboard() {
   const { user, logout } = useAuth();
   const [, setLocation] = useLocation();
   const [collapsed, setCollapsed] = useState(false);
+  
+  // Check onboarding status
+  useOnboardingCheck();
 
-  // Mock data for demonstration
-  const { data: stats } = useQuery({
-    queryKey: ['patient-stats'],
-    queryFn: async () => ({
-      totalAppointments: 12,
-      upcomingAppointments: 3,
-      completedAppointments: 9,
-      prescriptions: 5,
-      labReports: 8
-    })
-  });
-
-  const { data: appointments } = useQuery({
+  // Get patient appointments from API
+  const { data: appointmentsData = [], isLoading: appointmentsLoading } = useQuery({
     queryKey: ['patient-appointments'],
-    queryFn: async () => [
-      {
-        id: 1,
-        doctor: 'Dr. Sarah Johnson',
-        specialty: 'Cardiology',
-        date: '2024-09-28',
-        time: '10:00 AM',
-        status: 'confirmed',
-        hospital: 'City General Hospital'
-      },
-      {
-        id: 2,
-        doctor: 'Dr. Michael Chen',
-        specialty: 'Dermatology',
-        date: '2024-09-30',
-        time: '2:30 PM',
-        status: 'pending',
-        hospital: 'Metro Health Center'
-      }
-    ]
+    queryFn: async () => {
+      const token = localStorage.getItem('auth-token');
+      const response = await fetch('/api/appointments/my', {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+      if (!response.ok) throw new Error('Failed to fetch appointments');
+      const data = await response.json();
+      console.log('📅 Patient appointments loaded:', data.length, 'appointments');
+      return data.map((apt: any) => ({
+        id: apt.id,
+        doctor: apt.doctorName || 'Unknown Doctor',
+        specialty: apt.doctorSpecialty || 'General',
+        date: apt.appointmentDate ? new Date(apt.appointmentDate).toISOString().split('T')[0] : 'N/A',
+        time: apt.appointmentTime || apt.timeSlot || 'N/A',
+        status: apt.status || 'pending',
+        hospital: apt.hospitalName || 'Unknown Hospital'
+      }));
+    },
+    refetchInterval: 10000, // Refetch every 10 seconds (less aggressive)
+    refetchOnWindowFocus: false, // Don't refetch on window focus (prevents unwanted refreshes)
+    refetchOnMount: true,
   });
+
+  // Calculate stats from real appointments data
+  const stats = {
+    totalAppointments: appointmentsData.length,
+    upcomingAppointments: appointmentsData.filter((apt: any) => 
+      apt.status === 'confirmed' || apt.status === 'pending'
+    ).length,
+    completedAppointments: appointmentsData.filter((apt: any) => 
+      apt.status === 'completed'
+    ).length,
+    prescriptions: 0, // TODO: Fetch from prescriptions API when ready
+    labReports: 0 // TODO: Fetch from lab reports API when ready
+  };
+
+  // Get recent appointments (last 5)
+  const appointments = appointmentsData.slice(0, 5);
 
   const appointmentColumns = [
     {
@@ -285,19 +298,27 @@ export default function PatientDashboard() {
               >
                 Book Appointment
               </Button>
-              <Button icon={<MedicineBoxOutlined />} size="large">
+              <Button 
+                icon={<MedicineBoxOutlined />} 
+                size="large"
+                onClick={() => setLocation('/dashboard/patient/prescriptions')}
+              >
                 View Prescriptions
               </Button>
-              <Button icon={<FileTextOutlined />} size="large">
+              <Button 
+                icon={<FileTextOutlined />} 
+                size="large"
+                onClick={() => message.info('Lab reports feature coming soon')}
+              >
                 Lab Reports
-                      </Button>
+              </Button>
             </Space>
         </Card>
 
           {/* Recent Appointments */}
           <Card 
             title="Recent Appointments" 
-            extra={<Button type="link">View All</Button>}
+            extra={<Button type="link" onClick={() => setLocation('/dashboard/patient/appointments')}>View All</Button>}
           >
             <Table
               columns={appointmentColumns}

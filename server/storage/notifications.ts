@@ -1,5 +1,5 @@
 // server/storage/notifications.ts
-import { db } from './db';
+import { db } from '../db';
 import { notifications } from '../../shared/schema';
 import { eq } from 'drizzle-orm';
 import type { InsertNotification } from '../../shared/schema-types';

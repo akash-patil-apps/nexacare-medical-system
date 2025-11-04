@@ -38,6 +38,8 @@ import {
 } from '@ant-design/icons';
 import { useAuth } from '../../hooks/use-auth';
 import { useLocation } from 'wouter';
+import { useQueryClient } from '@tanstack/react-query';
+import { Popconfirm } from 'antd';
 
 const { Header, Content, Sider } = Layout;
 const { Title, Text } = Typography;
@@ -66,11 +68,15 @@ interface Appointment {
 export default function PatientAppointments() {
   const { user, logout } = useAuth();
   const [, setLocation] = useLocation();
+  const queryClient = useQueryClient();
   const [collapsed, setCollapsed] = useState(false);
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState('all');
   const [searchTerm, setSearchTerm] = useState('');
+  const [selectedAppointment, setSelectedAppointment] = useState<Appointment | null>(null);
+  const [isViewModalOpen, setIsViewModalOpen] = useState(false);
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
 
   // Load appointments from API
   const loadAppointments = async () => {
@@ -103,6 +109,38 @@ export default function PatientAppointments() {
     loadAppointments();
   }, []);
 
+  // Auto-refresh appointments every 10 seconds (less aggressive)
+  useEffect(() => {
+    const interval = setInterval(() => {
+      loadAppointments();
+    }, 10000); // Changed from 3000ms to 10000ms (10 seconds)
+
+    return () => clearInterval(interval);
+  }, []);
+
+  // Listen for appointment updates from other tabs/windows (cross-tab communication)
+  useEffect(() => {
+    const handleStorageChange = (e: StorageEvent) => {
+      if (e.key === 'appointment-updated') {
+        console.log('🔄 Patient appointments: Update detected, refreshing...');
+        loadAppointments();
+      }
+    };
+    
+    const handleCustomEvent = () => {
+      console.log('🔄 Patient appointments: Custom event detected, refreshing...');
+      loadAppointments();
+    };
+    
+    window.addEventListener('storage', handleStorageChange);
+    window.addEventListener('appointment-updated', handleCustomEvent);
+    
+    return () => {
+      window.removeEventListener('storage', handleStorageChange);
+      window.removeEventListener('appointment-updated', handleCustomEvent);
+    };
+  }, []);
+
   // Refresh appointments when returning from booking page
   useEffect(() => {
     const handleVisibilityChange = () => {
@@ -113,6 +151,18 @@ export default function PatientAppointments() {
 
     document.addEventListener('visibilitychange', handleVisibilityChange);
     return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
+  }, []);
+
+  // Listen for appointment updates from other tabs/windows
+  useEffect(() => {
+    const handleStorageChange = (e: StorageEvent) => {
+      if (e.key === 'appointment-updated') {
+        console.log('🔄 Appointment updated detected, refreshing patient appointments...');
+        loadAppointments();
+      }
+    };
+    window.addEventListener('storage', handleStorageChange);
+    return () => window.removeEventListener('storage', handleStorageChange);
   }, []);
 
   const filteredAppointments = appointments.filter(appointment => {
@@ -202,18 +252,34 @@ export default function PatientAppointments() {
       key: 'actions',
       render: (record: Appointment) => (
         <Space>
-          <Button size="small" icon={<EyeOutlined />}>
+          <Button 
+            size="small" 
+            icon={<EyeOutlined />}
+            onClick={() => handleViewAppointment(record)}
+          >
             View
           </Button>
           {record.status === 'pending' && (
-            <Button size="small" icon={<EditOutlined />}>
+            <Button 
+              size="small" 
+              icon={<EditOutlined />}
+              onClick={() => handleEditAppointment(record)}
+            >
               Edit
             </Button>
           )}
           {record.status === 'pending' && (
-            <Button size="small" danger icon={<DeleteOutlined />}>
-              Cancel
-            </Button>
+            <Popconfirm
+              title="Cancel Appointment"
+              description="Are you sure you want to cancel this appointment?"
+              onConfirm={() => handleCancelAppointment(record.id)}
+              okText="Yes, Cancel"
+              cancelText="No"
+            >
+              <Button size="small" danger icon={<DeleteOutlined />}>
+                Cancel
+              </Button>
+            </Popconfirm>
           )}
         </Space>
       ),
@@ -444,6 +510,82 @@ export default function PatientAppointments() {
 
         </Content>
       </Layout>
+
+      {/* View Appointment Modal */}
+      <Modal
+        title="Appointment Details"
+        open={isViewModalOpen}
+        onCancel={() => setIsViewModalOpen(false)}
+        footer={[
+          <Button key="close" onClick={() => setIsViewModalOpen(false)}>
+            Close
+          </Button>
+        ]}
+        width={600}
+      >
+        {selectedAppointment && (
+          <div>
+            <Space direction="vertical" size="middle" style={{ width: '100%' }}>
+              <div>
+                <Text strong>Doctor: </Text>
+                <Text>{selectedAppointment.doctorName}</Text>
+                <Text type="secondary" style={{ marginLeft: '8px' }}>
+                  ({selectedAppointment.doctorSpecialty})
+                </Text>
+              </div>
+              <div>
+                <Text strong>Hospital: </Text>
+                <Text>{selectedAppointment.hospitalName}</Text>
+              </div>
+              <div>
+                <Text strong>Date: </Text>
+                <Text>{selectedAppointment.appointmentDate}</Text>
+              </div>
+              <div>
+                <Text strong>Time: </Text>
+                <Text>{selectedAppointment.appointmentTime}</Text>
+              </div>
+              <div>
+                <Text strong>Reason: </Text>
+                <Text>{selectedAppointment.reason}</Text>
+              </div>
+              <div>
+                <Text strong>Status: </Text>
+                <Tag color={getStatusColor(selectedAppointment.status)}>
+                  {selectedAppointment.status.toUpperCase()}
+                </Tag>
+              </div>
+              {selectedAppointment.symptoms && (
+                <div>
+                  <Text strong>Symptoms: </Text>
+                  <Text>{selectedAppointment.symptoms}</Text>
+                </div>
+              )}
+              {selectedAppointment.notes && (
+                <div>
+                  <Text strong>Notes: </Text>
+                  <Text>{selectedAppointment.notes}</Text>
+                </div>
+              )}
+            </Space>
+          </div>
+        )}
+      </Modal>
+
+      {/* Edit Appointment Modal */}
+      <Modal
+        title="Edit Appointment"
+        open={isEditModalOpen}
+        onCancel={() => setIsEditModalOpen(false)}
+        footer={null}
+        width={600}
+      >
+        {selectedAppointment && (
+          <div>
+            <Text>Edit functionality coming soon. Please cancel and rebook if you need to change details.</Text>
+          </div>
+        )}
+      </Modal>
     </Layout>
   );
 }
