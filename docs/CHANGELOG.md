@@ -1,5 +1,43 @@
 # NexaCare Medical System - Changelog
 
+## [2025-11-09] - Dashboard Redesign & Prescription Workflow Updates
+
+### 🎨 **Frontend Enhancements**
+- **Patient Dashboard Refresh**
+  - Removed hero banner and legacy top header elements.
+  - Introduced new sidebar profile placement (avatar + name pinned bottom-left).
+  - Rebuilt layout with reusable dashboard cards for KPIs, quick actions, prescriptions, care timeline, and notifications.
+  - Ensured prescription history and active medications are always visible.
+- **Doctor Dashboard Modernization**
+  - Applied Doctor palette from the new dashboard style guide.
+  - Made sidebar sticky with fixed profile; content column scrolls independently.
+  - Added “Add Prescription” action column to Today’s Schedule with contextual patient pre-fill.
+  - “Write Prescription” quick action now lists only today’s unattended patients.
+- **Appointment Booking Polish**
+  - Removed redundant helper text and excess padding across steps.
+  - Reordered hospital filters and redesigned hospital cards for professional layout.
+  - Updated date/time step to match new UX specifications and fixed confirmation card styling.
+
+### 🧩 **Reusable Components & Documentation**
+- Created reusable dashboard components (`KpiCard`, `QuickActionTile`, `PrescriptionCard`, `TimelineItem`, `NotificationItem`) under `client/src/components/dashboard/`.
+- Authored comprehensive dashboard design references:
+  - `docs/DASHBOARD_STYLE_GUIDE.md`
+  - `docs/PATIENT_DASHBOARD_SPEC.md`
+  - `docs/PATIENT_DASHBOARD_IMPLEMENTATION.md`
+- Documented role-based palettes, typography, spacing, and interaction patterns for future dashboards.
+
+### 🔧 **Backend Fixes**
+- Prescriptions service queries now use proper Drizzle `eq/and` helpers, resolving `TypeError: condition is not a function`.
+- Added patient-specific lab report endpoint (`/api/labs/patient/reports`) and corresponding service function.
+- Expanded notifications routes to support fetching a user’s notifications and marking read.
+- Cleaned duplicate prescription service file and aligned routing imports.
+
+### 🧪 **Pending Work**
+- Apply the new dashboard system to Hospital Admin, Receptionist, and Lab roles.
+- Expand notification center modules for other dashboards once designs are finalized.
+
+---
+
 ## [2025-11-05] - Multi-Role Workflow & Critical Bug Fixes
 
 ### 🎯 **MAJOR RELEASE: Complete Multi-Role Appointment Workflow Implementation**

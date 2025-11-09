@@ -106,21 +106,20 @@ git push origin feature/[feature-name]
 
 ## 🎯 **Current Priority Tasks**
 
-### **TODAY'S FOCUS** (September 24, 2024)
-1. **Complete Appointment API Routes**
-   - File: `server/routes/appointments.routes.ts`
-   - Implement: GET, POST, PUT, DELETE endpoints
-   - Test: All CRUD operations
+### **TODAY'S FOCUS** (November 9, 2025)
+1. **Dashboard Redesign Rollout**
+   - Files: `client/src/pages/dashboards/hospital-admin-dashboard.tsx`, `receptionist-dashboard.tsx`, `lab-dashboard.tsx`
+   - Apply style guide tokens, sidebar layout, reusable KPI/quick-action/panel components.
+   - Ensure role-specific palettes and modules are documented.
 
-2. **Complete Appointment Service Functions**
-   - File: `server/services/appointments.service.ts`
-   - Implement: createAppointment, getAppointments, updateAppointment, deleteAppointment
-   - Test: All service functions
+2. **Prescription & Notification QA**
+   - Files: `client/src/pages/dashboards/doctor-dashboard.tsx`, `patient-dashboard.tsx`, `server/services/prescriptions.service.ts`
+   - Verify unattended patient filtering, appointment linkage, and notification mark-as-read flow after backend restart.
 
-3. **Create Patient Appointments Page**
-   - File: `client/src/pages/dashboards/patient-appointments.tsx`
-   - Features: List, create, edit, cancel appointments
-   - Test: Full appointment workflow
+3. **Documentation & Testing**
+   - Files: `docs/DASHBOARD_STYLE_GUIDE.md`, `PROJECT_LOG.md`, `CHANGELOG.md`
+   - Capture any Stitch AI prompt deltas; update docs after each dashboard handoff.
+   - Run `npm run dev` (server + client) and walk through Patient → Doctor workflow end-to-end.
 
 ---
 

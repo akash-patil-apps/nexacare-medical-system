@@ -2,8 +2,8 @@
 import { Router } from "express";
 import { authenticateToken, authorizeRoles } from "../middleware/auth";
 import type { AuthenticatedRequest } from "../types";
-import { getLabReportsForLab } from "../services/lab.service";
-import { createLabReport } from "../storage";
+import { createLabReport as createLabReportRecord } from "../services/lab.service";
+import { getLabReportsForLab, getLabReportsForPatient } from "../services/lab.service";
 
 const router = Router();
 
@@ -13,8 +13,8 @@ router.post(
   authorizeRoles('lab'),
   async (req: AuthenticatedRequest, res) => {
     try {
-      const report = req.body; // Validate via Zod optionally
-      const created = await createLabReport({
+      const report = req.body; // TODO: Validate via Zod
+      const created = await createLabReportRecord({
         ...report,
         labId: req.user!.id,
       });
@@ -25,7 +25,6 @@ router.post(
     }
   }
 );
-
 
 router.get(
   "/me/reports",
@@ -38,6 +37,22 @@ router.get(
       res.json(reports);
     } catch (err) {
       console.error("Get lab reports error:", err);
+      res.status(500).json({ message: "Failed to fetch lab reports" });
+    }
+  }
+);
+
+router.get(
+  "/patient/reports",
+  authenticateToken,
+  authorizeRoles("patient"),
+  async (req: AuthenticatedRequest, res) => {
+    try {
+      const patientId = req.user!.id;
+      const reports = await getLabReportsForPatient(patientId);
+      res.json(reports);
+    } catch (err) {
+      console.error("Get patient lab reports error:", err);
       res.status(500).json({ message: "Failed to fetch lab reports" });
     }
   }

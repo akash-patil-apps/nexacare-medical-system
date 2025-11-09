@@ -330,9 +330,10 @@ export default function BookAppointment() {
     applyHospitalFilters(hospitals, search, selectedSpecialty);
   };
 
-  const handleSpecialtyChange = (specialty: string) => {
-    setSelectedSpecialty(specialty);
-    applyHospitalFilters(hospitals, searchTerm, specialty);
+  const handleSpecialtyChange = (specialty?: string) => {
+    const nextSpecialty = specialty || '';
+    setSelectedSpecialty(nextSpecialty);
+    applyHospitalFilters(hospitals, searchTerm, nextSpecialty);
   };
 
   // Auto-advance functions - no manual Next/Previous needed
@@ -442,31 +443,9 @@ export default function BookAppointment() {
       icon: <EnvironmentOutlined />,
       content: (
         <div>
-          <Title level={3}>Choose a Hospital</Title>
-          <Text type="secondary" style={{ fontSize: '16px', marginBottom: '24px', display: 'block' }}>
-            Select the hospital where you want to book an appointment
-          </Text>
-          
           {/* City Selector */}
-          <div style={{ marginBottom: '24px' }}>
-            <Text strong style={{ marginBottom: '8px', display: 'block' }}>Select City:</Text>
-            <Select
-              value={selectedCity}
-              onChange={handleCityChange}
-              style={{ width: '200px' }}
-              placeholder="Select city"
-            >
-              {availableCities.map(city => (
-                <Option key={city} value={city}>
-                  📍 {city}
-                </Option>
-              ))}
-            </Select>
-          </div>
-
-          {/* Search and Filter */}
           <Row gutter={[16, 16]} style={{ marginBottom: '24px' }}>
-            <Col xs={24} sm={12}>
+            <Col xs={24} md={8}>
               <Text strong style={{ marginBottom: '8px', display: 'block' }}>Search Hospital:</Text>
               <Input
                 placeholder="Search by hospital name..."
@@ -476,11 +455,11 @@ export default function BookAppointment() {
                 allowClear
               />
             </Col>
-            <Col xs={24} sm={12}>
+            <Col xs={24} md={8}>
               <Text strong style={{ marginBottom: '8px', display: 'block' }}>Filter by Specialty:</Text>
               <Select
-                placeholder="Select specialty..."
-                value={selectedSpecialty}
+                placeholder="All specialties"
+                value={selectedSpecialty || undefined}
                 onChange={handleSpecialtyChange}
                 style={{ width: '100%' }}
                 allowClear
@@ -488,6 +467,21 @@ export default function BookAppointment() {
                 {allSpecialties.map(specialty => (
                   <Option key={specialty} value={specialty}>
                     🏥 {specialty}
+                  </Option>
+                ))}
+              </Select>
+            </Col>
+            <Col xs={24} md={8}>
+              <Text strong style={{ marginBottom: '8px', display: 'block' }}>Select City:</Text>
+              <Select
+                value={selectedCity}
+                onChange={handleCityChange}
+                style={{ width: '100%' }}
+                placeholder="Select city"
+              >
+                {availableCities.map(city => (
+                  <Option key={city} value={city}>
+                    📍 {city}
                   </Option>
                 ))}
               </Select>
@@ -527,57 +521,88 @@ export default function BookAppointment() {
             <Row gutter={[16, 16]}>
               {filteredHospitals.map(hospital => (
                 <Col xs={24} sm={12} lg={8} key={hospital.id}>
-                <Card
-                  hoverable
-                  style={{
-                    border: selectedHospital?.id === hospital.id ? '2px solid #1890ff' : '1px solid #d9d9d9',
-                    cursor: 'pointer',
-                    height: '100%'
-                  }}
-                  onClick={() => handleHospitalSelect(hospital.id)}
-                  bodyStyle={{ padding: '16px' }}
-                >
-                  <div style={{ marginBottom: '12px' }}>
-                    <Title level={4} style={{ margin: 0, color: selectedHospital?.id === hospital.id ? '#1890ff' : '#262626' }}>
-                      {hospital.name}
-                    </Title>
-                    <Text type="secondary" style={{ fontSize: '12px' }}>
-                      📍 {hospital.address}, {hospital.city}, {hospital.state}
-                    </Text>
-                  </div>
-                  
-                  <Row gutter={[8, 8]} style={{ marginBottom: '12px' }}>
-                    <Col span={12}>
-                      <Text strong style={{ fontSize: '12px' }}>Established:</Text>
-                      <div style={{ fontSize: '12px' }}>{hospital.establishedYear}</div>
-                    </Col>
-                    <Col span={12}>
-                      <Text strong style={{ fontSize: '12px' }}>Beds:</Text>
-                      <div style={{ fontSize: '12px' }}>{hospital.totalBeds}</div>
-                    </Col>
-                  </Row>
+                  <Card
+                    hoverable
+                    onClick={() => handleHospitalSelect(hospital.id)}
+                    style={{
+                      height: '100%',
+                      borderRadius: 12,
+                      border: selectedHospital?.id === hospital.id ? '1px solid #2563eb' : '1px solid #e2e8f0',
+                      boxShadow: selectedHospital?.id === hospital.id
+                        ? '0 12px 24px rgba(37, 99, 235, 0.12)'
+                        : '0 6px 16px rgba(15, 23, 42, 0.08)',
+                      transition: 'border 0.2s ease, box-shadow 0.2s ease',
+                      cursor: 'pointer',
+                      background: '#ffffff',
+                    }}
+                    bodyStyle={{ padding: '20px' }}
+                  >
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                        <div style={{ maxWidth: '75%' }}>
+                          <Title level={4} style={{ margin: 0, color: '#0f172a', fontSize: 20 }}>
+                            {hospital.name}
+                          </Title>
+                          <Text type="secondary" style={{ fontSize: 13, display: 'block', marginTop: 4 }}>
+                            {hospital.address}
+                          </Text>
+                          <Text type="secondary" style={{ fontSize: 12, display: 'block' }}>
+                            {hospital.city}, {hospital.state}
+                          </Text>
+                        </div>
+                        <Tag color={hospital.is_verified ? 'success' : 'default'} bordered={false}>
+                          {hospital.is_verified ? 'Verified' : 'Pending'}
+                        </Tag>
+                      </div>
 
-                  <div style={{ marginBottom: '12px' }}>
-                    <Text strong style={{ fontSize: '12px' }}>Departments:</Text>
-                    <div style={{ marginTop: '4px' }}>
-                      {JSON.parse(hospital.departments).slice(0, 3).map((dept: string) => (
-                        <Tag key={dept} color="blue" size="small">{dept}</Tag>
-                      ))}
-                      {JSON.parse(hospital.departments).length > 3 && (
-                        <Tag color="default" size="small">+{JSON.parse(hospital.departments).length - 3} more</Tag>
-                      )}
+                      <div style={{
+                        display: 'grid',
+                        gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
+                        gap: 12,
+                      }}>
+                        <div>
+                          <Text type="secondary" style={{ fontSize: 12 }}>Established</Text>
+                          <div style={{ fontSize: 16, fontWeight: 600 }}>{hospital.establishedYear}</div>
+                        </div>
+                        <div>
+                          <Text type="secondary" style={{ fontSize: 12 }}>Total Beds</Text>
+                          <div style={{ fontSize: 16, fontWeight: 600 }}>{hospital.totalBeds}</div>
+                        </div>
+                      </div>
+
+                      <div>
+                        <Text type="secondary" style={{ fontSize: 12 }}>Departments</Text>
+                        <div style={{ marginTop: 10, display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                          {JSON.parse(hospital.departments).slice(0, 3).map((dept: string) => (
+                            <Tag
+                              key={dept}
+                              bordered={false}
+                              style={{ background: '#f1f5f9', color: '#1e293b', fontSize: 12, padding: '2px 10px' }}
+                            >
+                              {dept}
+                            </Tag>
+                          ))}
+                          {JSON.parse(hospital.departments).length > 3 && (
+                            <Tag
+                              bordered={false}
+                              style={{ background: '#e2e8f0', color: '#475569', fontSize: 12, padding: '2px 10px' }}
+                            >
+                              +{JSON.parse(hospital.departments).length - 3}
+                            </Tag>
+                          )}
+                        </div>
+                      </div>
+
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <Text type="secondary" style={{ fontSize: 12 }}>
+                          {hospital.operating_hours || 'Hours not available'}
+                        </Text>
+                        <Tag bordered={false} color={hospital.emergencyServices ? 'blue' : 'default'}>
+                          {hospital.emergencyServices ? 'Emergency Available' : 'No Emergency'}
+                        </Tag>
+                      </div>
                     </div>
-                  </div>
-
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <Tag color={hospital.emergencyServices ? 'green' : 'red'} size="small">
-                      {hospital.emergencyServices ? '🚑 Emergency Available' : '❌ No Emergency'}
-                    </Tag>
-                    <Tag color="orange" size="small">
-                      {hospital.is_verified ? '✅ Verified' : '⏳ Pending'}
-                    </Tag>
-                  </div>
-                </Card>
+                  </Card>
                 </Col>
               ))}
             </Row>
@@ -646,11 +671,6 @@ export default function BookAppointment() {
       icon: <UserOutlined />,
       content: (
         <div>
-          <Title level={3}>Choose a Doctor</Title>
-          <Text type="secondary" style={{ fontSize: '16px', marginBottom: '24px', display: 'block' }}>
-            Select a doctor from {selectedHospital?.name}
-          </Text>
-
           {selectedHospital && (
             <div>
               <div style={{ marginBottom: '16px', padding: '12px', background: '#f6ffed', border: '1px solid #b7eb8f', borderRadius: '8px' }}>
@@ -805,94 +825,93 @@ export default function BookAppointment() {
       icon: <CalendarOutlined />,
       content: (
         <div>
-          <Title level={3}>Choose Date & Time</Title>
-          <Text type="secondary" style={{ fontSize: '16px', marginBottom: '24px', display: 'block' }}>
-            Select your preferred date and time slot (Available for today and tomorrow only)
-          </Text>
 
           <Row gutter={[24, 24]}>
             <Col span={24}>
-              <div style={{ marginBottom: '16px' }}>
-                <Text strong style={{ fontSize: '16px', marginBottom: '12px', display: 'block' }}>
-                  Quick Date Selection:
-                </Text>
-                <Space size="middle">
-                  <Button 
-                    type={selectedDate?.format('YYYY-MM-DD') === dayjs().format('YYYY-MM-DD') ? 'primary' : 'default'}
-                    size="large"
-                    onClick={() => {
-                      const today = dayjs();
-                      setSelectedDate(today);
-                      form.setFieldsValue({ appointmentDate: today });
-                    }}
-                  >
-                    📅 Today ({dayjs().format('MMM D, YYYY')})
-                  </Button>
-                  <Button 
-                    type={selectedDate?.format('YYYY-MM-DD') === dayjs().add(1, 'day').format('YYYY-MM-DD') ? 'primary' : 'default'}
-                    size="large"
-                    onClick={() => {
-                      const tomorrow = dayjs().add(1, 'day');
-                      setSelectedDate(tomorrow);
-                      form.setFieldsValue({ appointmentDate: tomorrow });
-                    }}
-                  >
-                    📅 Tomorrow ({dayjs().add(1, 'day').format('MMM D, YYYY')})
-                  </Button>
-                </Space>
-              </div>
-              
-              <Form.Item
-                name="appointmentDate"
-                rules={[{ required: true, message: 'Please select a date' }]}
-              >
-                <DatePicker
-                  placeholder="Or select a specific date"
-                  size="large"
-                  style={{ width: '100%' }}
-                  disabledDate={(current) => {
-                    const today = dayjs().startOf('day');
-                    const tomorrow = dayjs().add(1, 'day').startOf('day');
-                    return current && (current < today || current > tomorrow);
+              <Card bordered={false} style={{ borderRadius: '12px', border: '1px solid #e2e8f0', marginBottom: 16 }}>
+                <div
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 8,
+                    overflowX: 'auto',
+                    paddingBottom: 6,
                   }}
-                  onChange={handleDateChange}
-                />
-              </Form.Item>
-              
-              {selectedDate && (
-                <div style={{ marginTop: '12px', padding: '12px', background: '#f6ffed', border: '1px solid #b7eb8f', borderRadius: '8px' }}>
-                  <Text strong style={{ color: '#52c41a' }}>
-                    📅 Selected Date: {selectedDate.format('dddd, MMMM D, YYYY')}
-                  </Text>
-                </div>
-              )}
-            </Col>
+                >
+                  {[0, 1, 2, 3, 4, 5, 6].map(offset => {
+                    const date = dayjs().add(offset, 'day');
+                    const isSelected = selectedDate?.isSame(date, 'day');
+                    const isDisabled = offset > 6;
 
-            {selectedDate && selectedDoctor && (
-              <Col span={24}>
-                <Title level={4}>Available Time Slots</Title>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(120px, 1fr))', gap: 8 }}>
-                  {availableSlots.map(slot => (
-                    <Button
-                      key={slot}
-                      type={selectedSlot === slot ? 'primary' : 'default'}
-                      onClick={() => handleSlotSelect(slot)}
-                      style={{ height: '40px' }}
-                    >
-                      {slot}
-                    </Button>
-                  ))}
+                    return (
+                      <div
+                        key={offset}
+                        onClick={() => !isDisabled && handleDateChange(date)}
+                        style={{
+                          display: 'flex',
+                          flexDirection: 'column',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          minWidth: 72,
+                          padding: '10px 14px',
+                          borderRadius: 12,
+                          border: `1px solid ${isSelected ? '#ff385c' : '#d1d5db'}`,
+                          background: isSelected ? '#ff385c' : '#ffffff',
+                          color: isSelected ? '#ffffff' : '#111827',
+                          cursor: isDisabled ? 'not-allowed' : 'pointer',
+                          opacity: isDisabled ? 0.4 : 1,
+                          transition: 'all 0.2s ease',
+                          boxShadow: isSelected ? '0 4px 12px rgba(255, 56, 92, 0.2)' : undefined,
+                        }}
+                      >
+                        <Text style={{ fontSize: 11, letterSpacing: '0.08em' }}>
+                          {date.format('ddd').toUpperCase()}
+                        </Text>
+                        <Text style={{ fontSize: 16, fontWeight: 700 }}>{date.format('DD')}</Text>
+                        <Text style={{ fontSize: 11, letterSpacing: '0.08em' }}>
+                          {date.format('MMM').toUpperCase()}
+                        </Text>
+                      </div>
+                    );
+                  })}
                 </div>
-                {availableSlots.length === 0 && (
-                  <Alert
-                    message="No available slots"
-                    description="Please select a different date or doctor"
-                    type="warning"
-                    style={{ marginTop: 16 }}
-                  />
-                )}
-              </Col>
-            )}
+              </Card>
+              <Card bordered={false} style={{ borderRadius: '12px', border: '1px solid #e2e8f0' }}>
+                <div
+                  style={{
+                    display: 'grid',
+                    gridTemplateColumns: 'repeat(auto-fill, minmax(120px, 1fr))',
+                    gap: 12,
+                  }}
+                >
+                  {availableSlots.length > 0 ? (
+                    availableSlots.map(slot => {
+                      const isSelected = selectedSlot === slot;
+                      return (
+                        <button
+                          key={slot}
+                          onClick={() => handleSlotSelect(slot)}
+                          style={{
+                            height: 42,
+                            borderRadius: 8,
+                            border: `1px solid ${isSelected ? '#16a34a' : '#9ae6b4'}`,
+                            background: isSelected ? '#16a34a' : '#ffffff',
+                            color: isSelected ? '#ffffff' : '#047857',
+                            fontWeight: 600,
+                            fontSize: 14,
+                            cursor: 'pointer',
+                          }}
+                        >
+                          {slot}
+                        </button>
+                      );
+                    })
+                  ) : (
+                    <Alert message="No slots available for the selected date" type="warning" showIcon />
+                  )}
+                </div>
+              </Card>
+            </Col>
           </Row>
 
           {selectedDate && selectedSlot && (
@@ -921,70 +940,56 @@ export default function BookAppointment() {
       icon: <CheckCircleOutlined />,
       content: (
         <div>
-          <Title level={3}>Confirm Your Appointment</Title>
-          <Text type="secondary" style={{ fontSize: '16px', marginBottom: '24px', display: 'block' }}>
-            Please review your appointment details and confirm
-          </Text>
+          {selectedHospital && selectedDoctor && selectedDate && selectedSlot ? (
+            <Card
+              bordered={false}
+              style={{
+                borderRadius: 16,
+                border: '1px solid #e2e8f0',
+                boxShadow: '0 12px 32px rgba(15,23,42,0.08)',
+                padding: 24,
+              }}
+            >
+              <Space direction="vertical" size={20} style={{ width: '100%' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 16 }}>
+                  <div>
+                    <Text type="secondary" style={{ fontSize: 13 }}>Hospital</Text>
+                    <Title level={4} style={{ margin: '8px 0 4px' }}>{selectedHospital.name}</Title>
+                    <Text style={{ fontSize: 13, color: '#6b7280' }}>{selectedHospital.address}, {selectedHospital.city}</Text>
+                  </div>
+                  <div style={{ textAlign: 'right' }}>
+                    <Text type="secondary" style={{ fontSize: 13 }}>Doctor</Text>
+                    <Title level={4} style={{ margin: '8px 0 4px' }}>{selectedDoctor.fullName}</Title>
+                    <Text style={{ fontSize: 13, color: '#6b7280' }}>{selectedDoctor.specialty} • {selectedDoctor.experience} yrs</Text>
+                  </div>
+                </div>
 
-          {selectedHospital && selectedDoctor && selectedDate && selectedSlot && (
-            <Card style={{ border: '2px solid #52c41a', background: '#f6ffed' }}>
-              <Title level={4} style={{ color: '#52c41a', marginBottom: 24, textAlign: 'center' }}>
-                ✅ Appointment Summary
-              </Title>
-              
-              <Row gutter={[24, 24]}>
-                <Col xs={24} sm={12}>
-                  <div style={{ textAlign: 'center', padding: '16px', background: '#fff', borderRadius: '8px' }}>
-                    <Title level={5} style={{ color: '#1890ff', margin: '0 0 8px 0' }}>🏥 Hospital</Title>
-                    <Text strong style={{ fontSize: '16px' }}>{selectedHospital.name}</Text>
-                    <div style={{ fontSize: '12px', color: '#666', marginTop: '4px' }}>
-                      {selectedHospital.address}, {selectedHospital.city}
-                    </div>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 16 }}>
+                  <div style={{ flex: '1 1 220px', padding: '16px 20px', borderRadius: 12, border: '1px solid #f0f2f5', background: '#f9fafb' }}>
+                    <Text type="secondary" style={{ fontSize: 12 }}>Date</Text>
+                    <div style={{ fontSize: 16, fontWeight: 600, marginTop: 6 }}>{selectedDate.format('dddd, MMM D, YYYY')}</div>
                   </div>
-                </Col>
-                
-                <Col xs={24} sm={12}>
-                  <div style={{ textAlign: 'center', padding: '16px', background: '#fff', borderRadius: '8px' }}>
-                    <Title level={5} style={{ color: '#722ed1', margin: '0 0 8px 0' }}>👨‍⚕️ Doctor</Title>
-                    <Text strong style={{ fontSize: '16px' }}>{selectedDoctor.fullName}</Text>
-                    <div style={{ fontSize: '12px', color: '#666', marginTop: '4px' }}>
-                      {selectedDoctor.specialty} • {selectedDoctor.experience} years
-                    </div>
+                  <div style={{ flex: '1 1 220px', padding: '16px 20px', borderRadius: 12, border: '1px solid #f0f2f5', background: '#f9fafb' }}>
+                    <Text type="secondary" style={{ fontSize: 12 }}>Time</Text>
+                    <div style={{ fontSize: 16, fontWeight: 600, marginTop: 6 }}>{selectedSlot}</div>
                   </div>
-                </Col>
-                
-                <Col xs={24} sm={12}>
-                  <div style={{ textAlign: 'center', padding: '16px', background: '#fff', borderRadius: '8px' }}>
-                    <Title level={5} style={{ color: '#fa8c16', margin: '0 0 8px 0' }}>📅 Date & Time</Title>
-                    <Text strong style={{ fontSize: '16px' }}>{selectedDate.format('MMM D, YYYY')}</Text>
-                    <div style={{ fontSize: '12px', color: '#666', marginTop: '4px' }}>
-                      {selectedDate.format('dddd')} • {selectedSlot}
-                    </div>
+                  <div style={{ flex: '1 1 220px', padding: '16px 20px', borderRadius: 12, border: '1px solid #f0f2f5', background: '#f9fafb' }}>
+                    <Text type="secondary" style={{ fontSize: 12 }}>Consultation Fee</Text>
+                    <div style={{ fontSize: 18, fontWeight: 600, marginTop: 6 }}>₹{selectedDoctor.consultationFee}</div>
                   </div>
-                </Col>
-                
-                <Col xs={24} sm={12}>
-                  <div style={{ textAlign: 'center', padding: '16px', background: '#fff', borderRadius: '8px' }}>
-                    <Title level={5} style={{ color: '#eb2f96', margin: '0 0 8px 0' }}>💰 Fee</Title>
-                    <Text strong style={{ fontSize: '20px', color: '#eb2f96' }}>₹{selectedDoctor.consultationFee}</Text>
-                    <div style={{ fontSize: '12px', color: '#666', marginTop: '4px' }}>
-                      Consultation Fee
-                    </div>
-                  </div>
-                </Col>
-              </Row>
-              
-              <div style={{ textAlign: 'center', marginTop: '24px', padding: '16px', background: '#e6f7ff', borderRadius: '8px' }}>
-                <Text style={{ fontSize: '14px', color: '#1890ff' }}>
-                  💡 Your appointment will be confirmed after payment. You'll receive a confirmation message shortly.
-                </Text>
-              </div>
-              
-              <div style={{ textAlign: 'center', marginTop: '12px', padding: '12px', background: '#f0f8ff', borderRadius: '6px' }}>
-                <Text style={{ fontSize: '12px', color: '#1890ff' }}>
-                  🔄 <strong>Auto-Navigation:</strong> The system automatically advances when you make selections. Use "Previous Step" to go back if needed.
-                </Text>
-              </div>
+                </div>
+
+                <div style={{ padding: '14px 18px', borderRadius: 12, background: '#ecfdf5', border: '1px solid #bbf7d0' }}>
+                  <Text style={{ fontSize: 13, color: '#047857' }}>
+                    Once you confirm, a receipt and status updates will be shared with you instantly.
+                  </Text>
+                </div>
+              </Space>
+            </Card>
+          ) : (
+            <Card style={{ borderRadius: 16, textAlign: 'center' }}>
+              <Title level={4}>Missing Details</Title>
+              <Text type="secondary">Please complete the previous steps to review your appointment.</Text>
             </Card>
           )}
 
@@ -1048,19 +1053,11 @@ export default function BookAppointment() {
               </Breadcrumb>
             </Space>
           </Col>
-          <Col>
-            <Space>
-              <Text strong>Step {currentStep + 1} of {steps.length}</Text>
-              <Button danger onClick={handleCancel}>
-                Cancel
-              </Button>
-            </Space>
-          </Col>
         </Row>
       </div>
 
       {/* Content */}
-      <div style={{ padding: '24px', maxWidth: '1200px', margin: '0 auto', width: '100%' }}>
+      <div style={{ padding: '32px 24px', maxWidth: '1320px', margin: '0 auto', width: '100%' }}>
         <Spin spinning={loading}>
           <Card style={{ marginBottom: 24 }}>
             <div style={{ textAlign: 'center', marginBottom: 32 }}>
@@ -1071,12 +1068,7 @@ export default function BookAppointment() {
               <Text type="secondary" style={{ fontSize: '16px' }}>
                 {steps[currentStep].icon}
               </Text>
-              <div style={{ marginTop: '8px', fontSize: '12px', color: '#666' }}>
-                {currentStep === 0 && '🏥 Step 1: Choose your hospital'}
-                {currentStep === 1 && '👨‍⚕️ Step 2: Select a doctor'}
-                {currentStep === 2 && '📅 Step 3: Pick date & time'}
-                {currentStep === 3 && '📝 Step 4: Enter patient details'}
-              </div>
+              <div style={{ marginTop: '8px', fontSize: '12px', color: '#666' }} />
             </div>
 
             <Form
@@ -1092,9 +1084,6 @@ export default function BookAppointment() {
 
             <div style={{ textAlign: 'center' }}>
               <Space size="large">
-                <Button danger onClick={handleCancel}>
-                  Cancel Booking
-                </Button>
                 
                 {/* Previous Button */}
                 {currentStep > 0 && (

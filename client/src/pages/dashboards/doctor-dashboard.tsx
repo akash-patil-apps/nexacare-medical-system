@@ -1,32 +1,28 @@
 import { useState, useEffect } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Redirect, useLocation } from "wouter";
-import { 
-  Layout, 
-  Card, 
-  Row, 
-  Col, 
-  Statistic, 
-  Button, 
-  Table, 
-  Tag, 
-  Space, 
+import {
+  Layout,
+  Card,
+  Row,
+  Col,
+  Button,
+  Table,
+  Tag,
+  Space,
   Typography,
   Avatar,
   Menu,
-  Dropdown,
-  Badge,
   Progress,
   Timeline,
   message,
   Spin
 } from 'antd';
-import { 
-  UserOutlined, 
-  CalendarOutlined, 
-  MedicineBoxOutlined, 
+import {
+  UserOutlined,
+  CalendarOutlined,
+  MedicineBoxOutlined,
   FileTextOutlined,
-  BellOutlined,
   SettingOutlined,
   LogoutOutlined,
   PlusOutlined,
@@ -35,9 +31,17 @@ import {
 } from '@ant-design/icons';
 import { useAuth } from '../../hooks/use-auth';
 import PrescriptionForm from '../../components/prescription-form';
+import { KpiCard } from '../../components/dashboard/KpiCard';
+import { QuickActionTile } from '../../components/dashboard/QuickActionTile';
 
-const { Header, Content, Sider } = Layout;
+const { Content, Sider } = Layout;
 const { Title, Text } = Typography;
+
+const doctorTheme = {
+  primary: '#1D4ED8',
+  highlight: '#E0E7FF',
+  accent: '#7C3AED',
+};
 
 export default function DoctorDashboard() {
   const { user, logout, isLoading } = useAuth();
@@ -45,6 +49,8 @@ export default function DoctorDashboard() {
   const [, setLocation] = useLocation();
   const [collapsed, setCollapsed] = useState(false);
   const [isPrescriptionModalOpen, setIsPrescriptionModalOpen] = useState(false);
+  const [selectedPatientId, setSelectedPatientId] = useState<number | undefined>(undefined);
+  const [selectedAppointmentId, setSelectedAppointmentId] = useState<number | undefined>(undefined);
 
   // ALL HOOKS MUST BE CALLED BEFORE ANY CONDITIONAL RETURNS
   // Get doctor profile to access hospitalId
@@ -99,13 +105,15 @@ export default function DoctorDashboard() {
         
         return {
           id: apt.id,
+          patientId: apt.patientId,
           patient: apt.patientName || 'Unknown Patient',
+          patientMobile: apt.patientMobile,
           time: apt.appointmentTime || apt.timeSlot || 'N/A',
           status: apt.status || 'pending',
           type: apt.type || 'Consultation',
           priority: apt.priority || 'Normal',
-          date: apt.appointmentDate, // Keep original for filtering
-          dateObj: appointmentDate // Parsed date object
+          date: apt.appointmentDate,
+          dateObj: appointmentDate,
         };
       });
       
@@ -178,6 +186,42 @@ export default function DoctorDashboard() {
   });
 
   // Calculate real stats from appointments data (AFTER appointments are loaded)
+  const todaysPendingAppointments = allAppointments.filter((apt: any) => {
+    if (!apt.date && !apt.dateObj) return false;
+    const appointmentDate = apt.dateObj || new Date(apt.date);
+    const today = new Date();
+    appointmentDate.setHours(0, 0, 0, 0);
+    today.setHours(0, 0, 0, 0);
+    const isToday = appointmentDate.getTime() === today.getTime();
+    const status = (apt.status || '').toLowerCase();
+    const isPendingStatus = !['completed', 'cancelled', 'attended'].includes(status);
+    return isToday && isPendingStatus;
+  });
+
+  const todaysPendingPatientsMap = new Map<number, { id: number; fullName: string; mobileNumber?: string; appointmentId: number }>();
+  todaysPendingAppointments.forEach((apt: any) => {
+    if (apt.patientId && !todaysPendingPatientsMap.has(apt.patientId)) {
+      todaysPendingPatientsMap.set(apt.patientId, {
+        id: apt.patientId,
+        fullName: apt.patient,
+        mobileNumber: apt.patientMobile,
+        appointmentId: apt.id,
+      });
+    }
+  });
+  const todaysPendingPatientsRaw = Array.from(todaysPendingPatientsMap.values());
+  const todaysPendingPatients = todaysPendingPatientsRaw.map(({ id, fullName, mobileNumber }) => ({
+    id,
+    fullName,
+    mobileNumber,
+  }));
+  const todaysAppointmentIdMap: Record<number, number | undefined> = {};
+  todaysPendingPatientsRaw.forEach((patient) => {
+    if (patient.appointmentId) {
+      todaysAppointmentIdMap[patient.id] = patient.appointmentId;
+    }
+  });
+
   const stats = allAppointments.length > 0 ? {
     totalPatients: new Set(allAppointments.map((apt: any) => apt.patient)).size,
     todayAppointments: todayAppointments.length || appointmentsToShow.length,
@@ -191,6 +235,10 @@ export default function DoctorDashboard() {
     pendingPrescriptions: 0,
     totalPrescriptions: 0
   };
+
+  const completionPercent = stats.todayAppointments
+    ? Math.round((stats.completedAppointments / (stats.todayAppointments || 1)) * 100)
+    : 0;
 
   // Listen for appointment updates from other tabs/windows
   useEffect(() => {
@@ -336,35 +384,65 @@ export default function DoctorDashboard() {
         </Tag>
       ),
     },
-  ];
-
-  const userMenuItems = [
     {
-      key: 'profile',
-      icon: <UserOutlined />,
-      label: 'Profile',
-    },
-    {
-      key: 'settings',
-      icon: <SettingOutlined />,
-      label: 'Settings',
-    },
-    {
-      type: 'divider' as const,
-    },
-    {
-      key: 'logout',
-      icon: <LogoutOutlined />,
-      label: 'Logout',
-      onClick: logout,
+      title: 'Action',
+      key: 'action',
+      render: (_: any, record: any) => (
+        <Button
+          type="link"
+          onClick={() => handleOpenPrescriptionModal(record)}
+          disabled={
+            !record.patientId ||
+            ['completed', 'cancelled', 'attended'].includes((record.status || '').toLowerCase())
+          }
+        >
+          Add Prescription
+        </Button>
+      ),
     },
   ];
 
   const handleMenuClick = ({ key }: { key: string }) => {
     if (key === 'prescriptions') {
-      setIsPrescriptionModalOpen(true);
+      handleOpenPrescriptionModal();
     }
     // Add other navigation handlers as needed
+  };
+
+  const handleQuickAction = (key: 'consult' | 'prescription' | 'availability' | 'labs') => {
+    switch (key) {
+      case 'consult':
+        message.info('Consultation room launching soon.');
+        break;
+      case 'prescription':
+        handleOpenPrescriptionModal();
+        break;
+      case 'availability':
+        message.info('Availability management coming soon.');
+        break;
+      case 'labs':
+        message.info('Lab queue coming soon.');
+        break;
+      default:
+        break;
+    }
+  };
+
+  const handleOpenPrescriptionModal = (appointment?: any) => {
+    if (appointment?.patientId) {
+      setSelectedPatientId(appointment.patientId);
+      setSelectedAppointmentId(appointment.id);
+    } else {
+      setSelectedPatientId(undefined);
+      setSelectedAppointmentId(undefined);
+    }
+    setIsPrescriptionModalOpen(true);
+  };
+
+  const handleClosePrescriptionModal = () => {
+    setIsPrescriptionModalOpen(false);
+    setSelectedPatientId(undefined);
+    setSelectedAppointmentId(undefined);
   };
 
   const sidebarMenu = [
@@ -396,28 +474,30 @@ export default function DoctorDashboard() {
   ];
 
   return (
-    <Layout style={{ minHeight: '100vh' }}>
-      <Sider 
-        trigger={null} 
-        collapsible 
+    <Layout style={{ minHeight: '100vh', background: doctorTheme.highlight }}>
+      <Sider
+        trigger={null}
+        collapsible
         collapsed={collapsed}
         style={{
-          background: '#fff',
-          boxShadow: '2px 0 8px rgba(0,0,0,0.1)'
+          background: '#ffffff',
+          boxShadow: '2px 0 8px rgba(0,0,0,0.08)',
         }}
       >
-        <div style={{ 
-          padding: '16px', 
-          textAlign: 'center',
-          borderBottom: '1px solid #f0f0f0'
-        }}>
-          <MedicineBoxOutlined style={{ fontSize: '24px', color: '#1890ff' }} />
+        <div
+          style={{
+            padding: '16px',
+            textAlign: 'center',
+            borderBottom: '1px solid #eef2ff',
+          }}
+        >
+          <MedicineBoxOutlined style={{ fontSize: 24, color: doctorTheme.primary }} />
           {!collapsed && (
-            <Title level={4} style={{ margin: '8px 0 0 0', color: '#1890ff' }}>
+            <Title level={4} style={{ margin: '8px 0 0', color: doctorTheme.primary }}>
               NexaCare
             </Title>
           )}
-              </div>
+        </div>
         <Menu
           mode="inline"
           defaultSelectedKeys={['dashboard']}
@@ -425,193 +505,219 @@ export default function DoctorDashboard() {
           style={{ border: 'none' }}
           onClick={handleMenuClick}
         />
+        <div
+          style={{
+            marginTop: 'auto',
+            borderTop: '1px solid #eef2ff',
+            padding: '16px',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 12,
+          }}
+        >
+          <Avatar size={collapsed ? 48 : 40} icon={<UserOutlined />} />
+          {!collapsed && (
+            <div style={{ display: 'flex', flexDirection: 'column' }}>
+              <Text strong style={{ lineHeight: 1.2 }}>{user?.fullName}</Text>
+              <Tag color="blue" style={{ width: 'fit-content', marginTop: 4 }}>DOCTOR</Tag>
+            </div>
+          )}
+          {!collapsed && (
+            <Space>
+              <Button
+                type="text"
+                icon={<SettingOutlined />}
+                onClick={() => message.info('Profile settings coming soon.')}
+              />
+              <Button
+                type="text"
+                icon={<LogoutOutlined />}
+                onClick={logout}
+              />
+            </Space>
+          )}
+        </div>
       </Sider>
 
       <Layout>
-        <Header style={{ 
-          background: '#fff', 
-          padding: '0 24px',
-          boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center'
-        }}>
-          <Button
-            type="text"
-            onClick={() => setCollapsed(!collapsed)}
-            style={{ fontSize: '16px' }}
-          >
-            {collapsed ? '☰' : '✕'}
-          </Button>
-          
-          <Space>
-            <Tag color="green" style={{ marginRight: '8px' }}>
-              👨‍⚕️ DOCTOR DASHBOARD
-            </Tag>
-            <Badge count={5} size="small">
-              <BellOutlined style={{ fontSize: '18px' }} />
-            </Badge>
-            <Dropdown menu={{ items: userMenuItems }} placement="bottomRight">
-              <Space style={{ cursor: 'pointer' }}>
-                <Avatar icon={<UserOutlined />} />
-                <Text strong>{user?.fullName}</Text>
-              </Space>
-            </Dropdown>
-          </Space>
-        </Header>
-
-        <Content style={{ padding: '24px', background: '#f5f5f5' }}>
-          <div style={{ marginBottom: '24px' }}>
-            <Title level={2} style={{ margin: 0 }}>
-              Doctor Dashboard
-            </Title>
-            <Text type="secondary">
-              Welcome back, Dr. {user?.fullName?.split(' ')[1] || user?.fullName}
-            </Text>
+        <Content style={{ background: doctorTheme.highlight, minHeight: '100vh', overflowY: 'auto' }}>
+          <div style={{ padding: '32px 24px', maxWidth: '1320px', margin: '0 auto' }}>
+            <div
+              style={{
+                marginBottom: 24,
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                gap: 16,
+              }}
+            >
+              <div>
+                <Text type="secondary">Home / Doctor Dashboard</Text>
+                <Title level={2} style={{ margin: '4px 0 0' }}>Doctor Workspace</Title>
               </div>
-
-          {/* Statistics Cards */}
-          <Row gutter={[16, 16]} style={{ marginBottom: '24px' }}>
-            <Col xs={24} sm={12} md={6}>
-              <Card>
-                <Statistic
-                  title="Total Patients"
-                  value={stats?.totalPatients || 0}
-                  prefix={<TeamOutlined />}
-                  valueStyle={{ color: '#1890ff' }}
-                />
-        </Card>
-            </Col>
-            <Col xs={24} sm={12} md={6}>
-        <Card>
-                <Statistic
-                  title="Today's Appointments"
-                  value={stats?.todayAppointments || 0}
-                  prefix={<CalendarOutlined />}
-                  valueStyle={{ color: '#52c41a' }}
-                />
-        </Card>
-            </Col>
-            <Col xs={24} sm={12} md={6}>
-        <Card>
-                <Statistic
-                  title="Completed Today"
-                  value={stats?.completedAppointments || 0}
-                  prefix={<CheckCircleOutlined />}
-                  valueStyle={{ color: '#faad14' }}
-                />
-        </Card>
-            </Col>
-            <Col xs={24} sm={12} md={6}>
-              <Card>
-                <Statistic
-                  title="Pending Prescriptions"
-                  value={stats?.pendingPrescriptions || 0}
-                  prefix={<MedicineBoxOutlined />}
-                  valueStyle={{ color: '#722ed1' }}
-                />
-      </Card>
-            </Col>
-          </Row>
-
-      {/* Quick Actions */}
-          <Card title="Quick Actions" style={{ marginBottom: '24px' }}>
-            <Space wrap>
-              <Button 
-                type="primary" 
-                icon={<PlusOutlined />} 
-                size="large"
-                onClick={() => setIsPrescriptionModalOpen(true)}
-              >
-                New Prescription
+              <Button type="text" onClick={() => setCollapsed(!collapsed)} style={{ fontSize: 16 }}>
+                {collapsed ? '☰' : '✕'}
               </Button>
-              <Button 
-                icon={<CalendarOutlined />} 
-                size="large"
-                onClick={() => window.location.href = '/dashboard/doctor/appointments'}
-              >
-                View Schedule
-              </Button>
-              <Button 
-                icon={<TeamOutlined />} 
-                size="large"
-                onClick={() => message.info('Patient list feature coming soon')}
-              >
-                Patient List
-        </Button>
-            </Space>
-          </Card>
+            </div>
 
-          <Row gutter={[16, 16]}>
-            {/* Today's Appointments */}
-            <Col xs={24} lg={16}>
-              <Card 
-                title={`Appointments (${appointmentsToShow.length} confirmed/completed)`}
-                extra={<Button type="link" onClick={() => window.location.href = '/dashboard/doctor/appointments'}>View All</Button>}
-              >
-                {appointmentsToShow.length === 0 ? (
-                  <div style={{ textAlign: 'center', padding: '40px' }}>
-                    <Text type="secondary">
-                      {allAppointments.length === 0 
-                        ? 'No appointments found. Waiting for receptionist to confirm appointments.'
-                        : `No confirmed appointments yet. ${allAppointments.filter((a: any) => a.status === 'pending').length} pending confirmation.`}
-                    </Text>
-                  </div>
-                ) : (
-                <Table
-                  columns={appointmentColumns}
-                    dataSource={appointmentsToShow}
-                  pagination={false}
-                  rowKey="id"
-                  loading={appointmentsLoading}
+            <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
+              <Col xs={24} sm={12} md={6}>
+                <KpiCard
+                  label="Today's Appointments"
+                  value={stats.todayAppointments || 0}
+                  icon={<CalendarOutlined style={{ color: doctorTheme.primary }} />}
+                  trendLabel={`${appointmentsToShow.length} confirmed`}
+                  trendType="positive"
+                  onView={() => setLocation('/dashboard/doctor/appointments')}
                 />
-                )}
-              </Card>
-            </Col>
+              </Col>
+              <Col xs={24} sm={12} md={6}>
+                <KpiCard
+                  label="Patients Under Care"
+                  value={stats.totalPatients || 0}
+                  icon={<TeamOutlined style={{ color: doctorTheme.accent }} />}
+                  trendLabel="Updated"
+                  trendType="neutral"
+                  onView={() => message.info('Patient list coming soon')}
+                />
+              </Col>
+              <Col xs={24} sm={12} md={6}>
+                <KpiCard
+                  label="Completed Today"
+                  value={stats.completedAppointments || 0}
+                  icon={<CheckCircleOutlined style={{ color: '#16a34a' }} />}
+                  trendLabel="Live"
+                  trendType="positive"
+                  onView={() => setLocation('/dashboard/doctor/appointments')}
+                />
+              </Col>
+              <Col xs={24} sm={12} md={6}>
+                <KpiCard
+                  label="Pending Prescriptions"
+                  value={stats.pendingPrescriptions || 0}
+                  icon={<MedicineBoxOutlined style={{ color: '#f97316' }} />}
+                  trendLabel="Action needed"
+                  trendType="negative"
+                  onView={() => setIsPrescriptionModalOpen(true)}
+                />
+              </Col>
+            </Row>
 
-            {/* Quick Stats & Timeline */}
-            <Col xs={24} lg={8}>
-              <Card title="Today's Progress">
-                <Progress 
-                  percent={75} 
-                  status="active" 
-                  strokeColor="#52c41a"
-                  style={{ marginBottom: '16px' }}
-                />
-                <Text type="secondary">
-                  {stats?.completedAppointments || 0} of {stats?.todayAppointments || 0} appointments completed
-                </Text>
-              </Card>
+            <Card bordered={false} style={{ marginBottom: 24, borderRadius: 16 }} bodyStyle={{ padding: 20 }}>
+              <Row gutter={[16, 16]}>
+                <Col xs={24} sm={12} md={6}>
+                  <QuickActionTile
+                    label="Start Consultation"
+                    icon={<CalendarOutlined />}
+                    onClick={() => handleQuickAction('consult')}
+                  />
+                </Col>
+                <Col xs={24} sm={12} md={6}>
+                  <QuickActionTile
+                    label="Write Prescription"
+                    icon={<MedicineBoxOutlined />}
+                    onClick={() => handleQuickAction('prescription')}
+                  />
+                </Col>
+                <Col xs={24} sm={12} md={6}>
+                  <QuickActionTile
+                    label="Update Availability"
+                    icon={<CheckCircleOutlined />}
+                    onClick={() => handleQuickAction('availability')}
+                  />
+                </Col>
+                <Col xs={24} sm={12} md={6}>
+                  <QuickActionTile
+                    label="Review Lab Queue"
+                    icon={<FileTextOutlined />}
+                    onClick={() => handleQuickAction('labs')}
+                  />
+                </Col>
+              </Row>
+            </Card>
 
-              <Card title="Recent Activity" style={{ marginTop: '16px' }}>
-                <Timeline
-                  items={[
-                    {
-                      color: 'green',
-                      children: <Text>Completed appointment with John Doe</Text>
-                    },
-                    {
-                      color: 'blue',
-                      children: <Text>Prescribed medication for Jane Smith</Text>
-                    },
-                    {
-                      color: 'orange',
-                      children: <Text>Upcoming appointment with Mike Johnson</Text>
-                    }
-                  ]}
-                />
-              </Card>
-            </Col>
-          </Row>
+            <Row gutter={[16, 16]}>
+              <Col xs={24} lg={16}>
+                <Card
+                  bordered={false}
+                  style={{ borderRadius: 16 }}
+                  title="Today's Schedule"
+                  extra={<Button type="link" onClick={() => setLocation('/dashboard/doctor/appointments')}>View All</Button>}
+                >
+                  {appointmentsToShow.length === 0 ? (
+                    <div style={{ textAlign: 'center', padding: '40px 0' }}>
+                      <Text type="secondary">
+                        {allAppointments.length === 0
+                          ? 'No appointments found. Waiting for receptionist to confirm appointments.'
+                          : `No confirmed appointments yet. ${allAppointments.filter((a: any) => a.status === 'pending').length} pending confirmation.`}
+                      </Text>
+                    </div>
+                  ) : (
+                    <Table
+                      columns={appointmentColumns}
+                      dataSource={appointmentsToShow}
+                      pagination={false}
+                      rowKey="id"
+                      loading={appointmentsLoading}
+                      size="middle"
+                    />
+                  )}
+                </Card>
+              </Col>
+
+              <Col xs={24} lg={8}>
+                <Space direction="vertical" size={16} style={{ width: '100%' }}>
+                  <Card bordered={false} style={{ borderRadius: 16 }}>
+                    <Title level={5} style={{ marginBottom: 12 }}>Shift Overview</Title>
+                    <Progress
+                      percent={completionPercent}
+                      status="active"
+                      strokeColor={doctorTheme.primary}
+                      style={{ marginBottom: 12 }}
+                    />
+                    <Space direction="vertical" size={4}>
+                      <Text type="secondary">{stats.completedAppointments || 0} of {stats.todayAppointments || 0} completed</Text>
+                      <Text type="secondary">Next break at 3:00 PM</Text>
+                    </Space>
+                  </Card>
+
+                  <Card bordered={false} style={{ borderRadius: 16 }}>
+                    <Title level={5} style={{ marginBottom: 12 }}>Recent Activity</Title>
+                    <Timeline
+                      items={[
+                        {
+                          color: doctorTheme.primary,
+                          children: <Text>Completed consultation with John Doe</Text>,
+                        },
+                        {
+                          color: doctorTheme.accent,
+                          children: <Text>Prescribed medication for Jane Smith</Text>,
+                        },
+                        {
+                          color: '#f97316',
+                          children: <Text>Awaiting lab results for Mike Johnson</Text>,
+                        },
+                      ]}
+                    />
+                  </Card>
+                </Space>
+              </Col>
+            </Row>
+          </div>
         </Content>
       </Layout>
 
       {/* Prescription Form Modal */}
       <PrescriptionForm
         isOpen={isPrescriptionModalOpen}
-        onClose={() => setIsPrescriptionModalOpen(false)}
+        onClose={handleClosePrescriptionModal}
         doctorId={user?.id}
         hospitalId={doctorProfile?.hospitalId}
+        patientId={selectedPatientId}
+        appointmentId={selectedAppointmentId}
+        patientsOverride={todaysPendingPatients}
+        hideHospitalSelect
+        appointmentIdMap={todaysAppointmentIdMap}
       />
     </Layout>
   );

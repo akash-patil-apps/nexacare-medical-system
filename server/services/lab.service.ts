@@ -18,3 +18,7 @@ export const createLabReport = async (data: Omit<InsertLabReport, 'id' | 'create
 export const getLabReportsForLab = async (labId: number) => {
   return db.select().from(labReports).where(eq(labReports.labId, labId));
 };
+
+export const getLabReportsForPatient = async (patientId: number) => {
+  return db.select().from(labReports).where(eq(labReports.patientId, patientId));
+};

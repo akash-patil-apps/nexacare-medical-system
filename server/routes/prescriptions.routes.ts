@@ -3,7 +3,7 @@ import { Router } from "express";
 import { z } from "zod";
 import { authenticateToken, authorizeRoles } from "../middleware/auth";
 import type { AuthenticatedRequest } from "../types";
-import * as prescriptionService from "../services/prescriptions.service";
+import * as prescriptionService from "../services/prescription.service";
 import { insertPrescriptionSchema } from "../../shared/schema"; 
 
 const router = Router();

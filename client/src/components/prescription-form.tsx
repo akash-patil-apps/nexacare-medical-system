@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { 
   Modal, 
@@ -39,6 +39,9 @@ interface PrescriptionFormProps {
   doctorId?: number;
   hospitalId?: number;
   appointmentId?: number;
+  patientsOverride?: Array<{ id: number; fullName: string; mobileNumber?: string }>;
+  hideHospitalSelect?: boolean;
+  appointmentIdMap?: Record<number, number | undefined>;
 }
 
 export default function PrescriptionForm({
@@ -48,7 +51,10 @@ export default function PrescriptionForm({
   patientId,
   doctorId,
   hospitalId,
-  appointmentId
+  appointmentId,
+  patientsOverride,
+  hideHospitalSelect,
+  appointmentIdMap,
 }: PrescriptionFormProps) {
   const { message } = App.useApp();
   const [form] = Form.useForm();
@@ -64,7 +70,7 @@ export default function PrescriptionForm({
       const response = await apiRequest('GET', '/patients');
       return response.json();
     },
-    enabled: !!doctorId,
+    enabled: !!doctorId && !patientsOverride,
   });
 
   // Fetch hospitals for doctor to select from
@@ -74,8 +80,39 @@ export default function PrescriptionForm({
       const response = await apiRequest('GET', '/hospitals');
       return response.json();
     },
-    enabled: !!doctorId,
+    enabled: !!doctorId && !hideHospitalSelect,
   });
+
+  const resolvedPatients =
+    patientsOverride ??
+    (Array.isArray(patients?.patients)
+      ? patients.patients
+      : Array.isArray(patients)
+        ? patients
+        : []);
+
+  const resolvedHospitals =
+    Array.isArray(hospitals?.hospitals)
+      ? hospitals.hospitals
+      : Array.isArray(hospitals)
+        ? hospitals
+        : [];
+  useEffect(() => {
+    if (isOpen) {
+      form.resetFields();
+      setMedications([]);
+      const derivedAppointmentId =
+        appointmentId ??
+        (patientId ? appointmentIdMap?.[patientId] : undefined);
+
+      form.setFieldsValue({
+        patientId: patientId ?? undefined,
+        hospitalId: hospitalId ?? undefined,
+        appointmentId: derivedAppointmentId ?? undefined,
+      });
+    }
+  }, [isOpen, patientId, hospitalId, appointmentId, appointmentIdMap, form]);
+
 
   const createPrescriptionMutation = useMutation({
     mutationFn: async (data: any) => {
@@ -181,37 +218,53 @@ export default function PrescriptionForm({
                   showSearch
                   optionFilterProp="children"
                   disabled={!!patientId}
+                  onChange={(value: number) => {
+                    form.setFieldsValue({
+                      appointmentId: appointmentIdMap?.[value],
+                    });
+                  }}
                 >
-                  {patients?.map((patient: any) => (
+                  {resolvedPatients?.map((patient: any) => (
                     <Option key={patient.id} value={patient.id}>
-                      {patient.fullName} ({patient.mobileNumber})
+                      {patient.fullName || patient.name || 'Unknown'}{' '}
+                      {patient.mobileNumber ? `(${patient.mobileNumber})` : ''}
                     </Option>
                   ))}
                 </Select>
               </Form.Item>
             </Col>
-            <Col span={12}>
-              <Form.Item
-                name="hospitalId"
-                label="Hospital"
-                rules={[{ required: true, message: 'Please select a hospital' }]}
-                initialValue={hospitalId}
-              >
-                <Select
-                  placeholder="Select hospital"
-                  showSearch
-                  optionFilterProp="children"
-                  disabled={!!hospitalId}
+            {hideHospitalSelect || hospitalId ? (
+              <Form.Item name="hospitalId" initialValue={hospitalId} hidden>
+                <Input />
+              </Form.Item>
+            ) : (
+              <Col span={12}>
+                <Form.Item
+                  name="hospitalId"
+                  label="Hospital"
+                  rules={[{ required: true, message: 'Please select a hospital' }]}
+                  initialValue={hospitalId}
                 >
-                  {hospitals?.map((hospital: any) => (
-                    <Option key={hospital.id} value={hospital.id}>
-                      {hospital.name}
-                    </Option>
-                  ))}
-                </Select>
-              </Form.Item>
-            </Col>
+                  <Select
+                    placeholder="Select hospital"
+                    showSearch
+                    optionFilterProp="children"
+                    disabled={!!hospitalId}
+                  >
+                    {resolvedHospitals?.map((hospital: any) => (
+                      <Option key={hospital.id} value={hospital.id}>
+                        {hospital.name}
+                      </Option>
+                    ))}
+                  </Select>
+                </Form.Item>
+              </Col>
+            )}
           </Row>
+
+          <Form.Item name="appointmentId" hidden initialValue={appointmentId}>
+            <Input />
+          </Form.Item>
 
           <Form.Item
             name="diagnosis"
