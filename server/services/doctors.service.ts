@@ -39,6 +39,20 @@ export const getAllDoctors = async () => {
  * Get doctor by ID.
  */
 export const getDoctorById = async (doctorId: number) => {
+  if (
+    typeof doctorId !== 'number' ||
+    Number.isNaN(doctorId) ||
+    !Number.isFinite(doctorId) ||
+    !Number.isInteger(doctorId) ||
+    doctorId <= 0
+  ) {
+    console.warn(`👨‍⚕️ getDoctorById called with invalid id`, {
+      doctorId,
+      type: typeof doctorId,
+    });
+    return null;
+  }
+
   console.log(`👨‍⚕️ Fetching doctor ${doctorId}`);
   const result = await db
     .select()

@@ -1,30 +1,27 @@
 import { useState, useEffect } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Redirect, useLocation } from "wouter";
-import {
-  Layout,
-  Card,
-  Row,
-  Col,
-  Button,
-  Table,
-  Tag,
-  Space,
+import { 
+  Layout, 
+  Card, 
+  Row, 
+  Col, 
+  Button, 
+  Table, 
+  Tag, 
+  Space, 
   Typography,
-  Avatar,
   Menu,
   Progress,
   Timeline,
   message,
   Spin
 } from 'antd';
-import {
-  UserOutlined,
-  CalendarOutlined,
-  MedicineBoxOutlined,
+import { 
+  UserOutlined, 
+  CalendarOutlined, 
+  MedicineBoxOutlined, 
   FileTextOutlined,
-  SettingOutlined,
-  LogoutOutlined,
   PlusOutlined,
   CheckCircleOutlined,
   TeamOutlined
@@ -33,6 +30,7 @@ import { useAuth } from '../../hooks/use-auth';
 import PrescriptionForm from '../../components/prescription-form';
 import { KpiCard } from '../../components/dashboard/KpiCard';
 import { QuickActionTile } from '../../components/dashboard/QuickActionTile';
+import { SidebarProfile } from '../../components/dashboard/SidebarProfile';
 
 const { Content, Sider } = Layout;
 const { Title, Text } = Typography;
@@ -482,6 +480,8 @@ export default function DoctorDashboard() {
         style={{
           background: '#ffffff',
           boxShadow: '2px 0 8px rgba(0,0,0,0.08)',
+          display: 'flex',
+          flexDirection: 'column',
         }}
       >
         <div
@@ -502,41 +502,18 @@ export default function DoctorDashboard() {
           mode="inline"
           defaultSelectedKeys={['dashboard']}
           items={sidebarMenu}
-          style={{ border: 'none' }}
+          style={{ border: 'none', flex: 1 }}
           onClick={handleMenuClick}
         />
-        <div
-          style={{
-            marginTop: 'auto',
-            borderTop: '1px solid #eef2ff',
-            padding: '16px',
-            display: 'flex',
-            alignItems: 'center',
-            gap: 12,
-          }}
-        >
-          <Avatar size={collapsed ? 48 : 40} icon={<UserOutlined />} />
-          {!collapsed && (
-            <div style={{ display: 'flex', flexDirection: 'column' }}>
-              <Text strong style={{ lineHeight: 1.2 }}>{user?.fullName}</Text>
-              <Tag color="blue" style={{ width: 'fit-content', marginTop: 4 }}>DOCTOR</Tag>
-            </div>
-          )}
-          {!collapsed && (
-            <Space>
-              <Button
-                type="text"
-                icon={<SettingOutlined />}
-                onClick={() => message.info('Profile settings coming soon.')}
-              />
-              <Button
-                type="text"
-                icon={<LogoutOutlined />}
-                onClick={logout}
-              />
-            </Space>
-          )}
-        </div>
+        <SidebarProfile
+          collapsed={collapsed}
+          name={user?.fullName}
+          roleLabel="DOCTOR"
+          roleColor={doctorTheme.primary}
+          avatarIcon={<UserOutlined />}
+          onSettingsClick={() => message.info('Profile settings coming soon.')}
+          onLogoutClick={logout}
+        />
       </Sider>
 
       <Layout>

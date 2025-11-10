@@ -9,10 +9,7 @@ import {
   Tag, 
   Space, 
   Typography,
-  Avatar,
   Menu,
-  Dropdown,
-  Badge,
   message,
   Skeleton,
   Empty,
@@ -23,8 +20,6 @@ import {
   MedicineBoxOutlined, 
   FileTextOutlined,
   BellOutlined,
-  SettingOutlined,
-  LogoutOutlined,
   PlusOutlined,
 } from '@ant-design/icons';
 import { useAuth } from '../../hooks/use-auth';
@@ -35,8 +30,9 @@ import { QuickActionTile } from '../../components/dashboard/QuickActionTile';
 import { PrescriptionCard } from '../../components/dashboard/PrescriptionCard';
 import { TimelineItem } from '../../components/dashboard/TimelineItem';
 import { NotificationItem } from '../../components/dashboard/NotificationItem';
+import { SidebarProfile } from '../../components/dashboard/SidebarProfile';
 
-const { Header, Content, Sider } = Layout;
+const { Content, Sider } = Layout;
 const { Title, Text } = Typography;
 const TIMELINE_FILTERS = ['all', 'appointments', 'prescriptions', 'labs'] as const;
 
@@ -267,13 +263,6 @@ export default function PatientDashboard() {
 
   const isTimelineLoading = appointmentsLoading || prescriptionsLoading || labReportsLoading;
 
-  const userMenuItems = [
-    { key: 'profile', icon: <UserOutlined />, label: 'Profile' },
-    { key: 'settings', icon: <SettingOutlined />, label: 'Settings' },
-    { type: 'divider' as const },
-    { key: 'logout', icon: <LogoutOutlined />, label: 'Logout', onClick: logout },
-  ];
-
   const sidebarMenu = [
     { key: 'dashboard', icon: <UserOutlined />, label: 'Dashboard' },
     { key: 'appointments', icon: <CalendarOutlined />, label: 'Appointments' },
@@ -309,7 +298,12 @@ export default function PatientDashboard() {
         trigger={null} 
         collapsible 
         collapsed={collapsed}
-        style={{ background: '#fff', boxShadow: '2px 0 8px rgba(0,0,0,0.1)' }}
+        style={{
+          background: '#fff',
+          boxShadow: '2px 0 8px rgba(0,0,0,0.1)',
+          display: 'flex',
+          flexDirection: 'column',
+        }}
       >
         <div style={{ padding: '16px', textAlign: 'center', borderBottom: '1px solid #f0f0f0' }}>
           <MedicineBoxOutlined style={{ fontSize: '24px', color: '#1890ff' }} />
@@ -319,36 +313,20 @@ export default function PatientDashboard() {
             </Title>
           )}
         </div>
-        <Menu mode="inline" defaultSelectedKeys={['dashboard']} items={sidebarMenu} style={{ border: 'none' }} />
-        <div
-          style={{
-            marginTop: 'auto',
-            borderTop: '1px solid #f0f0f0',
-            padding: '16px',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '12px',
-          }}
-        >
-          <Avatar size={collapsed ? 48 : 40} icon={<UserOutlined />} />
-          {!collapsed && (
-            <div style={{ display: 'flex', flexDirection: 'column' }}>
-              <Text strong style={{ lineHeight: 1.2 }}>
-                {user?.fullName || 'Patient'}
-              </Text>
-              <Tag color="blue" style={{ width: 'fit-content', marginTop: 4 }}>
-                PATIENT
-              </Tag>
-            </div>
-          )}
-          {!collapsed && (
-            <Button
-              type="text"
-              icon={<SettingOutlined />}
-              onClick={() => message.info('Profile settings coming soon.')}
-            />
-          )}
-        </div>
+        <Menu
+          mode="inline"
+          defaultSelectedKeys={['dashboard']}
+          items={sidebarMenu}
+          style={{ border: 'none', flex: 1 }}
+        />
+        <SidebarProfile
+          collapsed={collapsed}
+          name={user?.fullName || 'Patient'}
+          roleLabel="PATIENT"
+          roleColor="blue"
+          avatarIcon={<UserOutlined />}
+          onSettingsClick={() => message.info('Profile settings coming soon.')}
+        />
       </Sider>
 
       <Layout>

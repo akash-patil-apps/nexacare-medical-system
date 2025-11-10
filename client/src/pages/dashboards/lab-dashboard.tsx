@@ -11,14 +11,9 @@ import {
   Tag, 
   Space, 
   Typography,
-  Avatar,
   Menu,
-  Dropdown,
-  Badge,
   Progress,
-  Timeline,
   List,
-  Upload,
   message
 } from 'antd';
 import { 
@@ -26,20 +21,16 @@ import {
   CalendarOutlined, 
   MedicineBoxOutlined, 
   FileTextOutlined,
-  BellOutlined,
-  SettingOutlined,
-  LogoutOutlined,
-  PlusOutlined,
   CheckCircleOutlined,
-  TeamOutlined,
   ExperimentOutlined,
   UploadOutlined,
   FileSearchOutlined,
   BarChartOutlined
 } from '@ant-design/icons';
 import { useAuth } from '../../hooks/use-auth';
+import { SidebarProfile } from '../../components/dashboard/SidebarProfile';
 
-const { Header, Content, Sider } = Layout;
+const { Content, Sider } = Layout;
 const { Title, Text } = Typography;
 
 export default function LabDashboard() {
@@ -146,28 +137,6 @@ export default function LabDashboard() {
     },
   ];
 
-  const userMenuItems = [
-    {
-      key: 'profile',
-      icon: <UserOutlined />,
-      label: 'Profile',
-    },
-    {
-      key: 'settings',
-      icon: <SettingOutlined />,
-      label: 'Settings',
-    },
-    {
-      type: 'divider',
-    },
-    {
-      key: 'logout',
-      icon: <LogoutOutlined />,
-      label: 'Logout',
-      onClick: logout,
-    },
-  ];
-
   const sidebarMenu = [
     {
       key: 'dashboard',
@@ -204,7 +173,9 @@ export default function LabDashboard() {
         collapsed={collapsed}
         style={{
           background: '#fff',
-          boxShadow: '2px 0 8px rgba(0,0,0,0.1)'
+          boxShadow: '2px 0 8px rgba(0,0,0,0.1)',
+          display: 'flex',
+          flexDirection: 'column'
         }}
       >
         <div style={{ 
@@ -223,55 +194,48 @@ export default function LabDashboard() {
           mode="inline"
           defaultSelectedKeys={['dashboard']}
           items={sidebarMenu}
-          style={{ border: 'none' }}
+          style={{ border: 'none', flex: 1 }}
+        />
+        <SidebarProfile
+          collapsed={collapsed}
+          name={user?.fullName || 'Lab Technician'}
+          roleLabel="LAB TECHNICIAN"
+          roleColor="#0EA5E9"
+          avatarIcon={<ExperimentOutlined />}
+          onSettingsClick={() => message.info('Profile settings coming soon.')}
+          onLogoutClick={logout}
         />
       </Sider>
 
       <Layout>
-        <Header style={{ 
-          background: '#fff', 
-          padding: '0 24px',
-          boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center'
-        }}>
-          <Button
-            type="text"
-            onClick={() => setCollapsed(!collapsed)}
-            style={{ fontSize: '16px' }}
-          >
-            {collapsed ? '☰' : '✕'}
-          </Button>
-          
-          <Space>
-            <Tag color="purple" style={{ marginRight: '8px' }}>
-              🧪 LAB DASHBOARD
-            </Tag>
-            <Badge count={5} size="small">
-              <BellOutlined style={{ fontSize: '18px' }} />
-            </Badge>
-            <Dropdown menu={{ items: userMenuItems }} placement="bottomRight">
-              <Space style={{ cursor: 'pointer' }}>
-                <Avatar icon={<ExperimentOutlined />} />
-                <Text strong>{user?.fullName}</Text>
-              </Space>
-            </Dropdown>
-          </Space>
-        </Header>
-
-        <Content style={{ padding: '24px', background: '#f5f5f5' }}>
-          <div style={{ marginBottom: '24px' }}>
-            <Title level={2} style={{ margin: 0 }}>
-              Laboratory Dashboard
-            </Title>
-            <Text type="secondary">
-              Welcome back, {user?.fullName} - Lab Technician
-            </Text>
+        <Content style={{ background: '#f5f5f5' }}>
+          <div style={{ padding: '32px 24px', maxWidth: '1320px', margin: '0 auto' }}>
+            <div
+              style={{
+                marginBottom: 24,
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                gap: 16,
+              }}
+            >
+              <div>
+                <Text type="secondary">Home / Lab Dashboard</Text>
+                <Title level={2} style={{ margin: '4px 0 0' }}>
+                  Laboratory Dashboard
+                </Title>
               </div>
+              <Button
+                type="text"
+                onClick={() => setCollapsed(!collapsed)}
+                style={{ fontSize: 16 }}
+              >
+                {collapsed ? '☰' : '✕'}
+              </Button>
+            </div>
 
           {/* Statistics Cards */}
-          <Row gutter={[16, 16]} style={{ marginBottom: '24px' }}>
+          <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
             <Col xs={24} sm={12} md={6}>
               <Card>
                 <Statistic
@@ -392,6 +356,7 @@ export default function LabDashboard() {
               </Card>
             </Col>
           </Row>
+          </div>
         </Content>
       </Layout>
     </Layout>

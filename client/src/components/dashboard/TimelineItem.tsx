@@ -20,7 +20,7 @@ export function TimelineItem({
   onAction,
 }: TimelineItemProps) {
   return (
-    <Card bordered>
+    <Card variant="outlined">
       <Space direction="vertical" style={{ width: '100%' }} size={4}>
         <Title level={4} style={{ marginBottom: 0 }}>
           {title}
