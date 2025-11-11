@@ -159,17 +159,29 @@ export default function HospitalDashboard() {
     },
   ];
 
+  const siderWidth = collapsed ? 80 : 260;
+
   return (
-    <Layout style={{ minHeight: '100vh' }}>
+    <Layout style={{ minHeight: '100vh', background: '#f5f5f5' }}>
       <Sider 
         trigger={null} 
         collapsible 
         collapsed={collapsed}
+        onCollapse={setCollapsed}
+        width={260}
+        collapsedWidth={80}
         style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          height: '100vh',
+          width: siderWidth,
           background: '#fff',
           boxShadow: '2px 0 8px rgba(0,0,0,0.1)',
           display: 'flex',
-          flexDirection: 'column'
+          flexDirection: 'column',
+          transition: 'width 0.2s ease',
+          zIndex: 10,
         }}
       >
         <div style={{ 
@@ -201,24 +213,24 @@ export default function HospitalDashboard() {
         />
       </Sider>
 
-      <Layout>
-        <Content style={{ background: '#f5f5f5' }}>
-          <div style={{ padding: '32px 24px', maxWidth: '1320px', margin: '0 auto' }}>
-            <div
-              style={{
-                marginBottom: 24,
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-                gap: 16,
-              }}
-            >
-              <div>
-                <Text type="secondary">Home / Hospital Dashboard</Text>
-                <Title level={2} style={{ margin: '4px 0 0' }}>
-                  Hospital Management Dashboard
-                </Title>
-              </div>
+      <Layout
+        style={{
+          marginLeft: siderWidth,
+          minHeight: '100vh',
+          background: '#f5f5f5',
+          transition: 'margin-left 0.2s ease',
+          overflow: 'hidden',
+        }}
+      >
+        <Content
+          style={{
+            background: '#f5f5f5',
+            height: '100vh',
+            overflowY: 'auto',
+          }}
+        >
+          <div style={{ padding: '32px 24px', maxWidth: '1320px', margin: '0 auto', paddingBottom: 48 }}>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 24 }}>
               <Button
                 type="text"
                 onClick={() => setCollapsed(!collapsed)}

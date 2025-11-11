@@ -40,6 +40,7 @@ import { useAuth } from '../../hooks/use-auth';
 import { useState } from 'react';
 import { useQuery } from "@tanstack/react-query";
 import { apiRequest } from '../../lib/queryClient';
+import { formatDate } from '../../lib/utils';
 
 const { Header, Content, Sider } = Layout;
 const { Title, Text } = Typography;
@@ -137,7 +138,7 @@ export default function PatientPrescriptionsPage() {
       title: 'Date',
       dataIndex: 'createdAt',
       key: 'createdAt',
-      render: (date: string) => new Date(date).toLocaleDateString(),
+      render: (date: string) => formatDate(date),
     },
     {
       title: 'Status',
@@ -325,7 +326,7 @@ export default function PatientPrescriptionsPage() {
                     <Text strong>Prescription ID:</Text> #{selectedPrescription.id}
                   </Col>
                   <Col span={12}>
-                    <Text strong>Date:</Text> {new Date(selectedPrescription.createdAt).toLocaleDateString()}
+                    <Text strong>Date:</Text> {formatDate(selectedPrescription.createdAt)}
                   </Col>
                 </Row>
                 
@@ -413,7 +414,7 @@ export default function PatientPrescriptionsPage() {
 
                 {selectedPrescription.followUpDate && (
                   <div>
-                    <Text strong>Follow-up Date:</Text> {new Date(selectedPrescription.followUpDate).toLocaleDateString()}
+                    <Text strong>Follow-up Date:</Text> {formatDate(selectedPrescription.followUpDate)}
                   </div>
                 )}
               </div>

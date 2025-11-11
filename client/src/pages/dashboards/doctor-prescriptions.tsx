@@ -41,6 +41,7 @@ import {
 import { useAuth } from '../../hooks/use-auth';
 import PrescriptionForm from '../../components/prescription-form';
 import { apiRequest } from '../../lib/queryClient';
+import { formatDate } from '../../lib/utils';
 
 const { Header, Content, Sider } = Layout;
 const { Title, Text } = Typography;
@@ -157,7 +158,7 @@ export default function DoctorPrescriptionsPage() {
       title: 'Date',
       dataIndex: 'createdAt',
       key: 'createdAt',
-      render: (date: string) => new Date(date).toLocaleDateString(),
+      render: (date: string) => formatDate(date),
     },
     {
       title: 'Status',
@@ -386,7 +387,7 @@ export default function DoctorPrescriptionsPage() {
                     <Text strong>Prescription ID:</Text> #{selectedPrescription.id}
                   </Col>
                   <Col span={12}>
-                    <Text strong>Date:</Text> {new Date(selectedPrescription.createdAt).toLocaleDateString()}
+                    <Text strong>Date:</Text> {formatDate(selectedPrescription.createdAt)}
                     </Col>
                 </Row>
                 
@@ -474,7 +475,7 @@ export default function DoctorPrescriptionsPage() {
 
                 {selectedPrescription.followUpDate && (
                   <div>
-                    <Text strong>Follow-up Date:</Text> {new Date(selectedPrescription.followUpDate).toLocaleDateString()}
+                    <Text strong>Follow-up Date:</Text> {formatDate(selectedPrescription.followUpDate)}
                   </div>
                 )}
               </div>

@@ -47,6 +47,7 @@ import {
   VideoCameraOutlined
 } from '@ant-design/icons';
 import { useAuth } from '../../hooks/use-auth';
+import { formatDate } from '../../lib/utils';
 
 const { Header, Content, Sider } = Layout;
 const { Title, Text } = Typography;
@@ -455,7 +456,7 @@ export default function DoctorAppointments() {
                           <Space>
                             <CalendarOutlined />
                             <Text type="secondary">
-                              {new Date(appointment.appointmentDate).toLocaleDateString()}
+                              {formatDate(appointment.appointmentDate)}
                             </Text>
                           </Space>
                           <Space>

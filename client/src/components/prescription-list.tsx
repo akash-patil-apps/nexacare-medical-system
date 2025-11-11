@@ -19,6 +19,7 @@ import {
   Printer
 } from "lucide-react";
 import { apiRequest } from "../lib/queryClient";
+import { formatDate } from "../lib/utils";
 
 interface PrescriptionListProps {
   role: 'doctor' | 'patient' | 'hospital';
@@ -260,7 +261,7 @@ export default function PrescriptionList({
                       <div>
                         <span className="font-medium text-gray-700">Date:</span>
                         <p className="text-gray-900">
-                          {new Date(prescription.createdAt).toLocaleDateString()}
+                          {formatDate(prescription.createdAt)}
                         </p>
                       </div>
                     </div>
@@ -277,7 +278,7 @@ export default function PrescriptionList({
                         <Calendar className="w-4 h-4 text-medical-green" />
                         <span className="font-medium text-gray-700">Follow-up:</span>
                         <span className="text-gray-900">
-                          {new Date(prescription.followUpDate).toLocaleDateString()}
+                          {formatDate(prescription.followUpDate)}
                         </span>
                       </div>
                     )}

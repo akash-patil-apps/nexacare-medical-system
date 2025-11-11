@@ -459,7 +459,7 @@ export default function AppointmentBookingModal({
               <Row gutter={[16, 16]}>
                 <Col span={8}>
                   <Text strong>Date:</Text>
-                  <div>{selectedDate.format('dddd, MMMM D, YYYY')}</div>
+                  <div>{selectedDate.format('dddd, DD/MM/YYYY')}</div>
                 </Col>
                 <Col span={8}>
                   <Text strong>Time:</Text>
@@ -565,7 +565,7 @@ export default function AppointmentBookingModal({
                 </Col>
                 <Col span={12}>
                   <Text strong>Date:</Text>
-                  <div>{selectedDate.format('MMMM D, YYYY')}</div>
+                  <div>{selectedDate.format('dddd, DD/MM/YYYY')}</div>
                 </Col>
                 <Col span={12}>
                   <Text strong>Time:</Text>

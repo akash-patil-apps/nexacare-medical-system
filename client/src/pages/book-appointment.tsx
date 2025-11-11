@@ -852,7 +852,7 @@ export default function BookAppointment() {
                           flexDirection: 'column',
                           alignItems: 'center',
                           justifyContent: 'center',
-                          minWidth: 72,
+                          minWidth: 96,
                           padding: '10px 14px',
                           borderRadius: 12,
                           border: `1px solid ${isSelected ? '#ff385c' : '#d1d5db'}`,
@@ -864,12 +864,11 @@ export default function BookAppointment() {
                           boxShadow: isSelected ? '0 4px 12px rgba(255, 56, 92, 0.2)' : undefined,
                         }}
                       >
-                        <Text style={{ fontSize: 11, letterSpacing: '0.08em' }}>
+                        <Text style={{ fontSize: 12, letterSpacing: '0.08em' }}>
                           {date.format('ddd').toUpperCase()}
                         </Text>
-                        <Text style={{ fontSize: 16, fontWeight: 700 }}>{date.format('DD')}</Text>
-                        <Text style={{ fontSize: 11, letterSpacing: '0.08em' }}>
-                          {date.format('MMM').toUpperCase()}
+                        <Text style={{ fontSize: 15, fontWeight: 700, marginTop: 2 }}>
+                          {date.format('DD/MM/YYYY')}
                         </Text>
                       </div>
                     );
@@ -919,7 +918,7 @@ export default function BookAppointment() {
               <Row gutter={[16, 16]}>
                 <Col span={8}>
                   <Text strong>Date:</Text>
-                  <div>{selectedDate.format('dddd, MMMM D, YYYY')}</div>
+                  <div>{selectedDate.format('dddd, DD/MM/YYYY')}</div>
                 </Col>
                 <Col span={8}>
                   <Text strong>Time:</Text>
@@ -967,7 +966,7 @@ export default function BookAppointment() {
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 16 }}>
                   <div style={{ flex: '1 1 220px', padding: '16px 20px', borderRadius: 12, border: '1px solid #f0f2f5', background: '#f9fafb' }}>
                     <Text type="secondary" style={{ fontSize: 12 }}>Date</Text>
-                    <div style={{ fontSize: 16, fontWeight: 600, marginTop: 6 }}>{selectedDate.format('dddd, MMM D, YYYY')}</div>
+                    <div style={{ fontSize: 16, fontWeight: 600, marginTop: 6 }}>{selectedDate.format('dddd, DD/MM/YYYY')}</div>
                   </div>
                   <div style={{ flex: '1 1 220px', padding: '16px 20px', borderRadius: 12, border: '1px solid #f0f2f5', background: '#f9fafb' }}>
                     <Text type="secondary" style={{ fontSize: 12 }}>Time</Text>

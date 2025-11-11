@@ -471,17 +471,29 @@ export default function DoctorDashboard() {
     },
   ];
 
+  const siderWidth = collapsed ? 80 : 260;
+
   return (
     <Layout style={{ minHeight: '100vh', background: doctorTheme.highlight }}>
       <Sider
         trigger={null}
         collapsible
         collapsed={collapsed}
+        onCollapse={setCollapsed}
+        width={260}
+        collapsedWidth={80}
         style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          height: '100vh',
+          width: siderWidth,
           background: '#ffffff',
           boxShadow: '2px 0 8px rgba(0,0,0,0.08)',
           display: 'flex',
           flexDirection: 'column',
+          transition: 'width 0.2s ease',
+          zIndex: 10,
         }}
       >
         <div
@@ -516,22 +528,24 @@ export default function DoctorDashboard() {
         />
       </Sider>
 
-      <Layout>
-        <Content style={{ background: doctorTheme.highlight, minHeight: '100vh', overflowY: 'auto' }}>
-          <div style={{ padding: '32px 24px', maxWidth: '1320px', margin: '0 auto' }}>
-            <div
-              style={{
-                marginBottom: 24,
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-                gap: 16,
-              }}
-            >
-              <div>
-                <Text type="secondary">Home / Doctor Dashboard</Text>
-                <Title level={2} style={{ margin: '4px 0 0' }}>Doctor Workspace</Title>
-              </div>
+      <Layout
+        style={{
+          marginLeft: siderWidth,
+          minHeight: '100vh',
+          background: doctorTheme.highlight,
+          transition: 'margin-left 0.2s ease',
+          overflow: 'hidden',
+        }}
+      >
+        <Content
+          style={{
+            background: doctorTheme.highlight,
+            height: '100vh',
+            overflowY: 'auto',
+          }}
+        >
+          <div style={{ padding: '32px 24px', maxWidth: '1320px', margin: '0 auto', paddingBottom: 48 }}>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 24 }}>
               <Button type="text" onClick={() => setCollapsed(!collapsed)} style={{ fontSize: 16 }}>
                 {collapsed ? '☰' : '✕'}
               </Button>

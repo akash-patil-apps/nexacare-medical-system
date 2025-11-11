@@ -31,6 +31,7 @@ import { PrescriptionCard } from '../../components/dashboard/PrescriptionCard';
 import { TimelineItem } from '../../components/dashboard/TimelineItem';
 import { NotificationItem } from '../../components/dashboard/NotificationItem';
 import { SidebarProfile } from '../../components/dashboard/SidebarProfile';
+import { formatDate, formatDateTime } from '../../lib/utils';
 
 const { Content, Sider } = Layout;
 const { Title, Text } = Typography;
@@ -87,18 +88,36 @@ const fetchWithAuth = async <T,>(url: string, init?: RequestInit): Promise<T> =>
   return response.json() as Promise<T>;
 };
 
-const formatDateTime = (value?: string | null) => {
-  if (!value) return 'Date unavailable';
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return 'Date unavailable';
-  return `${date.toLocaleDateString()} · ${date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
-};
-
 const toSeverity = (type?: string): NotificationSeverity => {
   if (!type) return 'info';
   const normalized = type.toLowerCase();
   if (['urgent', 'warning', 'critical'].includes(normalized)) return 'urgent';
   return 'info';
+};
+
+const formatTimeDisplay = (time?: string) => {
+  if (!time) return '';
+  const trimmed = time.trim();
+  const meridiemMatch = trimmed.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i);
+  if (meridiemMatch) {
+    let hours = Number(meridiemMatch[1]);
+    const minutes = meridiemMatch[2];
+    const period = meridiemMatch[3].toUpperCase();
+    if (period === 'PM' && hours < 12) {
+      hours += 12;
+    }
+    if (period === 'AM' && hours === 12) {
+      hours = 0;
+    }
+    return `${String(hours).padStart(2, '0')}:${minutes}`;
+  }
+  const twentyFourMatch = trimmed.match(/^(\d{1,2}):(\d{2})$/);
+  if (twentyFourMatch) {
+    const hours = twentyFourMatch[1].padStart(2, '0');
+    const minutes = twentyFourMatch[2];
+    return `${hours}:${minutes}`;
+  }
+  return trimmed;
 };
 
 export default function PatientDashboard() {
@@ -121,11 +140,12 @@ export default function PatientDashboard() {
         id: apt.id,
         doctor: apt.doctorName || 'Doctor',
         specialty: apt.doctorSpecialty || 'General',
-        date: apt.appointmentDate ? new Date(apt.appointmentDate).toISOString().split('T')[0] : 'N/A',
-        time: apt.appointmentTime || apt.timeSlot || 'N/A',
+        date: apt.appointmentDate ? formatDate(apt.appointmentDate) : 'Date unavailable',
+        time: apt.appointmentTime || apt.timeSlot || '',
         status: apt.status || 'pending',
         hospital: apt.hospitalName || 'Hospital',
-        dateTime: apt.appointmentDate ? new Date(apt.appointmentDate).toISOString() : null,
+        rawDate: apt.appointmentDate || null,
+        dateTime: apt.appointmentDate ? apt.appointmentDate : null,
         notes: apt.notes || '',
       }));
     },
@@ -194,6 +214,11 @@ export default function PatientDashboard() {
       };
     });
   }, [prescriptionsData]);
+
+  const nextAppointment = appointmentsData[0];
+  const nextAppointmentDisplay = nextAppointment?.rawDate
+    ? `${formatDate(nextAppointment.rawDate)}${nextAppointment.time ? ` · ${formatTimeDisplay(nextAppointment.time)}` : ''}`
+    : 'TBD';
 
   const notifications: DashboardNotification[] = useMemo(() => {
     return notificationsData.map((notification: any) => ({
@@ -292,17 +317,29 @@ export default function PatientDashboard() {
     }
   };
 
+  const siderWidth = collapsed ? 80 : 260;
+
   return (
-    <Layout style={{ minHeight: '100vh' }}>
-      <Sider 
-        trigger={null} 
-        collapsible 
+    <Layout style={{ minHeight: '100vh', background: '#f5f5f5' }}>
+      <Sider
+        trigger={null}
+        collapsible
         collapsed={collapsed}
+        onCollapse={setCollapsed}
+        width={260}
+        collapsedWidth={80}
         style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          height: '100vh',
+          width: siderWidth,
           background: '#fff',
           boxShadow: '2px 0 8px rgba(0,0,0,0.1)',
           display: 'flex',
           flexDirection: 'column',
+          transition: 'width 0.2s ease',
+          zIndex: 10,
         }}
       >
         <div style={{ padding: '16px', textAlign: 'center', borderBottom: '1px solid #f0f0f0' }}>
@@ -329,231 +366,254 @@ export default function PatientDashboard() {
         />
       </Sider>
 
-      <Layout>
-        <Content style={{ background: '#f5f5f5' }}>
-          <div style={{ padding: '16px 24px 24px' }}>
-            <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
-            <Col xs={24} sm={12} md={6}>
-              <KpiCard
-                label="Upcoming Appointments"
-                value={stats.upcomingAppointments}
-                icon={<CalendarOutlined style={{ color: '#1890ff' }} />}
-                trendLabel="Updated"
-                trendType="positive"
-                onView={() => setLocation('/dashboard/patient/appointments')}
+      <Layout
+        style={{
+          marginLeft: siderWidth,
+          minHeight: '100vh',
+          background: '#f5f5f5',
+          transition: 'margin-left 0.2s ease',
+          overflow: 'hidden',
+        }}
+      >
+        <Content
+          style={{
+            background: '#f5f5f5',
+            height: '100vh',
+            overflowY: 'auto',
+            padding: '16px 24px 24px',
+          }}
+        >
+          <div style={{ paddingBottom: 24 }}>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 16 }}>
+              <Button
+                type="text"
+                icon={collapsed ? <MenuFoldOutlined /> : <MenuUnfoldOutlined />}
+                onClick={() => setCollapsed(!collapsed)}
               />
-            </Col>
-            <Col xs={24} sm={12} md={6}>
-              <KpiCard
-                label="Active Prescriptions"
-                value={stats.prescriptions}
-                icon={<MedicineBoxOutlined style={{ color: '#52c41a' }} />}
-                trendLabel="Current"
-                trendType="neutral"
-                onView={() => setLocation('/dashboard/patient/prescriptions')}
-              />
-            </Col>
-            <Col xs={24} sm={12} md={6}>
-              <KpiCard
-                label="Lab Reports"
-                value={stats.labReports}
-                icon={<FileTextOutlined style={{ color: '#faad14' }} />}
-                trendLabel="Latest"
-                trendType="neutral"
-                onView={() => message.info('Lab reports dashboard coming soon.')}
-              />
-            </Col>
-            <Col xs={24} sm={12} md={6}>
-              <KpiCard
-                label="Messages"
-                value={messageCounts.total}
-                icon={<BellOutlined style={{ color: '#722ed1' }} />}
-                trendLabel={`+${messageCounts.unread} new`}
-                trendType={messageCounts.unread > 0 ? 'positive' : 'neutral'}
-                onView={() => message.info('Messages coming soon.')}
-              />
-            </Col>
-          </Row>
+            </div>
 
-            <Card style={{ marginBottom: 24 }}>
-            <Row gutter={[16, 16]} align="middle">
-              <Col xs={24} md={6}>
-                <QuickActionTile
-                  label="New Appointment"
-                icon={<PlusOutlined />} 
-                  onClick={() => handleQuickAction('book')}
+            <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
+              <Col xs={24} sm={12} md={6}>
+                <KpiCard
+                  label="Upcoming Appointments"
+                  value={stats.upcomingAppointments}
+                  icon={<CalendarOutlined style={{ color: '#1890ff' }} />}
+                  trendLabel="Updated"
+                  trendType="positive"
+                  onView={() => setLocation('/dashboard/patient/appointments')}
                 />
               </Col>
-              <Col xs={24} md={6}>
-                <QuickActionTile
-                  label="Request Refill"
-                icon={<MedicineBoxOutlined />} 
-                  onClick={() => handleQuickAction('refill')}
+              <Col xs={24} sm={12} md={6}>
+                <KpiCard
+                  label="Active Prescriptions"
+                  value={stats.prescriptions}
+                  icon={<MedicineBoxOutlined style={{ color: '#52c41a' }} />}
+                  trendLabel="Current"
+                  trendType="neutral"
+                  onView={() => setLocation('/dashboard/patient/prescriptions')}
                 />
               </Col>
-              <Col xs={24} md={6}>
-                <QuickActionTile
-                  label="Upload Document"
-                  icon={<FileTextOutlined />}
-                  onClick={() => handleQuickAction('upload')}
+              <Col xs={24} sm={12} md={6}>
+                <KpiCard
+                  label="Lab Reports"
+                  value={stats.labReports}
+                  icon={<FileTextOutlined style={{ color: '#faad14' }} />}
+                  trendLabel="Latest"
+                  trendType="neutral"
+                  onView={() => message.info('Lab reports dashboard coming soon.')}
                 />
               </Col>
-              <Col xs={24} md={3}>
-                <QuickActionTile
-                  label="Send Message"
-                  onClick={() => handleQuickAction('message')}
-                  variant="secondary"
-                />
-              </Col>
-              <Col xs={24} md={3}>
-                <QuickActionTile
-                  label="View History"
-                  onClick={() => handleQuickAction('history')}
-                  variant="secondary"
+              <Col xs={24} sm={12} md={6}>
+                <KpiCard
+                  label="Messages"
+                  value={messageCounts.total}
+                  icon={<BellOutlined style={{ color: '#722ed1' }} />}
+                  trendLabel={`+${messageCounts.unread} new`}
+                  trendType={messageCounts.unread > 0 ? 'positive' : 'neutral'}
+                  onView={() => message.info('Messages coming soon.')}
                 />
               </Col>
             </Row>
-          </Card>
+
+            <Card style={{ marginBottom: 24 }}>
+              <Row gutter={[16, 16]} align="middle">
+                <Col xs={24} md={6}>
+                  <QuickActionTile
+                    label="New Appointment"
+                    icon={<PlusOutlined />}
+                    onClick={() => handleQuickAction('book')}
+                  />
+                </Col>
+                <Col xs={24} md={6}>
+                  <QuickActionTile
+                    label="Request Refill"
+                    icon={<MedicineBoxOutlined />}
+                    onClick={() => handleQuickAction('refill')}
+                  />
+                </Col>
+                <Col xs={24} md={6}>
+                  <QuickActionTile
+                    label="Upload Document"
+                    icon={<FileTextOutlined />}
+                    onClick={() => handleQuickAction('upload')}
+                  />
+                </Col>
+                <Col xs={24} md={3}>
+                  <QuickActionTile
+                    label="Send Message"
+                    onClick={() => handleQuickAction('message')}
+                    variant="secondary"
+                  />
+                </Col>
+                <Col xs={24} md={3}>
+                  <QuickActionTile
+                    label="View History"
+                    onClick={() => handleQuickAction('history')}
+                    variant="secondary"
+                  />
+                </Col>
+              </Row>
+            </Card>
 
             <Row gutter={[24, 24]}>
-            <Col xs={24} lg={16}>
-              <Card
-                title="Prescriptions"
-                extra={
-                  <Space>
-                    <Button type="primary">Current</Button>
-                    <Button>Past</Button>
-                  </Space>
-                }
-                style={{ marginBottom: 24 }}
-              >
-                {prescriptionsLoading ? (
-                  <Skeleton active paragraph={{ rows: 3 }} />
-                ) : prescriptionCards.length ? (
-                  <Space direction="vertical" style={{ width: '100%' }} size={16}>
-                    {prescriptionCards.map((rx) => (
-                      <PrescriptionCard
-                        key={rx.id}
-                        name={rx.name}
-                        dosage={rx.dosage}
-                        nextDose={rx.nextDose}
-                        refillsRemaining={rx.refillsRemaining}
-                        adherence={rx.adherence}
-                        onViewDetails={() => message.info('Prescription detail view coming soon.')}
-                        onRequestRefill={() => handleQuickAction('refill')}
-                      />
-                    ))}
-                  </Space>
-                ) : (
-                  <Empty description="No prescriptions yet" />
-                )}
-              </Card>
-
-              <Card title="Care Timeline">
-                <Space style={{ marginBottom: 16 }} wrap>
-                  {TIMELINE_FILTERS.map((filter) => (
-                    <Tag
-                      key={filter}
-                      color={timelineFilter === filter ? 'blue' : undefined}
-                      style={{ cursor: 'pointer' }}
-                      onClick={() => setTimelineFilter(filter)}
-                    >
-                      {filter.charAt(0).toUpperCase() + filter.slice(1)}
-                    </Tag>
-                  ))}
-                </Space>
-                {isTimelineLoading ? (
-                  <Skeleton active paragraph={{ rows: 4 }} />
-                ) : filteredTimeline.length ? (
-                  <Space direction="vertical" style={{ width: '100%' }} size={16}>
-                    {filteredTimeline.map((item) => (
-                      <TimelineItem
-                        key={item.id}
-                        title={item.title}
-                        timestamp={item.timestamp}
-                        description={item.description}
-                        actionLabel={item.actionLabel}
-                        onAction={() => message.info('Coming soon')}
-                      />
-                    ))}
-                  </Space>
-                ) : (
-                  <Empty description="No timeline events yet" />
-                )}
-              </Card>
-            </Col>
-
-            <Col xs={24} lg={8}>
-              <Space direction="vertical" style={{ width: '100%' }} size={24}>
-                <Card title="Next Appointment">
-                  <Space direction="vertical" style={{ width: '100%' }} size={12}>
-                    <Text type="secondary">with {appointmentsData[0]?.doctor || 'your care team'}</Text>
-                    <Card style={{ background: '#E6F4FF', textAlign: 'center' }}>
-                      <Text type="secondary">In</Text>
-                      <Title level={3} style={{ margin: '8px 0 0' }}>
-                        {appointmentsData[0]?.date ? `${appointmentsData[0].date} · ${appointmentsData[0].time}` : 'TBD'}
-                      </Title>
-                    </Card>
-                    <Button block onClick={() => message.info('Appointment detail view coming soon.')}>
-                      View Details
-              </Button>
-            </Space>
-        </Card>
-
-                <Card title="Latest Lab Result">
-                  {labReportsLoading ? (
-                    <Skeleton active paragraph={{ rows: 3 }} />
-                  ) : labReportsData.length ? (
-                    <Space direction="vertical" size={12}>
-                      <Text type="secondary">
-                        {labReportsData[0].testName} · {formatDateTime(labReportsData[0].reportDate)}
-                      </Text>
-                      <Row justify="space-between" align="middle">
-                        <Col>
-                          <Text strong>{labReportsData[0].testType}</Text>
-                        </Col>
-                        <Col>
-                          <Title level={4} style={{ margin: 0 }}>
-                            {labReportsData[0].status || 'Completed'}
-                          </Title>
-                        </Col>
-                      </Row>
-                      <Tag color="orange">Review</Tag>
-                      <Button block onClick={() => message.info('Lab report viewer coming soon.')}>
-                        View Full Report
-                      </Button>
+              <Col xs={24} lg={16}>
+                <Card
+                  title="Prescriptions"
+                  extra={
+                    <Space>
+                      <Button type="primary">Current</Button>
+                      <Button>Past</Button>
                     </Space>
-                  ) : (
-                    <Empty description="No lab reports yet" />
-                  )}
-                </Card>
-
-                <Card title="Notifications">
-                  {notificationsLoading ? (
+                  }
+                  style={{ marginBottom: 24 }}
+                >
+                  {prescriptionsLoading ? (
                     <Skeleton active paragraph={{ rows: 3 }} />
-                  ) : notifications.length ? (
-                    <Space direction="vertical" size={16} style={{ width: '100%' }}>
-                      {notifications.map((notification) => (
-                        <NotificationItem
-                          key={notification.id}
-                          title={notification.title}
-                          message={notification.message}
-                          timestamp={notification.timestamp}
-                          severity={notification.severity}
-                          read={notification.read}
-                          onMarkRead={() =>
-                            !notification.read && markNotificationMutation.mutate(notification.id)
-                          }
+                  ) : prescriptionCards.length ? (
+                    <Space direction="vertical" style={{ width: '100%' }} size={16}>
+                      {prescriptionCards.map((rx) => (
+                        <PrescriptionCard
+                          key={rx.id}
+                          name={rx.name}
+                          dosage={rx.dosage}
+                          nextDose={rx.nextDose}
+                          refillsRemaining={rx.refillsRemaining}
+                          adherence={rx.adherence}
+                          onViewDetails={() => message.info('Prescription detail view coming soon.')}
+                          onRequestRefill={() => handleQuickAction('refill')}
                         />
                       ))}
                     </Space>
                   ) : (
-                    <Empty description="All caught up" />
+                    <Empty description="No prescriptions yet" />
                   )}
-          </Card>
-              </Space>
-            </Col>
-          </Row>
+                </Card>
+
+                <Card title="Care Timeline">
+                  <Space style={{ marginBottom: 16 }} wrap>
+                    {TIMELINE_FILTERS.map((filter) => (
+                      <Tag
+                        key={filter}
+                        color={timelineFilter === filter ? 'blue' : undefined}
+                        style={{ cursor: 'pointer' }}
+                        onClick={() => setTimelineFilter(filter)}
+                      >
+                        {filter.charAt(0).toUpperCase() + filter.slice(1)}
+                      </Tag>
+                    ))}
+                  </Space>
+                  {isTimelineLoading ? (
+                    <Skeleton active paragraph={{ rows: 4 }} />
+                  ) : filteredTimeline.length ? (
+                    <Space direction="vertical" style={{ width: '100%' }} size={16}>
+                      {filteredTimeline.map((item) => (
+                        <TimelineItem
+                          key={item.id}
+                          title={item.title}
+                          timestamp={item.timestamp}
+                          description={item.description}
+                          actionLabel={item.actionLabel}
+                          onAction={() => message.info('Coming soon')}
+                        />
+                      ))}
+                    </Space>
+                  ) : (
+                    <Empty description="No timeline events yet" />
+                  )}
+                </Card>
+              </Col>
+
+              <Col xs={24} lg={8}>
+                <Space direction="vertical" style={{ width: '100%' }} size={24}>
+                  <Card title="Next Appointment">
+                    <Space direction="vertical" style={{ width: '100%' }} size={12}>
+                      <Text type="secondary">with {appointmentsData[0]?.doctor || 'your care team'}</Text>
+                      <Card style={{ background: '#E6F4FF', textAlign: 'center' }}>
+                        <Text type="secondary">In</Text>
+                        <Title level={3} style={{ margin: '8px 0 0' }}>
+                          {nextAppointmentDisplay}
+                        </Title>
+                      </Card>
+                      <Button block onClick={() => message.info('Appointment detail view coming soon.')}>
+                        View Details
+                      </Button>
+                    </Space>
+                  </Card>
+
+                  <Card title="Latest Lab Result">
+                    {labReportsLoading ? (
+                      <Skeleton active paragraph={{ rows: 3 }} />
+                    ) : labReportsData.length ? (
+                      <Space direction="vertical" size={12}>
+                        <Text type="secondary">
+                          {labReportsData[0].testName} · {formatDateTime(labReportsData[0].reportDate)}
+                        </Text>
+                        <Row justify="space-between" align="middle">
+                          <Col>
+                            <Text strong>{labReportsData[0].testType}</Text>
+                          </Col>
+                          <Col>
+                            <Title level={4} style={{ margin: 0 }}>
+                              {labReportsData[0].status || 'Completed'}
+                            </Title>
+                          </Col>
+                        </Row>
+                        <Tag color="orange">Review</Tag>
+                        <Button block onClick={() => message.info('Lab report viewer coming soon.')}>
+                          View Full Report
+                        </Button>
+                      </Space>
+                    ) : (
+                      <Empty description="No lab reports yet" />
+                    )}
+                  </Card>
+
+                  <Card title="Notifications">
+                    {notificationsLoading ? (
+                      <Skeleton active paragraph={{ rows: 3 }} />
+                    ) : notifications.length ? (
+                      <Space direction="vertical" size={16} style={{ width: '100%' }}>
+                        {notifications.map((notification) => (
+                          <NotificationItem
+                            key={notification.id}
+                            title={notification.title}
+                            message={notification.message}
+                            timestamp={notification.timestamp}
+                            severity={notification.severity}
+                            read={notification.read}
+                            onMarkRead={() =>
+                              !notification.read && markNotificationMutation.mutate(notification.id)
+                            }
+                          />
+                        ))}
+                      </Space>
+                    ) : (
+                      <Empty description="All caught up" />
+                    )}
+                  </Card>
+                </Space>
+              </Col>
+            </Row>
           </div>
         </Content>
       </Layout>
