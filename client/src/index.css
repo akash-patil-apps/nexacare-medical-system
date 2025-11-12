@@ -1,12 +1,45 @@
 /* Ant Design CSS Reset */
 @import 'antd/dist/reset.css';
 
+
+
 /* ============================================
    NexaCare Medical System - Design System
    Inspired by modern medical platforms
    ============================================ */
 
+html, body {
+  min-height: 100vh;
+  min-height: 100dvh;
+  overflow: hidden;
+}
+
+body {
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', sans-serif;
+  background-color: var(--bg-tertiary);
+  color: var(--text-primary);
+  margin: 0;
+  padding: 0;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+.viewport-layout {
+  min-height: 100vh;
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+}
+
+.viewport-layout__content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
 /* CSS Custom Properties - Design Tokens */
+
 :root {
   /* Primary Colors */
   --primary-50: #e6f4ff;
@@ -107,7 +140,242 @@ body {
 
 .medical-container {
   min-height: 100vh;
+  min-height: 100dvh;
   background: linear-gradient(135deg, #f5f7fa 0%, #e8f2f8 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--spacing-2xl) var(--spacing-lg);
+}
+
+.medical-container__inner {
+  max-width: 960px;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--spacing-lg);
+}
+
+.role-selection-strip {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 24px;
+  width: 100%;
+  flex-wrap: nowrap;
+}
+
+.role-selection-card {
+  width: 180px;
+  height: 230px;
+  padding: 24px 16px;
+  border-radius: 18px;
+  border: 1.6px solid #d9e3f5;
+  background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
+  color: var(--text-primary);
+  outline: none;
+  box-shadow: 0 8px 18px rgba(15, 34, 67, 0.08);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  transition: all 200ms ease;
+  cursor: pointer;
+}
+
+.role-selection-card:hover,
+.role-selection-card:focus,
+.role-selection-card.active {
+  border-color: #2663ff;
+  box-shadow: 0 16px 32px rgba(38, 99, 255, 0.18);
+  background: linear-gradient(180deg, #f7faff 0%, #edf3ff 100%);
+}
+
+.role-selection-card.disabled {
+  border-color: #e2e7f3;
+  background: #f7f8fa;
+  color: #a0a8b6;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
+.role-selection-card.disabled .role-emoji {
+  background: rgba(160, 168, 182, 0.2);
+  color: #a0a8b6;
+}
+
+.hospital-onboarding-wrapper {
+  min-height: 100vh;
+  padding: 48px 24px;
+  background: linear-gradient(135deg, #f5f7fb 0%, #eef3ff 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.hospital-onboarding-card {
+  width: 100%;
+  max-width: 1080px;
+  background: #ffffff;
+}
+
+.hospital-onboarding-layout {
+  display: flex;
+  gap: 40px;
+  padding: 40px;
+}
+
+.hospital-onboarding-stepper {
+  width: 260px;
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+  padding-right: 16px;
+  border-right: 1px solid var(--border-light);
+}
+
+.hospital-onboarding-progress-label {
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  font-size: 12px;
+}
+
+.hospital-stepper-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.hospital-stepper-item {
+  position: relative;
+  padding-left: 48px;
+  color: var(--text-secondary);
+}
+
+.hospital-stepper-item::after {
+  content: '';
+  position: absolute;
+  left: 16px;
+  top: 34px;
+  width: 2px;
+  height: calc(100% - 34px);
+  background: var(--border-light);
+}
+
+.hospital-stepper-item:last-child::after {
+  display: none;
+}
+
+.hospital-stepper-icon {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 32px;
+  height: 32px;
+  border-radius: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  background: #eff3ff;
+  color: var(--primary-500);
+  border: 1px solid rgba(38, 99, 255, 0.25);
+  box-shadow: 0 10px 18px rgba(38, 99, 255, 0.15);
+}
+
+.hospital-stepper-item.completed .hospital-stepper-icon {
+  background: var(--success-100);
+  color: var(--success-600);
+  border-color: transparent;
+  box-shadow: none;
+}
+
+.hospital-stepper-item.active .hospital-stepper-icon {
+  background: rgba(38, 99, 255, 0.15);
+  color: var(--primary-500);
+  border-color: transparent;
+}
+
+.hospital-stepper-item.upcoming .hospital-stepper-icon {
+  background: #f3f4f7;
+  color: #a8b1c3;
+  border-color: rgba(168, 177, 195, 0.35);
+  box-shadow: none;
+}
+
+.hospital-stepper-item.completed::after {
+  background: var(--success-200);
+}
+
+.hospital-stepper-item.active::after {
+  background: linear-gradient(180deg, var(--primary-200), var(--border-light));
+}
+
+.hospital-stepper-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.hospital-stepper-title {
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.hospital-stepper-item.completed .hospital-stepper-title {
+  color: var(--success-600);
+}
+
+.hospital-stepper-item.active .hospital-stepper-title {
+  color: var(--primary-500);
+}
+
+.hospital-stepper-status {
+  font-size: 13px;
+  color: var(--text-tertiary);
+}
+
+.hospital-onboarding-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+.hospital-onboarding-content-inner {
+  min-height: 420px;
+  background: #f9fbff;
+  border-radius: 18px;
+  padding: 24px;
+  border: 1px solid #e1e8f5;
+}
+
+.hospital-onboarding-footer {
+  margin-top: 24px;
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.hospital-onboarding-footer .ant-btn-primary {
+  box-shadow: 0 12px 24px rgba(38, 99, 255, 0.25);
+}
+
+.role-emoji {
+  width: 72px;
+  height: 72px;
+  border-radius: 16px;
+  background: rgba(30, 99, 255, 0.12);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 40px;
 }
 
 .medical-responsive {
