@@ -22,3 +22,7 @@ export const getLabReportsForLab = async (labId: number) => {
 export const getLabReportsForPatient = async (patientId: number) => {
   return db.select().from(labReports).where(eq(labReports.patientId, patientId));
 };
+
+export const getLabReportsForDoctor = async (doctorId: number) => {
+  return db.select().from(labReports).where(eq(labReports.doctorId, doctorId));
+};

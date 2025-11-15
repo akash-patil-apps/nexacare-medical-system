@@ -60,6 +60,7 @@ export const hospitals = pgTable("hospitals", {
   totalBeds: integer("total_beds"),
   departments: text("departments"),
   services: text("services"),
+  photos: text("photos"),
   operatingHours: text("operating_hours"),
   emergencyServices: boolean("emergency_services").default(false),
   isActive: boolean("is_active").default(true),

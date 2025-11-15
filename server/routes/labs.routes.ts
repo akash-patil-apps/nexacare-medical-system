@@ -3,7 +3,7 @@ import { Router } from "express";
 import { authenticateToken, authorizeRoles } from "../middleware/auth";
 import type { AuthenticatedRequest } from "../types";
 import { createLabReport as createLabReportRecord } from "../services/lab.service";
-import { getLabReportsForLab, getLabReportsForPatient } from "../services/lab.service";
+import { getLabReportsForLab, getLabReportsForPatient, getLabReportsForDoctor } from "../services/lab.service";
 
 const router = Router();
 
@@ -53,6 +53,22 @@ router.get(
       res.json(reports);
     } catch (err) {
       console.error("Get patient lab reports error:", err);
+      res.status(500).json({ message: "Failed to fetch lab reports" });
+    }
+  }
+);
+
+router.get(
+  "/doctor/reports",
+  authenticateToken,
+  authorizeRoles("doctor"),
+  async (req: AuthenticatedRequest, res) => {
+    try {
+      const doctorId = req.user!.id;
+      const reports = await getLabReportsForDoctor(doctorId);
+      res.json(reports);
+    } catch (err) {
+      console.error("Get doctor lab reports error:", err);
       res.status(500).json({ message: "Failed to fetch lab reports" });
     }
   }

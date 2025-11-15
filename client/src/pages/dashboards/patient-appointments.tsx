@@ -341,7 +341,6 @@ export default function PatientAppointments() {
   return (
     <Layout style={{ minHeight: '100vh' }}>
       <Sider 
-        trigger={null} 
         collapsible 
         collapsed={collapsed}
         style={{
@@ -378,14 +377,6 @@ export default function PatientAppointments() {
           justifyContent: 'space-between',
           alignItems: 'center'
         }}>
-          <Button
-            type="text"
-            onClick={() => setCollapsed(!collapsed)}
-            style={{ fontSize: '16px' }}
-          >
-            {collapsed ? '☰' : '✕'}
-          </Button>
-          
           <Space>
             <Badge count={3} size="small">
               <BellOutlined style={{ fontSize: '18px' }} />

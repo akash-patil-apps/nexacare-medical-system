@@ -19,6 +19,7 @@ import HospitalDashboard from './pages/dashboards/hospital-dashboard';
 import LabDashboard from './pages/dashboards/lab-dashboard';
 import ReceptionistDashboard from './pages/dashboards/receptionist-dashboard';
 import PatientOnboarding from './pages/onboarding/patient-onboarding';
+import HospitalOnboarding from './pages/onboarding/hospital-onboarding';
 import NotFound from './pages/not-found';
 
 // Create a client
@@ -73,6 +74,7 @@ function App() {
                   
                   {/* Onboarding Routes */}
                   <Route path="/onboarding/patient" component={PatientOnboarding} />
+                  <Route path="/onboarding/hospital" component={HospitalOnboarding} />
                   
                   {/* Dashboard Routes */}
                   <Route path="/dashboard" component={DashboardRedirect} />

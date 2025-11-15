@@ -1,7 +1,7 @@
 // server/services/onboarding.service.ts
 import { db } from "../db";
-import { patients, users } from "../../shared/schema";
-import { eq } from "drizzle-orm";
+import { patients, users, hospitals, states } from "../../shared/schema";
+import { eq, ilike } from "drizzle-orm";
 
 /**
  * Complete patient onboarding by creating/updating patient profile.
@@ -116,9 +116,9 @@ export const getPatientOnboardingStatus = async (userId: number) => {
       profile: patient[0] || null,
       user: {
         id: user[0].id,
-        name: user[0].name,
+        fullName: user[0].fullName,
         email: user[0].email,
-        mobile: user[0].mobile,
+        mobileNumber: user[0].mobileNumber,
         role: user[0].role,
       }
     };
@@ -127,6 +127,182 @@ export const getPatientOnboardingStatus = async (userId: number) => {
     throw error;
   }
 };
+
+const normaliseListField = (value: unknown) => {
+  if (!value) return null;
+  if (Array.isArray(value)) {
+    return value.join(", ");
+  }
+  if (typeof value === "string") {
+    return value.trim() === "" ? null : value;
+  }
+  return null;
+};
+
+const formatOperatingHours = (start?: string | null, end?: string | null) => {
+  if (!start || !end) return null;
+  const toDisplay = (time: string) => {
+    const [hourStr, minuteStr = "00"] = time.split(":");
+    let hours = Number(hourStr);
+    if (Number.isNaN(hours)) return time;
+    const minutes = minuteStr.slice(0, 2);
+    const period = hours >= 12 ? "PM" : "AM";
+    hours = hours % 12 || 12;
+    return `${hours}:${minutes} ${period}`;
+  };
+
+  return `${toDisplay(start)} - ${toDisplay(end)}`;
+};
+
+const resolveStateName = async (stateId?: number | null, stateName?: string | null) => {
+  if (stateId) {
+    const [stateRecord] = await db
+      .select()
+      .from(states)
+      .where(eq(states.id, stateId))
+      .limit(1);
+
+    if (!stateRecord) {
+      throw new Error("Invalid state selection");
+    }
+    return stateRecord.name;
+  }
+
+  if (stateName && stateName.trim() !== "") {
+    const [stateRecord] = await db
+      .select()
+      .from(states)
+      .where(ilike(states.name, stateName.trim()))
+      .limit(1);
+
+    if (stateRecord) {
+      return stateRecord.name;
+    }
+
+    throw new Error("Invalid state selection");
+  }
+
+  throw new Error("State is required");
+};
+
+export const completeHospitalOnboarding = async (userId: number, data: any) => {
+  console.log(`🏥 Completing hospital onboarding for user ${userId}`);
+
+  try {
+    const stateName = await resolveStateName(
+      data.stateId ? Number(data.stateId) : undefined,
+      data.state
+    );
+
+    const hospitalData = {
+      name: data.hospitalName,
+      address: data.address,
+      city: data.city,
+      state: stateName,
+      zipCode: data.zipCode,
+      licenseNumber: data.licenseNumber,
+      establishedYear: data.establishedYear ? Number(data.establishedYear) : null,
+      totalBeds: data.totalBeds ? Number(data.totalBeds) : null,
+      departments: normaliseListField(data.departments),
+      services: normaliseListField(data.services),
+      operatingHours: formatOperatingHours(data.operatingHoursStart, data.operatingHoursEnd),
+      emergencyServices: Boolean(data.emergencyServices),
+      contactEmail: data.contactEmail || null,
+      website: data.website || null,
+      photos: Array.isArray(data.photos) && data.photos.length > 0
+        ? JSON.stringify(data.photos)
+        : null,
+    };
+
+    if (!hospitalData.name || !hospitalData.address || !hospitalData.city || !hospitalData.zipCode || !hospitalData.licenseNumber) {
+      throw new Error("Missing required hospital fields");
+    }
+
+    const existingHospital = await db
+      .select()
+      .from(hospitals)
+      .where(eq(hospitals.userId, userId))
+      .limit(1);
+
+    if (existingHospital.length > 0) {
+      console.log(`📝 Updating existing hospital profile for user ${userId}`);
+      const [updated] = await db
+        .update(hospitals)
+        .set(hospitalData)
+        .where(eq(hospitals.userId, userId))
+        .returning();
+
+      console.log(`✅ Hospital profile updated for user ${userId}`);
+      return { success: true, hospital: updated, isNew: false };
+    }
+
+    console.log(`🆕 Creating new hospital profile for user ${userId}`);
+    const [created] = await db
+      .insert(hospitals)
+      .values({
+        userId,
+        ...hospitalData,
+        createdAt: new Date(),
+      })
+      .returning();
+
+    console.log(`✅ Hospital profile created for user ${userId}`);
+    return { success: true, hospital: created, isNew: true };
+  } catch (error) {
+    console.error(`❌ Hospital onboarding failed for user ${userId}:`, error);
+    throw error;
+  }
+};
+
+export const getHospitalOnboardingStatus = async (userId: number) => {
+  console.log(`🔍 Checking hospital onboarding status for user ${userId}`);
+
+  try {
+    const [user] = await db
+      .select()
+      .from(users)
+      .where(eq(users.id, userId))
+      .limit(1);
+
+    if (!user) {
+      throw new Error("User not found");
+    }
+
+    const [hospital] = await db
+      .select()
+      .from(hospitals)
+      .where(eq(hospitals.userId, userId))
+      .limit(1);
+
+    const hasProfile = !!hospital;
+    const isComplete =
+      !!hospital &&
+      !!hospital.name &&
+      !!hospital.address &&
+      !!hospital.city &&
+      !!hospital.state &&
+      !!hospital.zipCode &&
+      !!hospital.licenseNumber;
+
+    return {
+      userId,
+      hasProfile,
+      isCompleted: isComplete,
+      profile: hospital || null,
+      user: {
+        id: user.id,
+        fullName: user.fullName,
+        email: user.email,
+        mobileNumber: user.mobileNumber,
+        role: user.role,
+      },
+    };
+  } catch (error) {
+    console.error(`❌ Failed to get hospital onboarding status for user ${userId}:`, error);
+    throw error;
+  }
+};
+
 
 
 

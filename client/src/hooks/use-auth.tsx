@@ -1,6 +1,5 @@
 import { createContext, useContext, useEffect, useState } from "react";
 import { getUserFromToken, getAuthToken, type User, authApi } from "../lib/auth";
-import { useQuery } from "@tanstack/react-query";
 
 interface AuthContextType {
   user: User | null;
@@ -33,15 +32,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           console.log('🔍 Auth check - decoded user:', tokenUser);
           if (tokenUser) {
             setUser(tokenUser);
+            localStorage.setItem('userRole', tokenUser.role.toLowerCase());
             console.log('✅ User set in auth context');
           } else {
             // Token is invalid, clear it
             console.log('❌ Invalid token, clearing');
             localStorage.removeItem('auth-token');
+            localStorage.removeItem('userRole');
             setUser(null);
           }
         } else {
           console.log('❌ No token found');
+          localStorage.removeItem('userRole');
           setUser(null);
         }
       } catch (error) {
@@ -77,6 +79,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const logout = () => {
     setUser(null);
+    localStorage.removeItem('userRole');
     authApi.logout();
   };
 

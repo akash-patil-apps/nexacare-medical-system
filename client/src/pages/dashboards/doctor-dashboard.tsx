@@ -1,5 +1,5 @@
-import { useState, useEffect } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useState, useEffect, useMemo } from "react";
+import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
 import { Redirect, useLocation } from "wouter";
 import { 
   Layout, 
@@ -15,7 +15,13 @@ import {
   Progress,
   Timeline,
   message,
-  Spin
+  Spin,
+  Input,
+  List,
+  Empty,
+  Badge,
+  Divider,
+  Tabs
 } from 'antd';
 import { 
   UserOutlined, 
@@ -24,13 +30,19 @@ import {
   FileTextOutlined,
   PlusOutlined,
   CheckCircleOutlined,
-  TeamOutlined
+  TeamOutlined,
+  ExperimentOutlined,
+  BellOutlined,
+  SearchOutlined,
+  ClockCircleOutlined,
+  BarChartOutlined
 } from '@ant-design/icons';
 import { useAuth } from '../../hooks/use-auth';
 import PrescriptionForm from '../../components/prescription-form';
 import { KpiCard } from '../../components/dashboard/KpiCard';
 import { QuickActionTile } from '../../components/dashboard/QuickActionTile';
 import { SidebarProfile } from '../../components/dashboard/SidebarProfile';
+import dayjs from 'dayjs';
 
 const { Content, Sider } = Layout;
 const { Title, Text } = Typography;
@@ -49,6 +61,8 @@ export default function DoctorDashboard() {
   const [isPrescriptionModalOpen, setIsPrescriptionModalOpen] = useState(false);
   const [selectedPatientId, setSelectedPatientId] = useState<number | undefined>(undefined);
   const [selectedAppointmentId, setSelectedAppointmentId] = useState<number | undefined>(undefined);
+  const [patientSearchTerm, setPatientSearchTerm] = useState('');
+  const [activeAppointmentTab, setActiveAppointmentTab] = useState<string>('today');
 
   // ALL HOOKS MUST BE CALLED BEFORE ANY CONDITIONAL RETURNS
   // Get doctor profile to access hospitalId
@@ -65,6 +79,84 @@ export default function DoctorDashboard() {
       return response.json();
     },
     enabled: !!user && user.role?.toUpperCase() === 'DOCTOR',
+  });
+
+  // Get lab reports for doctor
+  const { data: labReports = [], isLoading: labReportsLoading } = useQuery({
+    queryKey: ['/api/labs/doctor/reports'],
+    queryFn: async () => {
+      const token = localStorage.getItem('auth-token');
+      const response = await fetch('/api/labs/doctor/reports', {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+      if (!response.ok) {
+        console.log('⚠️ Lab reports API not ready yet');
+        return [];
+      }
+      return response.json();
+    },
+    enabled: !!user && user.role?.toUpperCase() === 'DOCTOR',
+    refetchInterval: 10000,
+  });
+
+  // Get prescriptions for doctor
+  const { data: prescriptions = [], isLoading: prescriptionsLoading } = useQuery({
+    queryKey: ['/api/prescriptions/doctor'],
+    queryFn: async () => {
+      const token = localStorage.getItem('auth-token');
+      const response = await fetch('/api/prescriptions/doctor', {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+      if (!response.ok) {
+        console.log('⚠️ Prescriptions API not ready yet');
+        return [];
+      }
+      return response.json();
+    },
+    enabled: !!user && user.role?.toUpperCase() === 'DOCTOR',
+    refetchInterval: 10000,
+  });
+
+  // Get notifications for doctor
+  const { data: notifications = [], isLoading: notificationsLoading } = useQuery({
+    queryKey: ['/api/notifications/me'],
+    queryFn: async () => {
+      const token = localStorage.getItem('auth-token');
+      const response = await fetch('/api/notifications/me', {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+      if (!response.ok) {
+        console.log('⚠️ Notifications API not ready yet');
+        return [];
+      }
+      return response.json();
+    },
+    enabled: !!user && user.role?.toUpperCase() === 'DOCTOR',
+    refetchInterval: 15000,
+  });
+
+  // Mark notification as read
+  const markNotificationMutation = useMutation({
+    mutationFn: async (notificationId: number) => {
+      const token = localStorage.getItem('auth-token');
+      const response = await fetch(`/api/notifications/${notificationId}/read`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+      if (!response.ok) throw new Error('Failed to mark notification as read');
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/notifications/me'] });
+    },
   });
 
   // Get doctor appointments with auto-refresh
@@ -124,58 +216,212 @@ export default function DoctorDashboard() {
     refetchOnMount: true, // Refetch when component mounts
   });
 
-  // Filter appointments for today's date
-  const todayAppointments = allAppointments.filter((apt: any) => {
-    if (!apt.date && !apt.dateObj) {
-      console.warn(`⚠️ Appointment ${apt.id} has no date`);
-      return false;
-    }
+  // Filter confirmed appointments that are today or in the future (by date and time)
+  const confirmedFutureAppointments = useMemo(() => {
+    const now = new Date();
     
-    try {
-      const appointmentDate = apt.dateObj || new Date(apt.date);
-      if (isNaN(appointmentDate.getTime())) {
-        console.warn(`⚠️ Invalid date for appointment ${apt.id}:`, apt.date);
-        return false;
-      }
+    return allAppointments
+      .filter((apt: any) => {
+        // Only show confirmed appointments
+        if (apt.status !== 'confirmed') {
+          return false;
+        }
+        
+        // Check if appointment has valid date
+        if (!apt.date && !apt.dateObj) {
+          return false;
+        }
+        
+        try {
+          const appointmentDateTime = apt.dateObj || new Date(apt.date);
+          if (isNaN(appointmentDateTime.getTime())) {
+            return false;
+          }
+          
+          // Parse time from appointmentTime or timeSlot
+          let appointmentTime = new Date(appointmentDateTime);
+          
+          if (apt.appointmentTime) {
+            // Parse time string (e.g., "09:00", "09:00 AM", "14:30")
+            const timeStr = apt.appointmentTime.trim();
+            const timeMatch = timeStr.match(/(\d{1,2}):(\d{2})\s*(AM|PM|am|pm)?/i);
+            
+            if (timeMatch) {
+              let hours = parseInt(timeMatch[1]);
+              const minutes = parseInt(timeMatch[2]);
+              const period = timeMatch[3]?.toUpperCase();
+              
+              // Handle 12-hour format
+              if (period === 'PM' && hours !== 12) {
+                hours += 12;
+              } else if (period === 'AM' && hours === 12) {
+                hours = 0;
+              }
+              
+              appointmentTime.setHours(hours, minutes, 0, 0);
+            } else {
+              // Try 24-hour format
+              const parts = timeStr.split(':');
+              if (parts.length >= 2) {
+                const hours = parseInt(parts[0]) || 9;
+                const minutes = parseInt(parts[1]) || 0;
+                appointmentTime.setHours(hours, minutes, 0, 0);
+              } else {
+                // Default to 9 AM if can't parse
+                appointmentTime.setHours(9, 0, 0, 0);
+              }
+            }
+          } else if (apt.timeSlot) {
+            // Extract start time from timeSlot (e.g., "09:00 AM - 10:00 AM", "14:30 - 15:30")
+            const timeMatch = apt.timeSlot.match(/(\d{1,2}):(\d{2})\s*(AM|PM|am|pm)?/i);
+            if (timeMatch) {
+              let hours = parseInt(timeMatch[1]);
+              const minutes = parseInt(timeMatch[2]);
+              const period = timeMatch[3]?.toUpperCase();
+              
+              // Handle 12-hour format
+              if (period === 'PM' && hours !== 12) {
+                hours += 12;
+              } else if (period === 'AM' && hours === 12) {
+                hours = 0;
+              }
+              
+              appointmentTime.setHours(hours, minutes, 0, 0);
+            } else {
+              // Default to 9 AM if can't parse
+              appointmentTime.setHours(9, 0, 0, 0);
+            }
+          } else {
+            // No time info, default to start of day (midnight)
+            appointmentTime.setHours(0, 0, 0, 0);
+          }
+          
+          // Only include appointments that are today or in the future (by date and time)
+          return appointmentTime >= now;
+        } catch (error) {
+          console.error(`❌ Error checking date/time for appointment ${apt.id}:`, error);
+          return false;
+        }
+      })
+      .sort((a: any, b: any) => {
+        // Sort by date and time (earliest first)
+        const dateTimeA = a.dateObj || new Date(a.date);
+        const dateTimeB = b.dateObj || new Date(b.date);
+        return dateTimeA.getTime() - dateTimeB.getTime();
+      });
+  }, [allAppointments]);
+
+  // Group appointments by date for tabs
+  const appointmentsByDate = useMemo(() => {
+    const now = new Date();
+    const today = new Date(now);
+    today.setHours(0, 0, 0, 0);
+    
+    const tomorrow = new Date(today);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    
+    const groups: Record<string, any[]> = {
+      today: [],
+      tomorrow: [],
+    };
+    
+    confirmedFutureAppointments.forEach((apt: any) => {
+      if (!apt.dateObj && !apt.date) return;
       
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
+      const appointmentDate = apt.dateObj || new Date(apt.date);
       appointmentDate.setHours(0, 0, 0, 0);
       
-      const isToday = appointmentDate.getTime() === today.getTime();
+      const dateKey = appointmentDate.getTime();
+      const todayKey = today.getTime();
+      const tomorrowKey = tomorrow.getTime();
       
-      console.log(`📅 Checking appointment ${apt.id}:`, {
-        originalDate: apt.date,
-        appointmentDate: appointmentDate.toDateString(),
-        today: today.toDateString(),
-        isToday,
-        status: apt.status
-      });
-      
-      return isToday;
-    } catch (error) {
-      console.error(`❌ Error checking date for appointment ${apt.id}:`, error);
-      return false;
+      if (dateKey === todayKey) {
+        groups.today.push(apt);
+      } else if (dateKey === tomorrowKey) {
+        groups.tomorrow.push(apt);
+      } else {
+        // Future dates - use date string as key
+        const dateStr = dayjs(appointmentDate).format('YYYY-MM-DD');
+        const displayDate = dayjs(appointmentDate).format('DD MMM YYYY');
+        
+        if (!groups[dateStr]) {
+          groups[dateStr] = [];
+        }
+        groups[dateStr].push(apt);
+      }
+    });
+    
+    return groups;
+  }, [confirmedFutureAppointments]);
+
+  // Get appointments for active tab
+  const appointmentsToShow = useMemo(() => {
+    if (activeAppointmentTab === 'today') {
+      return appointmentsByDate.today || [];
+    } else if (activeAppointmentTab === 'tomorrow') {
+      return appointmentsByDate.tomorrow || [];
+    } else {
+      return appointmentsByDate[activeAppointmentTab] || [];
     }
-  });
-  
-  // Show ALL confirmed/completed appointments (not just today's)
-  // This ensures doctors see all their confirmed appointments regardless of date
-  const appointmentsToShow = allAppointments
-    .filter((apt: any) => 
-      apt.status === 'confirmed' || apt.status === 'completed' || apt.status === 'cancelled'
-    )
-    .sort((a: any, b: any) => {
-      // Sort by date (most recent first)
-      const dateA = a.dateObj || new Date(a.date);
-      const dateB = b.dateObj || new Date(b.date);
-      return dateB.getTime() - dateA.getTime();
-    })
-    .slice(0, 20); // Show up to 20 most recent confirmed/completed appointments
+  }, [activeAppointmentTab, appointmentsByDate]);
+
+  // Generate tab items for appointments
+  const appointmentTabs = useMemo(() => {
+    const tabs: Array<{ key: string; label: string; count: number }> = [];
+    
+    // Today tab
+    if (appointmentsByDate.today && appointmentsByDate.today.length > 0) {
+      tabs.push({
+        key: 'today',
+        label: `Today (${appointmentsByDate.today.length})`,
+        count: appointmentsByDate.today.length,
+      });
+    }
+    
+    // Tomorrow tab
+    if (appointmentsByDate.tomorrow && appointmentsByDate.tomorrow.length > 0) {
+      tabs.push({
+        key: 'tomorrow',
+        label: `Tomorrow (${appointmentsByDate.tomorrow.length})`,
+        count: appointmentsByDate.tomorrow.length,
+      });
+    }
+    
+    // Future date tabs
+    Object.keys(appointmentsByDate)
+      .filter(key => key !== 'today' && key !== 'tomorrow')
+      .sort()
+      .forEach(dateKey => {
+        const appointments = appointmentsByDate[dateKey];
+        if (appointments && appointments.length > 0) {
+          const displayDate = dayjs(dateKey).format('DD MMM');
+          tabs.push({
+            key: dateKey,
+            label: `${displayDate} (${appointments.length})`,
+            count: appointments.length,
+          });
+        }
+      });
+    
+    return tabs;
+  }, [appointmentsByDate]);
+
+  // Update active tab if current tab has no appointments
+  useEffect(() => {
+    if (appointmentTabs.length > 0 && !appointmentTabs.find(tab => tab.key === activeAppointmentTab)) {
+      setActiveAppointmentTab(appointmentTabs[0].key);
+    } else if (appointmentTabs.length === 0) {
+      setActiveAppointmentTab('today');
+    }
+  }, [appointmentTabs, activeAppointmentTab]);
+
+  // For stats - use today's confirmed appointments
+  const todayAppointments = appointmentsByDate.today || [];
   
   console.log('📅 All appointments from API:', allAppointments.length);
   console.log('📅 Today appointments:', todayAppointments.length);
-  console.log('📅 Confirmed/completed appointments to show:', appointmentsToShow.length);
+  console.log('📅 Confirmed future appointments:', confirmedFutureAppointments.length);
+  console.log('📅 Appointments in active tab:', appointmentsToShow.length);
   console.log('📅 Appointments breakdown by status:', {
     confirmed: allAppointments.filter((a: any) => a.status === 'confirmed').length,
     completed: allAppointments.filter((a: any) => a.status === 'completed').length,
@@ -184,16 +430,10 @@ export default function DoctorDashboard() {
   });
 
   // Calculate real stats from appointments data (AFTER appointments are loaded)
-  const todaysPendingAppointments = allAppointments.filter((apt: any) => {
-    if (!apt.date && !apt.dateObj) return false;
-    const appointmentDate = apt.dateObj || new Date(apt.date);
-    const today = new Date();
-    appointmentDate.setHours(0, 0, 0, 0);
-    today.setHours(0, 0, 0, 0);
-    const isToday = appointmentDate.getTime() === today.getTime();
+  // For today's pending appointments (for prescription modal), use confirmed appointments from today
+  const todaysPendingAppointments = todayAppointments.filter((apt: any) => {
     const status = (apt.status || '').toLowerCase();
-    const isPendingStatus = !['completed', 'cancelled', 'attended'].includes(status);
-    return isToday && isPendingStatus;
+    return status === 'confirmed'; // Only confirmed appointments for today
   });
 
   const todaysPendingPatientsMap = new Map<number, { id: number; fullName: string; mobileNumber?: string; appointmentId: number }>();
@@ -220,23 +460,116 @@ export default function DoctorDashboard() {
     }
   });
 
-  const stats = allAppointments.length > 0 ? {
-    totalPatients: new Set(allAppointments.map((apt: any) => apt.patient)).size,
-    todayAppointments: todayAppointments.length || appointmentsToShow.length,
+  // Calculate stats with real data
+  const pendingLabReports = useMemo(() => {
+    return labReports.filter((report: any) => report.status === 'pending' || !report.status);
+  }, [labReports]);
+
+  const unreadNotifications = useMemo(() => {
+    return notifications.filter((notif: any) => !notif.read);
+  }, [notifications]);
+
+  // Calculate stats using confirmed future appointments
+  const stats = confirmedFutureAppointments.length > 0 ? {
+    totalPatients: new Set(confirmedFutureAppointments.map((apt: any) => apt.patient)).size,
+    todayAppointments: todayAppointments.length,
     completedAppointments: allAppointments.filter((apt: any) => apt.status === 'completed').length,
-    pendingPrescriptions: 0, // TODO: Add prescriptions API
-    totalPrescriptions: 0 // TODO: Add prescriptions API
+    pendingPrescriptions: prescriptions.filter((p: any) => p.status === 'pending' || !p.status).length,
+    totalPrescriptions: prescriptions.length,
+    pendingLabReports: pendingLabReports.length,
+    unreadNotifications: unreadNotifications.length,
   } : {
     totalPatients: 0,
     todayAppointments: 0,
-    completedAppointments: 0,
-    pendingPrescriptions: 0,
-    totalPrescriptions: 0
+    completedAppointments: allAppointments.filter((apt: any) => apt.status === 'completed').length,
+    pendingPrescriptions: prescriptions.filter((p: any) => p.status === 'pending' || !p.status).length,
+    totalPrescriptions: prescriptions.length,
+    pendingLabReports: pendingLabReports.length,
+    unreadNotifications: unreadNotifications.length,
   };
 
   const completionPercent = stats.todayAppointments
     ? Math.round((stats.completedAppointments / (stats.todayAppointments || 1)) * 100)
     : 0;
+
+  // Calculate analytics
+  const analytics = useMemo(() => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const weekAgo = new Date(today);
+    weekAgo.setDate(weekAgo.getDate() - 7);
+    const monthAgo = new Date(today);
+    monthAgo.setMonth(monthAgo.getMonth() - 1);
+
+    const completedToday = allAppointments.filter((apt: any) => {
+      if (apt.status !== 'completed') return false;
+      const aptDate = apt.dateObj || new Date(apt.date);
+      aptDate.setHours(0, 0, 0, 0);
+      return aptDate.getTime() === today.getTime();
+    }).length;
+
+    const completedThisWeek = allAppointments.filter((apt: any) => {
+      if (apt.status !== 'completed') return false;
+      const aptDate = apt.dateObj || new Date(apt.date);
+      return aptDate >= weekAgo;
+    }).length;
+
+    const completedThisMonth = allAppointments.filter((apt: any) => {
+      if (apt.status !== 'completed') return false;
+      const aptDate = apt.dateObj || new Date(apt.date);
+      return aptDate >= monthAgo;
+    }).length;
+
+    return {
+      today: completedToday,
+      week: completedThisWeek,
+      month: completedThisMonth,
+    };
+  }, [allAppointments]);
+
+  // Generate real activity timeline
+  const activityTimeline = useMemo(() => {
+    const activities: Array<{ color: string; children: string; time: Date }> = [];
+    
+    // Add recent completed appointments
+    allAppointments
+      .filter((apt: any) => apt.status === 'completed')
+      .slice(0, 3)
+      .forEach((apt: any) => {
+        activities.push({
+          color: doctorTheme.primary,
+          children: `Completed consultation with ${apt.patient}`,
+          time: apt.dateObj || new Date(apt.date),
+        });
+      });
+
+    // Add recent prescriptions
+    prescriptions.slice(0, 2).forEach((presc: any) => {
+      activities.push({
+        color: doctorTheme.accent,
+        children: `Prescribed medication for patient`,
+        time: new Date(presc.createdAt || Date.now()),
+      });
+    });
+
+    // Sort by time (most recent first)
+    activities.sort((a, b) => b.time.getTime() - a.time.getTime());
+
+    return activities.slice(0, 5);
+  }, [allAppointments, prescriptions]);
+
+  // Filter patients for search
+  const filteredPatients = useMemo(() => {
+    if (!patientSearchTerm.trim()) return [];
+    const searchLower = patientSearchTerm.toLowerCase();
+    const patientSet = new Set<string>();
+    allAppointments.forEach((apt: any) => {
+      if (apt.patient && apt.patient.toLowerCase().includes(searchLower)) {
+        patientSet.add(apt.patient);
+      }
+    });
+    return Array.from(patientSet).slice(0, 5);
+  }, [patientSearchTerm, allAppointments]);
 
   // Listen for appointment updates from other tabs/windows
   useEffect(() => {
@@ -353,6 +686,28 @@ export default function DoctorDashboard() {
       key: 'patient',
     },
     {
+      title: 'Date',
+      key: 'date',
+      render: (_: any, record: any) => {
+        if (!record.dateObj && !record.date) return 'N/A';
+        const date = record.dateObj || new Date(record.date);
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        const appointmentDate = new Date(date);
+        appointmentDate.setHours(0, 0, 0, 0);
+        
+        if (appointmentDate.getTime() === today.getTime()) {
+          return <Text strong>Today</Text>;
+        }
+        const tomorrow = new Date(today);
+        tomorrow.setDate(tomorrow.getDate() + 1);
+        if (appointmentDate.getTime() === tomorrow.getTime()) {
+          return <Text>Tomorrow</Text>;
+        }
+        return dayjs(date).format('DD MMM YYYY');
+      },
+    },
+    {
       title: 'Time',
       dataIndex: 'time',
       key: 'time',
@@ -367,7 +722,7 @@ export default function DoctorDashboard() {
       dataIndex: 'priority',
       key: 'priority',
       render: (priority: string) => (
-        <Tag color={priority === 'High' ? 'red' : 'blue'}>
+        <Tag color={priority === 'High' || priority === 'high' ? 'red' : priority === 'urgent' ? 'orange' : 'blue'}>
           {priority}
         </Tag>
       ),
@@ -476,7 +831,6 @@ export default function DoctorDashboard() {
   return (
     <Layout style={{ minHeight: '100vh', background: doctorTheme.highlight }}>
       <Sider
-        trigger={null}
         collapsible
         collapsed={collapsed}
         onCollapse={setCollapsed}
@@ -545,12 +899,6 @@ export default function DoctorDashboard() {
           }}
         >
           <div style={{ padding: '32px 24px', maxWidth: '1320px', margin: '0 auto', paddingBottom: 48 }}>
-            <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 24 }}>
-              <Button type="text" onClick={() => setCollapsed(!collapsed)} style={{ fontSize: 16 }}>
-                {collapsed ? '☰' : '✕'}
-              </Button>
-            </div>
-
             <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
               <Col xs={24} sm={12} md={6}>
                 <KpiCard
@@ -564,12 +912,12 @@ export default function DoctorDashboard() {
               </Col>
               <Col xs={24} sm={12} md={6}>
                 <KpiCard
-                  label="Patients Under Care"
-                  value={stats.totalPatients || 0}
-                  icon={<TeamOutlined style={{ color: doctorTheme.accent }} />}
-                  trendLabel="Updated"
-                  trendType="neutral"
-                  onView={() => message.info('Patient list coming soon')}
+                  label="Lab Results Pending"
+                  value={stats.pendingLabReports || 0}
+                  icon={<ExperimentOutlined style={{ color: doctorTheme.accent }} />}
+                  trendLabel="Awaiting review"
+                  trendType={stats.pendingLabReports > 0 ? "negative" : "neutral"}
+                  onView={() => message.info('Lab results widget below')}
                 />
               </Col>
               <Col xs={24} sm={12} md={6}>
@@ -584,12 +932,19 @@ export default function DoctorDashboard() {
               </Col>
               <Col xs={24} sm={12} md={6}>
                 <KpiCard
-                  label="Pending Prescriptions"
-                  value={stats.pendingPrescriptions || 0}
-                  icon={<MedicineBoxOutlined style={{ color: '#f97316' }} />}
-                  trendLabel="Action needed"
-                  trendType="negative"
-                  onView={() => setIsPrescriptionModalOpen(true)}
+                  label={
+                    <Space>
+                      <span>Notifications</span>
+                      {stats.unreadNotifications > 0 && (
+                        <Badge count={stats.unreadNotifications} size="small" />
+                      )}
+                    </Space>
+                  }
+                  value={stats.unreadNotifications || 0}
+                  icon={<BellOutlined style={{ color: '#f97316' }} />}
+                  trendLabel="Unread"
+                  trendType={stats.unreadNotifications > 0 ? "negative" : "neutral"}
+                  onView={() => message.info('Notifications widget below')}
                 />
               </Col>
             </Row>
@@ -632,26 +987,39 @@ export default function DoctorDashboard() {
                 <Card
                   bordered={false}
                   style={{ borderRadius: 16 }}
-                  title="Today's Schedule"
+                  title="Upcoming Appointments"
                   extra={<Button type="link" onClick={() => setLocation('/dashboard/doctor/appointments')}>View All</Button>}
                 >
-                  {appointmentsToShow.length === 0 ? (
+                  {appointmentTabs.length === 0 ? (
                     <div style={{ textAlign: 'center', padding: '40px 0' }}>
                       <Text type="secondary">
                         {allAppointments.length === 0
                           ? 'No appointments found. Waiting for receptionist to confirm appointments.'
-                          : `No confirmed appointments yet. ${allAppointments.filter((a: any) => a.status === 'pending').length} pending confirmation.`}
+                          : `No confirmed appointments scheduled. ${allAppointments.filter((a: any) => a.status === 'pending').length} pending confirmation.`}
                       </Text>
                     </div>
                   ) : (
-                    <Table
-                      columns={appointmentColumns}
-                      dataSource={appointmentsToShow}
-                      pagination={false}
-                      rowKey="id"
-                      loading={appointmentsLoading}
-                      size="middle"
-                    />
+                    <>
+                      <Tabs
+                        activeKey={activeAppointmentTab}
+                        onChange={setActiveAppointmentTab}
+                        items={appointmentTabs.map(tab => ({
+                          key: tab.key,
+                          label: tab.label,
+                          children: (
+                            <Table
+                              columns={appointmentColumns}
+                              dataSource={appointmentsToShow}
+                              pagination={false}
+                              rowKey="id"
+                              loading={appointmentsLoading}
+                              size="middle"
+                            />
+                          ),
+                        }))}
+                        style={{ marginTop: 8 }}
+                      />
+                    </>
                   )}
                 </Card>
               </Col>
@@ -668,28 +1036,163 @@ export default function DoctorDashboard() {
                     />
                     <Space direction="vertical" size={4}>
                       <Text type="secondary">{stats.completedAppointments || 0} of {stats.todayAppointments || 0} completed</Text>
-                      <Text type="secondary">Next break at 3:00 PM</Text>
+                      {doctorProfile?.hospitalName && (
+                        <Text type="secondary">📍 {doctorProfile.hospitalName}</Text>
+                      )}
                     </Space>
                   </Card>
 
                   <Card bordered={false} style={{ borderRadius: 16 }}>
-                    <Title level={5} style={{ marginBottom: 12 }}>Recent Activity</Title>
-                    <Timeline
-                      items={[
-                        {
-                          color: doctorTheme.primary,
-                          children: <Text>Completed consultation with John Doe</Text>,
-                        },
-                        {
-                          color: doctorTheme.accent,
-                          children: <Text>Prescribed medication for Jane Smith</Text>,
-                        },
-                        {
-                          color: '#f97316',
-                          children: <Text>Awaiting lab results for Mike Johnson</Text>,
-                        },
-                      ]}
+                    <Title level={5} style={{ marginBottom: 12 }}>
+                      <BarChartOutlined style={{ marginRight: 8 }} />
+                      Analytics
+                    </Title>
+                    <Space direction="vertical" size={8} style={{ width: '100%' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                        <Text type="secondary">Today</Text>
+                        <Text strong>{analytics.today}</Text>
+                      </div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                        <Text type="secondary">This Week</Text>
+                        <Text strong>{analytics.week}</Text>
+                      </div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                        <Text type="secondary">This Month</Text>
+                        <Text strong>{analytics.month}</Text>
+                      </div>
+                    </Space>
+                  </Card>
+
+                  <Card bordered={false} style={{ borderRadius: 16 }}>
+                    <Title level={5} style={{ marginBottom: 12 }}>
+                      <SearchOutlined style={{ marginRight: 8 }} />
+                      Patient Search
+                    </Title>
+                    <Input
+                      placeholder="Search patients..."
+                      prefix={<SearchOutlined />}
+                      value={patientSearchTerm}
+                      onChange={(e) => setPatientSearchTerm(e.target.value)}
+                      style={{ marginBottom: 12 }}
                     />
+                    {filteredPatients.length > 0 ? (
+                      <List
+                        size="small"
+                        dataSource={filteredPatients}
+                        renderItem={(patient) => (
+                          <List.Item style={{ padding: '8px 0', cursor: 'pointer' }}>
+                            <Text>{patient}</Text>
+                          </List.Item>
+                        )}
+                      />
+                    ) : patientSearchTerm.trim() ? (
+                      <Text type="secondary">No patients found</Text>
+                    ) : (
+                      <Text type="secondary">Start typing to search...</Text>
+                    )}
+                  </Card>
+
+                  <Card bordered={false} style={{ borderRadius: 16 }}>
+                    <Title level={5} style={{ marginBottom: 12 }}>
+                      <ExperimentOutlined style={{ marginRight: 8 }} />
+                      Lab Results Queue
+                    </Title>
+                    {labReportsLoading ? (
+                      <Spin size="small" />
+                    ) : pendingLabReports.length > 0 ? (
+                      <List
+                        size="small"
+                        dataSource={pendingLabReports.slice(0, 5)}
+                        renderItem={(report: any) => (
+                          <List.Item style={{ padding: '8px 0' }}>
+                            <Space direction="vertical" size={2} style={{ width: '100%' }}>
+                              <Text strong>{report.testName || 'Lab Test'}</Text>
+                              <Text type="secondary" style={{ fontSize: 12 }}>
+                                {report.testType || 'Test'} • {report.reportDate ? dayjs(report.reportDate).format('DD MMM YYYY') : 'Pending'}
+                              </Text>
+                            </Space>
+                          </List.Item>
+                        )}
+                      />
+                    ) : (
+                      <Empty
+                        image={Empty.PRESENTED_IMAGE_SIMPLE}
+                        description="No pending lab results"
+                        style={{ padding: '20px 0' }}
+                      />
+                    )}
+                  </Card>
+
+                  <Card bordered={false} style={{ borderRadius: 16 }}>
+                    <Title level={5} style={{ marginBottom: 12 }}>
+                      <BellOutlined style={{ marginRight: 8 }} />
+                      Notifications
+                      {stats.unreadNotifications > 0 && (
+                        <Badge count={stats.unreadNotifications} style={{ marginLeft: 8 }} />
+                      )}
+                    </Title>
+                    {notificationsLoading ? (
+                      <Spin size="small" />
+                    ) : notifications.length > 0 ? (
+                      <List
+                        size="small"
+                        dataSource={notifications.slice(0, 5)}
+                        renderItem={(notif: any) => (
+                          <List.Item style={{ padding: '8px 0' }}>
+                            <Space direction="vertical" size={4} style={{ width: '100%' }}>
+                              <Space size={8}>
+                                <Tag color={notif.type === 'urgent' ? 'red' : 'blue'} style={{ margin: 0 }}>
+                                  {notif.type === 'urgent' ? 'Urgent' : 'Info'}
+                                </Tag>
+                                <Text strong style={{ fontSize: 13 }}>{notif.title || 'Notification'}</Text>
+                                {!notif.read && (
+                                  <Button
+                                    type="link"
+                                    size="small"
+                                    onClick={() => markNotificationMutation.mutate(notif.id)}
+                                    style={{ padding: 0, height: 'auto', fontSize: 11 }}
+                                  >
+                                    Mark read
+                                  </Button>
+                                )}
+                              </Space>
+                              <Text type="secondary" style={{ fontSize: 12 }}>{notif.message || ''}</Text>
+                              <Text type="secondary" style={{ fontSize: 11 }}>
+                                {dayjs(notif.createdAt || new Date()).format('DD MMM, hh:mm A')}
+                              </Text>
+                            </Space>
+                          </List.Item>
+                        )}
+                      />
+                    ) : (
+                      <Empty
+                        image={Empty.PRESENTED_IMAGE_SIMPLE}
+                        description="No notifications"
+                        style={{ padding: '20px 0' }}
+                      />
+                    )}
+                  </Card>
+
+                  <Card bordered={false} style={{ borderRadius: 16 }}>
+                    <Title level={5} style={{ marginBottom: 12 }}>Recent Activity</Title>
+                    {activityTimeline.length > 0 ? (
+                      <Timeline
+                        items={activityTimeline.map((activity) => ({
+                          color: activity.color,
+                          children: (
+                            <Text style={{ fontSize: 13 }}>
+                              {activity.children}
+                              <br />
+                              <Text type="secondary" style={{ fontSize: 11 }}>
+                                {dayjs(activity.time).format('DD MMM, hh:mm A')}
+                              </Text>
+                            </Text>
+                          ),
+                        }))}
+                      />
+                    ) : (
+                      <Text type="secondary">No recent activity</Text>
+                    )}
                   </Card>
                 </Space>
               </Col>

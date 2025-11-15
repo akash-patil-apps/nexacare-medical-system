@@ -170,7 +170,6 @@ export default function LabDashboard() {
   return (
     <Layout style={{ minHeight: '100vh', background: '#f5f5f5' }}>
       <Sider 
-        trigger={null} 
         collapsible 
         collapsed={collapsed}
         onCollapse={setCollapsed}
@@ -236,16 +235,6 @@ export default function LabDashboard() {
           }}
         >
           <div style={{ padding: '32px 24px', maxWidth: '1320px', margin: '0 auto', paddingBottom: 48 }}>
-            <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 24 }}>
-              <Button
-                type="text"
-                onClick={() => setCollapsed(!collapsed)}
-                style={{ fontSize: 16 }}
-              >
-                {collapsed ? '☰' : '✕'}
-              </Button>
-            </div>
-
           {/* Statistics Cards */}
           <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
             <Col xs={24} sm={12} md={6}>

@@ -21,7 +21,12 @@ export function useOnboardingCheck() {
     queryKey: ['onboarding-status', userRole],
     queryFn: async () => {
       if (userRole === 'patient') {
-        return apiRequest('GET', '/api/onboarding/patient/status');
+        const res = await apiRequest('GET', '/api/onboarding/patient/status');
+        return res.json();
+      }
+      if (userRole === 'hospital') {
+        const res = await apiRequest('GET', '/api/onboarding/hospital/status');
+        return res.json();
       }
       // Add other roles as needed
       return { isCompleted: true };
@@ -31,10 +36,10 @@ export function useOnboardingCheck() {
 
   useEffect(() => {
     // Check if user is logged in and on dashboard
-    const token = localStorage.getItem('authToken');
+    const token = localStorage.getItem('auth-token');
     const currentPath = window.location.pathname;
     
-    if (token && currentPath === '/dashboard' && userRole) {
+    if (token && currentPath.startsWith('/dashboard') && userRole) {
       setShouldCheck(true);
     }
   }, [userRole]);

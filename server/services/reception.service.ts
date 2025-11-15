@@ -1,9 +1,18 @@
 // server/services/reception.service.ts
+import { and, eq, isNull, asc, ilike, or } from 'drizzle-orm';
+import { alias } from 'drizzle-orm/pg-core';
 import { db } from '../db';
-import { receptionists, appointments } from '../../shared/schema';
-import { eq, and, isNull } from 'drizzle-orm';
+import {
+  appointments,
+  doctors,
+  patients,
+  receptionists,
+  users,
+} from '../../shared/schema';
 import type { InsertReceptionist } from '../../shared/schema-types';
+import { hashPassword } from './auth.service';
 import { createNotification } from './notifications.service';
+import { getDoctorsByHospital } from './doctors.service';
 
 /**
  * Add a new receptionist to a hospital.
@@ -24,25 +33,57 @@ export const getReceptionistsByHospital = async (hospitalId: number) => {
  * (Assumes 'walk-in' type, pending status, and null receptionist)
  */
 export const getWalkInAppointments = async (receptionistUserId: number) => {
-  const [rec] = await db
-    .select()
-    .from(receptionists)
-    .where(eq(receptionists.userId, receptionistUserId))
-    .limit(1);
+  const context = await getReceptionistContext(receptionistUserId);
+  if (!context) return [];
 
-  if (!rec) return [];
+  const doctorUsers = alias(users, 'doctor_users');
 
-  return db
-    .select()
+  const results = await db
+    .select({
+      id: appointments.id,
+      priority: appointments.priority,
+      status: appointments.status,
+      reason: appointments.reason,
+      notes: appointments.notes,
+      appointmentDate: appointments.appointmentDate,
+      appointmentTime: appointments.appointmentTime,
+      createdAt: appointments.createdAt,
+      timeSlot: appointments.timeSlot,
+      patientName: users.fullName,
+      patientPhone: users.mobileNumber,
+      doctorId: appointments.doctorId,
+      doctorName: doctorUsers.fullName,
+    })
     .from(appointments)
+    .innerJoin(patients, eq(appointments.patientId, patients.id))
+    .innerJoin(users, eq(patients.userId, users.id))
+    .innerJoin(doctors, eq(appointments.doctorId, doctors.id))
+    .innerJoin(doctorUsers, eq(doctors.userId, doctorUsers.id))
     .where(
       and(
-        eq(appointments.hospitalId, rec.hospitalId),
+        eq(appointments.hospitalId, context.hospitalId),
         eq(appointments.type, 'walk-in'),
         eq(appointments.status, 'pending'),
         isNull(appointments.receptionistId)
       )
-    );
+    )
+    .orderBy(asc(appointments.createdAt));
+
+  return results.map((item) => ({
+    id: item.id,
+    priority: item.priority ?? 'normal',
+    status: item.status,
+    reason: item.reason,
+    notes: item.notes,
+    appointmentDate: item.appointmentDate,
+    appointmentTime: item.appointmentTime,
+    timeSlot: item.timeSlot,
+    createdAt: item.createdAt,
+    patientName: item.patientName,
+    patientPhone: item.patientPhone,
+    doctorId: item.doctorId,
+    doctorName: item.doctorName,
+  }));
 };
 
 /**
@@ -80,3 +121,283 @@ export const confirmAppointment = async (appointmentId: number, receptionistId: 
 
   return updated;
 };
+
+/**
+ * Get doctors available to a receptionist (same hospital).
+ */
+export const getHospitalDoctorsForReceptionist = async (receptionistUserId: number) => {
+  const context = await getReceptionistContext(receptionistUserId);
+  if (!context) return [];
+
+  const doctorsInHospital = await getDoctorsByHospital(context.hospitalId);
+
+  return doctorsInHospital
+    .filter((doc) => doc.userId)
+    .map((doc) => ({
+      id: doc.id,
+      hospitalId: doc.hospitalId,
+      userId: doc.userId!,
+      specialty: doc.specialty,
+      isAvailable: doc.isAvailable,
+      fullName: doc.fullName || 'Doctor',
+    }));
+};
+
+export interface WalkInRegistrationInput {
+  fullName: string;
+  mobileNumber: string;
+  email?: string;
+  reason?: string;
+  doctorId: number;
+  priority?: string;
+  notes?: string | null;
+  appointmentDate?: string;
+  startTime?: string;
+  durationMinutes?: number;
+}
+
+export const registerWalkInPatient = async (
+  receptionistUserId: number,
+  payload: WalkInRegistrationInput
+) => {
+  const context = await getReceptionistContext(receptionistUserId);
+  if (!context) {
+    throw new Error('Receptionist profile not found');
+  }
+
+  const {
+    fullName,
+    mobileNumber,
+    email,
+    reason,
+    doctorId,
+    priority = 'normal',
+    notes,
+    appointmentDate,
+    startTime,
+    durationMinutes = 30,
+  } = payload;
+
+  const trimmedMobile = mobileNumber.trim();
+
+  const doctorUsers = alias(users, 'doctor_users');
+
+  const [doctorRecord] = await db
+    .select({
+      doctor: doctors,
+      doctorUserId: doctorUsers.id,
+      doctorFullName: doctorUsers.fullName,
+    })
+    .from(doctors)
+    .innerJoin(doctorUsers, eq(doctors.userId, doctorUsers.id))
+    .where(eq(doctors.id, doctorId))
+    .limit(1);
+
+  if (!doctorRecord) {
+    throw new Error('Doctor not found');
+  }
+
+  const doctor = doctorRecord.doctor;
+  const doctorFullName = doctorRecord.doctorFullName;
+  const doctorUserId = doctorRecord.doctorUserId;
+
+  if (doctor.hospitalId !== context.hospitalId) {
+    throw new Error('Doctor does not belong to your hospital');
+  }
+
+  // Find or create user
+  let [existingUser] = await db
+    .select()
+    .from(users)
+    .where(eq(users.mobileNumber, trimmedMobile))
+    .limit(1);
+
+  if (!existingUser) {
+    let generatedEmail = (email && email.trim()) || `${trimmedMobile}@walkin.nexacare.local`;
+    let emailAttempt = generatedEmail;
+    let counter = 1;
+
+    while (true) {
+      const [emailUser] = await db
+        .select()
+        .from(users)
+        .where(eq(users.email, emailAttempt))
+        .limit(1);
+      if (!emailUser) break;
+      emailAttempt = `${generatedEmail.split('@')[0]}+${counter}@${generatedEmail.split('@')[1]}`;
+      counter += 1;
+    }
+
+    const passwordToHash = `WalkIn@${trimmedMobile.slice(-4)}${counter}`;
+    const hashedPassword = await hashPassword(passwordToHash);
+
+    const [createdUser] = await db
+      .insert(users)
+      .values({
+        fullName,
+        mobileNumber: trimmedMobile,
+        email: emailAttempt,
+        password: hashedPassword,
+        role: 'patient',
+        isVerified: true,
+      })
+      .returning();
+
+    existingUser = createdUser;
+  }
+
+  let [patient] = await db
+    .select()
+    .from(patients)
+    .where(eq(patients.userId, existingUser.id))
+    .limit(1);
+
+  if (!patient) {
+    const [createdPatient] = await db
+      .insert(patients)
+      .values({
+        userId: existingUser.id,
+        emergencyContact: trimmedMobile,
+        emergencyContactName: fullName,
+        emergencyRelation: 'Self',
+        createdAt: new Date(),
+      })
+      .returning();
+    patient = createdPatient;
+  }
+
+  const now = new Date();
+  let scheduledDate: Date;
+  if (appointmentDate) {
+    if (/^\d{4}-\d{2}-\d{2}$/.test(appointmentDate)) {
+      const [year, month, day] = appointmentDate.split('-').map((value) => parseInt(value, 10));
+      scheduledDate = new Date();
+      scheduledDate.setFullYear(year, (month || 1) - 1, day || new Date().getDate());
+      scheduledDate.setHours(0, 0, 0, 0);
+    } else {
+      scheduledDate = new Date(appointmentDate);
+    }
+  } else {
+    scheduledDate = new Date(now);
+  }
+
+  if (Number.isNaN(scheduledDate.getTime())) {
+    throw new Error('Invalid appointment date');
+  }
+
+  const [startHour, startMinute] = (startTime || '09:00').split(':').map((value) => parseInt(value, 10));
+  const startDateTime = new Date(scheduledDate);
+  startDateTime.setHours(startHour || 9, startMinute || 0, 0, 0);
+
+  const duration = Math.max(Number(durationMinutes) || 30, 5);
+  const milliseconds = duration * 60 * 1000;
+  const endDateTime = new Date(startDateTime.getTime() + milliseconds);
+
+  const formatTime = (date: Date) =>
+    date.toLocaleTimeString('en-IN', {
+    hour: '2-digit',
+    minute: '2-digit',
+    });
+
+  const timeLabel = formatTime(startDateTime);
+  const slotLabel = `${formatTime(startDateTime)} - ${formatTime(endDateTime)}`;
+
+  const [appointment] = await db
+    .insert(appointments)
+    .values({
+      patientId: patient.id,
+      doctorId: doctor.id,
+      hospitalId: context.hospitalId,
+      appointmentDate: startDateTime,
+      appointmentTime: timeLabel,
+      timeSlot: slotLabel,
+      reason: reason ?? null,
+      notes: notes ?? null,
+      status: 'pending',
+      type: 'walk-in',
+      priority,
+      createdBy: receptionistUserId,
+      createdAt: now,
+    })
+    .returning();
+
+  await createNotification({
+    userId: existingUser.id,
+    type: 'walkin_registered',
+    title: 'Walk-in Registration',
+    message: 'Your walk-in registration is confirmed at the reception.',
+  });
+
+  if (doctorUserId) {
+    await createNotification({
+      userId: doctorUserId,
+      type: 'walkin_registered',
+      title: 'Walk-in patient waiting',
+      message: `${fullName} has been registered as a walk-in patient.`,
+    });
+  }
+
+  return {
+    id: appointment.id,
+    patientName: existingUser.fullName,
+    patientPhone: existingUser.mobileNumber,
+    doctorId: doctor.id,
+    doctorName: doctorFullName,
+    reason: appointment.reason,
+    status: appointment.status,
+    priority: appointment.priority,
+    appointmentDate: appointment.appointmentDate,
+    appointmentTime: appointment.appointmentTime,
+    timeSlot: appointment.timeSlot,
+    createdAt: appointment.createdAt,
+    durationMinutes: duration,
+  };
+};
+
+export const searchPatientsForReceptionist = async (
+  receptionistUserId: number,
+  query: string
+) => {
+  const context = await getReceptionistContext(receptionistUserId);
+  if (!context) return [];
+
+  const trimmed = query.trim();
+  if (!trimmed) return [];
+
+  const namePattern = `%${trimmed}%`;
+
+  const results = await db
+    .select({
+      userId: users.id,
+      patientId: patients.id,
+      fullName: users.fullName,
+      mobileNumber: users.mobileNumber,
+    })
+    .from(users)
+    .leftJoin(patients, eq(users.id, patients.userId))
+    .where(
+      and(
+        eq(users.role, 'patient'),
+        or(
+          ilike(users.fullName, namePattern),
+          ilike(users.mobileNumber, `${trimmed}%`)
+        )
+      )
+    )
+    .orderBy(asc(users.fullName))
+    .limit(10);
+
+  return results;
+};
+
+async function getReceptionistContext(receptionistUserId: number) {
+  const [rec] = await db
+    .select()
+    .from(receptionists)
+    .where(eq(receptionists.userId, receptionistUserId))
+    .limit(1);
+
+  if (!rec) return null;
+
+  return rec;
+}

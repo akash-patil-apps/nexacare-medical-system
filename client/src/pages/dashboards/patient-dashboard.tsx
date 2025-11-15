@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useState, useEffect } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { 
   Layout, 
@@ -13,14 +13,18 @@ import {
   message,
   Skeleton,
   Empty,
+  Tabs,
+  Table,
 } from 'antd';
-import { 
-  UserOutlined, 
-  CalendarOutlined, 
-  MedicineBoxOutlined, 
+import {
+  UserOutlined,
+  CalendarOutlined,
+  MedicineBoxOutlined,
   FileTextOutlined,
   BellOutlined,
   PlusOutlined,
+  MenuFoldOutlined,
+  MenuUnfoldOutlined,
 } from '@ant-design/icons';
 import { useAuth } from '../../hooks/use-auth';
 import { useLocation } from 'wouter';
@@ -32,6 +36,7 @@ import { TimelineItem } from '../../components/dashboard/TimelineItem';
 import { NotificationItem } from '../../components/dashboard/NotificationItem';
 import { SidebarProfile } from '../../components/dashboard/SidebarProfile';
 import { formatDate, formatDateTime } from '../../lib/utils';
+import dayjs from 'dayjs';
 
 const { Content, Sider } = Layout;
 const { Title, Text } = Typography;
@@ -126,32 +131,226 @@ export default function PatientDashboard() {
   const [, setLocation] = useLocation();
   const [collapsed, setCollapsed] = useState(false);
   const [timelineFilter, setTimelineFilter] = useState<TimelineFilter>('all');
+  const [activeAppointmentTab, setActiveAppointmentTab] = useState<string>('today');
   
   useOnboardingCheck();
 
   const {
-    data: appointmentsData = [],
+    data: allAppointments = [],
     isLoading: appointmentsLoading,
   } = useQuery({
     queryKey: ['patient-appointments'],
     queryFn: async () => {
       const data = await fetchWithAuth<Array<any>>('/api/appointments/my');
-      return data.map((apt) => ({
-        id: apt.id,
-        doctor: apt.doctorName || 'Doctor',
-        specialty: apt.doctorSpecialty || 'General',
-        date: apt.appointmentDate ? formatDate(apt.appointmentDate) : 'Date unavailable',
-        time: apt.appointmentTime || apt.timeSlot || '',
-        status: apt.status || 'pending',
-        hospital: apt.hospitalName || 'Hospital',
-        rawDate: apt.appointmentDate || null,
-        dateTime: apt.appointmentDate ? apt.appointmentDate : null,
-        notes: apt.notes || '',
-      }));
+      // Transform API data with date object for proper date handling
+      return data.map((apt) => {
+        // Handle different date formats
+        let appointmentDate = apt.appointmentDate;
+        if (typeof appointmentDate === 'string') {
+          appointmentDate = new Date(appointmentDate);
+          if (isNaN(appointmentDate.getTime())) {
+            console.warn(`⚠️ Invalid date for appointment ${apt.id}:`, apt.appointmentDate);
+            appointmentDate = null;
+          }
+        } else if (appointmentDate) {
+          appointmentDate = new Date(appointmentDate);
+        }
+        
+        return {
+          id: apt.id,
+          doctor: apt.doctorName || 'Doctor',
+          specialty: apt.doctorSpecialty || 'General',
+          date: apt.appointmentDate ? formatDate(apt.appointmentDate) : 'Date unavailable',
+          time: apt.appointmentTime || apt.timeSlot || '',
+          status: apt.status || 'pending',
+          hospital: apt.hospitalName || 'Hospital',
+          rawDate: apt.appointmentDate || null,
+          dateTime: apt.appointmentDate ? apt.appointmentDate : null,
+          dateObj: appointmentDate,
+          notes: apt.notes || '',
+        };
+      });
     },
     refetchInterval: 10_000,
     refetchOnWindowFocus: false,
   });
+
+  // Filter appointments that are today or in the future (by date and time)
+  // Patients should see all their appointment statuses (pending, confirmed, completed, cancelled)
+  const futureAppointments = useMemo(() => {
+    const now = new Date();
+    
+    return allAppointments
+      .filter((apt: any) => {
+        // Check if appointment has valid date
+        if (!apt.rawDate && !apt.dateObj) {
+          return false;
+        }
+        
+        try {
+          const appointmentDateTime = apt.dateObj || new Date(apt.rawDate);
+          if (isNaN(appointmentDateTime.getTime())) {
+            return false;
+          }
+          
+          // Parse time from appointmentTime or timeSlot
+          let appointmentTime = new Date(appointmentDateTime);
+          
+          if (apt.time) {
+            // Parse time string (e.g., "09:00", "09:00 AM", "14:30")
+            const timeStr = apt.time.trim();
+            const timeMatch = timeStr.match(/(\d{1,2}):(\d{2})\s*(AM|PM|am|pm)?/i);
+            
+            if (timeMatch) {
+              let hours = parseInt(timeMatch[1]);
+              const minutes = parseInt(timeMatch[2]);
+              const period = timeMatch[3]?.toUpperCase();
+              
+              // Handle 12-hour format
+              if (period === 'PM' && hours !== 12) {
+                hours += 12;
+              } else if (period === 'AM' && hours === 12) {
+                hours = 0;
+              }
+              
+              appointmentTime.setHours(hours, minutes, 0, 0);
+            } else {
+              // Try 24-hour format
+              const parts = timeStr.split(':');
+              if (parts.length >= 2) {
+                const hours = parseInt(parts[0]) || 9;
+                const minutes = parseInt(parts[1]) || 0;
+                appointmentTime.setHours(hours, minutes, 0, 0);
+              } else {
+                // Default to 9 AM if can't parse
+                appointmentTime.setHours(9, 0, 0, 0);
+              }
+            }
+          } else {
+            // No time info, default to start of day (midnight)
+            appointmentTime.setHours(0, 0, 0, 0);
+          }
+          
+          // Only include appointments that are today or in the future (by date and time)
+          return appointmentTime >= now;
+        } catch (error) {
+          console.error(`❌ Error checking date/time for appointment ${apt.id}:`, error);
+          return false;
+        }
+      })
+      .sort((a: any, b: any) => {
+        // Sort by date and time (earliest first)
+        const dateTimeA = a.dateObj || new Date(a.rawDate);
+        const dateTimeB = b.dateObj || new Date(b.rawDate);
+        return dateTimeA.getTime() - dateTimeB.getTime();
+      });
+  }, [allAppointments]);
+
+  // Group appointments by date for tabs
+  const appointmentsByDate = useMemo(() => {
+    const now = new Date();
+    const today = new Date(now);
+    today.setHours(0, 0, 0, 0);
+    
+    const tomorrow = new Date(today);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    
+    const groups: Record<string, any[]> = {
+      today: [],
+      tomorrow: [],
+    };
+    
+    futureAppointments.forEach((apt: any) => {
+      if (!apt.dateObj && !apt.rawDate) return;
+      
+      const appointmentDate = apt.dateObj || new Date(apt.rawDate);
+      appointmentDate.setHours(0, 0, 0, 0);
+      
+      const dateKey = appointmentDate.getTime();
+      const todayKey = today.getTime();
+      const tomorrowKey = tomorrow.getTime();
+      
+      if (dateKey === todayKey) {
+        groups.today.push(apt);
+      } else if (dateKey === tomorrowKey) {
+        groups.tomorrow.push(apt);
+      } else {
+        // Future dates - use date string as key
+        const dateStr = dayjs(appointmentDate).format('YYYY-MM-DD');
+        
+        if (!groups[dateStr]) {
+          groups[dateStr] = [];
+        }
+        groups[dateStr].push(apt);
+      }
+    });
+    
+    return groups;
+  }, [futureAppointments]);
+
+  // Get appointments for active tab
+  const appointmentsToShow = useMemo(() => {
+    if (activeAppointmentTab === 'today') {
+      return appointmentsByDate.today || [];
+    } else if (activeAppointmentTab === 'tomorrow') {
+      return appointmentsByDate.tomorrow || [];
+    } else {
+      return appointmentsByDate[activeAppointmentTab] || [];
+    }
+  }, [activeAppointmentTab, appointmentsByDate]);
+
+  // Generate tab items for appointments
+  const appointmentTabs = useMemo(() => {
+    const tabs: Array<{ key: string; label: string; count: number }> = [];
+    
+    // Today tab
+    if (appointmentsByDate.today && appointmentsByDate.today.length > 0) {
+      tabs.push({
+        key: 'today',
+        label: `Today (${appointmentsByDate.today.length})`,
+        count: appointmentsByDate.today.length,
+      });
+    }
+    
+    // Tomorrow tab
+    if (appointmentsByDate.tomorrow && appointmentsByDate.tomorrow.length > 0) {
+      tabs.push({
+        key: 'tomorrow',
+        label: `Tomorrow (${appointmentsByDate.tomorrow.length})`,
+        count: appointmentsByDate.tomorrow.length,
+      });
+    }
+    
+    // Future date tabs
+    Object.keys(appointmentsByDate)
+      .filter(key => key !== 'today' && key !== 'tomorrow')
+      .sort()
+      .forEach(dateKey => {
+        const appointments = appointmentsByDate[dateKey];
+        if (appointments && appointments.length > 0) {
+          const displayDate = dayjs(dateKey).format('DD MMM');
+          tabs.push({
+            key: dateKey,
+            label: `${displayDate} (${appointments.length})`,
+            count: appointments.length,
+          });
+        }
+      });
+    
+    return tabs;
+  }, [appointmentsByDate]);
+
+  // Update active tab if current tab has no appointments
+  useEffect(() => {
+    if (appointmentTabs.length > 0 && !appointmentTabs.find(tab => tab.key === activeAppointmentTab)) {
+      setActiveAppointmentTab(appointmentTabs[0].key);
+    } else if (appointmentTabs.length === 0) {
+      setActiveAppointmentTab('today');
+    }
+  }, [appointmentTabs, activeAppointmentTab]);
+
+  // Use filtered appointments for display
+  const appointmentsData = futureAppointments;
 
   const {
     data: prescriptionsData = [],
@@ -215,7 +414,8 @@ export default function PatientDashboard() {
     });
   }, [prescriptionsData]);
 
-  const nextAppointment = appointmentsData[0];
+  // Get next appointment from filtered future appointments
+  const nextAppointment = futureAppointments.length > 0 ? futureAppointments[0] : null;
   const nextAppointmentDisplay = nextAppointment?.rawDate
     ? `${formatDate(nextAppointment.rawDate)}${nextAppointment.time ? ` · ${formatTimeDisplay(nextAppointment.time)}` : ''}`
     : 'TBD';
@@ -272,11 +472,11 @@ export default function PatientDashboard() {
   }, [timelineEntries, timelineFilter]);
 
   const stats = {
-    totalAppointments: appointmentsData.length,
-    upcomingAppointments: appointmentsData.filter((apt: any) => 
+    totalAppointments: futureAppointments.length,
+    upcomingAppointments: futureAppointments.filter((apt: any) => 
       apt.status === 'confirmed' || apt.status === 'pending'
     ).length,
-    completedAppointments: appointmentsData.filter((apt: any) => apt.status === 'completed').length,
+    completedAppointments: futureAppointments.filter((apt: any) => apt.status === 'completed').length,
     prescriptions: prescriptionCards.length,
     labReports: labReportsData.length,
   };
@@ -478,6 +678,75 @@ export default function PatientDashboard() {
             <Row gutter={[24, 24]}>
               <Col xs={24} lg={16}>
                 <Card
+                  bordered={false}
+                  style={{ borderRadius: 16, marginBottom: 24 }}
+                  title="Upcoming Appointments"
+                  extra={<Button type="link" onClick={() => setLocation('/dashboard/patient/appointments')}>View All</Button>}
+                >
+                  {appointmentTabs.length === 0 ? (
+                    <div style={{ textAlign: 'center', padding: '40px 0' }}>
+                      <Text type="secondary">
+                        {allAppointments.length === 0
+                          ? 'No appointments found. Book your first appointment to get started.'
+                          : 'No upcoming appointments scheduled.'}
+                      </Text>
+                    </div>
+                  ) : (
+                    <Tabs
+                      activeKey={activeAppointmentTab}
+                      onChange={setActiveAppointmentTab}
+                      items={appointmentTabs.map(tab => ({
+                        key: tab.key,
+                        label: tab.label,
+                        children: (
+                          <Space direction="vertical" style={{ width: '100%' }} size={12}>
+                            {appointmentsToShow.map((apt: any) => (
+                              <Card
+                                key={apt.id}
+                                size="small"
+                                style={{ background: apt.status === 'confirmed' ? '#E6F4FF' : apt.status === 'pending' ? '#FFF7E6' : apt.status === 'cancelled' ? '#FFF1F0' : '#F6FFED' }}
+                              >
+                                <Row justify="space-between" align="middle">
+                                  <Col flex="auto">
+                                    <Space direction="vertical" size={4}>
+                                      <Text strong>{apt.doctor}</Text>
+                                      <Text type="secondary">{apt.specialty} · {apt.hospital}</Text>
+                                      <Text type="secondary">
+                                        {apt.date} {apt.time ? `· ${apt.time}` : ''}
+                                      </Text>
+                                    </Space>
+                                  </Col>
+                                  <Col>
+                                    <Space direction="vertical" align="end" size={4}>
+                                      <Tag color={
+                                        apt.status === 'confirmed' ? 'blue' :
+                                        apt.status === 'pending' ? 'orange' :
+                                        apt.status === 'completed' ? 'green' :
+                                        apt.status === 'cancelled' ? 'red' : 'default'
+                                      }>
+                                        {apt.status.toUpperCase()}
+                                      </Tag>
+                                      <Button
+                                        size="small"
+                                        type="link"
+                                        onClick={() => setLocation('/dashboard/patient/appointments')}
+                                      >
+                                        View Details
+                                      </Button>
+                                    </Space>
+                                  </Col>
+                                </Row>
+                              </Card>
+                            ))}
+                          </Space>
+                        ),
+                      }))}
+                      style={{ marginTop: 8 }}
+                    />
+                  )}
+                </Card>
+
+                <Card
                   title="Prescriptions"
                   extra={
                     <Space>
@@ -547,14 +816,14 @@ export default function PatientDashboard() {
                 <Space direction="vertical" style={{ width: '100%' }} size={24}>
                   <Card title="Next Appointment">
                     <Space direction="vertical" style={{ width: '100%' }} size={12}>
-                      <Text type="secondary">with {appointmentsData[0]?.doctor || 'your care team'}</Text>
+                      <Text type="secondary">with {nextAppointment?.doctor || 'your care team'}</Text>
                       <Card style={{ background: '#E6F4FF', textAlign: 'center' }}>
                         <Text type="secondary">In</Text>
                         <Title level={3} style={{ margin: '8px 0 0' }}>
                           {nextAppointmentDisplay}
                         </Title>
                       </Card>
-                      <Button block onClick={() => message.info('Appointment detail view coming soon.')}>
+                      <Button block onClick={() => setLocation('/dashboard/patient/appointments')}>
                         View Details
                       </Button>
                     </Space>
