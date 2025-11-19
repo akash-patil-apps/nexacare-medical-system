@@ -46,7 +46,43 @@ export function useOnboardingCheck() {
 
   useEffect(() => {
     if (onboardingStatus && !isLoading) {
-      if (!onboardingStatus.isCompleted) {
+      const currentPath = window.location.pathname;
+      
+      // Don't redirect if already on onboarding page
+      if (currentPath.startsWith('/onboarding/')) {
+        return;
+      }
+      
+      // Don't redirect if onboarding was just completed (prevent redirect loop)
+      const justCompleted = localStorage.getItem('onboarding-just-completed');
+      const completedTimestamp = localStorage.getItem('onboarding-completed-timestamp');
+      
+      // Check if onboarding was completed recently (within last 10 minutes)
+      const wasRecentlyCompleted = completedTimestamp && 
+        (Date.now() - parseInt(completedTimestamp)) < 10 * 60 * 1000; // 10 minutes
+      
+      if (justCompleted === 'true' || wasRecentlyCompleted) {
+        console.log('✅ Onboarding just completed or was recently completed, skipping redirect check');
+        // Still check the status, but don't redirect
+        if (onboardingStatus.isCompleted || onboardingStatus.isComplete) {
+          // If status is actually complete, clear the flags
+          localStorage.removeItem('onboarding-just-completed');
+          localStorage.removeItem('onboarding-completed-timestamp');
+        }
+        return;
+      }
+      
+      // Check both isCompleted and isComplete for compatibility
+      const isCompleted = onboardingStatus.isCompleted === true || onboardingStatus.isComplete === true;
+      
+      if (!isCompleted) {
+        console.log('⚠️ Onboarding not completed, redirecting to onboarding page');
+        console.log('⚠️ Status details:', {
+          isCompleted: onboardingStatus.isCompleted,
+          isComplete: onboardingStatus.isComplete,
+          hasProfile: onboardingStatus.hasProfile,
+          profile: onboardingStatus.profile,
+        });
         // Redirect to appropriate onboarding based on role
         if (userRole === 'patient') {
           setLocation('/onboarding/patient');
@@ -56,6 +92,8 @@ export function useOnboardingCheck() {
           setLocation('/onboarding/hospital');
         }
         // Add other roles as needed
+      } else {
+        console.log('✅ Onboarding is completed, no redirect needed');
       }
     }
   }, [onboardingStatus, isLoading, userRole, setLocation]);

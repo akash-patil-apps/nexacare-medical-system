@@ -22,7 +22,7 @@ export function PrescriptionCard({
   onRequestRefill,
 }: PrescriptionCardProps) {
   return (
-    <Card bordered style={{ borderRadius: 12 }}>
+    <Card variant="outlined" style={{ borderRadius: 12 }}>
       <Row gutter={[16, 16]} align="middle">
         <Col xs={24} md={8}>
           <Title level={4} style={{ marginBottom: 4 }}>

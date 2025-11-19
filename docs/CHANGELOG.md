@@ -1,5 +1,109 @@
 # NexaCare Medical System - Changelog
 
+## [2025-01-20] - Responsive Design, Onboarding Fixes & UI Improvements
+
+### 🎨 **Frontend Enhancements**
+- **Responsive Design Implementation**
+  - Created `useResponsive` hook for mobile/tablet/desktop breakpoint detection
+  - Implemented responsive sidebar with mobile drawer for patient dashboard
+  - Added mobile-friendly navigation with hamburger menu
+  - KPI cards now scroll horizontally on mobile, 2-column grid on tablet, 4-column on desktop
+  - Quick actions stack vertically on mobile, grid layout on larger screens
+  - Adjusted padding: 12px mobile, 16px tablet, 24px desktop
+  - Form fields render across all steps (hidden with CSS) to preserve values
+
+- **Patient Dashboard Responsive Updates**
+  - Mobile drawer sidebar replaces fixed sidebar on small screens
+  - Responsive KPI card layout with horizontal scroll on mobile
+  - Quick actions adapt to screen size
+  - Mobile-friendly header with centered title
+  - All content areas stack properly on mobile devices
+
+- **Ant Design v5 Migration**
+  - Fixed all `bordered` prop deprecation warnings
+  - Replaced `bordered={false}` with `variant="borderless"` on all Card components
+  - Replaced `bordered` with `variant="outlined"` where appropriate
+  - Updated components: Patient, Doctor, Receptionist, Hospital Admin, Lab Technician dashboards
+  - Updated book-appointment page and PrescriptionCard component
+
+- **Message System Updates**
+  - Migrated from static `message` functions to `App.useApp()` hook
+  - Fixed Ant Design warnings about static function context
+  - Updated patient onboarding to use App context
+
+### 🔧 **Onboarding System Fixes**
+- **Patient Onboarding Improvements**
+  - Fixed form value preservation across multi-step form
+  - All form fields now render (hidden) to ensure Ant Design preserves values
+  - Enhanced date formatting with better error handling
+  - Added validation to ensure required fields are present before submission
+  - Improved error messages and navigation to error fields
+  - Added comprehensive logging for debugging form submission
+
+- **Onboarding Status Check Enhancements**
+  - Fixed redirect loop by adding timestamp-based completion tracking
+  - Added 10-minute grace period for recently completed onboarding
+  - Enhanced status validation to check both `isCompleted` and `isComplete` fields
+  - Improved cache invalidation after onboarding completion
+  - Added detailed logging for onboarding status checks
+
+- **Backend Onboarding Service**
+  - Enhanced date parsing with proper error handling
+  - Improved completion logic to check for null, undefined, and empty strings
+  - Added comprehensive logging for data received, saved, and checked
+  - Fixed status response to include both `isCompleted` and `isComplete` for compatibility
+  - Better validation of required fields (dateOfBirth and gender)
+
+### 📱 **Responsive Design System**
+- **Breakpoints Defined**
+  - Mobile: < 768px
+  - Tablet: 768px - 1024px
+  - Desktop: ≥ 1024px
+
+- **Responsive Patterns**
+  - Sidebar: Fixed on desktop/tablet, drawer on mobile
+  - KPI Cards: Horizontal scroll on mobile, 2-up on tablet, 4-up on desktop
+  - Quick Actions: Stack on mobile, grid on larger screens
+  - Tables: Horizontal scroll on mobile or stack columns
+  - Padding: Responsive based on screen size
+
+### 🐛 **Bug Fixes**
+- **Onboarding Redirect Loop**
+  - Fixed infinite redirect loop after completing onboarding
+  - Added localStorage flags to prevent redirect on recently completed onboarding
+  - Improved cache invalidation timing
+  - Enhanced status check to handle edge cases
+
+- **Form Data Preservation**
+  - Fixed issue where form values from step 1 weren't preserved when submitting from step 3
+  - All form fields now render (hidden) to ensure Ant Design Form preserves values
+  - Changed `form.getFieldsValue()` to `form.getFieldsValue(true)` to get all fields
+
+- **Card Component Deprecation**
+  - Fixed all Ant Design v5 deprecation warnings
+  - Updated 22+ Card components across all dashboards
+  - Updated Tag components where applicable
+
+### 📊 **Dashboard Status Updates**
+- **Patient Dashboard**: ✅ Fully responsive, onboarding fixed
+- **Doctor Dashboard**: ✅ Design system migrated, responsive pending
+- **Receptionist Dashboard**: ✅ Design system migrated, responsive pending
+- **Hospital Admin Dashboard**: ✅ Design system migrated, responsive pending
+- **Lab Technician Dashboard**: ✅ Design system migrated, responsive pending
+
+### 🔄 **Pending Work**
+- Apply responsive design to remaining dashboards (Doctor, Receptionist, Hospital Admin, Lab Technician)
+- Complete mobile optimization for all dashboard components
+- Add responsive table handling for appointment lists
+- Test responsive design across all screen sizes
+
+### 📚 **Documentation Updates**
+- Updated CHANGELOG.md with all recent changes
+- Enhanced onboarding troubleshooting with detailed logging
+- Documented responsive design patterns and breakpoints
+
+---
+
 ## [2025-11-09] - Dashboard Redesign & Prescription Workflow Updates
 
 ### 🎨 **Frontend Enhancements**
@@ -477,5 +581,5 @@
 
 ---
 
-**Last Updated**: September 25, 2024
+**Last Updated**: January 20, 2025
 **Next Update**: As development progresses

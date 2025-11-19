@@ -139,12 +139,16 @@ export default function Login() {
         padding: '40px 20px'
       }}>
         <div style={{ width: '100%', maxWidth: '400px' }}>
-          <Card className="medical-card" style={{ 
-            borderRadius: '16px', 
-            boxShadow: '0 8px 32px rgba(0,0,0,0.1)',
-            background: 'rgba(255,255,255,0.95)',
-            backdropFilter: 'blur(10px)'
-          }}>
+          <Card 
+            className="medical-card" 
+            variant="outlined"
+            style={{ 
+              borderRadius: '16px', 
+              boxShadow: '0 8px 32px rgba(0,0,0,0.1)',
+              background: 'rgba(255,255,255,0.95)',
+              backdropFilter: 'blur(10px)'
+            }}
+          >
             <div className="medical-form" style={{ height: '450px', display: 'flex', flexDirection: 'column' }}>
               <Tabs 
                 defaultActiveKey="password" 

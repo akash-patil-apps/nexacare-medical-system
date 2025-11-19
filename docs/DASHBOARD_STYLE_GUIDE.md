@@ -137,7 +137,51 @@ For each step:
 
 ---
 
-## 6. Accessibility & QA Checklist
+## 6. Responsive Design Guidelines
+
+### 6.1 Breakpoints
+- **Mobile**: < 768px
+- **Tablet**: 768px - 1024px
+- **Desktop**: ≥ 1024px
+
+### 6.2 Responsive Patterns
+- **Sidebar Navigation**
+  - Desktop/Tablet: Fixed sidebar (collapsible, 260px/80px)
+  - Mobile: Drawer component (opens from left, 260px width)
+  - Auto-collapse on mobile/tablet breakpoints
+
+- **KPI Cards**
+  - Desktop: 4-column grid (md={6} per card)
+  - Tablet: 2-column grid (sm={12} per card)
+  - Mobile: Horizontal scrollable row with snap points (min-width: 200px per card)
+
+- **Quick Actions**
+  - Desktop: Grid layout (md={6} or md={3} per action)
+  - Tablet: 2-column grid (sm={12} per action)
+  - Mobile: Full-width stacked (xs={24} per action)
+
+- **Content Layout**
+  - Desktop: 2-column (16/8 split) for main content + sidebar widgets
+  - Tablet: 2-column (16/8 split) maintained
+  - Mobile: Single column, widgets stack below main content (xs={24})
+
+- **Padding & Spacing**
+  - Desktop: 24px horizontal, 32px vertical
+  - Tablet: 20px horizontal, 16px vertical
+  - Mobile: 16px horizontal, 12px vertical
+
+### 6.3 Implementation Status
+- ✅ Patient Dashboard: Fully responsive
+- ⏳ Doctor Dashboard: Responsive pending
+- ⏳ Receptionist Dashboard: Responsive pending
+- ⏳ Hospital Admin Dashboard: Responsive pending
+- ⏳ Lab Technician Dashboard: Responsive pending
+
+For detailed responsive implementation patterns, see `docs/RESPONSIVE_DESIGN_GUIDE.md`.
+
+---
+
+## 7. Accessibility & QA Checklist
 - Contrast ratios ≥ 4.5:1 for text (verify role highlight backgrounds).
 - Focus order: nav → quick actions → primary content → secondary widgets.
 - Responsive behaviour: ≤ 1024 px collapse KPI row to 2-up, quick actions to stacked.
@@ -145,7 +189,7 @@ For each step:
 
 ---
 
-## 7. Deliverables
+## 8. Deliverables
 When redesigning each dashboard:
 1. Update the respective `dashboard` page component.
 2. Add screenshots to documentation (optional) for stakeholder review.

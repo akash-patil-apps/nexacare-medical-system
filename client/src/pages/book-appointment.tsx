@@ -550,7 +550,7 @@ export default function BookAppointment() {
                             {hospital.city}, {hospital.state}
                           </Text>
                         </div>
-                        <Tag color={hospital.is_verified ? 'success' : 'default'} bordered={false}>
+                        <Tag color={hospital.is_verified ? 'success' : 'default'} variant="borderless">
                           {hospital.is_verified ? 'Verified' : 'Pending'}
                         </Tag>
                       </div>
@@ -576,7 +576,7 @@ export default function BookAppointment() {
                           {JSON.parse(hospital.departments).slice(0, 3).map((dept: string) => (
                             <Tag
                               key={dept}
-                              bordered={false}
+                              variant="borderless"
                               style={{ background: '#f1f5f9', color: '#1e293b', fontSize: 12, padding: '2px 10px' }}
                             >
                               {dept}
@@ -584,7 +584,7 @@ export default function BookAppointment() {
                           ))}
                           {JSON.parse(hospital.departments).length > 3 && (
                             <Tag
-                              bordered={false}
+                              variant="borderless"
                               style={{ background: '#e2e8f0', color: '#475569', fontSize: 12, padding: '2px 10px' }}
                             >
                               +{JSON.parse(hospital.departments).length - 3}
@@ -597,7 +597,7 @@ export default function BookAppointment() {
                         <Text type="secondary" style={{ fontSize: 12 }}>
                           {hospital.operating_hours || 'Hours not available'}
                         </Text>
-                        <Tag bordered={false} color={hospital.emergencyServices ? 'blue' : 'default'}>
+                        <Tag variant="borderless" color={hospital.emergencyServices ? 'blue' : 'default'}>
                           {hospital.emergencyServices ? 'Emergency Available' : 'No Emergency'}
                         </Tag>
                       </div>
@@ -828,7 +828,7 @@ export default function BookAppointment() {
 
           <Row gutter={[24, 24]}>
             <Col span={24}>
-              <Card bordered={false} style={{ borderRadius: '12px', border: '1px solid #e2e8f0', marginBottom: 16 }}>
+              <Card variant="borderless" style={{ borderRadius: '12px', border: '1px solid #e2e8f0', marginBottom: 16 }}>
                 <div
                   style={{
                     display: 'flex',
@@ -875,7 +875,7 @@ export default function BookAppointment() {
                   })}
                 </div>
               </Card>
-              <Card bordered={false} style={{ borderRadius: '12px', border: '1px solid #e2e8f0' }}>
+              <Card variant="borderless" style={{ borderRadius: '12px', border: '1px solid #e2e8f0' }}>
                 <div
                   style={{
                     display: 'grid',
@@ -941,7 +941,7 @@ export default function BookAppointment() {
         <div>
           {selectedHospital && selectedDoctor && selectedDate && selectedSlot ? (
             <Card
-              bordered={false}
+              variant="borderless"
               style={{
                 borderRadius: 16,
                 border: '1px solid #e2e8f0',

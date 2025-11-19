@@ -10,6 +10,8 @@
   - Full-page appointment booking with hospital search, doctor filtering, date/time selection, and confirmation summary. Bookings start in `pending` status (visible only to receptionists).
   - Redesigned patient dashboard using reusable cards; shows KPIs, quick actions, prescriptions, care timeline, notifications, and lab entries.
   - Prescription feed with unread badge, mark-as-read persistence, and downloadable artifacts; notifications rely on updated backend routes.
+  - **Fully responsive design** with mobile drawer navigation, horizontal scrolling KPI cards, and adaptive layouts.
+  - **Fixed onboarding flow** with proper form value preservation and redirect loop prevention.
 - **Needs Work**
   - Integrate lab report download/upload module directly into dashboard.
   - Add appointment rescheduling, tele-consult links, billing history, and richer health timeline.
@@ -20,8 +22,12 @@
 - **Current Features**
   - Dashboard supports confirming pending appointments (`pending → confirmed`) and checking-in patients on arrival.
   - Cross-tab notifications update patient and doctor dashboards immediately after receptionist actions.
+  - **Migrated to new design system** with role-specific theme colors and reusable components.
+  - Enhanced appointment filtering with tabs for Today, Tomorrow, and future dates.
+  - Includes cancelled appointments for tracking purposes.
 - **Needs Work**
-  - Migrate dashboard to new design system; add KPIs (pending/confirmed/no-show), queues, quick actions for walk-ins and rescheduling, notes panel, patient lookup, overdue alerts.
+  - Apply responsive design (mobile drawer, responsive KPIs, etc.).
+  - Add queues, quick actions for walk-ins and rescheduling, notes panel, patient lookup, overdue alerts.
 - **Future Scope**
   - Triage checklist, automated SMS/email reminders, payment tracking, bed availability integration, operational reporting exports.
 
@@ -37,17 +43,24 @@
 
 ## Hospital Admin Experience
 - **Current Features**
-  - Legacy dashboard still functional but not migrated; admin can oversee data with existing views.
+  - **Migrated to new design system** with hospital-specific theme (purple/sky blue palette).
+  - KPI cards for Total Doctors, Total Patients, Today's Appointments, Monthly Revenue.
+  - Quick action tiles for staff management and reporting.
 - **Needs Work**
-  - Adopt new layout with KPIs (appointments today, occupancy, revenue), staff roster management, approval workflows, compliance alerts, audit log access, notification center.
+  - Apply responsive design (mobile drawer, responsive KPIs, etc.).
+  - Add staff roster management, approval workflows, compliance alerts, audit log access, notification center.
 - **Future Scope**
   - Financial analytics, staffing forecasts, multi-facility management, SLA monitoring, ERP/billing integrations, incident response tools.
 
 ## Lab Technician Experience
 - **Current Features**
   - Lab report endpoints (`/api/labs/patient/reports`) available; patient timeline can show lab entries.
+  - **Migrated to new design system** with lab-specific theme (sky blue/green palette).
+  - KPI cards for Samples Pending, Reports Ready, Critical Alerts, Total Tests.
+  - Quick action tiles for sample logging and report management.
 - **Needs Work**
-  - Redesign dashboard; include queue of pending lab orders, upload workflow with status states (`processing`, `ready`), communication channel with doctors, sample tracking, auto-notify patient/doctor when results are ready.
+  - Apply responsive design (mobile drawer, responsive KPIs, etc.).
+  - Include queue of pending lab orders, upload workflow with status states (`processing`, `ready`), communication channel with doctors, sample tracking, auto-notify patient/doctor when results are ready.
 - **Future Scope**
   - Device integrations (HL7), quality control dashboards, billing linkage, courier scheduling, external lab network support.
 

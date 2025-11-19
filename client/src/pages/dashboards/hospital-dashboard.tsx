@@ -5,7 +5,6 @@ import {
   Card, 
   Row, 
   Col, 
-  Statistic, 
   Button, 
   Table, 
   Tag, 
@@ -24,13 +23,24 @@ import {
   TeamOutlined,
   BankOutlined,
   UserAddOutlined,
-  BarChartOutlined
+  BarChartOutlined,
+  CheckCircleOutlined
 } from '@ant-design/icons';
 import { useAuth } from '../../hooks/use-auth';
 import { SidebarProfile } from '../../components/dashboard/SidebarProfile';
+import { KpiCard } from '../../components/dashboard/KpiCard';
+import { QuickActionTile } from '../../components/dashboard/QuickActionTile';
 
 const { Content, Sider } = Layout;
 const { Title, Text } = Typography;
+
+const hospitalTheme = {
+  primary: '#7C3AED', // Purple
+  secondary: '#0EA5E9', // Sky blue
+  accent: '#FBBF24', // Amber
+  background: '#F6F2FF', // Light purple
+  highlight: '#EDE9FE', // Lighter purple
+};
 
 export default function HospitalDashboard() {
   const { user, logout } = useAuth();
@@ -188,13 +198,13 @@ export default function HospitalDashboard() {
           textAlign: 'center',
           borderBottom: '1px solid #f0f0f0'
         }}>
-          <BankOutlined style={{ fontSize: '24px', color: '#1890ff' }} />
+          <BankOutlined style={{ fontSize: '24px', color: hospitalTheme.primary }} />
           {!collapsed && (
-            <Title level={4} style={{ margin: '8px 0 0 0', color: '#1890ff' }}>
+            <Title level={4} style={{ margin: '8px 0 0 0', color: hospitalTheme.primary }}>
               NexaCare Hospital
             </Title>
           )}
-              </div>
+        </div>
         <Menu
           mode="inline"
           defaultSelectedKeys={['dashboard']}
@@ -216,89 +226,98 @@ export default function HospitalDashboard() {
         style={{
           marginLeft: siderWidth,
           minHeight: '100vh',
-          background: '#f5f5f5',
+          background: hospitalTheme.background,
           transition: 'margin-left 0.2s ease',
           overflow: 'hidden',
         }}
       >
         <Content
           style={{
-            background: '#f5f5f5',
+            background: hospitalTheme.background,
             height: '100vh',
             overflowY: 'auto',
           }}
         >
           <div style={{ padding: '32px 24px', maxWidth: '1320px', margin: '0 auto', paddingBottom: 48 }}>
-          {/* Statistics Cards */}
+          {/* KPI Cards */}
           <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
             <Col xs={24} sm={12} md={6}>
-        <Card>
-                <Statistic
-                  title="Total Doctors"
-                  value={stats?.totalDoctors || 0}
-                  prefix={<TeamOutlined />}
-                  valueStyle={{ color: '#1890ff' }}
-                />
-        </Card>
+              <KpiCard
+                label="Total Doctors"
+                value={stats?.totalDoctors || 0}
+                icon={<TeamOutlined style={{ fontSize: '24px', color: hospitalTheme.primary }} />}
+                trendLabel="Active"
+                trendType="positive"
+              />
             </Col>
             <Col xs={24} sm={12} md={6}>
-        <Card>
-                <Statistic
-                  title="Total Patients"
-                  value={stats?.totalPatients || 0}
-                  prefix={<UserOutlined />}
-                  valueStyle={{ color: '#52c41a' }}
-                />
-        </Card>
+              <KpiCard
+                label="Total Patients"
+                value={stats?.totalPatients || 0}
+                icon={<UserOutlined style={{ fontSize: '24px', color: hospitalTheme.secondary }} />}
+                trendLabel="Registered"
+                trendType="positive"
+              />
             </Col>
             <Col xs={24} sm={12} md={6}>
-        <Card>
-                <Statistic
-                  title="Today's Appointments"
-                  value={stats?.todayAppointments || 0}
-                  prefix={<CalendarOutlined />}
-                  valueStyle={{ color: '#faad14' }}
-                />
-        </Card>
+              <KpiCard
+                label="Today's Appointments"
+                value={stats?.todayAppointments || 0}
+                icon={<CalendarOutlined style={{ fontSize: '24px', color: hospitalTheme.accent }} />}
+                trendLabel="Scheduled"
+                trendType="neutral"
+              />
             </Col>
             <Col xs={24} sm={12} md={6}>
-        <Card>
-                <Statistic
-                  title="Monthly Revenue"
-                  value={stats?.totalRevenue || 0}
-                  prefix="₹"
-                  valueStyle={{ color: '#722ed1' }}
-                />
-        </Card>
+              <KpiCard
+                label="Monthly Revenue"
+                value={`₹${(stats?.totalRevenue || 0).toLocaleString()}`}
+                icon={<BarChartOutlined style={{ fontSize: '24px', color: hospitalTheme.primary }} />}
+                trendLabel="This Month"
+                trendType="positive"
+              />
             </Col>
           </Row>
 
         {/* Quick Actions */}
-          <Card title="Quick Actions" style={{ marginBottom: '24px' }}>
-            <Space wrap>
-              <Button 
-                type="primary" 
-                icon={<UserAddOutlined />} 
-                size="large"
-                onClick={() => message.info('Add doctor feature coming soon')}
-              >
-                Add Doctor
-              </Button>
-              <Button 
-                icon={<CalendarOutlined />} 
-                size="large"
-                onClick={() => message.info('Manage appointments feature coming soon')}
-              >
-                Manage Appointments
-              </Button>
-              <Button 
-                icon={<BarChartOutlined />} 
-                size="large"
-                onClick={() => message.info('Analytics feature coming soon')}
-              >
-                View Analytics
-              </Button>
-            </Space>
+          <Card 
+            title="Quick Actions" 
+            style={{ 
+              marginBottom: '24px',
+              borderRadius: 16,
+              background: hospitalTheme.background
+            }}
+          >
+            <Row gutter={[16, 16]}>
+              <Col xs={24} sm={12} md={6}>
+                <QuickActionTile
+                  label="Invite Staff"
+                  icon={<UserAddOutlined />}
+                  onClick={() => message.info('Invite staff feature coming soon')}
+                />
+              </Col>
+              <Col xs={24} sm={12} md={6}>
+                <QuickActionTile
+                  label="Assign Shift"
+                  icon={<CalendarOutlined />}
+                  onClick={() => message.info('Assign shift feature coming soon')}
+                />
+              </Col>
+              <Col xs={24} sm={12} md={6}>
+                <QuickActionTile
+                  label="Approve Requests"
+                  icon={<CheckCircleOutlined />}
+                  onClick={() => message.info('Approve requests feature coming soon')}
+                />
+              </Col>
+              <Col xs={24} sm={12} md={6}>
+                <QuickActionTile
+                  label="View Reports"
+                  icon={<BarChartOutlined />}
+                  onClick={() => message.info('View reports feature coming soon')}
+                />
+              </Col>
+            </Row>
           </Card>
 
           <Row gutter={[16, 16]}>
@@ -307,23 +326,31 @@ export default function HospitalDashboard() {
               <Card 
                 title="Today's Appointments" 
                 extra={<Button type="link" onClick={() => message.info('View all appointments feature coming soon')}>View All</Button>}
+                style={{ borderRadius: 16 }}
               >
                 <Table
                   columns={appointmentColumns}
                   dataSource={appointments}
                   pagination={false}
                   rowKey="id"
+                  variant="borderless"
+                  style={{
+                    backgroundColor: hospitalTheme.background
+                  }}
                 />
               </Card>
             </Col>
 
             {/* Hospital Stats & Recent Doctors */}
             <Col xs={24} lg={8}>
-              <Card title="Hospital Performance">
+              <Card 
+                title="Hospital Performance"
+                style={{ borderRadius: 16 }}
+              >
                 <Progress 
-                  percent={75} 
+                  percent={stats?.todayAppointments ? Math.round((stats.completedAppointments / stats.todayAppointments) * 100) : 0} 
                   status="active" 
-                  strokeColor="#52c41a"
+                  strokeColor={hospitalTheme.primary}
                   style={{ marginBottom: '16px' }}
                 />
                 <Text type="secondary">
@@ -331,14 +358,26 @@ export default function HospitalDashboard() {
                 </Text>
               </Card>
 
-              <Card title="Recent Doctors" style={{ marginTop: '16px' }}>
+              <Card 
+                title="Recent Doctors" 
+                style={{ 
+                  marginTop: '16px',
+                  borderRadius: 16
+                }}
+              >
                 <List
                   dataSource={doctors}
                   renderItem={(doctor: any) => (
-                    <List.Item>
+                    <List.Item style={{ 
+                      padding: '12px 0',
+                      borderBottom: '1px solid #f0f0f0'
+                    }}>
                       <List.Item.Meta
-                        avatar={<Avatar icon={<UserOutlined />} />}
-                        title={doctor.name}
+                        avatar={<Avatar 
+                          icon={<UserOutlined />} 
+                          style={{ backgroundColor: hospitalTheme.highlight }}
+                        />}
+                        title={<Text strong>{doctor.name}</Text>}
                         description={
                           <Space direction="vertical" size={0}>
                             <Text type="secondary">{doctor.specialty}</Text>
@@ -349,7 +388,7 @@ export default function HospitalDashboard() {
                     </List.Item>
                   )}
                 />
-        </Card>
+              </Card>
             </Col>
           </Row>
           </div>

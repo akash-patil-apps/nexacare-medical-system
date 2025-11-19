@@ -15,6 +15,7 @@ import {
   Empty,
   Tabs,
   Table,
+  Drawer,
 } from 'antd';
 import {
   UserOutlined,
@@ -29,6 +30,7 @@ import {
 import { useAuth } from '../../hooks/use-auth';
 import { useLocation } from 'wouter';
 import { useOnboardingCheck } from '../../hooks/use-onboarding-check';
+import { useResponsive } from '../../hooks/use-responsive';
 import { KpiCard } from '../../components/dashboard/KpiCard';
 import { QuickActionTile } from '../../components/dashboard/QuickActionTile';
 import { PrescriptionCard } from '../../components/dashboard/PrescriptionCard';
@@ -129,11 +131,20 @@ export default function PatientDashboard() {
   const { user, logout } = useAuth();
   const queryClient = useQueryClient();
   const [, setLocation] = useLocation();
+  const { isMobile, isTablet } = useResponsive();
   const [collapsed, setCollapsed] = useState(false);
+  const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false);
   const [timelineFilter, setTimelineFilter] = useState<TimelineFilter>('all');
   const [activeAppointmentTab, setActiveAppointmentTab] = useState<string>('today');
   
   useOnboardingCheck();
+
+  // Auto-collapse sidebar on mobile/tablet
+  useEffect(() => {
+    if (isMobile || isTablet) {
+      setCollapsed(true);
+    }
+  }, [isMobile, isTablet]);
 
   const {
     data: allAppointments = [],
@@ -517,54 +528,79 @@ export default function PatientDashboard() {
     }
   };
 
-  const siderWidth = collapsed ? 80 : 260;
+  const siderWidth = isMobile ? 0 : (collapsed ? 80 : 260);
+
+  // Sidebar content component (reusable for drawer and sider)
+  const SidebarContent = ({ onMenuClick }: { onMenuClick?: () => void }) => (
+    <>
+      <div style={{ padding: '16px', textAlign: 'center', borderBottom: '1px solid #f0f0f0' }}>
+        <MedicineBoxOutlined style={{ fontSize: '24px', color: '#1890ff' }} />
+        {(!collapsed || isMobile) && (
+          <Title level={4} style={{ margin: '8px 0 0', color: '#1890ff' }}>
+            NexaCare
+          </Title>
+        )}
+      </div>
+      <Menu
+        mode="inline"
+        defaultSelectedKeys={['dashboard']}
+        items={sidebarMenu}
+        style={{ border: 'none', flex: 1 }}
+        onClick={onMenuClick}
+      />
+      <SidebarProfile
+        collapsed={collapsed && !isMobile}
+        name={user?.fullName || 'Patient'}
+        roleLabel="PATIENT"
+        roleColor="blue"
+        avatarIcon={<UserOutlined />}
+        onSettingsClick={() => message.info('Profile settings coming soon.')}
+      />
+    </>
+  );
 
   return (
     <Layout style={{ minHeight: '100vh', background: '#f5f5f5' }}>
-      <Sider
-        trigger={null}
-        collapsible
-        collapsed={collapsed}
-        onCollapse={setCollapsed}
-        width={260}
-        collapsedWidth={80}
-        style={{
-          position: 'fixed',
-          top: 0,
-          left: 0,
-          height: '100vh',
-          width: siderWidth,
-          background: '#fff',
-          boxShadow: '2px 0 8px rgba(0,0,0,0.1)',
-          display: 'flex',
-          flexDirection: 'column',
-          transition: 'width 0.2s ease',
-          zIndex: 10,
-        }}
-      >
-        <div style={{ padding: '16px', textAlign: 'center', borderBottom: '1px solid #f0f0f0' }}>
-          <MedicineBoxOutlined style={{ fontSize: '24px', color: '#1890ff' }} />
-          {!collapsed && (
-            <Title level={4} style={{ margin: '8px 0 0', color: '#1890ff' }}>
-              NexaCare
-            </Title>
-          )}
-        </div>
-        <Menu
-          mode="inline"
-          defaultSelectedKeys={['dashboard']}
-          items={sidebarMenu}
-          style={{ border: 'none', flex: 1 }}
-        />
-        <SidebarProfile
+      {/* Desktop/Tablet Sidebar */}
+      {!isMobile && (
+        <Sider
+          trigger={null}
+          collapsible
           collapsed={collapsed}
-          name={user?.fullName || 'Patient'}
-          roleLabel="PATIENT"
-          roleColor="blue"
-          avatarIcon={<UserOutlined />}
-          onSettingsClick={() => message.info('Profile settings coming soon.')}
-        />
-      </Sider>
+          onCollapse={setCollapsed}
+          width={260}
+          collapsedWidth={80}
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            height: '100vh',
+            width: siderWidth,
+            background: '#fff',
+            boxShadow: '2px 0 8px rgba(0,0,0,0.1)',
+            display: 'flex',
+            flexDirection: 'column',
+            transition: 'width 0.2s ease',
+            zIndex: 10,
+          }}
+        >
+          <SidebarContent />
+        </Sider>
+      )}
+
+      {/* Mobile Drawer */}
+      {isMobile && (
+        <Drawer
+          title="Navigation"
+          placement="left"
+          onClose={() => setMobileDrawerOpen(false)}
+          open={mobileDrawerOpen}
+          bodyStyle={{ padding: 0 }}
+          width={260}
+        >
+          <SidebarContent onMenuClick={() => setMobileDrawerOpen(false)} />
+        </Drawer>
+      )}
 
       <Layout
         style={{
@@ -580,92 +616,134 @@ export default function PatientDashboard() {
             background: '#f5f5f5',
             height: '100vh',
             overflowY: 'auto',
-            padding: '16px 24px 24px',
+            padding: isMobile ? '12px 16px' : isTablet ? '16px 20px' : '16px 24px 24px',
           }}
         >
           <div style={{ paddingBottom: 24 }}>
-            <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 16 }}>
-              <Button
-                type="text"
-                icon={collapsed ? <MenuFoldOutlined /> : <MenuUnfoldOutlined />}
-                onClick={() => setCollapsed(!collapsed)}
-              />
-            </div>
+            {/* Mobile Menu Button */}
+            {isMobile && (
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+                <Button
+                  type="text"
+                  icon={<MenuUnfoldOutlined />}
+                  onClick={() => setMobileDrawerOpen(true)}
+                  style={{ fontSize: '18px' }}
+                />
+                <Title level={4} style={{ margin: 0 }}>Dashboard</Title>
+                <div style={{ width: 32 }} /> {/* Spacer for centering */}
+              </div>
+            )}
+            
+            {/* Desktop/Tablet Menu Toggle */}
+            {!isMobile && (
+              <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 16 }}>
+                <Button
+                  type="text"
+                  icon={collapsed ? <MenuFoldOutlined /> : <MenuUnfoldOutlined />}
+                  onClick={() => setCollapsed(!collapsed)}
+                />
+              </div>
+            )}
 
-            <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
-              <Col xs={24} sm={12} md={6}>
-                <KpiCard
-                  label="Upcoming Appointments"
-                  value={stats.upcomingAppointments}
-                  icon={<CalendarOutlined style={{ color: '#1890ff' }} />}
-                  trendLabel="Updated"
-                  trendType="positive"
-                  onView={() => setLocation('/dashboard/patient/appointments')}
-                />
-              </Col>
-              <Col xs={24} sm={12} md={6}>
-                <KpiCard
-                  label="Active Prescriptions"
-                  value={stats.prescriptions}
-                  icon={<MedicineBoxOutlined style={{ color: '#52c41a' }} />}
-                  trendLabel="Current"
-                  trendType="neutral"
-                  onView={() => setLocation('/dashboard/patient/prescriptions')}
-                />
-              </Col>
-              <Col xs={24} sm={12} md={6}>
-                <KpiCard
-                  label="Lab Reports"
-                  value={stats.labReports}
-                  icon={<FileTextOutlined style={{ color: '#faad14' }} />}
-                  trendLabel="Latest"
-                  trendType="neutral"
-                  onView={() => message.info('Lab reports dashboard coming soon.')}
-                />
-              </Col>
-              <Col xs={24} sm={12} md={6}>
-                <KpiCard
-                  label="Messages"
-                  value={messageCounts.total}
-                  icon={<BellOutlined style={{ color: '#722ed1' }} />}
-                  trendLabel={`+${messageCounts.unread} new`}
-                  trendType={messageCounts.unread > 0 ? 'positive' : 'neutral'}
-                  onView={() => message.info('Messages coming soon.')}
-                />
-              </Col>
-            </Row>
+            {/* KPI Cards - Responsive Grid */}
+            {isMobile ? (
+              <div style={{ 
+                display: 'flex', 
+                overflowX: 'auto', 
+                gap: 12, 
+                marginBottom: 24,
+                paddingBottom: 8,
+                scrollSnapType: 'x mandatory',
+                WebkitOverflowScrolling: 'touch',
+              }}>
+                {[
+                  { label: "Upcoming Appointments", value: stats.upcomingAppointments, icon: <CalendarOutlined style={{ color: '#1890ff' }} />, trendLabel: "Updated", trendType: "positive" as const, onView: () => setLocation('/dashboard/patient/appointments') },
+                  { label: "Active Prescriptions", value: stats.prescriptions, icon: <MedicineBoxOutlined style={{ color: '#52c41a' }} />, trendLabel: "Current", trendType: "neutral" as const, onView: () => setLocation('/dashboard/patient/prescriptions') },
+                  { label: "Lab Reports", value: stats.labReports, icon: <FileTextOutlined style={{ color: '#faad14' }} />, trendLabel: "Latest", trendType: "neutral" as const, onView: () => message.info('Lab reports dashboard coming soon.') },
+                  { label: "Messages", value: messageCounts.total, icon: <BellOutlined style={{ color: '#722ed1' }} />, trendLabel: `+${messageCounts.unread} new`, trendType: (messageCounts.unread > 0 ? 'positive' : 'neutral') as const, onView: () => message.info('Messages coming soon.') },
+                ].map((kpi, idx) => (
+                  <div key={idx} style={{ minWidth: 200, scrollSnapAlign: 'start' }}>
+                    <KpiCard {...kpi} />
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
+                <Col xs={24} sm={12} md={6}>
+                  <KpiCard
+                    label="Upcoming Appointments"
+                    value={stats.upcomingAppointments}
+                    icon={<CalendarOutlined style={{ color: '#1890ff' }} />}
+                    trendLabel="Updated"
+                    trendType="positive"
+                    onView={() => setLocation('/dashboard/patient/appointments')}
+                  />
+                </Col>
+                <Col xs={24} sm={12} md={6}>
+                  <KpiCard
+                    label="Active Prescriptions"
+                    value={stats.prescriptions}
+                    icon={<MedicineBoxOutlined style={{ color: '#52c41a' }} />}
+                    trendLabel="Current"
+                    trendType="neutral"
+                    onView={() => setLocation('/dashboard/patient/prescriptions')}
+                  />
+                </Col>
+                <Col xs={24} sm={12} md={6}>
+                  <KpiCard
+                    label="Lab Reports"
+                    value={stats.labReports}
+                    icon={<FileTextOutlined style={{ color: '#faad14' }} />}
+                    trendLabel="Latest"
+                    trendType="neutral"
+                    onView={() => message.info('Lab reports dashboard coming soon.')}
+                  />
+                </Col>
+                <Col xs={24} sm={12} md={6}>
+                  <KpiCard
+                    label="Messages"
+                    value={messageCounts.total}
+                    icon={<BellOutlined style={{ color: '#722ed1' }} />}
+                    trendLabel={`+${messageCounts.unread} new`}
+                    trendType={messageCounts.unread > 0 ? 'positive' : 'neutral'}
+                    onView={() => message.info('Messages coming soon.')}
+                  />
+                </Col>
+              </Row>
+            )}
 
+            {/* Quick Actions - Responsive */}
             <Card style={{ marginBottom: 24 }}>
               <Row gutter={[16, 16]} align="middle">
-                <Col xs={24} md={6}>
+                <Col xs={24} sm={12} md={6}>
                   <QuickActionTile
                     label="New Appointment"
                     icon={<PlusOutlined />}
                     onClick={() => handleQuickAction('book')}
                   />
                 </Col>
-                <Col xs={24} md={6}>
+                <Col xs={24} sm={12} md={6}>
                   <QuickActionTile
                     label="Request Refill"
                     icon={<MedicineBoxOutlined />}
                     onClick={() => handleQuickAction('refill')}
                   />
                 </Col>
-                <Col xs={24} md={6}>
+                <Col xs={24} sm={12} md={6}>
                   <QuickActionTile
                     label="Upload Document"
                     icon={<FileTextOutlined />}
                     onClick={() => handleQuickAction('upload')}
                   />
                 </Col>
-                <Col xs={24} md={3}>
+                <Col xs={24} sm={12} md={3}>
                   <QuickActionTile
                     label="Send Message"
                     onClick={() => handleQuickAction('message')}
                     variant="secondary"
                   />
                 </Col>
-                <Col xs={24} md={3}>
+                <Col xs={24} sm={12} md={3}>
                   <QuickActionTile
                     label="View History"
                     onClick={() => handleQuickAction('history')}
@@ -678,7 +756,7 @@ export default function PatientDashboard() {
             <Row gutter={[24, 24]}>
               <Col xs={24} lg={16}>
                 <Card
-                  bordered={false}
+                  variant="borderless"
                   style={{ borderRadius: 16, marginBottom: 24 }}
                   title="Upcoming Appointments"
                   extra={<Button type="link" onClick={() => setLocation('/dashboard/patient/appointments')}>View All</Button>}

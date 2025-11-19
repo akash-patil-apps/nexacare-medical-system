@@ -5,7 +5,6 @@ import {
   Card, 
   Row, 
   Col, 
-  Statistic, 
   Button, 
   Table, 
   Tag, 
@@ -25,13 +24,24 @@ import {
   ExperimentOutlined,
   UploadOutlined,
   FileSearchOutlined,
-  BarChartOutlined
+  BarChartOutlined,
+  AlertOutlined
 } from '@ant-design/icons';
 import { useAuth } from '../../hooks/use-auth';
 import { SidebarProfile } from '../../components/dashboard/SidebarProfile';
+import { KpiCard } from '../../components/dashboard/KpiCard';
+import { QuickActionTile } from '../../components/dashboard/QuickActionTile';
 
 const { Content, Sider } = Layout;
 const { Title, Text } = Typography;
+
+const labTheme = {
+  primary: '#0EA5E9', // Sky blue
+  secondary: '#22C55E', // Green
+  accent: '#F87171', // Red
+  background: '#F0FAFF', // Light blue
+  highlight: '#DFF3FF', // Lighter blue
+};
 
 export default function LabDashboard() {
   const { user, logout } = useAuth();
@@ -194,13 +204,13 @@ export default function LabDashboard() {
           textAlign: 'center',
           borderBottom: '1px solid #f0f0f0'
         }}>
-          <ExperimentOutlined style={{ fontSize: '24px', color: '#1890ff' }} />
+          <ExperimentOutlined style={{ fontSize: '24px', color: labTheme.primary }} />
           {!collapsed && (
-            <Title level={4} style={{ margin: '8px 0 0 0', color: '#1890ff' }}>
+            <Title level={4} style={{ margin: '8px 0 0 0', color: labTheme.primary }}>
               NexaCare Lab
             </Title>
           )}
-              </div>
+        </div>
         <Menu
           mode="inline"
           defaultSelectedKeys={['dashboard']}
@@ -222,90 +232,99 @@ export default function LabDashboard() {
         style={{
           marginLeft: siderWidth,
           minHeight: '100vh',
-          background: '#f5f5f5',
+          background: labTheme.background,
           transition: 'margin-left 0.2s ease',
           overflow: 'hidden',
         }}
       >
         <Content
           style={{
-            background: '#f5f5f5',
+            background: labTheme.background,
             height: '100vh',
             overflowY: 'auto',
           }}
         >
           <div style={{ padding: '32px 24px', maxWidth: '1320px', margin: '0 auto', paddingBottom: 48 }}>
-          {/* Statistics Cards */}
+          {/* KPI Cards */}
           <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
             <Col xs={24} sm={12} md={6}>
-              <Card>
-                <Statistic
-                  title="Total Tests"
-                  value={stats?.totalTests || 0}
-                  prefix={<ExperimentOutlined />}
-                  valueStyle={{ color: '#1890ff' }}
-                />
-        </Card>
+              <KpiCard
+                label="Samples Pending"
+                value={stats?.pendingTests || 0}
+                icon={<FileSearchOutlined style={{ fontSize: '24px', color: labTheme.primary }} />}
+                trendLabel="Awaiting Analysis"
+                trendType="neutral"
+              />
             </Col>
             <Col xs={24} sm={12} md={6}>
-        <Card>
-                <Statistic
-                  title="Completed Today"
-                  value={stats?.completedTests || 0}
-                  prefix={<CheckCircleOutlined />}
-                  valueStyle={{ color: '#52c41a' }}
-                />
-        </Card>
+              <KpiCard
+                label="Reports Ready"
+                value={stats?.completedTests || 0}
+                icon={<CheckCircleOutlined style={{ fontSize: '24px', color: labTheme.secondary }} />}
+                trendLabel="Completed Today"
+                trendType="positive"
+              />
             </Col>
             <Col xs={24} sm={12} md={6}>
-        <Card>
-                <Statistic
-                  title="Pending Tests"
-                  value={stats?.pendingTests || 0}
-                  prefix={<FileSearchOutlined />}
-                  valueStyle={{ color: '#faad14' }}
-                />
-        </Card>
+              <KpiCard
+                label="Critical Alerts"
+                value={stats?.criticalResults || 0}
+                icon={<AlertOutlined style={{ fontSize: '24px', color: labTheme.accent }} />}
+                trendLabel="Requires Attention"
+                trendType={stats?.criticalResults > 0 ? 'negative' : 'positive'}
+              />
             </Col>
             <Col xs={24} sm={12} md={6}>
-        <Card>
-                <Statistic
-                  title="Critical Results"
-                  value={stats?.criticalResults || 0}
-                  prefix={<MedicineBoxOutlined />}
-                  valueStyle={{ color: '#ff4d4f' }}
-                />
-        </Card>
+              <KpiCard
+                label="Total Tests"
+                value={stats?.totalTests || 0}
+                icon={<ExperimentOutlined style={{ fontSize: '24px', color: labTheme.primary }} />}
+                trendLabel="All Time"
+                trendType="neutral"
+              />
             </Col>
           </Row>
 
           {/* Quick Actions */}
-          <Card title="Quick Actions" style={{ marginBottom: '24px' }}>
-            <Space wrap>
-              <Button 
-                type="primary" 
-                icon={<UploadOutlined />} 
-                size="large"
-                onClick={() => message.info('Upload report feature coming soon')}
-              >
-                Upload Report
-              </Button>
-              <Button 
-                icon={<FileTextOutlined />} 
-                size="large"
-                onClick={() => message.info('View all reports feature coming soon')}
-              >
-                View All Reports
-              </Button>
-              <Button 
-                icon={<BarChartOutlined />} 
-                size="large"
-                onClick={() => message.info('Lab analytics feature coming soon')}
-              >
-                Lab Analytics
-              </Button>
-            </Space>
-      </Card>
+          <Card 
+            title="Quick Actions" 
+            style={{ 
+              marginBottom: '24px',
+              borderRadius: 16,
+              background: labTheme.background
+            }}
+          >
+            <Row gutter={[16, 16]}>
+              <Col xs={24} sm={12} md={6}>
+                <QuickActionTile
+                  label="Log Sample"
+                  icon={<ExperimentOutlined />}
+                  onClick={() => message.info('Log sample feature coming soon')}
+                />
+              </Col>
+              <Col xs={24} sm={12} md={6}>
+                <QuickActionTile
+                  label="Upload Report"
+                  icon={<UploadOutlined />}
+                  onClick={() => message.info('Upload report feature coming soon')}
+                />
+              </Col>
+              <Col xs={24} sm={12} md={6}>
+                <QuickActionTile
+                  label="Assign Technician"
+                  icon={<UserOutlined />}
+                  onClick={() => message.info('Assign technician feature coming soon')}
+                />
+              </Col>
+              <Col xs={24} sm={12} md={6}>
+                <QuickActionTile
+                  label="Request Re-test"
+                  icon={<FileSearchOutlined />}
+                  onClick={() => message.info('Request re-test feature coming soon')}
+                />
+              </Col>
+            </Row>
+          </Card>
 
           <Row gutter={[16, 16]}>
             {/* Recent Lab Reports */}
@@ -313,23 +332,31 @@ export default function LabDashboard() {
               <Card 
                 title="Recent Lab Reports" 
                 extra={<Button type="link" onClick={() => message.info('View all reports feature coming soon')}>View All</Button>}
+                style={{ borderRadius: 16 }}
               >
                 <Table
                   columns={reportColumns}
                   dataSource={labReports}
                   pagination={false}
                   rowKey="id"
+                  variant="borderless"
+                  style={{
+                    backgroundColor: labTheme.background
+                  }}
                 />
               </Card>
             </Col>
 
             {/* Lab Performance & Critical Results */}
             <Col xs={24} lg={8}>
-              <Card title="Lab Performance">
+              <Card 
+                title="Lab Performance"
+                style={{ borderRadius: 16 }}
+              >
                 <Progress 
-                  percent={85} 
+                  percent={stats?.totalTests ? Math.round((stats.completedTests / stats.totalTests) * 100) : 0} 
                   status="active" 
-                  strokeColor="#52c41a"
+                  strokeColor={labTheme.primary}
                   style={{ marginBottom: '16px' }}
                 />
                 <Text type="secondary">
@@ -337,17 +364,27 @@ export default function LabDashboard() {
                 </Text>
               </Card>
 
-              <Card title="Critical Results" style={{ marginTop: '16px' }}>
+              <Card 
+                title="Critical Results" 
+                style={{ 
+                  marginTop: '16px',
+                  borderRadius: 16,
+                  borderColor: labTheme.accent
+                }}
+              >
                 <List
                   dataSource={labReports?.filter((report: any) => report.priority === 'Critical')}
                   renderItem={(report: any) => (
-                    <List.Item>
+                    <List.Item style={{ 
+                      padding: '12px 0',
+                      borderBottom: '1px solid #f0f0f0'
+                    }}>
                       <List.Item.Meta
-                        title={report.patient}
+                        title={<Text strong>{report.patient}</Text>}
                         description={
                           <Space direction="vertical" size={0}>
                             <Text type="secondary">{report.testName}</Text>
-                            <Tag color="red">CRITICAL</Tag>
+                            <Tag color={labTheme.accent}>CRITICAL</Tag>
                           </Space>
                         }
                       />

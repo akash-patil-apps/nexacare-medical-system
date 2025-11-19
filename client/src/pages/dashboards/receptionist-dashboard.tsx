@@ -1096,7 +1096,7 @@ export default function ReceptionistDashboard() {
           </Row>
 
           {/* Quick Actions */}
-          <Card bordered={false} style={{ marginBottom: 24, borderRadius: 16 }} bodyStyle={{ padding: 20 }}>
+          <Card variant="borderless" style={{ marginBottom: 24, borderRadius: 16 }} bodyStyle={{ padding: 20 }}>
             <Row gutter={[16, 16]}>
               <Col xs={24} sm={12} md={6}>
                 <QuickActionTile
@@ -1133,7 +1133,7 @@ export default function ReceptionistDashboard() {
             {/* Upcoming Appointments */}
             <Col xs={24} lg={16}>
               <Card 
-                bordered={false}
+                variant="borderless"
                 style={{ borderRadius: 16 }}
                 title="Upcoming Appointments" 
                 extra={<Button type="link" onClick={() => message.info('View all appointments feature coming soon')}>View All</Button>}
@@ -1195,7 +1195,7 @@ export default function ReceptionistDashboard() {
                 />
               </Card>
 
-              <Card bordered={false} style={{ borderRadius: 16, marginTop: '16px' }}>
+              <Card variant="borderless" style={{ borderRadius: 16, marginTop: '16px' }}>
                 <Title level={5} style={{ marginBottom: 12 }}>Queue Status</Title>
                 <Space direction="vertical" size={12} style={{ width: '100%' }}>
                   <div>

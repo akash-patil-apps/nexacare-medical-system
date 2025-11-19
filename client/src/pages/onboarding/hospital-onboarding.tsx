@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import { useLocation } from 'wouter';
-import { useMutation, useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Form,
   Input,
@@ -75,6 +75,7 @@ type StepConfig = {
 
 export default function HospitalOnboarding() {
   const [, setLocation] = useLocation();
+  const queryClient = useQueryClient();
   const [currentStep, setCurrentStep] = useState(0);
   const [form] = Form.useForm<HospitalFormValues>();
   const [sendingOtp, setSendingOtp] = useState(false);
@@ -93,9 +94,17 @@ export default function HospitalOnboarding() {
       const res = await apiRequest('POST', '/api/onboarding/hospital/complete', values);
       return res.json();
     },
-    onSuccess: () => {
+    onSuccess: async () => {
+      // Invalidate onboarding status query to refresh the cache
+      const userRole = localStorage.getItem('userRole') || 'hospital';
+      await queryClient.invalidateQueries({ queryKey: ['onboarding-status', userRole] });
+      
       message.success('Hospital profile completed successfully!');
-      setLocation('/dashboard/hospital');
+      
+      // Small delay to ensure cache is updated before redirect
+      setTimeout(() => {
+        setLocation('/dashboard/hospital');
+      }, 100);
     },
     onError: (error: any) => {
       message.error(error.message || 'Failed to complete hospital onboarding');
@@ -529,7 +538,7 @@ export default function HospitalOnboarding() {
     <div className="hospital-onboarding-wrapper">
       <Card
         className="hospital-onboarding-card"
-        bordered={false}
+        variant="borderless"
         style={{ borderRadius: 28, boxShadow: '0 28px 60px rgba(15, 34, 67, 0.12)' }}
         styles={{ body: { padding: 0 } }}
       >

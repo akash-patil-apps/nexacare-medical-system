@@ -949,7 +949,7 @@ export default function DoctorDashboard() {
               </Col>
             </Row>
 
-            <Card bordered={false} style={{ marginBottom: 24, borderRadius: 16 }} bodyStyle={{ padding: 20 }}>
+            <Card variant="borderless" style={{ marginBottom: 24, borderRadius: 16 }} bodyStyle={{ padding: 20 }}>
               <Row gutter={[16, 16]}>
                 <Col xs={24} sm={12} md={6}>
                   <QuickActionTile
@@ -985,7 +985,7 @@ export default function DoctorDashboard() {
             <Row gutter={[16, 16]}>
               <Col xs={24} lg={16}>
                 <Card
-                  bordered={false}
+                  variant="borderless"
                   style={{ borderRadius: 16 }}
                   title="Upcoming Appointments"
                   extra={<Button type="link" onClick={() => setLocation('/dashboard/doctor/appointments')}>View All</Button>}
@@ -1026,7 +1026,7 @@ export default function DoctorDashboard() {
 
               <Col xs={24} lg={8}>
                 <Space direction="vertical" size={16} style={{ width: '100%' }}>
-                  <Card bordered={false} style={{ borderRadius: 16 }}>
+                  <Card variant="borderless" style={{ borderRadius: 16 }}>
                     <Title level={5} style={{ marginBottom: 12 }}>Shift Overview</Title>
                     <Progress
                       percent={completionPercent}
@@ -1042,7 +1042,7 @@ export default function DoctorDashboard() {
                     </Space>
                   </Card>
 
-                  <Card bordered={false} style={{ borderRadius: 16 }}>
+                  <Card variant="borderless" style={{ borderRadius: 16 }}>
                     <Title level={5} style={{ marginBottom: 12 }}>
                       <BarChartOutlined style={{ marginRight: 8 }} />
                       Analytics
@@ -1063,7 +1063,7 @@ export default function DoctorDashboard() {
                     </Space>
                   </Card>
 
-                  <Card bordered={false} style={{ borderRadius: 16 }}>
+                  <Card variant="borderless" style={{ borderRadius: 16 }}>
                     <Title level={5} style={{ marginBottom: 12 }}>
                       <SearchOutlined style={{ marginRight: 8 }} />
                       Patient Search
@@ -1092,7 +1092,7 @@ export default function DoctorDashboard() {
                     )}
                   </Card>
 
-                  <Card bordered={false} style={{ borderRadius: 16 }}>
+                  <Card variant="borderless" style={{ borderRadius: 16 }}>
                     <Title level={5} style={{ marginBottom: 12 }}>
                       <ExperimentOutlined style={{ marginRight: 8 }} />
                       Lab Results Queue
@@ -1123,7 +1123,7 @@ export default function DoctorDashboard() {
                     )}
                   </Card>
 
-                  <Card bordered={false} style={{ borderRadius: 16 }}>
+                  <Card variant="borderless" style={{ borderRadius: 16 }}>
                     <Title level={5} style={{ marginBottom: 12 }}>
                       <BellOutlined style={{ marginRight: 8 }} />
                       Notifications
@@ -1173,7 +1173,7 @@ export default function DoctorDashboard() {
                     )}
                   </Card>
 
-                  <Card bordered={false} style={{ borderRadius: 16 }}>
+                  <Card variant="borderless" style={{ borderRadius: 16 }}>
                     <Title level={5} style={{ marginBottom: 12 }}>Recent Activity</Title>
                     {activityTimeline.length > 0 ? (
                       <Timeline

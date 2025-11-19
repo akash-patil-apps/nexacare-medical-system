@@ -8,6 +8,12 @@ import { eq, ilike } from "drizzle-orm";
  */
 export const completePatientOnboarding = async (userId: number, data: any) => {
   console.log(`🎯 Completing patient onboarding for user ${userId}`);
+  console.log(`📥 Received data:`, {
+    dateOfBirth: data.dateOfBirth,
+    gender: data.gender,
+    hasDateOfBirth: !!data.dateOfBirth,
+    hasGender: !!data.gender,
+  });
   
   try {
     // Check if patient profile already exists
@@ -17,9 +23,23 @@ export const completePatientOnboarding = async (userId: number, data: any) => {
       .where(eq(patients.userId, userId))
       .limit(1);
     
-    // Prepare patient data
+    // Prepare patient data - ensure dateOfBirth is properly formatted
+    let dateOfBirthValue = null;
+    if (data.dateOfBirth) {
+      try {
+        const date = new Date(data.dateOfBirth);
+        if (!isNaN(date.getTime())) {
+          dateOfBirthValue = date;
+        } else {
+          console.warn(`⚠️ Invalid date format: ${data.dateOfBirth}`);
+        }
+      } catch (e) {
+        console.warn(`⚠️ Error parsing date: ${data.dateOfBirth}`, e);
+      }
+    }
+    
     const patientData = {
-      dateOfBirth: data.dateOfBirth ? new Date(data.dateOfBirth) : null,
+      dateOfBirth: dateOfBirthValue,
       gender: data.gender || null,
       bloodGroup: data.bloodGroup || null,
       height: data.height ? String(data.height) : null,
@@ -40,6 +60,13 @@ export const completePatientOnboarding = async (userId: number, data: any) => {
       occupation: data.occupation || null,
       maritalStatus: data.maritalStatus || null,
     };
+    
+    console.log(`💾 Saving patient data:`, {
+      dateOfBirth: patientData.dateOfBirth,
+      gender: patientData.gender,
+      hasDateOfBirth: !!patientData.dateOfBirth,
+      hasGender: !!patientData.gender,
+    });
 
     if (existingPatient.length > 0) {
       // Update existing patient profile
@@ -51,6 +78,12 @@ export const completePatientOnboarding = async (userId: number, data: any) => {
         .returning();
       
       console.log(`✅ Patient profile updated for user ${userId}`);
+      console.log(`📊 Saved profile:`, {
+        dateOfBirth: result[0].dateOfBirth,
+        gender: result[0].gender,
+        hasDateOfBirth: !!result[0].dateOfBirth,
+        hasGender: !!result[0].gender,
+      });
       return { success: true, patient: result[0], isNew: false };
     } else {
       // Create new patient profile
@@ -65,6 +98,12 @@ export const completePatientOnboarding = async (userId: number, data: any) => {
         .returning();
       
       console.log(`✅ Patient profile created for user ${userId}`);
+      console.log(`📊 Saved profile:`, {
+        dateOfBirth: result[0].dateOfBirth,
+        gender: result[0].gender,
+        hasDateOfBirth: !!result[0].dateOfBirth,
+        hasGender: !!result[0].gender,
+      });
       return { success: true, patient: result[0], isNew: true };
     }
   } catch (error) {
@@ -100,19 +139,35 @@ export const getPatientOnboardingStatus = async (userId: number) => {
     
     const hasPatientProfile = patient.length > 0;
     
-    // Check if profile is complete (has essential fields)
-    const isComplete = hasPatientProfile && patient[0] && (
-      patient[0].dateOfBirth !== null ||
-      patient[0].gender !== null ||
-      patient[0].bloodGroup !== null
-    );
+    // Check if profile is complete (has required essential fields)
+    // Required fields: dateOfBirth and gender (as per onboarding form)
+    let isComplete = false;
+    
+    if (hasPatientProfile && patient[0]) {
+      const profile = patient[0];
+      const hasDateOfBirth = profile.dateOfBirth !== null && profile.dateOfBirth !== undefined;
+      const hasGender = profile.gender !== null && profile.gender !== undefined && profile.gender !== '';
+      
+      console.log(`📊 Profile check for user ${userId}:`, {
+        hasProfile: true,
+        dateOfBirth: profile.dateOfBirth,
+        hasDateOfBirth,
+        gender: profile.gender,
+        hasGender,
+      });
+      
+      isComplete = hasDateOfBirth && hasGender;
+    } else {
+      console.log(`📊 Profile check for user ${userId}: No profile found`);
+    }
     
     console.log(`📊 Onboarding status for user ${userId}: ${isComplete ? 'Complete' : 'Incomplete'}`);
     
     return {
       userId,
       hasProfile: hasPatientProfile,
-      isComplete,
+      isCompleted: isComplete, // Use isCompleted for consistency with frontend
+      isComplete, // Keep for backward compatibility
       profile: patient[0] || null,
       user: {
         id: user[0].id,
