@@ -7,16 +7,17 @@ This documentation system ensures that when you start a new chat session with th
 
 ### **Core Documentation (Read First)**
 1. **`PROJECT_LOG.md`** - Complete project history, what's been built, what's working
-2. **`DAILY_WORKFLOW.md`** - Current development workflow, working features, test URLs
-3. **`QUICK_REFERENCE.md`** - Demo credentials, test URLs, current priorities
-4. **`CHANGELOG.md`** - Recent changes, fixes, and improvements
+2. **`PROJECT_PLAN.md`** - Comprehensive development plan with phases, priorities, and roadmap
+3. **`DAILY_WORKFLOW.md`** - Current development workflow, working features, test URLs
+4. **`QUICK_REFERENCE.md`** - Demo credentials, test URLs, current priorities
+5. **`CHANGELOG.md`** - Recent changes, fixes, and improvements
 
 ### **Additional Documentation**
-5. **`DAILY_PROGRESS_TEMPLATE.md`** - Template for daily progress tracking
-6. **`DEMO_README.md`** - Demo and testing information
-7. **`AI_WORKFLOW_REMINDER.md`** - Instructions for AI assistant
-8. **`AUTO_UPDATE_SYSTEM.md`** - How to update documentation
-9. **`DOCUMENTATION_README.md`** - Complete documentation system overview
+6. **`DAILY_PROGRESS_TEMPLATE.md`** - Template for daily progress tracking
+7. **`DEMO_README.md`** - Demo and testing information
+8. **`AI_WORKFLOW_REMINDER.md`** - Instructions for AI assistant
+9. **`AUTO_UPDATE_SYSTEM.md`** - How to update documentation
+10. **`DOCUMENTATION_README.md`** - Complete documentation system overview
 
 ### **Duplicate Files (Use These Instead)**
 - **`DAILY_STARTUP.md`** - Duplicate of START_HERE.md (use START_HERE.md)

@@ -21,7 +21,8 @@ import {
   Empty,
   Badge,
   Divider,
-  Tabs
+  Tabs,
+  Drawer
 } from 'antd';
 import { 
   UserOutlined, 
@@ -35,9 +36,12 @@ import {
   BellOutlined,
   SearchOutlined,
   ClockCircleOutlined,
-  BarChartOutlined
+  BarChartOutlined,
+  MenuFoldOutlined,
+  MenuUnfoldOutlined
 } from '@ant-design/icons';
 import { useAuth } from '../../hooks/use-auth';
+import { useResponsive } from '../../hooks/use-responsive';
 import PrescriptionForm from '../../components/prescription-form';
 import { KpiCard } from '../../components/dashboard/KpiCard';
 import { QuickActionTile } from '../../components/dashboard/QuickActionTile';
@@ -57,12 +61,21 @@ export default function DoctorDashboard() {
   const { user, logout, isLoading } = useAuth();
   const queryClient = useQueryClient();
   const [, setLocation] = useLocation();
+  const { isMobile, isTablet } = useResponsive();
   const [collapsed, setCollapsed] = useState(false);
+  const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false);
   const [isPrescriptionModalOpen, setIsPrescriptionModalOpen] = useState(false);
   const [selectedPatientId, setSelectedPatientId] = useState<number | undefined>(undefined);
   const [selectedAppointmentId, setSelectedAppointmentId] = useState<number | undefined>(undefined);
   const [patientSearchTerm, setPatientSearchTerm] = useState('');
   const [activeAppointmentTab, setActiveAppointmentTab] = useState<string>('today');
+
+  // Auto-collapse sidebar on mobile/tablet
+  useEffect(() => {
+    if (isMobile || isTablet) {
+      setCollapsed(true);
+    }
+  }, [isMobile, isTablet]);
 
   // ALL HOOKS MUST BE CALLED BEFORE ANY CONDITIONAL RETURNS
   // Get doctor profile to access hospitalId
@@ -755,8 +768,8 @@ export default function DoctorDashboard() {
     },
   ];
 
-  const handleMenuClick = ({ key }: { key: string }) => {
-    if (key === 'prescriptions') {
+  const handleMenuClick = (e: { key: string }) => {
+    if (e.key === 'prescriptions') {
       handleOpenPrescriptionModal();
     }
     // Add other navigation handlers as needed
@@ -826,61 +839,89 @@ export default function DoctorDashboard() {
     },
   ];
 
-  const siderWidth = collapsed ? 80 : 260;
+  const siderWidth = isMobile ? 0 : (collapsed ? 80 : 260);
+
+  // Sidebar content component (reusable for drawer and sider)
+  const SidebarContent = ({ onMenuClick }: { onMenuClick?: () => void }) => (
+    <>
+      <div
+        style={{
+          padding: '16px',
+          textAlign: 'center',
+          borderBottom: '1px solid #eef2ff',
+        }}
+      >
+        <MedicineBoxOutlined style={{ fontSize: 24, color: doctorTheme.primary }} />
+        {(!collapsed || isMobile) && (
+          <Title level={4} style={{ margin: '8px 0 0', color: doctorTheme.primary }}>
+            NexaCare
+          </Title>
+        )}
+      </div>
+      <Menu
+        mode="inline"
+        defaultSelectedKeys={['dashboard']}
+        items={sidebarMenu}
+        style={{ border: 'none', flex: 1 }}
+        onClick={(e) => {
+          handleMenuClick(e);
+          onMenuClick?.();
+        }}
+      />
+      <SidebarProfile
+        collapsed={collapsed && !isMobile}
+        name={user?.fullName}
+        roleLabel="DOCTOR"
+        roleColor={doctorTheme.primary}
+        avatarIcon={<UserOutlined />}
+        onSettingsClick={() => message.info('Profile settings coming soon.')}
+        onLogoutClick={logout}
+      />
+    </>
+  );
 
   return (
     <Layout style={{ minHeight: '100vh', background: doctorTheme.highlight }}>
-      <Sider
-        collapsible
-        collapsed={collapsed}
-        onCollapse={setCollapsed}
-        width={260}
-        collapsedWidth={80}
-        style={{
-          position: 'fixed',
-          top: 0,
-          left: 0,
-          height: '100vh',
-          width: siderWidth,
-          background: '#ffffff',
-          boxShadow: '2px 0 8px rgba(0,0,0,0.08)',
-          display: 'flex',
-          flexDirection: 'column',
-          transition: 'width 0.2s ease',
-          zIndex: 10,
-        }}
-      >
-        <div
+      {/* Desktop/Tablet Sidebar */}
+      {!isMobile && (
+        <Sider
+          trigger={null}
+          collapsible
+          collapsed={collapsed}
+          onCollapse={setCollapsed}
+          width={260}
+          collapsedWidth={80}
           style={{
-            padding: '16px',
-            textAlign: 'center',
-            borderBottom: '1px solid #eef2ff',
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            height: '100vh',
+            width: siderWidth,
+            background: '#ffffff',
+            boxShadow: '2px 0 8px rgba(0,0,0,0.08)',
+            display: 'flex',
+            flexDirection: 'column',
+            transition: 'width 0.2s ease',
+            zIndex: 10,
           }}
         >
-          <MedicineBoxOutlined style={{ fontSize: 24, color: doctorTheme.primary }} />
-          {!collapsed && (
-            <Title level={4} style={{ margin: '8px 0 0', color: doctorTheme.primary }}>
-              NexaCare
-            </Title>
-          )}
-        </div>
-        <Menu
-          mode="inline"
-          defaultSelectedKeys={['dashboard']}
-          items={sidebarMenu}
-          style={{ border: 'none', flex: 1 }}
-          onClick={handleMenuClick}
-        />
-        <SidebarProfile
-          collapsed={collapsed}
-          name={user?.fullName}
-          roleLabel="DOCTOR"
-          roleColor={doctorTheme.primary}
-          avatarIcon={<UserOutlined />}
-          onSettingsClick={() => message.info('Profile settings coming soon.')}
-          onLogoutClick={logout}
-        />
-      </Sider>
+          <SidebarContent />
+        </Sider>
+      )}
+
+      {/* Mobile Drawer */}
+      {isMobile && (
+        <Drawer
+          title="Navigation"
+          placement="left"
+          onClose={() => setMobileDrawerOpen(false)}
+          open={mobileDrawerOpen}
+          bodyStyle={{ padding: 0 }}
+          width={260}
+        >
+          <SidebarContent onMenuClick={() => setMobileDrawerOpen(false)} />
+        </Drawer>
+      )}
 
       <Layout
         style={{
@@ -896,90 +937,165 @@ export default function DoctorDashboard() {
             background: doctorTheme.highlight,
             height: '100vh',
             overflowY: 'auto',
+            padding: isMobile ? '12px 16px' : isTablet ? '16px 20px' : '16px 24px 24px',
           }}
         >
-          <div style={{ padding: '32px 24px', maxWidth: '1320px', margin: '0 auto', paddingBottom: 48 }}>
-            <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
-              <Col xs={24} sm={12} md={6}>
-                <KpiCard
-                  label="Today's Appointments"
-                  value={stats.todayAppointments || 0}
-                  icon={<CalendarOutlined style={{ color: doctorTheme.primary }} />}
-                  trendLabel={`${appointmentsToShow.length} confirmed`}
-                  trendType="positive"
-                  onView={() => setLocation('/dashboard/doctor/appointments')}
+          <div style={{ paddingBottom: 24, maxWidth: '1320px', margin: '0 auto' }}>
+            {/* Mobile Menu Button */}
+            {isMobile && (
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+                <Button
+                  type="text"
+                  icon={<MenuUnfoldOutlined />}
+                  onClick={() => setMobileDrawerOpen(true)}
+                  style={{ fontSize: '18px' }}
                 />
-              </Col>
-              <Col xs={24} sm={12} md={6}>
-                <KpiCard
-                  label="Lab Results Pending"
-                  value={stats.pendingLabReports || 0}
-                  icon={<ExperimentOutlined style={{ color: doctorTheme.accent }} />}
-                  trendLabel="Awaiting review"
-                  trendType={stats.pendingLabReports > 0 ? "negative" : "neutral"}
-                  onView={() => message.info('Lab results widget below')}
+                <Title level={4} style={{ margin: 0 }}>Dashboard</Title>
+                <div style={{ width: 32 }} /> {/* Spacer for centering */}
+              </div>
+            )}
+            
+            {/* Desktop/Tablet Menu Toggle */}
+            {!isMobile && (
+              <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 16 }}>
+                <Button
+                  type="text"
+                  icon={collapsed ? <MenuFoldOutlined /> : <MenuUnfoldOutlined />}
+                  onClick={() => setCollapsed(!collapsed)}
                 />
-              </Col>
-              <Col xs={24} sm={12} md={6}>
-                <KpiCard
-                  label="Completed Today"
-                  value={stats.completedAppointments || 0}
-                  icon={<CheckCircleOutlined style={{ color: '#16a34a' }} />}
-                  trendLabel="Live"
-                  trendType="positive"
-                  onView={() => setLocation('/dashboard/doctor/appointments')}
-                />
-              </Col>
-              <Col xs={24} sm={12} md={6}>
-                <KpiCard
-                  label={
-                    <Space>
-                      <span>Notifications</span>
-                      {stats.unreadNotifications > 0 && (
-                        <Badge count={stats.unreadNotifications} size="small" />
-                      )}
-                    </Space>
-                  }
-                  value={stats.unreadNotifications || 0}
-                  icon={<BellOutlined style={{ color: '#f97316' }} />}
-                  trendLabel="Unread"
-                  trendType={stats.unreadNotifications > 0 ? "negative" : "neutral"}
-                  onView={() => message.info('Notifications widget below')}
-                />
-              </Col>
-            </Row>
+              </div>
+            )}
 
-            <Card variant="borderless" style={{ marginBottom: 24, borderRadius: 16 }} bodyStyle={{ padding: 20 }}>
-              <Row gutter={[16, 16]}>
+            {/* KPI Cards - Responsive Grid */}
+            {isMobile ? (
+              <div style={{ 
+                display: 'flex', 
+                overflowX: 'auto', 
+                gap: 12, 
+                marginBottom: 24,
+                paddingBottom: 8,
+                scrollSnapType: 'x mandatory',
+                WebkitOverflowScrolling: 'touch',
+              }}>
+                {[
+                  { label: "Today's Appointments", value: stats.todayAppointments || 0, icon: <CalendarOutlined style={{ color: doctorTheme.primary }} />, trendLabel: `${appointmentsToShow.length} confirmed`, trendType: "positive" as const, onView: () => setLocation('/dashboard/doctor/appointments') },
+                  { label: "Lab Results Pending", value: stats.pendingLabReports || 0, icon: <ExperimentOutlined style={{ color: doctorTheme.accent }} />, trendLabel: "Awaiting review", trendType: (stats.pendingLabReports > 0 ? "negative" : "neutral") as const, onView: () => message.info('Lab results widget below') },
+                  { label: "Completed Today", value: stats.completedAppointments || 0, icon: <CheckCircleOutlined style={{ color: '#16a34a' }} />, trendLabel: "Live", trendType: "positive" as const, onView: () => setLocation('/dashboard/doctor/appointments') },
+                  { label: "Notifications", value: stats.unreadNotifications || 0, icon: <BellOutlined style={{ color: '#f97316' }} />, trendLabel: "Unread", trendType: (stats.unreadNotifications > 0 ? "negative" : "neutral") as const, onView: () => message.info('Notifications widget below') },
+                ].map((kpi, idx) => (
+                  <div key={idx} style={{ minWidth: 200, scrollSnapAlign: 'start' }}>
+                    <KpiCard {...kpi} />
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
                 <Col xs={24} sm={12} md={6}>
+                  <KpiCard
+                    label="Today's Appointments"
+                    value={stats.todayAppointments || 0}
+                    icon={<CalendarOutlined style={{ color: doctorTheme.primary }} />}
+                    trendLabel={`${appointmentsToShow.length} confirmed`}
+                    trendType="positive"
+                    onView={() => setLocation('/dashboard/doctor/appointments')}
+                  />
+                </Col>
+                <Col xs={24} sm={12} md={6}>
+                  <KpiCard
+                    label="Lab Results Pending"
+                    value={stats.pendingLabReports || 0}
+                    icon={<ExperimentOutlined style={{ color: doctorTheme.accent }} />}
+                    trendLabel="Awaiting review"
+                    trendType={stats.pendingLabReports > 0 ? "negative" : "neutral"}
+                    onView={() => message.info('Lab results widget below')}
+                  />
+                </Col>
+                <Col xs={24} sm={12} md={6}>
+                  <KpiCard
+                    label="Completed Today"
+                    value={stats.completedAppointments || 0}
+                    icon={<CheckCircleOutlined style={{ color: '#16a34a' }} />}
+                    trendLabel="Live"
+                    trendType="positive"
+                    onView={() => setLocation('/dashboard/doctor/appointments')}
+                  />
+                </Col>
+                <Col xs={24} sm={12} md={6}>
+                  <KpiCard
+                    label={
+                      <Space>
+                        <span>Notifications</span>
+                        {stats.unreadNotifications > 0 && (
+                          <Badge count={stats.unreadNotifications} size="small" />
+                        )}
+                      </Space>
+                    }
+                    value={stats.unreadNotifications || 0}
+                    icon={<BellOutlined style={{ color: '#f97316' }} />}
+                    trendLabel="Unread"
+                    trendType={stats.unreadNotifications > 0 ? "negative" : "neutral"}
+                    onView={() => message.info('Notifications widget below')}
+                  />
+                </Col>
+              </Row>
+            )}
+
+            <Card variant="borderless" style={{ marginBottom: 24, borderRadius: 16 }} bodyStyle={{ padding: isMobile ? 16 : 20 }}>
+              {isMobile ? (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
                   <QuickActionTile
                     label="Start Consultation"
                     icon={<CalendarOutlined />}
                     onClick={() => handleQuickAction('consult')}
                   />
-                </Col>
-                <Col xs={24} sm={12} md={6}>
                   <QuickActionTile
                     label="Write Prescription"
                     icon={<MedicineBoxOutlined />}
                     onClick={() => handleQuickAction('prescription')}
                   />
-                </Col>
-                <Col xs={24} sm={12} md={6}>
                   <QuickActionTile
                     label="Update Availability"
                     icon={<CheckCircleOutlined />}
                     onClick={() => handleQuickAction('availability')}
                   />
-                </Col>
-                <Col xs={24} sm={12} md={6}>
                   <QuickActionTile
                     label="Review Lab Queue"
                     icon={<FileTextOutlined />}
                     onClick={() => handleQuickAction('labs')}
                   />
-                </Col>
-              </Row>
+                </div>
+              ) : (
+                <Row gutter={[16, 16]}>
+                  <Col xs={24} sm={12} md={6}>
+                    <QuickActionTile
+                      label="Start Consultation"
+                      icon={<CalendarOutlined />}
+                      onClick={() => handleQuickAction('consult')}
+                    />
+                  </Col>
+                  <Col xs={24} sm={12} md={6}>
+                    <QuickActionTile
+                      label="Write Prescription"
+                      icon={<MedicineBoxOutlined />}
+                      onClick={() => handleQuickAction('prescription')}
+                    />
+                  </Col>
+                  <Col xs={24} sm={12} md={6}>
+                    <QuickActionTile
+                      label="Update Availability"
+                      icon={<CheckCircleOutlined />}
+                      onClick={() => handleQuickAction('availability')}
+                    />
+                  </Col>
+                  <Col xs={24} sm={12} md={6}>
+                    <QuickActionTile
+                      label="Review Lab Queue"
+                      icon={<FileTextOutlined />}
+                      onClick={() => handleQuickAction('labs')}
+                    />
+                  </Col>
+                </Row>
+              )}
             </Card>
 
             <Row gutter={[16, 16]}>
@@ -1007,14 +1123,17 @@ export default function DoctorDashboard() {
                           key: tab.key,
                           label: tab.label,
                           children: (
-                            <Table
-                              columns={appointmentColumns}
-                              dataSource={appointmentsToShow}
-                              pagination={false}
-                              rowKey="id"
-                              loading={appointmentsLoading}
-                              size="middle"
-                            />
+                            <div style={{ overflowX: 'auto' }}>
+                              <Table
+                                columns={appointmentColumns}
+                                dataSource={appointmentsToShow}
+                                pagination={false}
+                                rowKey="id"
+                                loading={appointmentsLoading}
+                                size={isMobile ? "small" : "middle"}
+                                scroll={isMobile ? { x: 'max-content' } : undefined}
+                              />
+                            </div>
                           ),
                         }))}
                         style={{ marginTop: 8 }}

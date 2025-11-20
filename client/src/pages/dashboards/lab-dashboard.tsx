@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { 
   Layout, 
@@ -13,7 +13,8 @@ import {
   Menu,
   Progress,
   List,
-  message
+  message,
+  Drawer
 } from 'antd';
 import { 
   UserOutlined, 
@@ -25,9 +26,12 @@ import {
   UploadOutlined,
   FileSearchOutlined,
   BarChartOutlined,
-  AlertOutlined
+  AlertOutlined,
+  MenuFoldOutlined,
+  MenuUnfoldOutlined
 } from '@ant-design/icons';
 import { useAuth } from '../../hooks/use-auth';
+import { useResponsive } from '../../hooks/use-responsive';
 import { SidebarProfile } from '../../components/dashboard/SidebarProfile';
 import { KpiCard } from '../../components/dashboard/KpiCard';
 import { QuickActionTile } from '../../components/dashboard/QuickActionTile';
@@ -45,7 +49,16 @@ const labTheme = {
 
 export default function LabDashboard() {
   const { user, logout } = useAuth();
+  const { isMobile, isTablet } = useResponsive();
   const [collapsed, setCollapsed] = useState(false);
+  const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false);
+
+  // Auto-collapse sidebar on mobile/tablet
+  useEffect(() => {
+    if (isMobile || isTablet) {
+      setCollapsed(true);
+    }
+  }, [isMobile, isTablet]);
 
   // Get lab reports from API
   const { data: labReportsData = [], isLoading: labReportsLoading } = useQuery({
@@ -175,58 +188,84 @@ export default function LabDashboard() {
     },
   ];
 
-  const siderWidth = collapsed ? 80 : 260;
+  const siderWidth = isMobile ? 0 : (collapsed ? 80 : 260);
+
+  // Sidebar content component (reusable for drawer and sider)
+  const SidebarContent = ({ onMenuClick }: { onMenuClick?: () => void }) => (
+    <>
+      <div style={{ 
+        padding: '16px', 
+        textAlign: 'center',
+        borderBottom: '1px solid #f0f0f0'
+      }}>
+        <ExperimentOutlined style={{ fontSize: '24px', color: labTheme.primary }} />
+        {(!collapsed || isMobile) && (
+          <Title level={4} style={{ margin: '8px 0 0 0', color: labTheme.primary }}>
+            NexaCare Lab
+          </Title>
+        )}
+      </div>
+      <Menu
+        mode="inline"
+        defaultSelectedKeys={['dashboard']}
+        items={sidebarMenu}
+        style={{ border: 'none', flex: 1 }}
+        onClick={onMenuClick}
+      />
+      <SidebarProfile
+        collapsed={collapsed && !isMobile}
+        name={user?.fullName || 'Lab Technician'}
+        roleLabel="LAB TECHNICIAN"
+        roleColor="#0EA5E9"
+        avatarIcon={<ExperimentOutlined />}
+        onSettingsClick={() => message.info('Profile settings coming soon.')}
+        onLogoutClick={logout}
+      />
+    </>
+  );
 
   return (
     <Layout style={{ minHeight: '100vh', background: '#f5f5f5' }}>
-      <Sider 
-        collapsible 
-        collapsed={collapsed}
-        onCollapse={setCollapsed}
-        width={260}
-        collapsedWidth={80}
-        style={{
-          position: 'fixed',
-          top: 0,
-          left: 0,
-          height: '100vh',
-          width: siderWidth,
-          background: '#fff',
-          boxShadow: '2px 0 8px rgba(0,0,0,0.1)',
-          display: 'flex',
-          flexDirection: 'column',
-          transition: 'width 0.2s ease',
-          zIndex: 10,
-        }}
-      >
-        <div style={{ 
-          padding: '16px', 
-          textAlign: 'center',
-          borderBottom: '1px solid #f0f0f0'
-        }}>
-          <ExperimentOutlined style={{ fontSize: '24px', color: labTheme.primary }} />
-          {!collapsed && (
-            <Title level={4} style={{ margin: '8px 0 0 0', color: labTheme.primary }}>
-              NexaCare Lab
-            </Title>
-          )}
-        </div>
-        <Menu
-          mode="inline"
-          defaultSelectedKeys={['dashboard']}
-          items={sidebarMenu}
-          style={{ border: 'none', flex: 1 }}
-        />
-        <SidebarProfile
+      {/* Desktop/Tablet Sidebar */}
+      {!isMobile && (
+        <Sider 
+          trigger={null}
+          collapsible 
           collapsed={collapsed}
-          name={user?.fullName || 'Lab Technician'}
-          roleLabel="LAB TECHNICIAN"
-          roleColor="#0EA5E9"
-          avatarIcon={<ExperimentOutlined />}
-          onSettingsClick={() => message.info('Profile settings coming soon.')}
-          onLogoutClick={logout}
-        />
-      </Sider>
+          onCollapse={setCollapsed}
+          width={260}
+          collapsedWidth={80}
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            height: '100vh',
+            width: siderWidth,
+            background: '#fff',
+            boxShadow: '2px 0 8px rgba(0,0,0,0.1)',
+            display: 'flex',
+            flexDirection: 'column',
+            transition: 'width 0.2s ease',
+            zIndex: 10,
+          }}
+        >
+          <SidebarContent />
+        </Sider>
+      )}
+
+      {/* Mobile Drawer */}
+      {isMobile && (
+        <Drawer
+          title="Navigation"
+          placement="left"
+          onClose={() => setMobileDrawerOpen(false)}
+          open={mobileDrawerOpen}
+          bodyStyle={{ padding: 0 }}
+          width={260}
+        >
+          <SidebarContent onMenuClick={() => setMobileDrawerOpen(false)} />
+        </Drawer>
+      )}
 
       <Layout
         style={{
@@ -242,48 +281,97 @@ export default function LabDashboard() {
             background: labTheme.background,
             height: '100vh',
             overflowY: 'auto',
+            padding: isMobile ? '12px 16px' : isTablet ? '16px 20px' : '16px 24px 24px',
           }}
         >
-          <div style={{ padding: '32px 24px', maxWidth: '1320px', margin: '0 auto', paddingBottom: 48 }}>
-          {/* KPI Cards */}
-          <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
-            <Col xs={24} sm={12} md={6}>
-              <KpiCard
-                label="Samples Pending"
-                value={stats?.pendingTests || 0}
-                icon={<FileSearchOutlined style={{ fontSize: '24px', color: labTheme.primary }} />}
-                trendLabel="Awaiting Analysis"
-                trendType="neutral"
-              />
-            </Col>
-            <Col xs={24} sm={12} md={6}>
-              <KpiCard
-                label="Reports Ready"
-                value={stats?.completedTests || 0}
-                icon={<CheckCircleOutlined style={{ fontSize: '24px', color: labTheme.secondary }} />}
-                trendLabel="Completed Today"
-                trendType="positive"
-              />
-            </Col>
-            <Col xs={24} sm={12} md={6}>
-              <KpiCard
-                label="Critical Alerts"
-                value={stats?.criticalResults || 0}
-                icon={<AlertOutlined style={{ fontSize: '24px', color: labTheme.accent }} />}
-                trendLabel="Requires Attention"
-                trendType={stats?.criticalResults > 0 ? 'negative' : 'positive'}
-              />
-            </Col>
-            <Col xs={24} sm={12} md={6}>
-              <KpiCard
-                label="Total Tests"
-                value={stats?.totalTests || 0}
-                icon={<ExperimentOutlined style={{ fontSize: '24px', color: labTheme.primary }} />}
-                trendLabel="All Time"
-                trendType="neutral"
-              />
-            </Col>
-          </Row>
+          <div style={{ paddingBottom: 24, maxWidth: '1320px', margin: '0 auto' }}>
+            {/* Mobile Menu Button */}
+            {isMobile && (
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+                <Button
+                  type="text"
+                  icon={<MenuUnfoldOutlined />}
+                  onClick={() => setMobileDrawerOpen(true)}
+                  style={{ fontSize: '18px' }}
+                />
+                <Title level={4} style={{ margin: 0 }}>Dashboard</Title>
+                <div style={{ width: 32 }} /> {/* Spacer for centering */}
+              </div>
+            )}
+            
+            {/* Desktop/Tablet Menu Toggle */}
+            {!isMobile && (
+              <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 16 }}>
+                <Button
+                  type="text"
+                  icon={collapsed ? <MenuFoldOutlined /> : <MenuUnfoldOutlined />}
+                  onClick={() => setCollapsed(!collapsed)}
+                />
+              </div>
+            )}
+
+            {/* KPI Cards - Responsive Grid */}
+            {isMobile ? (
+              <div style={{ 
+                display: 'flex', 
+                overflowX: 'auto', 
+                gap: 12, 
+                marginBottom: 24,
+                paddingBottom: 8,
+                scrollSnapType: 'x mandatory',
+                WebkitOverflowScrolling: 'touch',
+              }}>
+                {[
+                  { label: "Samples Pending", value: stats?.pendingTests || 0, icon: <FileSearchOutlined style={{ fontSize: '24px', color: labTheme.primary }} />, trendLabel: "Awaiting Analysis", trendType: "neutral" as const, onView: () => message.info('View pending tests') },
+                  { label: "Reports Ready", value: stats?.completedTests || 0, icon: <CheckCircleOutlined style={{ fontSize: '24px', color: labTheme.secondary }} />, trendLabel: "Completed Today", trendType: "positive" as const, onView: () => message.info('View completed tests') },
+                  { label: "Critical Alerts", value: stats?.criticalResults || 0, icon: <AlertOutlined style={{ fontSize: '24px', color: labTheme.accent }} />, trendLabel: "Requires Attention", trendType: (stats?.criticalResults > 0 ? "negative" : "positive") as const, onView: () => message.info('View critical alerts') },
+                  { label: "Total Tests", value: stats?.totalTests || 0, icon: <ExperimentOutlined style={{ fontSize: '24px', color: labTheme.primary }} />, trendLabel: "All Time", trendType: "neutral" as const, onView: () => message.info('View all tests') },
+                ].map((kpi, idx) => (
+                  <div key={idx} style={{ minWidth: 200, scrollSnapAlign: 'start' }}>
+                    <KpiCard {...kpi} />
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
+                <Col xs={24} sm={12} md={6}>
+                  <KpiCard
+                    label="Samples Pending"
+                    value={stats?.pendingTests || 0}
+                    icon={<FileSearchOutlined style={{ fontSize: '24px', color: labTheme.primary }} />}
+                    trendLabel="Awaiting Analysis"
+                    trendType="neutral"
+                  />
+                </Col>
+                <Col xs={24} sm={12} md={6}>
+                  <KpiCard
+                    label="Reports Ready"
+                    value={stats?.completedTests || 0}
+                    icon={<CheckCircleOutlined style={{ fontSize: '24px', color: labTheme.secondary }} />}
+                    trendLabel="Completed Today"
+                    trendType="positive"
+                  />
+                </Col>
+                <Col xs={24} sm={12} md={6}>
+                  <KpiCard
+                    label="Critical Alerts"
+                    value={stats?.criticalResults || 0}
+                    icon={<AlertOutlined style={{ fontSize: '24px', color: labTheme.accent }} />}
+                    trendLabel="Requires Attention"
+                    trendType={stats?.criticalResults > 0 ? 'negative' : 'positive'}
+                  />
+                </Col>
+                <Col xs={24} sm={12} md={6}>
+                  <KpiCard
+                    label="Total Tests"
+                    value={stats?.totalTests || 0}
+                    icon={<ExperimentOutlined style={{ fontSize: '24px', color: labTheme.primary }} />}
+                    trendLabel="All Time"
+                    trendType="neutral"
+                  />
+                </Col>
+              </Row>
+            )}
 
           {/* Quick Actions */}
           <Card 
@@ -293,37 +381,63 @@ export default function LabDashboard() {
               borderRadius: 16,
               background: labTheme.background
             }}
+            bodyStyle={{ padding: isMobile ? 16 : 20 }}
           >
-            <Row gutter={[16, 16]}>
-              <Col xs={24} sm={12} md={6}>
+            {isMobile ? (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
                 <QuickActionTile
                   label="Log Sample"
                   icon={<ExperimentOutlined />}
                   onClick={() => message.info('Log sample feature coming soon')}
                 />
-              </Col>
-              <Col xs={24} sm={12} md={6}>
                 <QuickActionTile
                   label="Upload Report"
                   icon={<UploadOutlined />}
                   onClick={() => message.info('Upload report feature coming soon')}
                 />
-              </Col>
-              <Col xs={24} sm={12} md={6}>
                 <QuickActionTile
                   label="Assign Technician"
                   icon={<UserOutlined />}
                   onClick={() => message.info('Assign technician feature coming soon')}
                 />
-              </Col>
-              <Col xs={24} sm={12} md={6}>
                 <QuickActionTile
                   label="Request Re-test"
                   icon={<FileSearchOutlined />}
                   onClick={() => message.info('Request re-test feature coming soon')}
                 />
-              </Col>
-            </Row>
+              </div>
+            ) : (
+              <Row gutter={[16, 16]}>
+                <Col xs={24} sm={12} md={6}>
+                  <QuickActionTile
+                    label="Log Sample"
+                    icon={<ExperimentOutlined />}
+                    onClick={() => message.info('Log sample feature coming soon')}
+                  />
+                </Col>
+                <Col xs={24} sm={12} md={6}>
+                  <QuickActionTile
+                    label="Upload Report"
+                    icon={<UploadOutlined />}
+                    onClick={() => message.info('Upload report feature coming soon')}
+                  />
+                </Col>
+                <Col xs={24} sm={12} md={6}>
+                  <QuickActionTile
+                    label="Assign Technician"
+                    icon={<UserOutlined />}
+                    onClick={() => message.info('Assign technician feature coming soon')}
+                  />
+                </Col>
+                <Col xs={24} sm={12} md={6}>
+                  <QuickActionTile
+                    label="Request Re-test"
+                    icon={<FileSearchOutlined />}
+                    onClick={() => message.info('Request re-test feature coming soon')}
+                  />
+                </Col>
+              </Row>
+            )}
           </Card>
 
           <Row gutter={[16, 16]}>
@@ -334,16 +448,20 @@ export default function LabDashboard() {
                 extra={<Button type="link" onClick={() => message.info('View all reports feature coming soon')}>View All</Button>}
                 style={{ borderRadius: 16 }}
               >
-                <Table
-                  columns={reportColumns}
-                  dataSource={labReports}
-                  pagination={false}
-                  rowKey="id"
-                  variant="borderless"
-                  style={{
-                    backgroundColor: labTheme.background
-                  }}
-                />
+                <div style={{ overflowX: 'auto' }}>
+                  <Table
+                    columns={reportColumns}
+                    dataSource={labReports}
+                    pagination={false}
+                    rowKey="id"
+                    variant="borderless"
+                    size={isMobile ? "small" : "middle"}
+                    scroll={isMobile ? { x: 'max-content' } : undefined}
+                    style={{
+                      backgroundColor: labTheme.background
+                    }}
+                  />
+                </div>
               </Card>
             </Col>
 

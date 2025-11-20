@@ -63,11 +63,14 @@ git push origin feature/appointment-management
 - Receptionists: `9850000000` to `9850000019` (20 users)
 
 ## 🔥 **Next Priority Tasks**
-1. Migrate Hospital Admin, Receptionist, and Lab dashboards to the new design system.
-2. Extend notification and lab widgets across all dashboards once designs land.
-3. Run full regression of appointment → prescription workflow after backend restart.
-4. Capture feedback from Stitch AI iterations and document delta prompts if needed.
-5. Plan WebSocket upgrade for real-time notifications after dashboard redesign completes.
+See `docs/PROJECT_PLAN.md` for comprehensive development plan.
+
+**Immediate Priorities (Week 1)**:
+1. Apply responsive design to Doctor, Receptionist, Hospital Admin, and Lab dashboards
+2. Extend notification widgets across all dashboards
+3. Complete lab report upload workflow
+
+**Full Plan**: See `docs/PROJECT_PLAN.md` for detailed phases, timelines, and implementation notes.
 
 ## 📱 **Test URLs**
 - Main App: `http://localhost:3000/`

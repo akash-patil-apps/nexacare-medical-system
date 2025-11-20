@@ -26,6 +26,7 @@ import {
   TimePicker,
   Divider,
   Tabs,
+  Drawer,
 } from 'antd';
 import { 
   UserOutlined, 
@@ -37,8 +38,11 @@ import {
   UserAddOutlined,
   ClockCircleOutlined,
   PhoneOutlined,
+  MenuFoldOutlined,
+  MenuUnfoldOutlined,
 } from '@ant-design/icons';
 import { useAuth } from '../../hooks/use-auth';
+import { useResponsive } from '../../hooks/use-responsive';
 import { useQueryClient } from '@tanstack/react-query';
 import { message } from 'antd';
 import { SidebarProfile } from '../../components/dashboard/SidebarProfile';
@@ -62,7 +66,9 @@ export default function ReceptionistDashboard() {
   const { user, logout, isLoading } = useAuth();
   const queryClient = useQueryClient();
   const [, setLocation] = useLocation();
+  const { isMobile, isTablet } = useResponsive();
   const [collapsed, setCollapsed] = useState(false);
+  const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false);
   const [isBookingModalOpen, setIsBookingModalOpen] = useState(false);
   const [isWalkInModalOpen, setIsWalkInModalOpen] = useState(false);
   const [isWalkInSubmitting, setIsWalkInSubmitting] = useState(false);
@@ -74,6 +80,13 @@ export default function ReceptionistDashboard() {
   const patientSearchTimeoutRef = useRef<number | undefined>();
   const appointmentStartTimeValue = Form.useWatch('appointmentStartTime', walkInForm);
   const durationMinutesValue = Form.useWatch('durationMinutes', walkInForm);
+
+  // Auto-collapse sidebar on mobile/tablet
+  useEffect(() => {
+    if (isMobile || isTablet) {
+      setCollapsed(true);
+    }
+  }, [isMobile, isTablet]);
 
   // ALL HOOKS MUST BE CALLED BEFORE ANY CONDITIONAL RETURNS
   // Get appointments with auto-refresh
@@ -883,7 +896,41 @@ export default function ReceptionistDashboard() {
     },
   ];
 
-  const siderWidth = collapsed ? 80 : 260;
+  const siderWidth = isMobile ? 0 : (collapsed ? 80 : 260);
+
+  // Sidebar content component (reusable for drawer and sider)
+  const SidebarContent = ({ onMenuClick }: { onMenuClick?: () => void }) => (
+    <>
+      <div style={{ 
+        padding: '16px', 
+        textAlign: 'center',
+        borderBottom: '1px solid #f0f0f0'
+      }}>
+        <TeamOutlined style={{ fontSize: '24px', color: '#1890ff' }} />
+        {(!collapsed || isMobile) && (
+          <Title level={4} style={{ margin: '8px 0 0 0', color: '#1890ff' }}>
+            NexaCare Reception
+          </Title>
+        )}
+      </div>
+      <Menu
+        mode="inline"
+        defaultSelectedKeys={['dashboard']}
+        items={sidebarMenu}
+        style={{ border: 'none', flex: 1 }}
+        onClick={onMenuClick}
+      />
+      <SidebarProfile
+        collapsed={collapsed && !isMobile}
+        name={user?.fullName || 'Receptionist'}
+        roleLabel="RECEPTIONIST"
+        roleColor="#F97316"
+        avatarIcon={<TeamOutlined />}
+        onSettingsClick={() => message.info('Profile settings coming soon.')}
+        onLogoutClick={logout}
+      />
+    </>
+  );
 
   const handleWalkInSubmit = async (values: any) => {
     try {
@@ -985,54 +1032,46 @@ export default function ReceptionistDashboard() {
 
   return (
     <Layout style={{ minHeight: '100vh', background: '#f5f5f5' }}>
-      <Sider 
-        collapsible 
-        collapsed={collapsed}
-        onCollapse={setCollapsed}
-        width={260}
-        collapsedWidth={80}
-        style={{
-          position: 'fixed',
-          top: 0,
-          left: 0,
-          height: '100vh',
-          width: siderWidth,
-          background: '#fff',
-          boxShadow: '2px 0 8px rgba(0,0,0,0.1)',
-          display: 'flex',
-          flexDirection: 'column',
-          transition: 'width 0.2s ease',
-          zIndex: 10,
-        }}
-      >
-        <div style={{ 
-          padding: '16px', 
-          textAlign: 'center',
-          borderBottom: '1px solid #f0f0f0'
-        }}>
-          <TeamOutlined style={{ fontSize: '24px', color: '#1890ff' }} />
-          {!collapsed && (
-            <Title level={4} style={{ margin: '8px 0 0 0', color: '#1890ff' }}>
-              NexaCare Reception
-            </Title>
-          )}
-              </div>
-        <Menu
-          mode="inline"
-          defaultSelectedKeys={['dashboard']}
-          items={sidebarMenu}
-          style={{ border: 'none', flex: 1 }}
-        />
-        <SidebarProfile
+      {/* Desktop/Tablet Sidebar */}
+      {!isMobile && (
+        <Sider 
+          trigger={null}
+          collapsible 
           collapsed={collapsed}
-          name={user?.fullName || 'Receptionist'}
-          roleLabel="RECEPTIONIST"
-          roleColor="#F97316"
-          avatarIcon={<TeamOutlined />}
-          onSettingsClick={() => message.info('Profile settings coming soon.')}
-          onLogoutClick={logout}
-        />
-      </Sider>
+          onCollapse={setCollapsed}
+          width={260}
+          collapsedWidth={80}
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            height: '100vh',
+            width: siderWidth,
+            background: '#fff',
+            boxShadow: '2px 0 8px rgba(0,0,0,0.1)',
+            display: 'flex',
+            flexDirection: 'column',
+            transition: 'width 0.2s ease',
+            zIndex: 10,
+          }}
+        >
+          <SidebarContent />
+        </Sider>
+      )}
+
+      {/* Mobile Drawer */}
+      {isMobile && (
+        <Drawer
+          title="Navigation"
+          placement="left"
+          onClose={() => setMobileDrawerOpen(false)}
+          open={mobileDrawerOpen}
+          bodyStyle={{ padding: 0 }}
+          width={260}
+        >
+          <SidebarContent onMenuClick={() => setMobileDrawerOpen(false)} />
+        </Drawer>
+      )}
 
       <Layout
         style={{
@@ -1048,85 +1087,159 @@ export default function ReceptionistDashboard() {
             background: receptionistTheme.background,
             height: '100vh',
             overflowY: 'auto',
+            padding: isMobile ? '12px 16px' : isTablet ? '16px 20px' : '16px 24px 24px',
           }}
         >
-          <div style={{ padding: '32px 24px', maxWidth: '1320px', margin: '0 auto', paddingBottom: 48 }}>
-          {/* KPI Cards */}
-          <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
-            <Col xs={24} sm={12} md={6}>
-              <KpiCard
-                label="Pending Confirmation"
-                value={stats.pendingAppointments || 0}
-                icon={<ClockCircleOutlined style={{ color: receptionistTheme.primary }} />}
-                trendLabel="Awaiting action"
-                trendType={stats.pendingAppointments > 0 ? "negative" : "neutral"}
-                onView={() => message.info('View pending appointments')}
-              />
-            </Col>
-            <Col xs={24} sm={12} md={6}>
-              <KpiCard
-                label="Confirmed Today"
-                value={stats.confirmedAppointments || 0}
-                icon={<CheckCircleOutlined style={{ color: receptionistTheme.accent }} />}
-                trendLabel="Ready"
-                trendType="positive"
-                onView={() => message.info('View confirmed appointments')}
-              />
-            </Col>
-            <Col xs={24} sm={12} md={6}>
-              <KpiCard
-                label="Walk-ins Waiting"
-                value={stats.walkInPatients || 0}
-                icon={<UserAddOutlined style={{ color: receptionistTheme.secondary }} />}
-                trendLabel="In queue"
-                trendType={stats.walkInPatients > 0 ? "negative" : "neutral"}
-                onView={() => message.info('View walk-in patients')}
-              />
-            </Col>
-            <Col xs={24} sm={12} md={6}>
-              <KpiCard
-                label="Check-ins Completed"
-                value={stats.checkedInAppointments || 0}
-                icon={<TeamOutlined style={{ color: '#16a34a' }} />}
-                trendLabel="Today"
-                trendType="positive"
-                onView={() => message.info('View checked-in patients')}
-              />
-            </Col>
-          </Row>
+          <div style={{ paddingBottom: 24, maxWidth: '1320px', margin: '0 auto' }}>
+            {/* Mobile Menu Button */}
+            {isMobile && (
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+                <Button
+                  type="text"
+                  icon={<MenuUnfoldOutlined />}
+                  onClick={() => setMobileDrawerOpen(true)}
+                  style={{ fontSize: '18px' }}
+                />
+                <Title level={4} style={{ margin: 0 }}>Dashboard</Title>
+                <div style={{ width: 32 }} /> {/* Spacer for centering */}
+              </div>
+            )}
+            
+            {/* Desktop/Tablet Menu Toggle */}
+            {!isMobile && (
+              <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 16 }}>
+                <Button
+                  type="text"
+                  icon={collapsed ? <MenuFoldOutlined /> : <MenuUnfoldOutlined />}
+                  onClick={() => setCollapsed(!collapsed)}
+                />
+              </div>
+            )}
+
+            {/* KPI Cards - Responsive Grid */}
+            {isMobile ? (
+              <div style={{ 
+                display: 'flex', 
+                overflowX: 'auto', 
+                gap: 12, 
+                marginBottom: 24,
+                paddingBottom: 8,
+                scrollSnapType: 'x mandatory',
+                WebkitOverflowScrolling: 'touch',
+              }}>
+                {[
+                  { label: "Pending Confirmation", value: stats.pendingAppointments || 0, icon: <ClockCircleOutlined style={{ color: receptionistTheme.primary }} />, trendLabel: "Awaiting action", trendType: (stats.pendingAppointments > 0 ? "negative" : "neutral") as const, onView: () => message.info('View pending appointments') },
+                  { label: "Confirmed Today", value: stats.confirmedAppointments || 0, icon: <CheckCircleOutlined style={{ color: receptionistTheme.accent }} />, trendLabel: "Ready", trendType: "positive" as const, onView: () => message.info('View confirmed appointments') },
+                  { label: "Walk-ins Waiting", value: stats.walkInPatients || 0, icon: <UserAddOutlined style={{ color: receptionistTheme.secondary }} />, trendLabel: "In queue", trendType: (stats.walkInPatients > 0 ? "negative" : "neutral") as const, onView: () => message.info('View walk-in patients') },
+                  { label: "Check-ins Completed", value: stats.checkedInAppointments || 0, icon: <TeamOutlined style={{ color: '#16a34a' }} />, trendLabel: "Today", trendType: "positive" as const, onView: () => message.info('View checked-in patients') },
+                ].map((kpi, idx) => (
+                  <div key={idx} style={{ minWidth: 200, scrollSnapAlign: 'start' }}>
+                    <KpiCard {...kpi} />
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
+                <Col xs={24} sm={12} md={6}>
+                  <KpiCard
+                    label="Pending Confirmation"
+                    value={stats.pendingAppointments || 0}
+                    icon={<ClockCircleOutlined style={{ color: receptionistTheme.primary }} />}
+                    trendLabel="Awaiting action"
+                    trendType={stats.pendingAppointments > 0 ? "negative" : "neutral"}
+                    onView={() => message.info('View pending appointments')}
+                  />
+                </Col>
+                <Col xs={24} sm={12} md={6}>
+                  <KpiCard
+                    label="Confirmed Today"
+                    value={stats.confirmedAppointments || 0}
+                    icon={<CheckCircleOutlined style={{ color: receptionistTheme.accent }} />}
+                    trendLabel="Ready"
+                    trendType="positive"
+                    onView={() => message.info('View confirmed appointments')}
+                  />
+                </Col>
+                <Col xs={24} sm={12} md={6}>
+                  <KpiCard
+                    label="Walk-ins Waiting"
+                    value={stats.walkInPatients || 0}
+                    icon={<UserAddOutlined style={{ color: receptionistTheme.secondary }} />}
+                    trendLabel="In queue"
+                    trendType={stats.walkInPatients > 0 ? "negative" : "neutral"}
+                    onView={() => message.info('View walk-in patients')}
+                  />
+                </Col>
+                <Col xs={24} sm={12} md={6}>
+                  <KpiCard
+                    label="Check-ins Completed"
+                    value={stats.checkedInAppointments || 0}
+                    icon={<TeamOutlined style={{ color: '#16a34a' }} />}
+                    trendLabel="Today"
+                    trendType="positive"
+                    onView={() => message.info('View checked-in patients')}
+                  />
+                </Col>
+              </Row>
+            )}
 
           {/* Quick Actions */}
-          <Card variant="borderless" style={{ marginBottom: 24, borderRadius: 16 }} bodyStyle={{ padding: 20 }}>
-            <Row gutter={[16, 16]}>
-              <Col xs={24} sm={12} md={6}>
+          <Card variant="borderless" style={{ marginBottom: 24, borderRadius: 16 }} bodyStyle={{ padding: isMobile ? 16 : 20 }}>
+            {isMobile ? (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
                 <QuickActionTile
                   label="Create Appointment"
                   icon={<CalendarOutlined />}
                   onClick={() => setIsBookingModalOpen(true)}
                 />
-              </Col>
-              <Col xs={24} sm={12} md={6}>
                 <QuickActionTile
                   label="Walk-in Registration"
                   icon={<UserAddOutlined />}
                   onClick={openWalkInModal}
                 />
-              </Col>
-              <Col xs={24} sm={12} md={6}>
                 <QuickActionTile
                   label="Check-in Patient"
                   icon={<CheckCircleOutlined />}
                   onClick={() => message.info('Select an appointment to check-in')}
                 />
-              </Col>
-              <Col xs={24} sm={12} md={6}>
                 <QuickActionTile
                   label="Record Payment"
                   icon={<FileTextOutlined />}
                   onClick={() => message.info('Payment recording coming soon')}
                 />
-              </Col>
-            </Row>
+              </div>
+            ) : (
+              <Row gutter={[16, 16]}>
+                <Col xs={24} sm={12} md={6}>
+                  <QuickActionTile
+                    label="Create Appointment"
+                    icon={<CalendarOutlined />}
+                    onClick={() => setIsBookingModalOpen(true)}
+                  />
+                </Col>
+                <Col xs={24} sm={12} md={6}>
+                  <QuickActionTile
+                    label="Walk-in Registration"
+                    icon={<UserAddOutlined />}
+                    onClick={openWalkInModal}
+                  />
+                </Col>
+                <Col xs={24} sm={12} md={6}>
+                  <QuickActionTile
+                    label="Check-in Patient"
+                    icon={<CheckCircleOutlined />}
+                    onClick={() => message.info('Select an appointment to check-in')}
+                  />
+                </Col>
+                <Col xs={24} sm={12} md={6}>
+                  <QuickActionTile
+                    label="Record Payment"
+                    icon={<FileTextOutlined />}
+                    onClick={() => message.info('Payment recording coming soon')}
+                  />
+                </Col>
+              </Row>
+            )}
           </Card>
 
           <Row gutter={[16, 16]}>
@@ -1154,14 +1267,17 @@ export default function ReceptionistDashboard() {
                       key: tab.key,
                       label: tab.label,
                       children: (
-                        <Table
-                          columns={appointmentColumns}
-                          dataSource={appointmentsToShow}
-                          pagination={false}
-                          rowKey="id"
-                          loading={appointmentsLoading}
-                          size="middle"
-                        />
+                        <div style={{ overflowX: 'auto' }}>
+                          <Table
+                            columns={appointmentColumns}
+                            dataSource={appointmentsToShow}
+                            pagination={false}
+                            rowKey="id"
+                            loading={appointmentsLoading}
+                            size={isMobile ? "small" : "middle"}
+                            scroll={isMobile ? { x: 'max-content' } : undefined}
+                          />
+                        </div>
                       ),
                     }))}
                     style={{ marginTop: 8 }}
