@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation } from "@tanstack/react-query";
 import { 
   Layout, 
   Card, 
@@ -15,7 +15,10 @@ import {
   List,
   message,
   Avatar,
-  Drawer
+  Drawer,
+  Badge,
+  Empty,
+  Spin
 } from 'antd';
 import { 
   UserOutlined, 
@@ -27,13 +30,16 @@ import {
   BarChartOutlined,
   CheckCircleOutlined,
   MenuFoldOutlined,
-  MenuUnfoldOutlined
+  MenuUnfoldOutlined,
+  BellOutlined
 } from '@ant-design/icons';
 import { useAuth } from '../../hooks/use-auth';
 import { useResponsive } from '../../hooks/use-responsive';
 import { SidebarProfile } from '../../components/dashboard/SidebarProfile';
 import { KpiCard } from '../../components/dashboard/KpiCard';
 import { QuickActionTile } from '../../components/dashboard/QuickActionTile';
+import { NotificationItem } from '../../components/dashboard/NotificationItem';
+import { formatDateTime } from '../../lib/utils';
 
 const { Content, Sider } = Layout;
 const { Title, Text } = Typography;
@@ -59,18 +65,74 @@ export default function HospitalDashboard() {
     }
   }, [isMobile, isTablet]);
 
-  // Get dashboard stats
-  const { data: stats } = useQuery({
-    queryKey: ['/api/dashboard/stats'],
-    queryFn: async () => ({
-      totalDoctors: 24,
-      totalPatients: 1250,
-      totalAppointments: 156,
-      todayAppointments: 18,
-      completedAppointments: 12,
-      pendingAppointments: 6,
-      totalRevenue: 125000
-    })
+  // Get dashboard stats from real data
+  const { data: stats, isLoading: statsLoading } = useQuery({
+    queryKey: ['/api/hospitals/stats'],
+    queryFn: async () => {
+      const token = localStorage.getItem('auth-token');
+      const response = await fetch('/api/hospitals/stats', {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+      if (!response.ok) {
+        console.log('⚠️ Hospital stats API not ready yet');
+        // Return default values if API fails
+        return {
+          totalDoctors: 0,
+          totalPatients: 0,
+          totalAppointments: 0,
+          todayAppointments: 0,
+          completedAppointments: 0,
+          pendingAppointments: 0,
+          totalRevenue: 0
+        };
+      }
+      return response.json();
+    },
+    enabled: !!user && user.role?.toUpperCase() === 'HOSPITAL',
+    refetchInterval: 30000, // Refetch every 30 seconds
+  });
+
+  // Get notifications for hospital admin
+  const { data: notifications = [], isLoading: notificationsLoading } = useQuery({
+    queryKey: ['/api/notifications/me'],
+    queryFn: async () => {
+      const token = localStorage.getItem('auth-token');
+      const response = await fetch('/api/notifications/me', {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+      if (!response.ok) {
+        console.log('⚠️ Notifications API not ready yet');
+        return [];
+      }
+      return response.json();
+    },
+    enabled: !!user,
+    refetchInterval: 15000,
+  });
+
+  // Mark notification as read
+  const markNotificationMutation = useMutation({
+    mutationFn: async (notificationId: number) => {
+      const token = localStorage.getItem('auth-token');
+      const response = await fetch(`/api/notifications/read/${notificationId}`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+      if (!response.ok) throw new Error('Failed to mark notification as read');
+      return response.json();
+    },
+    onSuccess: () => {
+      message.success('Notification marked as read.');
+    },
+    onError: () => {
+      message.error('Failed to mark notification as read.');
+    },
   });
 
   // Get hospital appointments with auto-refresh
@@ -100,12 +162,12 @@ export default function HospitalDashboard() {
         }
         
         return {
-          id: apt.id,
-          patient: apt.patientName || 'Unknown Patient',
-          doctor: apt.doctorName || 'Unknown Doctor',
-          time: apt.appointmentTime || apt.timeSlot || 'N/A',
-          status: apt.status || 'pending',
-          department: apt.doctorSpecialty || 'General',
+        id: apt.id,
+        patient: apt.patientName || 'Unknown Patient',
+        doctor: apt.doctorName || 'Unknown Doctor',
+        time: apt.appointmentTime || apt.timeSlot || 'N/A',
+        status: apt.status || 'pending',
+        department: apt.doctorSpecialty || 'General',
           date: apt.appointmentDate,
           dateObj: appointmentDate,
         };
@@ -314,27 +376,27 @@ export default function HospitalDashboard() {
     <Layout style={{ minHeight: '100vh', background: '#f5f5f5' }}>
       {/* Desktop/Tablet Sidebar */}
       {!isMobile && (
-        <Sider 
+      <Sider 
           trigger={null}
-          collapsible 
-          collapsed={collapsed}
-          onCollapse={setCollapsed}
-          width={260}
-          collapsedWidth={80}
-          style={{
-            position: 'fixed',
-            top: 0,
-            left: 0,
-            height: '100vh',
-            width: siderWidth,
-            background: '#fff',
-            boxShadow: '2px 0 8px rgba(0,0,0,0.1)',
-            display: 'flex',
-            flexDirection: 'column',
-            transition: 'width 0.2s ease',
-            zIndex: 10,
-          }}
-        >
+        collapsible 
+        collapsed={collapsed}
+        onCollapse={setCollapsed}
+        width={260}
+        collapsedWidth={80}
+        style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          height: '100vh',
+          width: siderWidth,
+          background: '#fff',
+          boxShadow: '2px 0 8px rgba(0,0,0,0.1)',
+          display: 'flex',
+          flexDirection: 'column',
+          transition: 'width 0.2s ease',
+          zIndex: 10,
+        }}
+      >
           <SidebarContent />
         </Sider>
       )}
@@ -408,10 +470,10 @@ export default function HospitalDashboard() {
                 WebkitOverflowScrolling: 'touch',
               }}>
                 {[
-                  { label: "Total Doctors", value: stats?.totalDoctors || 0, icon: <TeamOutlined style={{ fontSize: '24px', color: hospitalTheme.primary }} />, trendLabel: "Active", trendType: "positive" as const, onView: () => message.info('View doctors') },
-                  { label: "Total Patients", value: stats?.totalPatients || 0, icon: <UserOutlined style={{ fontSize: '24px', color: hospitalTheme.secondary }} />, trendLabel: "Registered", trendType: "positive" as const, onView: () => message.info('View patients') },
-                  { label: "Today's Appointments", value: stats?.todayAppointments || 0, icon: <CalendarOutlined style={{ fontSize: '24px', color: hospitalTheme.accent }} />, trendLabel: "Scheduled", trendType: "neutral" as const, onView: () => message.info('View appointments') },
-                  { label: "Monthly Revenue", value: `₹${(stats?.totalRevenue || 0).toLocaleString()}`, icon: <BarChartOutlined style={{ fontSize: '24px', color: hospitalTheme.primary }} />, trendLabel: "This Month", trendType: "positive" as const, onView: () => message.info('View revenue') },
+                  { label: "Total Doctors", value: statsLoading ? '...' : (stats?.totalDoctors || 0), icon: <TeamOutlined style={{ fontSize: '24px', color: hospitalTheme.primary }} />, trendLabel: "Active", trendType: "positive" as const, onView: () => message.info('View doctors') },
+                  { label: "Total Patients", value: statsLoading ? '...' : (stats?.totalPatients || 0), icon: <UserOutlined style={{ fontSize: '24px', color: hospitalTheme.secondary }} />, trendLabel: "Registered", trendType: "positive" as const, onView: () => message.info('View patients') },
+                  { label: "Upcoming Appointments", value: statsLoading ? '...' : (stats?.upcomingAppointments || stats?.todayAppointments || 0), icon: <CalendarOutlined style={{ fontSize: '24px', color: hospitalTheme.accent }} />, trendLabel: "Scheduled", trendType: "neutral" as const, onView: () => message.info('View appointments') },
+                  { label: "Monthly Revenue", value: statsLoading ? '...' : `₹${(stats?.totalRevenue || 0).toLocaleString()}`, icon: <BarChartOutlined style={{ fontSize: '24px', color: hospitalTheme.primary }} />, trendLabel: "This Month", trendType: "positive" as const, onView: () => message.info('View revenue') },
                 ].map((kpi, idx) => (
                   <div key={idx} style={{ minWidth: 200, scrollSnapAlign: 'start' }}>
                     <KpiCard {...kpi} />
@@ -419,44 +481,44 @@ export default function HospitalDashboard() {
                 ))}
               </div>
             ) : (
-              <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
-                <Col xs={24} sm={12} md={6}>
-                  <KpiCard
-                    label="Total Doctors"
-                    value={stats?.totalDoctors || 0}
-                    icon={<TeamOutlined style={{ fontSize: '24px', color: hospitalTheme.primary }} />}
-                    trendLabel="Active"
-                    trendType="positive"
-                  />
-                </Col>
-                <Col xs={24} sm={12} md={6}>
-                  <KpiCard
-                    label="Total Patients"
-                    value={stats?.totalPatients || 0}
-                    icon={<UserOutlined style={{ fontSize: '24px', color: hospitalTheme.secondary }} />}
-                    trendLabel="Registered"
-                    trendType="positive"
-                  />
-                </Col>
-                <Col xs={24} sm={12} md={6}>
-                  <KpiCard
-                    label="Today's Appointments"
-                    value={stats?.todayAppointments || 0}
-                    icon={<CalendarOutlined style={{ fontSize: '24px', color: hospitalTheme.accent }} />}
-                    trendLabel="Scheduled"
-                    trendType="neutral"
-                  />
-                </Col>
-                <Col xs={24} sm={12} md={6}>
-                  <KpiCard
-                    label="Monthly Revenue"
-                    value={`₹${(stats?.totalRevenue || 0).toLocaleString()}`}
-                    icon={<BarChartOutlined style={{ fontSize: '24px', color: hospitalTheme.primary }} />}
-                    trendLabel="This Month"
-                    trendType="positive"
-                  />
-                </Col>
-              </Row>
+          <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
+                <Col xs={24} sm={12} md={6} style={{ display: 'flex' }}>
+              <KpiCard
+                label="Total Doctors"
+                    value={statsLoading ? '...' : (stats?.totalDoctors || 0)}
+                icon={<TeamOutlined style={{ fontSize: '24px', color: hospitalTheme.primary }} />}
+                trendLabel="Active"
+                trendType="positive"
+              />
+            </Col>
+                <Col xs={24} sm={12} md={6} style={{ display: 'flex' }}>
+              <KpiCard
+                label="Total Patients"
+                    value={statsLoading ? '...' : (stats?.totalPatients || 0)}
+                icon={<UserOutlined style={{ fontSize: '24px', color: hospitalTheme.secondary }} />}
+                trendLabel="Registered"
+                trendType="positive"
+              />
+            </Col>
+                <Col xs={24} sm={12} md={6} style={{ display: 'flex' }}>
+              <KpiCard
+                    label="Upcoming Appointments"
+                    value={statsLoading ? '...' : (stats?.upcomingAppointments || stats?.todayAppointments || 0)}
+                icon={<CalendarOutlined style={{ fontSize: '24px', color: hospitalTheme.accent }} />}
+                trendLabel="Scheduled"
+                trendType="neutral"
+              />
+            </Col>
+                <Col xs={24} sm={12} md={6} style={{ display: 'flex' }}>
+              <KpiCard
+                label="Monthly Revenue"
+                    value={statsLoading ? '...' : `₹${(stats?.totalRevenue || 0).toLocaleString()}`}
+                icon={<BarChartOutlined style={{ fontSize: '24px', color: hospitalTheme.primary }} />}
+                trendLabel="This Month"
+                trendType="positive"
+              />
+            </Col>
+          </Row>
             )}
 
         {/* Quick Actions */}
@@ -495,34 +557,34 @@ export default function HospitalDashboard() {
             ) : (
               <Row gutter={[16, 16]}>
                 <Col xs={24} sm={12} md={6}>
-                  <QuickActionTile
-                    label="Invite Staff"
-                    icon={<UserAddOutlined />}
-                    onClick={() => message.info('Invite staff feature coming soon')}
-                  />
-                </Col>
-                <Col xs={24} sm={12} md={6}>
-                  <QuickActionTile
-                    label="Assign Shift"
-                    icon={<CalendarOutlined />}
-                    onClick={() => message.info('Assign shift feature coming soon')}
-                  />
-                </Col>
-                <Col xs={24} sm={12} md={6}>
-                  <QuickActionTile
-                    label="Approve Requests"
-                    icon={<CheckCircleOutlined />}
-                    onClick={() => message.info('Approve requests feature coming soon')}
-                  />
-                </Col>
-                <Col xs={24} sm={12} md={6}>
-                  <QuickActionTile
-                    label="View Reports"
-                    icon={<BarChartOutlined />}
-                    onClick={() => message.info('View reports feature coming soon')}
-                  />
-                </Col>
-              </Row>
+                <QuickActionTile
+                  label="Invite Staff"
+                  icon={<UserAddOutlined />}
+                  onClick={() => message.info('Invite staff feature coming soon')}
+                />
+              </Col>
+              <Col xs={24} sm={12} md={6}>
+                <QuickActionTile
+                  label="Assign Shift"
+                  icon={<CalendarOutlined />}
+                  onClick={() => message.info('Assign shift feature coming soon')}
+                />
+              </Col>
+              <Col xs={24} sm={12} md={6}>
+                <QuickActionTile
+                  label="Approve Requests"
+                  icon={<CheckCircleOutlined />}
+                  onClick={() => message.info('Approve requests feature coming soon')}
+                />
+              </Col>
+              <Col xs={24} sm={12} md={6}>
+                <QuickActionTile
+                  label="View Reports"
+                  icon={<BarChartOutlined />}
+                  onClick={() => message.info('View reports feature coming soon')}
+                />
+              </Col>
+            </Row>
             )}
           </Card>
 
@@ -535,19 +597,19 @@ export default function HospitalDashboard() {
                 style={{ borderRadius: 16 }}
               >
                 <div style={{ overflowX: 'auto' }}>
-                  <Table
-                    columns={appointmentColumns}
-                    dataSource={appointments}
-                    pagination={false}
-                    rowKey="id"
-                    variant="borderless"
+                <Table
+                  columns={appointmentColumns}
+                  dataSource={appointments}
+                  pagination={false}
+                  rowKey="id"
+                  variant="borderless"
                     loading={appointmentsLoading}
                     size={isMobile ? "small" : "middle"}
                     scroll={isMobile ? { x: 'max-content' } : undefined}
-                    style={{
-                      backgroundColor: hospitalTheme.background
-                    }}
-                  />
+                  style={{
+                    backgroundColor: hospitalTheme.background
+                  }}
+                />
                 </div>
               </Card>
             </Col>
@@ -599,6 +661,46 @@ export default function HospitalDashboard() {
                     </List.Item>
                   )}
                 />
+              </Card>
+
+              <Card 
+                title={
+                  <Space>
+                    <BellOutlined />
+                    <span>Notifications</span>
+                    {notifications.filter((notif: any) => !notif.read).length > 0 && (
+                      <Badge count={notifications.filter((notif: any) => !notif.read).length} />
+                    )}
+                  </Space>
+                }
+                style={{ 
+                  marginTop: '16px',
+                  borderRadius: 16
+                }}
+              >
+                {notificationsLoading ? (
+                  <Spin size="small" />
+                ) : notifications.length > 0 ? (
+                  <Space direction="vertical" size={12} style={{ width: '100%' }}>
+                    {notifications.slice(0, 5).map((notif: any) => (
+                      <NotificationItem
+                        key={notif.id}
+                        title={notif.title || 'Notification'}
+                        message={notif.message || ''}
+                        timestamp={formatDateTime(notif.createdAt)}
+                        severity={notif.type === 'urgent' ? 'urgent' : 'info'}
+                        read={Boolean(notif.read)}
+                        onMarkRead={() => !notif.read && markNotificationMutation.mutate(notif.id)}
+                      />
+                    ))}
+                  </Space>
+                ) : (
+                  <Empty
+                    image={Empty.PRESENTED_IMAGE_SIMPLE}
+                    description="All caught up"
+                    style={{ padding: '20px 0' }}
+                  />
+                )}
               </Card>
             </Col>
           </Row>

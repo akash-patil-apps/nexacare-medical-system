@@ -14,7 +14,6 @@ import {
   Skeleton,
   Empty,
   Tabs,
-  Table,
   Drawer,
 } from 'antd';
 import {
@@ -37,6 +36,7 @@ import { PrescriptionCard } from '../../components/dashboard/PrescriptionCard';
 import { TimelineItem } from '../../components/dashboard/TimelineItem';
 import { NotificationItem } from '../../components/dashboard/NotificationItem';
 import { SidebarProfile } from '../../components/dashboard/SidebarProfile';
+import LabReportViewerModal from '../../components/modals/lab-report-viewer-modal';
 import { formatDate, formatDateTime } from '../../lib/utils';
 import dayjs from 'dayjs';
 
@@ -136,6 +136,8 @@ export default function PatientDashboard() {
   const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false);
   const [timelineFilter, setTimelineFilter] = useState<TimelineFilter>('all');
   const [activeAppointmentTab, setActiveAppointmentTab] = useState<string>('today');
+  const [selectedLabReport, setSelectedLabReport] = useState<any>(null);
+  const [isLabReportModalOpen, setIsLabReportModalOpen] = useState(false);
   
   useOnboardingCheck();
 
@@ -659,8 +661,15 @@ export default function PatientDashboard() {
                 {[
                   { label: "Upcoming Appointments", value: stats.upcomingAppointments, icon: <CalendarOutlined style={{ color: '#1890ff' }} />, trendLabel: "Updated", trendType: "positive" as const, onView: () => setLocation('/dashboard/patient/appointments') },
                   { label: "Active Prescriptions", value: stats.prescriptions, icon: <MedicineBoxOutlined style={{ color: '#52c41a' }} />, trendLabel: "Current", trendType: "neutral" as const, onView: () => setLocation('/dashboard/patient/prescriptions') },
-                  { label: "Lab Reports", value: stats.labReports, icon: <FileTextOutlined style={{ color: '#faad14' }} />, trendLabel: "Latest", trendType: "neutral" as const, onView: () => message.info('Lab reports dashboard coming soon.') },
-                  { label: "Messages", value: messageCounts.total, icon: <BellOutlined style={{ color: '#722ed1' }} />, trendLabel: `+${messageCounts.unread} new`, trendType: (messageCounts.unread > 0 ? 'positive' : 'neutral') as const, onView: () => message.info('Messages coming soon.') },
+                  { label: "Lab Reports", value: stats.labReports, icon: <FileTextOutlined style={{ color: '#faad14' }} />, trendLabel: "Latest", trendType: "neutral" as const, onView: () => {
+                    if (labReportsData.length > 0) {
+                      setSelectedLabReport(labReportsData[0]);
+                      setIsLabReportModalOpen(true);
+                    } else {
+                      message.info('No lab reports available yet.');
+                    }
+                  } },
+                  { label: "Messages", value: messageCounts.total, icon: <BellOutlined style={{ color: '#722ed1' }} />, trendLabel: `+${messageCounts.unread} new`, trendType: (messageCounts.unread > 0 ? 'positive' : 'neutral') as 'positive' | 'neutral', onView: () => message.info('Messages coming soon.') },
                 ].map((kpi, idx) => (
                   <div key={idx} style={{ minWidth: 200, scrollSnapAlign: 'start' }}>
                     <KpiCard {...kpi} />
@@ -669,7 +678,7 @@ export default function PatientDashboard() {
               </div>
             ) : (
               <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
-                <Col xs={24} sm={12} md={6}>
+                <Col xs={24} sm={12} md={6} style={{ display: 'flex' }}>
                   <KpiCard
                     label="Upcoming Appointments"
                     value={stats.upcomingAppointments}
@@ -679,7 +688,7 @@ export default function PatientDashboard() {
                     onView={() => setLocation('/dashboard/patient/appointments')}
                   />
                 </Col>
-                <Col xs={24} sm={12} md={6}>
+                <Col xs={24} sm={12} md={6} style={{ display: 'flex' }}>
                   <KpiCard
                     label="Active Prescriptions"
                     value={stats.prescriptions}
@@ -689,17 +698,24 @@ export default function PatientDashboard() {
                     onView={() => setLocation('/dashboard/patient/prescriptions')}
                   />
                 </Col>
-                <Col xs={24} sm={12} md={6}>
+                <Col xs={24} sm={12} md={6} style={{ display: 'flex' }}>
                   <KpiCard
                     label="Lab Reports"
                     value={stats.labReports}
                     icon={<FileTextOutlined style={{ color: '#faad14' }} />}
                     trendLabel="Latest"
                     trendType="neutral"
-                    onView={() => message.info('Lab reports dashboard coming soon.')}
+                    onView={() => {
+                      if (labReportsData.length > 0) {
+                        setSelectedLabReport(labReportsData[0]);
+                        setIsLabReportModalOpen(true);
+                      } else {
+                        message.info('No lab reports available yet.');
+                      }
+                    }}
                   />
                 </Col>
-                <Col xs={24} sm={12} md={6}>
+                <Col xs={24} sm={12} md={6} style={{ display: 'flex' }}>
                   <KpiCard
                     label="Messages"
                     value={messageCounts.total}
@@ -880,7 +896,19 @@ export default function PatientDashboard() {
                           timestamp={item.timestamp}
                           description={item.description}
                           actionLabel={item.actionLabel}
-                          onAction={() => message.info('Coming soon')}
+                          onAction={() => {
+                            // If it's a lab report item, open the viewer
+                            if (item.id?.startsWith('lab-')) {
+                              const reportId = parseInt(item.id.replace('lab-', ''));
+                              const report = labReportsData.find((r: any) => r.id === reportId);
+                              if (report) {
+                                setSelectedLabReport(report);
+                                setIsLabReportModalOpen(true);
+                              }
+                            } else {
+                              message.info('Coming soon');
+                            }
+                          }}
                         />
                       ))}
                     </Space>
@@ -926,7 +954,13 @@ export default function PatientDashboard() {
                           </Col>
                         </Row>
                         <Tag color="orange">Review</Tag>
-                        <Button block onClick={() => message.info('Lab report viewer coming soon.')}>
+                        <Button 
+                          block 
+                          onClick={() => {
+                            setSelectedLabReport(labReportsData[0]);
+                            setIsLabReportModalOpen(true);
+                          }}
+                        >
                           View Full Report
                         </Button>
                       </Space>
@@ -964,6 +998,17 @@ export default function PatientDashboard() {
           </div>
         </Content>
       </Layout>
+
+      {/* Lab Report Viewer Modal */}
+      <LabReportViewerModal
+        open={isLabReportModalOpen}
+        onCancel={() => {
+          setIsLabReportModalOpen(false);
+          setSelectedLabReport(null);
+        }}
+        report={selectedLabReport}
+        loading={labReportsLoading}
+      />
     </Layout>
   );
 }

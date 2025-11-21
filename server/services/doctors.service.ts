@@ -63,6 +63,20 @@ export const getDoctorById = async (doctorId: number) => {
 };
 
 /**
+ * Get doctor by user ID.
+ */
+export const getDoctorByUserId = async (userId: number) => {
+  console.log(`👨‍⚕️ Fetching doctor by user ID ${userId}`);
+  const result = await db
+    .select()
+    .from(doctors)
+    .where(eq(doctors.userId, userId))
+    .limit(1);
+  
+  return result[0] || null;
+};
+
+/**
  * Get doctors in a hospital.
  */
 export const getDoctorsByHospital = async (hospitalId: number) => {

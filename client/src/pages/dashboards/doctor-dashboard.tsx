@@ -46,6 +46,9 @@ import PrescriptionForm from '../../components/prescription-form';
 import { KpiCard } from '../../components/dashboard/KpiCard';
 import { QuickActionTile } from '../../components/dashboard/QuickActionTile';
 import { SidebarProfile } from '../../components/dashboard/SidebarProfile';
+import { NotificationItem } from '../../components/dashboard/NotificationItem';
+import LabRequestModal from '../../components/modals/lab-request-modal';
+import { formatDateTime } from '../../lib/utils';
 import dayjs from 'dayjs';
 
 const { Content, Sider } = Layout;
@@ -69,6 +72,7 @@ export default function DoctorDashboard() {
   const [selectedAppointmentId, setSelectedAppointmentId] = useState<number | undefined>(undefined);
   const [patientSearchTerm, setPatientSearchTerm] = useState('');
   const [activeAppointmentTab, setActiveAppointmentTab] = useState<string>('today');
+  const [isLabRequestModalOpen, setIsLabRequestModalOpen] = useState(false);
 
   // Auto-collapse sidebar on mobile/tablet
   useEffect(() => {
@@ -229,90 +233,49 @@ export default function DoctorDashboard() {
     refetchOnMount: true, // Refetch when component mounts
   });
 
-  // Filter confirmed appointments that are today or in the future (by date and time)
+  // Filter confirmed appointments that are today or in the future (by date only - simpler logic)
   const confirmedFutureAppointments = useMemo(() => {
     const now = new Date();
+    const today = new Date(now);
+    today.setHours(0, 0, 0, 0); // Start of today
     
-    return allAppointments
+    console.log('🔍 Filtering appointments. Total:', allAppointments.length);
+    console.log('🔍 Current date/time:', now.toISOString());
+    
+    const filtered = allAppointments
       .filter((apt: any) => {
         // Only show confirmed appointments
         if (apt.status !== 'confirmed') {
+          console.log(`⏭️  Skipping appointment ${apt.id} - status: ${apt.status}`);
           return false;
         }
         
         // Check if appointment has valid date
         if (!apt.date && !apt.dateObj) {
+          console.log(`⏭️  Skipping appointment ${apt.id} - no date`);
           return false;
         }
         
         try {
-          const appointmentDateTime = apt.dateObj || new Date(apt.date);
-          if (isNaN(appointmentDateTime.getTime())) {
+          // Get appointment date (ignore time for comparison)
+          const appointmentDate = apt.dateObj || new Date(apt.date);
+          if (isNaN(appointmentDate.getTime())) {
+            console.log(`⏭️  Skipping appointment ${apt.id} - invalid date:`, apt.date);
             return false;
           }
           
-          // Parse time from appointmentTime or timeSlot
-          let appointmentTime = new Date(appointmentDateTime);
+          // Set to start of day for comparison
+          const appointmentDay = new Date(appointmentDate);
+          appointmentDay.setHours(0, 0, 0, 0);
           
-          if (apt.appointmentTime) {
-            // Parse time string (e.g., "09:00", "09:00 AM", "14:30")
-            const timeStr = apt.appointmentTime.trim();
-            const timeMatch = timeStr.match(/(\d{1,2}):(\d{2})\s*(AM|PM|am|pm)?/i);
-            
-            if (timeMatch) {
-              let hours = parseInt(timeMatch[1]);
-              const minutes = parseInt(timeMatch[2]);
-              const period = timeMatch[3]?.toUpperCase();
-              
-              // Handle 12-hour format
-              if (period === 'PM' && hours !== 12) {
-                hours += 12;
-              } else if (period === 'AM' && hours === 12) {
-                hours = 0;
-              }
-              
-              appointmentTime.setHours(hours, minutes, 0, 0);
-            } else {
-              // Try 24-hour format
-              const parts = timeStr.split(':');
-              if (parts.length >= 2) {
-                const hours = parseInt(parts[0]) || 9;
-                const minutes = parseInt(parts[1]) || 0;
-                appointmentTime.setHours(hours, minutes, 0, 0);
-              } else {
-                // Default to 9 AM if can't parse
-                appointmentTime.setHours(9, 0, 0, 0);
-              }
-            }
-          } else if (apt.timeSlot) {
-            // Extract start time from timeSlot (e.g., "09:00 AM - 10:00 AM", "14:30 - 15:30")
-            const timeMatch = apt.timeSlot.match(/(\d{1,2}):(\d{2})\s*(AM|PM|am|pm)?/i);
-            if (timeMatch) {
-              let hours = parseInt(timeMatch[1]);
-              const minutes = parseInt(timeMatch[2]);
-              const period = timeMatch[3]?.toUpperCase();
-              
-              // Handle 12-hour format
-              if (period === 'PM' && hours !== 12) {
-                hours += 12;
-              } else if (period === 'AM' && hours === 12) {
-                hours = 0;
-              }
-              
-              appointmentTime.setHours(hours, minutes, 0, 0);
-            } else {
-              // Default to 9 AM if can't parse
-              appointmentTime.setHours(9, 0, 0, 0);
-            }
-          } else {
-            // No time info, default to start of day (midnight)
-            appointmentTime.setHours(0, 0, 0, 0);
-          }
+          // Include appointments that are today or in the future (by date only)
+          const isFutureOrToday = appointmentDay >= today;
           
-          // Only include appointments that are today or in the future (by date and time)
-          return appointmentTime >= now;
+          console.log(`📅 Appointment ${apt.id}: date=${appointmentDay.toISOString()}, today=${today.toISOString()}, include=${isFutureOrToday}`);
+          
+          return isFutureOrToday;
         } catch (error) {
-          console.error(`❌ Error checking date/time for appointment ${apt.id}:`, error);
+          console.error(`❌ Error checking date for appointment ${apt.id}:`, error, apt);
           return false;
         }
       })
@@ -322,6 +285,9 @@ export default function DoctorDashboard() {
         const dateTimeB = b.dateObj || new Date(b.date);
         return dateTimeA.getTime() - dateTimeB.getTime();
       });
+    
+    console.log(`✅ Filtered to ${filtered.length} confirmed future appointments`);
+    return filtered;
   }, [allAppointments]);
 
   // Group appointments by date for tabs
@@ -775,7 +741,7 @@ export default function DoctorDashboard() {
     // Add other navigation handlers as needed
   };
 
-  const handleQuickAction = (key: 'consult' | 'prescription' | 'availability' | 'labs') => {
+  const handleQuickAction = (key: 'consult' | 'prescription' | 'availability' | 'labs' | 'requestLab') => {
     switch (key) {
       case 'consult':
         message.info('Consultation room launching soon.');
@@ -788,6 +754,9 @@ export default function DoctorDashboard() {
         break;
       case 'labs':
         message.info('Lab queue coming soon.');
+        break;
+      case 'requestLab':
+        setIsLabRequestModalOpen(true);
         break;
       default:
         break;
@@ -990,7 +959,7 @@ export default function DoctorDashboard() {
               </div>
             ) : (
               <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
-                <Col xs={24} sm={12} md={6}>
+                <Col xs={24} sm={12} md={6} style={{ display: 'flex' }}>
                   <KpiCard
                     label="Today's Appointments"
                     value={stats.todayAppointments || 0}
@@ -1000,7 +969,7 @@ export default function DoctorDashboard() {
                     onView={() => setLocation('/dashboard/doctor/appointments')}
                   />
                 </Col>
-                <Col xs={24} sm={12} md={6}>
+                <Col xs={24} sm={12} md={6} style={{ display: 'flex' }}>
                   <KpiCard
                     label="Lab Results Pending"
                     value={stats.pendingLabReports || 0}
@@ -1010,7 +979,7 @@ export default function DoctorDashboard() {
                     onView={() => message.info('Lab results widget below')}
                   />
                 </Col>
-                <Col xs={24} sm={12} md={6}>
+                <Col xs={24} sm={12} md={6} style={{ display: 'flex' }}>
                   <KpiCard
                     label="Completed Today"
                     value={stats.completedAppointments || 0}
@@ -1020,7 +989,7 @@ export default function DoctorDashboard() {
                     onView={() => setLocation('/dashboard/doctor/appointments')}
                   />
                 </Col>
-                <Col xs={24} sm={12} md={6}>
+                <Col xs={24} sm={12} md={6} style={{ display: 'flex' }}>
                   <KpiCard
                     label={
                       <Space>
@@ -1059,6 +1028,11 @@ export default function DoctorDashboard() {
                     onClick={() => handleQuickAction('availability')}
                   />
                   <QuickActionTile
+                    label="Request Lab Test"
+                    icon={<ExperimentOutlined />}
+                    onClick={() => handleQuickAction('requestLab')}
+                  />
+                  <QuickActionTile
                     label="Review Lab Queue"
                     icon={<FileTextOutlined />}
                     onClick={() => handleQuickAction('labs')}
@@ -1082,16 +1056,16 @@ export default function DoctorDashboard() {
                   </Col>
                   <Col xs={24} sm={12} md={6}>
                     <QuickActionTile
-                      label="Update Availability"
-                      icon={<CheckCircleOutlined />}
-                      onClick={() => handleQuickAction('availability')}
+                      label="Request Lab Test"
+                      icon={<ExperimentOutlined />}
+                      onClick={() => handleQuickAction('requestLab')}
                     />
                   </Col>
                   <Col xs={24} sm={12} md={6}>
                     <QuickActionTile
-                      label="Review Lab Queue"
-                      icon={<FileTextOutlined />}
-                      onClick={() => handleQuickAction('labs')}
+                      label="Update Availability"
+                      icon={<CheckCircleOutlined />}
+                      onClick={() => handleQuickAction('availability')}
                     />
                   </Col>
                 </Row>
@@ -1242,51 +1216,35 @@ export default function DoctorDashboard() {
                     )}
                   </Card>
 
-                  <Card variant="borderless" style={{ borderRadius: 16 }}>
-                    <Title level={5} style={{ marginBottom: 12 }}>
-                      <BellOutlined style={{ marginRight: 8 }} />
-                      Notifications
+                  <Card variant="borderless" style={{ borderRadius: 16 }} title={
+                    <Space>
+                      <BellOutlined />
+                      <span>Notifications</span>
                       {stats.unreadNotifications > 0 && (
-                        <Badge count={stats.unreadNotifications} style={{ marginLeft: 8 }} />
+                        <Badge count={stats.unreadNotifications} />
                       )}
-                    </Title>
+                    </Space>
+                  }>
                     {notificationsLoading ? (
                       <Spin size="small" />
                     ) : notifications.length > 0 ? (
-                      <List
-                        size="small"
-                        dataSource={notifications.slice(0, 5)}
-                        renderItem={(notif: any) => (
-                          <List.Item style={{ padding: '8px 0' }}>
-                            <Space direction="vertical" size={4} style={{ width: '100%' }}>
-                              <Space size={8}>
-                                <Tag color={notif.type === 'urgent' ? 'red' : 'blue'} style={{ margin: 0 }}>
-                                  {notif.type === 'urgent' ? 'Urgent' : 'Info'}
-                                </Tag>
-                                <Text strong style={{ fontSize: 13 }}>{notif.title || 'Notification'}</Text>
-                                {!notif.read && (
-                                  <Button
-                                    type="link"
-                                    size="small"
-                                    onClick={() => markNotificationMutation.mutate(notif.id)}
-                                    style={{ padding: 0, height: 'auto', fontSize: 11 }}
-                                  >
-                                    Mark read
-                                  </Button>
-                                )}
-                              </Space>
-                              <Text type="secondary" style={{ fontSize: 12 }}>{notif.message || ''}</Text>
-                              <Text type="secondary" style={{ fontSize: 11 }}>
-                                {dayjs(notif.createdAt || new Date()).format('DD MMM, hh:mm A')}
-                              </Text>
-                            </Space>
-                          </List.Item>
-                        )}
-                      />
+                      <Space direction="vertical" size={12} style={{ width: '100%' }}>
+                        {notifications.slice(0, 5).map((notif: any) => (
+                          <NotificationItem
+                            key={notif.id}
+                            title={notif.title || 'Notification'}
+                            message={notif.message || ''}
+                            timestamp={formatDateTime(notif.createdAt)}
+                            severity={notif.type === 'urgent' ? 'urgent' : 'info'}
+                            read={Boolean(notif.read)}
+                            onMarkRead={() => !notif.read && markNotificationMutation.mutate(notif.id)}
+                          />
+                        ))}
+                      </Space>
                     ) : (
                       <Empty
                         image={Empty.PRESENTED_IMAGE_SIMPLE}
-                        description="No notifications"
+                        description="All caught up"
                         style={{ padding: '20px 0' }}
                       />
                     )}
@@ -1331,6 +1289,18 @@ export default function DoctorDashboard() {
         patientsOverride={todaysPendingPatients}
         hideHospitalSelect
         appointmentIdMap={todaysAppointmentIdMap}
+      />
+
+      {/* Lab Request Modal */}
+      <LabRequestModal
+        open={isLabRequestModalOpen}
+        onCancel={() => setIsLabRequestModalOpen(false)}
+        onSuccess={() => {
+          queryClient.invalidateQueries({ queryKey: ['/api/labs/doctor/reports'] });
+        }}
+        patientId={selectedPatientId}
+        appointmentId={selectedAppointmentId}
+        patientsOverride={todaysPendingPatients}
       />
     </Layout>
   );

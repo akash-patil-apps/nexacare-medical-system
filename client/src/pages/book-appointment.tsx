@@ -150,11 +150,22 @@ export default function BookAppointment() {
       const data = await response.json();
       const allHospitals = data.hospitals || [];
       
-      // Filter hospitals by selected city
+      console.log('🏥 All hospitals loaded:', allHospitals.length);
+      console.log('🏙️ Selected city:', selectedCity);
+      if (allHospitals.length > 0) {
+        console.log('📍 Sample hospital cities:', allHospitals.slice(0, 5).map((h: Hospital) => h.city));
+      }
+      
+      // Filter hospitals by selected city (case-insensitive)
       const cityFilteredHospitals = selectedCity 
-        ? allHospitals.filter((hospital: Hospital) => hospital.city === selectedCity)
+        ? allHospitals.filter((hospital: Hospital) => {
+            const hospitalCity = hospital.city?.trim().toLowerCase() || '';
+            const selectedCityLower = selectedCity.trim().toLowerCase();
+            return hospitalCity === selectedCityLower;
+          })
         : allHospitals;
       
+      console.log('✅ Filtered hospitals:', cityFilteredHospitals.length);
       setHospitals(cityFilteredHospitals);
       
       // Extract all unique specialties from hospitals

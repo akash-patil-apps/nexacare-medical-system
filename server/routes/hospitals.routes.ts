@@ -1,10 +1,13 @@
 // server/routes/hospitals.routes.ts
 import { Router } from 'express';
-import { createHospital, getAllHospitals } from '../services/hospitals.service';
+import { createHospital, getAllHospitals, getHospitalStats } from '../services/hospitals.service';
 import { insertHospitalSchema } from '../../shared/schema';
 import {approveLab,approveDoctor} from '../services/hospitals.service'
 import { authenticateToken, authorizeRoles } from '../middleware/auth';
 import { AuthenticatedRequest } from '../types';
+import { db } from '../db';
+import { hospitals } from '../../shared/schema';
+import { eq } from 'drizzle-orm';
 
 
 const router = Router();
@@ -12,11 +15,21 @@ const router = Router();
 // GET /hospitals - List all hospitals
 router.get('/', async (_req, res) => {
   try {
+    console.log('📡 GET /api/hospitals - Request received');
     const hospitals = await getAllHospitals();
+    console.log(`✅ Returning ${hospitals.length} hospitals`);
     res.json({ hospitals });
-  } catch (err) {
-    console.error('Fetch hospitals error:', err);
-    res.status(500).json({ message: 'Failed to fetch hospitals' });
+  } catch (err: any) {
+    console.error('❌ Fetch hospitals error:', err);
+    console.error('Error details:', {
+      message: err?.message,
+      stack: err?.stack,
+      name: err?.name
+    });
+    res.status(500).json({ 
+      message: 'Failed to fetch hospitals',
+      error: process.env.NODE_ENV === 'development' ? err?.message : undefined
+    });
   }
 });
 
@@ -74,5 +87,33 @@ router.post(
   }
 );
 
+// Get hospital statistics for dashboard
+router.get(
+  '/stats',
+  authenticateToken,
+  authorizeRoles('hospital'),
+  async (req: AuthenticatedRequest, res) => {
+    try {
+      const userId = req.user!.id;
+      
+      // Get hospital ID from user
+      const [hospital] = await db
+        .select({ id: hospitals.id })
+        .from(hospitals)
+        .where(eq(hospitals.userId, userId))
+        .limit(1);
+      
+      if (!hospital) {
+        return res.status(404).json({ message: 'Hospital not found for this user' });
+      }
+      
+      const stats = await getHospitalStats(hospital.id);
+      res.json(stats);
+    } catch (err: any) {
+      console.error('Get hospital stats error:', err);
+      res.status(500).json({ message: err.message || 'Failed to fetch hospital statistics' });
+    }
+  }
+);
 
 export default router;

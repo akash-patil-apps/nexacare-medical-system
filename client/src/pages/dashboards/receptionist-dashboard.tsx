@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation } from "@tanstack/react-query";
 import { Redirect, useLocation } from "wouter";
 import { 
   Layout, 
@@ -27,6 +27,8 @@ import {
   Divider,
   Tabs,
   Drawer,
+  Badge,
+  Empty,
 } from 'antd';
 import { 
   UserOutlined, 
@@ -40,6 +42,7 @@ import {
   PhoneOutlined,
   MenuFoldOutlined,
   MenuUnfoldOutlined,
+  BellOutlined,
 } from '@ant-design/icons';
 import { useAuth } from '../../hooks/use-auth';
 import { useResponsive } from '../../hooks/use-responsive';
@@ -48,6 +51,8 @@ import { message } from 'antd';
 import { SidebarProfile } from '../../components/dashboard/SidebarProfile';
 import { KpiCard } from '../../components/dashboard/KpiCard';
 import { QuickActionTile } from '../../components/dashboard/QuickActionTile';
+import { NotificationItem } from '../../components/dashboard/NotificationItem';
+import { formatDateTime } from '../../lib/utils';
 import dayjs from 'dayjs';
 import type { Dayjs } from 'dayjs';
 
@@ -168,6 +173,48 @@ export default function ReceptionistDashboard() {
     },
     enabled: !!user,
     refetchInterval: 5000,
+  });
+
+  // Get notifications for receptionist
+  const { data: notifications = [], isLoading: notificationsLoading } = useQuery({
+    queryKey: ['/api/notifications/me'],
+    queryFn: async () => {
+      const token = localStorage.getItem('auth-token');
+      const response = await fetch('/api/notifications/me', {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+      if (!response.ok) {
+        console.log('⚠️ Notifications API not ready yet');
+        return [];
+      }
+      return response.json();
+    },
+    enabled: !!user,
+    refetchInterval: 15000,
+  });
+
+  // Mark notification as read
+  const markNotificationMutation = useMutation({
+    mutationFn: async (notificationId: number) => {
+      const token = localStorage.getItem('auth-token');
+      const response = await fetch(`/api/notifications/read/${notificationId}`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+      if (!response.ok) throw new Error('Failed to mark notification as read');
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/notifications/me'] });
+      message.success('Notification marked as read.');
+    },
+    onError: () => {
+      message.error('Failed to mark notification as read.');
+    },
   });
 
   const { data: doctors = [], isLoading: doctorsLoading } = useQuery({
@@ -395,6 +442,8 @@ export default function ReceptionistDashboard() {
       apt.status === 'confirmed' || apt.status === 'checked-in' || apt.status === 'attended'
     ).length;
 
+    const unreadNotifications = notifications.filter((notif: any) => !notif.read).length;
+
     return {
       totalAppointments: appointments.length,
       todayAppointments: today.length,
@@ -407,8 +456,9 @@ export default function ReceptionistDashboard() {
       totalPatients: new Set(appointments.map((apt: any) => apt.patient)).size,
       noShowAppointments: 0, // TODO: Calculate based on missed appointments
       pendingPayments: 0, // TODO: Add payment tracking
+      unreadNotifications,
     };
-  }, [appointments, walkInPatients]);
+  }, [appointments, walkInPatients, notifications]);
 
   const handlePatientSearch = useCallback(
     (searchTerm: string) => {
@@ -1140,7 +1190,7 @@ export default function ReceptionistDashboard() {
               </div>
             ) : (
               <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
-                <Col xs={24} sm={12} md={6}>
+                <Col xs={24} sm={12} md={6} style={{ display: 'flex' }}>
                   <KpiCard
                     label="Pending Confirmation"
                     value={stats.pendingAppointments || 0}
@@ -1150,7 +1200,7 @@ export default function ReceptionistDashboard() {
                     onView={() => message.info('View pending appointments')}
                   />
                 </Col>
-                <Col xs={24} sm={12} md={6}>
+                <Col xs={24} sm={12} md={6} style={{ display: 'flex' }}>
                   <KpiCard
                     label="Confirmed Today"
                     value={stats.confirmedAppointments || 0}
@@ -1160,7 +1210,7 @@ export default function ReceptionistDashboard() {
                     onView={() => message.info('View confirmed appointments')}
                   />
                 </Col>
-                <Col xs={24} sm={12} md={6}>
+                <Col xs={24} sm={12} md={6} style={{ display: 'flex' }}>
                   <KpiCard
                     label="Walk-ins Waiting"
                     value={stats.walkInPatients || 0}
@@ -1170,7 +1220,7 @@ export default function ReceptionistDashboard() {
                     onView={() => message.info('View walk-in patients')}
                   />
                 </Col>
-                <Col xs={24} sm={12} md={6}>
+                <Col xs={24} sm={12} md={6} style={{ display: 'flex' }}>
                   <KpiCard
                     label="Check-ins Completed"
                     value={stats.checkedInAppointments || 0}
@@ -1309,6 +1359,40 @@ export default function ReceptionistDashboard() {
                     </List.Item>
                   )}
                 />
+              </Card>
+
+              <Card variant="borderless" style={{ borderRadius: 16, marginTop: '16px' }} title={
+                <Space>
+                  <BellOutlined />
+                  <span>Notifications</span>
+                  {notifications.filter((notif: any) => !notif.read).length > 0 && (
+                    <Badge count={notifications.filter((notif: any) => !notif.read).length} />
+                  )}
+                </Space>
+              }>
+                {notificationsLoading ? (
+                  <Spin size="small" />
+                ) : notifications.length > 0 ? (
+                  <Space direction="vertical" size={12} style={{ width: '100%' }}>
+                    {notifications.slice(0, 5).map((notif: any) => (
+                      <NotificationItem
+                        key={notif.id}
+                        title={notif.title || 'Notification'}
+                        message={notif.message || ''}
+                        timestamp={formatDateTime(notif.createdAt)}
+                        severity={notif.type === 'urgent' ? 'urgent' : 'info'}
+                        read={Boolean(notif.read)}
+                        onMarkRead={() => !notif.read && markNotificationMutation.mutate(notif.id)}
+                      />
+                    ))}
+                  </Space>
+                ) : (
+                  <Empty
+                    image={Empty.PRESENTED_IMAGE_SIMPLE}
+                    description="All caught up"
+                    style={{ padding: '20px 0' }}
+                  />
+                )}
               </Card>
 
               <Card variant="borderless" style={{ borderRadius: 16, marginTop: '16px' }}>

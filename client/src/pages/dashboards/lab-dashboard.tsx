@@ -1,5 +1,5 @@
-import { useState, useEffect } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useState, useEffect, useMemo } from "react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { 
   Layout, 
   Card, 
@@ -14,8 +14,14 @@ import {
   Progress,
   List,
   message,
-  Drawer
+  Drawer,
+  Badge,
+  Empty,
+  Spin,
+  Select
 } from 'antd';
+
+const { Option } = Select;
 import { 
   UserOutlined, 
   CalendarOutlined, 
@@ -28,13 +34,17 @@ import {
   BarChartOutlined,
   AlertOutlined,
   MenuFoldOutlined,
-  MenuUnfoldOutlined
+  MenuUnfoldOutlined,
+  BellOutlined
 } from '@ant-design/icons';
 import { useAuth } from '../../hooks/use-auth';
 import { useResponsive } from '../../hooks/use-responsive';
 import { SidebarProfile } from '../../components/dashboard/SidebarProfile';
 import { KpiCard } from '../../components/dashboard/KpiCard';
 import { QuickActionTile } from '../../components/dashboard/QuickActionTile';
+import { NotificationItem } from '../../components/dashboard/NotificationItem';
+import LabReportUploadModal from '../../components/modals/lab-report-upload-modal';
+import { formatDateTime } from '../../lib/utils';
 
 const { Content, Sider } = Layout;
 const { Title, Text } = Typography;
@@ -50,8 +60,12 @@ const labTheme = {
 export default function LabDashboard() {
   const { user, logout } = useAuth();
   const { isMobile, isTablet } = useResponsive();
+  const queryClient = useQueryClient();
   const [collapsed, setCollapsed] = useState(false);
   const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false);
+  const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
+  const [selectedReport, setSelectedReport] = useState<any>(null);
+  const [statusFilter, setStatusFilter] = useState<string>('all');
 
   // Auto-collapse sidebar on mobile/tablet
   useEffect(() => {
@@ -62,10 +76,10 @@ export default function LabDashboard() {
 
   // Get lab reports from API
   const { data: labReportsData = [], isLoading: labReportsLoading } = useQuery({
-    queryKey: ['/api/lab-reports/my'],
+    queryKey: ['/api/labs/me/reports'],
     queryFn: async () => {
       const token = localStorage.getItem('auth-token');
-      const response = await fetch('/api/lab-reports/my', {
+      const response = await fetch('/api/labs/me/reports', {
         headers: {
           'Authorization': `Bearer ${token}`
         }
@@ -77,11 +91,87 @@ export default function LabDashboard() {
       }
       const data = await response.json();
       console.log('📋 Lab reports loaded:', data.length, 'reports');
+      console.log('📋 Sample report data:', data[0] ? {
+        id: data[0].id,
+        patientId: data[0].patientId,
+        patientName: data[0].patientName,
+        testName: data[0].testName
+      } : 'No reports');
       return data;
     },
+    enabled: !!user,
     refetchInterval: 5000,
     refetchOnWindowFocus: true,
     refetchOnMount: true,
+  });
+
+  // Get notifications for lab technician
+  const { data: notifications = [], isLoading: notificationsLoading } = useQuery({
+    queryKey: ['/api/notifications/me'],
+    queryFn: async () => {
+      const token = localStorage.getItem('auth-token');
+      const response = await fetch('/api/notifications/me', {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+      if (!response.ok) {
+        console.log('⚠️ Notifications API not ready yet');
+        return [];
+      }
+      return response.json();
+    },
+    enabled: !!user,
+    refetchInterval: 15000,
+  });
+
+  // Mark notification as read
+  const markNotificationMutation = useMutation({
+    mutationFn: async (notificationId: number) => {
+      const token = localStorage.getItem('auth-token');
+      const response = await fetch(`/api/notifications/read/${notificationId}`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+      if (!response.ok) throw new Error('Failed to mark notification as read');
+      return response.json();
+    },
+    onSuccess: () => {
+      message.success('Notification marked as read.');
+    },
+    onError: () => {
+      message.error('Failed to mark notification as read.');
+    },
+  });
+
+  // Update lab report status
+  const updateStatusMutation = useMutation({
+    mutationFn: async ({ reportId, status }: { reportId: number; status: string }) => {
+      const token = localStorage.getItem('auth-token');
+      const response = await fetch(`/api/labs/reports/${reportId}/status`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ status }),
+      });
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.message || 'Failed to update status');
+      }
+      return response.json();
+    },
+    onSuccess: () => {
+      message.success('Status updated successfully');
+      queryClient.invalidateQueries({ queryKey: ['/api/lab-reports/my'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/labs/me/reports'] });
+    },
+    onError: (error: any) => {
+      message.error(error.message || 'Failed to update status');
+    },
   });
 
   // Calculate real stats from lab reports data
@@ -110,7 +200,35 @@ export default function LabDashboard() {
     normalResults: 0
   };
 
-  const labReports = labReportsData;
+  // Filter lab reports by status
+  const filteredLabReports = useMemo(() => {
+    if (!labReportsData) return [];
+    if (statusFilter === 'all') return labReportsData;
+    return labReportsData.filter((report: any) => report.status === statusFilter);
+  }, [labReportsData, statusFilter]);
+
+  // Separate doctor requests (pending with placeholder results) from regular reports
+  const doctorRequests = useMemo(() => {
+    return filteredLabReports.filter((report: any) => 
+      report.status === 'pending' && 
+      (report.results === 'Pending - Awaiting lab processing' || report.results?.includes('Pending - Awaiting')) &&
+      report.doctorId // Has a doctor ID, meaning it's a request
+    );
+  }, [filteredLabReports]);
+
+  // Transform lab reports for table display
+  const labReports = useMemo(() => {
+    return filteredLabReports.map((report: any) => ({
+      ...report,
+      id: report.id,
+      patient: report.patientName || report.patient || 'Unknown',
+      testName: report.testName || 'Test',
+      date: report.reportDate ? new Date(report.reportDate).toLocaleDateString() : 'N/A',
+      result: report.result || (report.status === 'ready' ? 'Ready' : 'Pending'),
+      priority: report.priority || 'Normal',
+      status: report.status || 'pending',
+    }));
+  }, [filteredLabReports]);
 
   const reportColumns = [
     {
@@ -152,10 +270,47 @@ export default function LabDashboard() {
       title: 'Status',
       dataIndex: 'status',
       key: 'status',
-      render: (status: string) => (
-        <Tag color={status === 'completed' ? 'green' : 'orange'}>
-          {status.toUpperCase()}
+      render: (status: string, record: any) => (
+        <Space>
+          <Tag color={
+            status === 'completed' || status === 'ready' ? 'green' : 
+            status === 'processing' ? 'blue' : 
+            'orange'
+          }>
+            {status?.toUpperCase() || 'PENDING'}
         </Tag>
+          {status !== 'completed' && (
+            <Select
+              size="small"
+              value={status}
+              onChange={(newStatus) => updateStatusMutation.mutate({ reportId: record.id, status: newStatus })}
+              style={{ width: 100 }}
+            >
+              <Option value="pending">Pending</Option>
+              <Option value="processing">Processing</Option>
+              <Option value="ready">Ready</Option>
+              <Option value="completed">Completed</Option>
+            </Select>
+          )}
+        </Space>
+      ),
+    },
+    {
+      title: 'Actions',
+      key: 'actions',
+      render: (_: any, record: any) => (
+        <Space>
+          <Button
+            type="link"
+            size="small"
+            onClick={() => {
+              setSelectedReport(record);
+              setIsUploadModalOpen(true);
+            }}
+          >
+            Edit
+          </Button>
+        </Space>
       ),
     },
   ];
@@ -228,27 +383,27 @@ export default function LabDashboard() {
     <Layout style={{ minHeight: '100vh', background: '#f5f5f5' }}>
       {/* Desktop/Tablet Sidebar */}
       {!isMobile && (
-        <Sider 
+      <Sider 
           trigger={null}
-          collapsible 
-          collapsed={collapsed}
-          onCollapse={setCollapsed}
-          width={260}
-          collapsedWidth={80}
-          style={{
-            position: 'fixed',
-            top: 0,
-            left: 0,
-            height: '100vh',
-            width: siderWidth,
-            background: '#fff',
-            boxShadow: '2px 0 8px rgba(0,0,0,0.1)',
-            display: 'flex',
-            flexDirection: 'column',
-            transition: 'width 0.2s ease',
-            zIndex: 10,
-          }}
-        >
+        collapsible 
+        collapsed={collapsed}
+        onCollapse={setCollapsed}
+        width={260}
+        collapsedWidth={80}
+        style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          height: '100vh',
+          width: siderWidth,
+          background: '#fff',
+          boxShadow: '2px 0 8px rgba(0,0,0,0.1)',
+          display: 'flex',
+          flexDirection: 'column',
+          transition: 'width 0.2s ease',
+          zIndex: 10,
+        }}
+      >
           <SidebarContent />
         </Sider>
       )}
@@ -333,44 +488,44 @@ export default function LabDashboard() {
                 ))}
               </div>
             ) : (
-              <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
-                <Col xs={24} sm={12} md={6}>
-                  <KpiCard
-                    label="Samples Pending"
-                    value={stats?.pendingTests || 0}
-                    icon={<FileSearchOutlined style={{ fontSize: '24px', color: labTheme.primary }} />}
-                    trendLabel="Awaiting Analysis"
-                    trendType="neutral"
-                  />
-                </Col>
-                <Col xs={24} sm={12} md={6}>
-                  <KpiCard
-                    label="Reports Ready"
-                    value={stats?.completedTests || 0}
-                    icon={<CheckCircleOutlined style={{ fontSize: '24px', color: labTheme.secondary }} />}
-                    trendLabel="Completed Today"
-                    trendType="positive"
-                  />
-                </Col>
-                <Col xs={24} sm={12} md={6}>
-                  <KpiCard
-                    label="Critical Alerts"
-                    value={stats?.criticalResults || 0}
-                    icon={<AlertOutlined style={{ fontSize: '24px', color: labTheme.accent }} />}
-                    trendLabel="Requires Attention"
-                    trendType={stats?.criticalResults > 0 ? 'negative' : 'positive'}
-                  />
-                </Col>
-                <Col xs={24} sm={12} md={6}>
-                  <KpiCard
-                    label="Total Tests"
-                    value={stats?.totalTests || 0}
-                    icon={<ExperimentOutlined style={{ fontSize: '24px', color: labTheme.primary }} />}
-                    trendLabel="All Time"
-                    trendType="neutral"
-                  />
-                </Col>
-              </Row>
+          <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
+                <Col xs={24} sm={12} md={6} style={{ display: 'flex' }}>
+              <KpiCard
+                label="Samples Pending"
+                value={stats?.pendingTests || 0}
+                icon={<FileSearchOutlined style={{ fontSize: '24px', color: labTheme.primary }} />}
+                trendLabel="Awaiting Analysis"
+                trendType="neutral"
+              />
+            </Col>
+                <Col xs={24} sm={12} md={6} style={{ display: 'flex' }}>
+              <KpiCard
+                label="Reports Ready"
+                value={stats?.completedTests || 0}
+                icon={<CheckCircleOutlined style={{ fontSize: '24px', color: labTheme.secondary }} />}
+                trendLabel="Completed Today"
+                trendType="positive"
+              />
+            </Col>
+                <Col xs={24} sm={12} md={6} style={{ display: 'flex' }}>
+              <KpiCard
+                label="Critical Alerts"
+                value={stats?.criticalResults || 0}
+                icon={<AlertOutlined style={{ fontSize: '24px', color: labTheme.accent }} />}
+                trendLabel="Requires Attention"
+                trendType={stats?.criticalResults > 0 ? 'negative' : 'positive'}
+              />
+            </Col>
+                <Col xs={24} sm={12} md={6} style={{ display: 'flex' }}>
+              <KpiCard
+                label="Total Tests"
+                value={stats?.totalTests || 0}
+                icon={<ExperimentOutlined style={{ fontSize: '24px', color: labTheme.primary }} />}
+                trendLabel="All Time"
+                trendType="neutral"
+              />
+            </Col>
+          </Row>
             )}
 
           {/* Quick Actions */}
@@ -388,12 +543,18 @@ export default function LabDashboard() {
                 <QuickActionTile
                   label="Log Sample"
                   icon={<ExperimentOutlined />}
-                  onClick={() => message.info('Log sample feature coming soon')}
+                  onClick={() => {
+                    setSelectedReport(null);
+                    setIsUploadModalOpen(true);
+                  }}
                 />
                 <QuickActionTile
                   label="Upload Report"
                   icon={<UploadOutlined />}
-                  onClick={() => message.info('Upload report feature coming soon')}
+                  onClick={() => {
+                    setSelectedReport(null);
+                    setIsUploadModalOpen(true);
+                  }}
                 />
                 <QuickActionTile
                   label="Assign Technician"
@@ -412,14 +573,20 @@ export default function LabDashboard() {
                   <QuickActionTile
                     label="Log Sample"
                     icon={<ExperimentOutlined />}
-                    onClick={() => message.info('Log sample feature coming soon')}
+                    onClick={() => {
+                      setSelectedReport(null);
+                      setIsUploadModalOpen(true);
+                    }}
                   />
                 </Col>
                 <Col xs={24} sm={12} md={6}>
                   <QuickActionTile
                     label="Upload Report"
                     icon={<UploadOutlined />}
-                    onClick={() => message.info('Upload report feature coming soon')}
+                    onClick={() => {
+                      setSelectedReport(null);
+                      setIsUploadModalOpen(true);
+                    }}
                   />
                 </Col>
                 <Col xs={24} sm={12} md={6}>
@@ -430,39 +597,97 @@ export default function LabDashboard() {
                   />
                 </Col>
                 <Col xs={24} sm={12} md={6}>
-                  <QuickActionTile
-                    label="Request Re-test"
-                    icon={<FileSearchOutlined />}
-                    onClick={() => message.info('Request re-test feature coming soon')}
-                  />
-                </Col>
-              </Row>
+                <QuickActionTile
+                  label="Request Re-test"
+                  icon={<FileSearchOutlined />}
+                  onClick={() => message.info('Request re-test feature coming soon')}
+                />
+              </Col>
+            </Row>
             )}
           </Card>
 
           <Row gutter={[16, 16]}>
-            {/* Recent Lab Reports */}
+            {/* Lab Reports Queue */}
             <Col xs={24} lg={16}>
+              <Space direction="vertical" size={16} style={{ width: '100%' }}>
+                {/* Doctor Requests Section */}
+                {doctorRequests.length > 0 && (
+                  <Card 
+                    title={
+                      <Space>
+                        <ExperimentOutlined style={{ color: labTheme.accent }} />
+                        <span>Doctor Requests ({doctorRequests.length})</span>
+                        <Tag color="orange">New</Tag>
+                      </Space>
+                    }
+                    style={{ borderRadius: 16, border: `2px solid ${labTheme.accent}` }}
+                  >
+                    <div style={{ overflowX: 'auto' }}>
+                      <Table
+                        columns={reportColumns}
+                        dataSource={doctorRequests.map((report: any) => ({
+                          ...report,
+                          id: report.id,
+                          patient: report.patientName || report.patient || 'Unknown',
+                          testName: report.testName || 'Test',
+                          date: report.reportDate ? new Date(report.reportDate).toLocaleDateString() : 'N/A',
+                          result: 'Requested',
+                          priority: report.priority || 'Normal',
+                          status: report.status || 'pending',
+                        }))}
+                        pagination={false}
+                        rowKey="id"
+                        variant="borderless"
+                        size={isMobile ? "small" : "middle"}
+                        scroll={isMobile ? { x: 'max-content' } : undefined}
+                        style={{
+                          backgroundColor: labTheme.background
+                        }}
+                      />
+                    </div>
+                  </Card>
+                )}
+
+                {/* Regular Lab Reports */}
               <Card 
-                title="Recent Lab Reports" 
-                extra={<Button type="link" onClick={() => message.info('View all reports feature coming soon')}>View All</Button>}
+                  title="Lab Reports Queue" 
+                  extra={
+                    <Space>
+                      <Select
+                        value={statusFilter}
+                        onChange={setStatusFilter}
+                        style={{ width: 120 }}
+                        size="small"
+                      >
+                        <Option value="all">All Status</Option>
+                        <Option value="pending">Pending</Option>
+                        <Option value="processing">Processing</Option>
+                        <Option value="ready">Ready</Option>
+                        <Option value="completed">Completed</Option>
+                      </Select>
+                      <Button type="link" onClick={() => message.info('View all reports feature coming soon')}>View All</Button>
+                    </Space>
+                  }
                 style={{ borderRadius: 16 }}
               >
-                <div style={{ overflowX: 'auto' }}>
-                  <Table
-                    columns={reportColumns}
-                    dataSource={labReports}
-                    pagination={false}
-                    rowKey="id"
-                    variant="borderless"
-                    size={isMobile ? "small" : "middle"}
-                    scroll={isMobile ? { x: 'max-content' } : undefined}
-                    style={{
-                      backgroundColor: labTheme.background
-                    }}
-                  />
-                </div>
+                  <div style={{ overflowX: 'auto' }}>
+                <Table
+                  columns={reportColumns}
+                      dataSource={labReports.filter((r: any) => !doctorRequests.find((dr: any) => dr.id === r.id))}
+                  pagination={false}
+                  rowKey="id"
+                  variant="borderless"
+                      size={isMobile ? "small" : "middle"}
+                      scroll={isMobile ? { x: 'max-content' } : undefined}
+                      loading={labReportsLoading}
+                  style={{
+                    backgroundColor: labTheme.background
+                  }}
+                />
+                  </div>
               </Card>
+              </Space>
             </Col>
 
             {/* Lab Performance & Critical Results */}
@@ -480,6 +705,46 @@ export default function LabDashboard() {
                 <Text type="secondary">
                   {stats?.completedTests || 0} of {stats?.totalTests || 0} tests completed
                 </Text>
+              </Card>
+
+              <Card 
+                title={
+                  <Space>
+                    <BellOutlined />
+                    <span>Notifications</span>
+                    {notifications.filter((notif: any) => !notif.read).length > 0 && (
+                      <Badge count={notifications.filter((notif: any) => !notif.read).length} />
+                    )}
+                  </Space>
+                }
+                style={{ 
+                  marginTop: '16px',
+                  borderRadius: 16
+                }}
+              >
+                {notificationsLoading ? (
+                  <Spin size="small" />
+                ) : notifications.length > 0 ? (
+                  <Space direction="vertical" size={12} style={{ width: '100%' }}>
+                    {notifications.slice(0, 5).map((notif: any) => (
+                      <NotificationItem
+                        key={notif.id}
+                        title={notif.title || 'Notification'}
+                        message={notif.message || ''}
+                        timestamp={formatDateTime(notif.createdAt)}
+                        severity={notif.type === 'urgent' ? 'urgent' : 'info'}
+                        read={Boolean(notif.read)}
+                        onMarkRead={() => !notif.read && markNotificationMutation.mutate(notif.id)}
+                      />
+                    ))}
+                  </Space>
+                ) : (
+                  <Empty
+                    image={Empty.PRESENTED_IMAGE_SIMPLE}
+                    description="All caught up"
+                    style={{ padding: '20px 0' }}
+                  />
+                )}
               </Card>
 
               <Card 
@@ -515,6 +780,20 @@ export default function LabDashboard() {
           </div>
         </Content>
       </Layout>
+
+      {/* Lab Report Upload Modal */}
+      <LabReportUploadModal
+        open={isUploadModalOpen}
+        onCancel={() => {
+          setIsUploadModalOpen(false);
+          setSelectedReport(null);
+        }}
+        onSuccess={() => {
+          queryClient.invalidateQueries({ queryKey: ['/api/lab-reports/my'] });
+          queryClient.invalidateQueries({ queryKey: ['/api/labs/me/reports'] });
+        }}
+        report={selectedReport}
+      />
     </Layout>
   );
 }
