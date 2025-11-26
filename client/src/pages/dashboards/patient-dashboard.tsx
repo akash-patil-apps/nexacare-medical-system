@@ -23,9 +23,19 @@ import {
   FileTextOutlined,
   BellOutlined,
   PlusOutlined,
-  MenuFoldOutlined,
   MenuUnfoldOutlined,
+  SendOutlined,
+  ClockCircleOutlined,
+  ExperimentOutlined,
+  MessageOutlined,
+  ReloadOutlined,
+  UploadOutlined,
+  HistoryOutlined,
 } from '@ant-design/icons';
+import { DashboardIcon } from '../../assets/icons/DashboardIcon';
+import { AppointmentIcon } from '../../assets/icons/AppointmentIcon';
+import { PrescriptionIcon } from '../../assets/icons/PrescriptionIcon';
+import { LabIcon } from '../../assets/icons/LabIcon';
 import { useAuth } from '../../hooks/use-auth';
 import { useLocation } from 'wouter';
 import { useOnboardingCheck } from '../../hooks/use-onboarding-check';
@@ -132,21 +142,14 @@ export default function PatientDashboard() {
   const queryClient = useQueryClient();
   const [, setLocation] = useLocation();
   const { isMobile, isTablet } = useResponsive();
-  const [collapsed, setCollapsed] = useState(false);
   const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false);
   const [timelineFilter, setTimelineFilter] = useState<TimelineFilter>('all');
   const [activeAppointmentTab, setActiveAppointmentTab] = useState<string>('today');
   const [selectedLabReport, setSelectedLabReport] = useState<any>(null);
   const [isLabReportModalOpen, setIsLabReportModalOpen] = useState(false);
+  const [selectedMenuKey, setSelectedMenuKey] = useState<string>('dashboard');
   
   useOnboardingCheck();
-
-  // Auto-collapse sidebar on mobile/tablet
-  useEffect(() => {
-    if (isMobile || isTablet) {
-      setCollapsed(true);
-    }
-  }, [isMobile, isTablet]);
 
   const {
     data: allAppointments = [],
@@ -501,12 +504,28 @@ export default function PatientDashboard() {
 
   const isTimelineLoading = appointmentsLoading || prescriptionsLoading || labReportsLoading;
 
-  const sidebarMenu = [
-    { key: 'dashboard', icon: <UserOutlined />, label: 'Dashboard' },
-    { key: 'appointments', icon: <CalendarOutlined />, label: 'Appointments' },
-    { key: 'prescriptions', icon: <MedicineBoxOutlined />, label: 'Prescriptions' },
-    { key: 'reports', icon: <FileTextOutlined />, label: 'Lab Reports' },
-  ];
+  const sidebarMenu = useMemo(() => [
+    { 
+      key: 'dashboard', 
+      icon: <DashboardIcon size={18} color={selectedMenuKey === 'dashboard' ? '#1A8FE3' : '#8C8C8C'} />, 
+      label: 'Dashboard' 
+    },
+    { 
+      key: 'appointments', 
+      icon: <AppointmentIcon size={18} color={selectedMenuKey === 'appointments' ? '#1A8FE3' : '#8C8C8C'} />, 
+      label: 'Appointments' 
+    },
+    { 
+      key: 'prescriptions', 
+      icon: <PrescriptionIcon size={18} color={selectedMenuKey === 'prescriptions' ? '#1A8FE3' : '#8C8C8C'} />, 
+      label: 'Prescriptions' 
+    },
+    { 
+      key: 'reports', 
+      icon: <LabIcon size={18} color={selectedMenuKey === 'reports' ? '#1A8FE3' : '#8C8C8C'} />, 
+      label: 'Lab Reports' 
+    },
+  ], [selectedMenuKey]);
 
   const handleQuickAction = (key: 'book' | 'refill' | 'upload' | 'message' | 'history') => {
     switch (key) {
@@ -530,60 +549,155 @@ export default function PatientDashboard() {
     }
   };
 
-  const siderWidth = isMobile ? 0 : (collapsed ? 80 : 260);
+  const siderWidth = isMobile ? 0 : 260;
 
   // Sidebar content component (reusable for drawer and sider)
   const SidebarContent = ({ onMenuClick }: { onMenuClick?: () => void }) => (
-    <>
-      <div style={{ padding: '16px', textAlign: 'center', borderBottom: '1px solid #f0f0f0' }}>
-        <MedicineBoxOutlined style={{ fontSize: '24px', color: '#1890ff' }} />
-        {(!collapsed || isMobile) && (
-          <Title level={4} style={{ margin: '8px 0 0', color: '#1890ff' }}>
-            NexaCare
-          </Title>
-        )}
+    <div style={{ 
+      display: 'flex', 
+      flexDirection: 'column', 
+      height: '100%',
+    }}>
+      <div style={{ 
+        padding: '20px 16px', 
+        display: 'flex',
+        alignItems: 'center',
+        gap: '12px',
+        borderBottom: '1px solid #E3F2FF',
+        background: '#fff',
+        flexShrink: 0,
+      }}>
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          width: '40px',
+          height: '40px',
+          borderRadius: '8px',
+          background: '#1A8FE3',
+          flexShrink: 0,
+        }}>
+          <PlusOutlined style={{ fontSize: '20px', color: '#fff' }} />
+        </div>
+        <Title level={4} style={{ margin: 0, color: '#1A8FE3', fontWeight: 600, fontSize: '18px' }}>
+          NexaCare
+        </Title>
       </div>
       <Menu
+        className="patient-dashboard-menu"
         mode="inline"
-        defaultSelectedKeys={['dashboard']}
+        selectedKeys={[selectedMenuKey]}
         items={sidebarMenu}
-        style={{ border: 'none', flex: 1 }}
-        onClick={onMenuClick}
+        style={{ 
+          border: 'none', 
+          flex: 1,
+          background: 'transparent',
+          padding: '8px',
+          overflowY: 'auto',
+        }}
+        onClick={(e) => {
+          setSelectedMenuKey(e.key);
+          if (onMenuClick) onMenuClick();
+          if (e.key === 'appointments') setLocation('/dashboard/patient/appointments');
+          if (e.key === 'prescriptions') setLocation('/dashboard/patient/prescriptions');
+          if (e.key === 'reports') message.info('Lab reports page coming soon.');
+        }}
+        theme="light"
       />
       <SidebarProfile
-        collapsed={collapsed && !isMobile}
+        collapsed={false}
         name={user?.fullName || 'Patient'}
         roleLabel="PATIENT"
-        roleColor="blue"
         avatarIcon={<UserOutlined />}
         onSettingsClick={() => message.info('Profile settings coming soon.')}
       />
-    </>
+    </div>
   );
 
+  // Patient theme colors
+  const patientTheme = {
+    primary: '#1A8FE3',
+    secondary: '#10B981',
+    accent: '#F59E0B',
+    background: '#F7FBFF',
+    highlight: '#E3F2FF',
+  };
+
   return (
-    <Layout style={{ minHeight: '100vh', background: '#f5f5f5' }}>
+    <>
+      <style>{`
+        .patient-dashboard-menu .ant-menu-item {
+          border-radius: 10px !important;
+          margin: 4px 8px !important;
+          height: 48px !important;
+          line-height: 48px !important;
+          transition: all 0.3s ease !important;
+          padding-left: 16px !important;
+          background: #fff !important;
+        }
+        .patient-dashboard-menu .ant-menu-item:hover {
+          background: #E3F2FF !important;
+        }
+        .patient-dashboard-menu .ant-menu-item:hover,
+        .patient-dashboard-menu .ant-menu-item:hover .ant-menu-title-content {
+          color: #1A8FE3 !important;
+        }
+        .patient-dashboard-menu .ant-menu-item-selected {
+          background: #E3F2FF !important;
+          font-weight: 600 !important;
+          border-left: 3px solid #1A8FE3 !important;
+          padding-left: 13px !important;
+        }
+        .patient-dashboard-menu .ant-menu-item-selected,
+        .patient-dashboard-menu .ant-menu-item-selected .ant-menu-title-content {
+          color: #1A8FE3 !important;
+        }
+        .patient-dashboard-menu .ant-menu-item-selected .ant-menu-item-icon,
+        .patient-dashboard-menu .ant-menu-item-selected .anticon,
+        .patient-dashboard-menu .ant-menu-item-selected img {
+          color: #1A8FE3 !important;
+          filter: brightness(0) saturate(100%) invert(48%) sepia(79%) saturate(2476%) hue-rotate(206deg) brightness(118%) contrast(119%) !important;
+        }
+        .patient-dashboard-menu .ant-menu-item:not(.ant-menu-item-selected) {
+          color: #595959 !important;
+        }
+        .patient-dashboard-menu .ant-menu-item:not(.ant-menu-item-selected) .ant-menu-title-content {
+          color: #595959 !important;
+        }
+        .patient-dashboard-menu .ant-menu-item:not(.ant-menu-item-selected) .ant-menu-item-icon,
+        .patient-dashboard-menu .ant-menu-item:not(.ant-menu-item-selected) .anticon,
+        .patient-dashboard-menu .ant-menu-item:not(.ant-menu-item-selected) img {
+          color: #8C8C8C !important;
+          filter: brightness(0) saturate(100%) invert(60%) !important;
+        }
+        .patient-dashboard-menu .ant-menu-item-selected::after {
+          display: none !important;
+        }
+        .patient-dashboard-menu .ant-menu-item-icon,
+        .patient-dashboard-menu .anticon {
+          font-size: 18px !important;
+          width: 18px !important;
+          height: 18px !important;
+        }
+      `}</style>
+      <Layout style={{ minHeight: '100vh', background: patientTheme.background }}>
       {/* Desktop/Tablet Sidebar */}
       {!isMobile && (
         <Sider
-          trigger={null}
-          collapsible
-          collapsed={collapsed}
-          onCollapse={setCollapsed}
           width={260}
-          collapsedWidth={80}
           style={{
             position: 'fixed',
             top: 0,
             left: 0,
             height: '100vh',
-            width: siderWidth,
+            width: 260,
             background: '#fff',
-            boxShadow: '2px 0 8px rgba(0,0,0,0.1)',
+            boxShadow: '0 2px 16px rgba(26, 143, 227, 0.08)',
             display: 'flex',
             flexDirection: 'column',
-            transition: 'width 0.2s ease',
             zIndex: 10,
+            borderLeft: '1px solid #E3F2FF',
+            borderBottom: '1px solid #E3F2FF',
           }}
         >
           <SidebarContent />
@@ -608,17 +722,17 @@ export default function PatientDashboard() {
         style={{
           marginLeft: siderWidth,
           minHeight: '100vh',
-          background: '#f5f5f5',
-          transition: 'margin-left 0.2s ease',
+          background: patientTheme.background,
           overflow: 'hidden',
         }}
       >
         <Content
           style={{
-            background: '#f5f5f5',
+            background: patientTheme.background,
             height: '100vh',
             overflowY: 'auto',
-            padding: isMobile ? '12px 16px' : isTablet ? '16px 20px' : '16px 24px 24px',
+            padding: isMobile ? '0 16px 16px' : isTablet ? '0 20px 20px' : '0 32px 24px',
+            paddingTop: 0,
           }}
         >
           <div style={{ paddingBottom: 24 }}>
@@ -635,33 +749,22 @@ export default function PatientDashboard() {
                 <div style={{ width: 32 }} /> {/* Spacer for centering */}
               </div>
             )}
-            
-            {/* Desktop/Tablet Menu Toggle */}
-            {!isMobile && (
-              <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 16 }}>
-                <Button
-                  type="text"
-                  icon={collapsed ? <MenuFoldOutlined /> : <MenuUnfoldOutlined />}
-                  onClick={() => setCollapsed(!collapsed)}
-                />
-              </div>
-            )}
 
             {/* KPI Cards - Responsive Grid */}
             {isMobile ? (
               <div style={{ 
                 display: 'flex', 
                 overflowX: 'auto', 
-                gap: 12, 
+                gap: 16, 
                 marginBottom: 24,
                 paddingBottom: 8,
                 scrollSnapType: 'x mandatory',
                 WebkitOverflowScrolling: 'touch',
               }}>
                 {[
-                  { label: "Upcoming Appointments", value: stats.upcomingAppointments, icon: <CalendarOutlined style={{ color: '#1890ff' }} />, trendLabel: "Updated", trendType: "positive" as const, onView: () => setLocation('/dashboard/patient/appointments') },
-                  { label: "Active Prescriptions", value: stats.prescriptions, icon: <MedicineBoxOutlined style={{ color: '#52c41a' }} />, trendLabel: "Current", trendType: "neutral" as const, onView: () => setLocation('/dashboard/patient/prescriptions') },
-                  { label: "Lab Reports", value: stats.labReports, icon: <FileTextOutlined style={{ color: '#faad14' }} />, trendLabel: "Latest", trendType: "neutral" as const, onView: () => {
+                  { label: "Upcoming Appointments", value: stats.upcomingAppointments, icon: <CalendarOutlined style={{ color: '#2563eb' }} />, trendLabel: "Updated", trendType: "positive" as const, onView: () => setLocation('/dashboard/patient/appointments') },
+                  { label: "Active Prescriptions", value: stats.prescriptions, icon: <MedicineBoxOutlined style={{ color: '#10B981' }} />, trendLabel: "Current", trendType: "neutral" as const, trendColor: "#2563eb", trendBg: "#DBEAFE", onView: () => setLocation('/dashboard/patient/prescriptions') },
+                  { label: "Lab Reports", value: stats.labReports, icon: <ExperimentOutlined style={{ color: '#F59E0B' }} />, trendLabel: "Latest", trendType: "neutral" as const, trendColor: "#F59E0B", trendBg: "#FEF3C7", onView: () => {
                     if (labReportsData.length > 0) {
                       setSelectedLabReport(labReportsData[0]);
                       setIsLabReportModalOpen(true);
@@ -669,42 +772,46 @@ export default function PatientDashboard() {
                       message.info('No lab reports available yet.');
                     }
                   } },
-                  { label: "Messages", value: messageCounts.total, icon: <BellOutlined style={{ color: '#722ed1' }} />, trendLabel: `+${messageCounts.unread} new`, trendType: (messageCounts.unread > 0 ? 'positive' : 'neutral') as 'positive' | 'neutral', onView: () => message.info('Messages coming soon.') },
+                  { label: "Messages", value: messageCounts.total, icon: <MessageOutlined style={{ color: '#7C3AED' }} />, trendLabel: `+${messageCounts.unread} new`, trendType: "neutral" as const, trendColor: "#7C3AED", trendBg: "#E9D5FF", onView: () => message.info('Messages coming soon.') },
                 ].map((kpi, idx) => (
-                  <div key={idx} style={{ minWidth: 200, scrollSnapAlign: 'start' }}>
+                  <div key={idx} style={{ minWidth: 220, scrollSnapAlign: 'start' }}>
                     <KpiCard {...kpi} />
                   </div>
                 ))}
               </div>
             ) : (
               <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
-                <Col xs={24} sm={12} md={6} style={{ display: 'flex' }}>
+                <Col xs={24} sm={12} lg={6} style={{ display: 'flex' }}>
                   <KpiCard
                     label="Upcoming Appointments"
                     value={stats.upcomingAppointments}
-                    icon={<CalendarOutlined style={{ color: '#1890ff' }} />}
+                    icon={<CalendarOutlined style={{ color: '#2563eb' }} />}
                     trendLabel="Updated"
                     trendType="positive"
                     onView={() => setLocation('/dashboard/patient/appointments')}
                   />
                 </Col>
-                <Col xs={24} sm={12} md={6} style={{ display: 'flex' }}>
+                <Col xs={24} sm={12} lg={6} style={{ display: 'flex' }}>
                   <KpiCard
                     label="Active Prescriptions"
                     value={stats.prescriptions}
-                    icon={<MedicineBoxOutlined style={{ color: '#52c41a' }} />}
+                    icon={<MedicineBoxOutlined style={{ color: '#10B981' }} />}
                     trendLabel="Current"
                     trendType="neutral"
+                    trendColor="#2563eb"
+                    trendBg="#DBEAFE"
                     onView={() => setLocation('/dashboard/patient/prescriptions')}
                   />
                 </Col>
-                <Col xs={24} sm={12} md={6} style={{ display: 'flex' }}>
+                <Col xs={24} sm={12} lg={6} style={{ display: 'flex' }}>
                   <KpiCard
                     label="Lab Reports"
                     value={stats.labReports}
-                    icon={<FileTextOutlined style={{ color: '#faad14' }} />}
+                    icon={<ExperimentOutlined style={{ color: '#F59E0B' }} />}
                     trendLabel="Latest"
                     trendType="neutral"
+                    trendColor="#F59E0B"
+                    trendBg="#FEF3C7"
                     onView={() => {
                       if (labReportsData.length > 0) {
                         setSelectedLabReport(labReportsData[0]);
@@ -715,13 +822,15 @@ export default function PatientDashboard() {
                     }}
                   />
                 </Col>
-                <Col xs={24} sm={12} md={6} style={{ display: 'flex' }}>
+                <Col xs={24} sm={12} lg={6} style={{ display: 'flex' }}>
                   <KpiCard
                     label="Messages"
                     value={messageCounts.total}
-                    icon={<BellOutlined style={{ color: '#722ed1' }} />}
+                    icon={<MessageOutlined style={{ color: '#7C3AED' }} />}
                     trendLabel={`+${messageCounts.unread} new`}
-                    trendType={messageCounts.unread > 0 ? 'positive' : 'neutral'}
+                    trendType="neutral"
+                    trendColor="#7C3AED"
+                    trendBg="#E9D5FF"
                     onView={() => message.info('Messages coming soon.')}
                   />
                 </Col>
@@ -729,53 +838,66 @@ export default function PatientDashboard() {
             )}
 
             {/* Quick Actions - Responsive */}
-            <Card style={{ marginBottom: 24 }}>
-              <Row gutter={[16, 16]} align="middle">
-                <Col xs={24} sm={12} md={6}>
+            <Card 
+              style={{ 
+                marginBottom: 32,
+                borderRadius: 12,
+                boxShadow: '0 1px 2px rgba(0, 0, 0, 0.05)',
+                border: '1px solid #e5e7eb',
+              }}
+              styles={{ body: { padding: '16px' } }}
+            >
+              <Row gutter={[12, 12]} align="middle">
+                <Col xs={24} sm={12} md={6} lg={4.8}>
                   <QuickActionTile
                     label="New Appointment"
                     icon={<PlusOutlined />}
                     onClick={() => handleQuickAction('book')}
                   />
                 </Col>
-                <Col xs={24} sm={12} md={6}>
+                <Col xs={24} sm={12} md={6} lg={4.8}>
                   <QuickActionTile
                     label="Request Refill"
-                    icon={<MedicineBoxOutlined />}
+                    icon={<ReloadOutlined />}
                     onClick={() => handleQuickAction('refill')}
                   />
                 </Col>
-                <Col xs={24} sm={12} md={6}>
+                <Col xs={24} sm={12} md={6} lg={4.8}>
                   <QuickActionTile
                     label="Upload Document"
-                    icon={<FileTextOutlined />}
+                    icon={<UploadOutlined />}
                     onClick={() => handleQuickAction('upload')}
                   />
                 </Col>
-                <Col xs={24} sm={12} md={3}>
+                <Col xs={24} sm={12} md={6} lg={4.8}>
                   <QuickActionTile
                     label="Send Message"
+                    icon={<SendOutlined />}
                     onClick={() => handleQuickAction('message')}
-                    variant="secondary"
                   />
                 </Col>
-                <Col xs={24} sm={12} md={3}>
+                <Col xs={24} sm={12} md={6} lg={4.8}>
                   <QuickActionTile
                     label="View History"
+                    icon={<HistoryOutlined />}
                     onClick={() => handleQuickAction('history')}
-                    variant="secondary"
                   />
                 </Col>
               </Row>
             </Card>
 
             <Row gutter={[24, 24]}>
-              <Col xs={24} lg={16}>
+              <Col xs={24} lg={12}>
                 <Card
                   variant="borderless"
-                  style={{ borderRadius: 16, marginBottom: 24 }}
-                  title="Upcoming Appointments"
-                  extra={<Button type="link" onClick={() => setLocation('/dashboard/patient/appointments')}>View All</Button>}
+                  style={{ 
+                    borderRadius: 16, 
+                    marginBottom: 24,
+                    boxShadow: '0 2px 12px rgba(26, 143, 227, 0.08)',
+                    border: '1px solid #E3F2FF',
+                  }}
+                  title={<Title level={4} style={{ margin: 0, color: '#262626', fontWeight: 600 }}>Upcoming Appointments</Title>}
+                  extra={<Button type="link" style={{ color: patientTheme.primary, fontWeight: 500 }} onClick={() => setLocation('/dashboard/patient/appointments')}>View All</Button>}
                 >
                   {appointmentTabs.length === 0 ? (
                     <div style={{ textAlign: 'center', padding: '40px 0' }}>
@@ -798,7 +920,15 @@ export default function PatientDashboard() {
                               <Card
                                 key={apt.id}
                                 size="small"
-                                style={{ background: apt.status === 'confirmed' ? '#E6F4FF' : apt.status === 'pending' ? '#FFF7E6' : apt.status === 'cancelled' ? '#FFF1F0' : '#F6FFED' }}
+                                style={{ 
+                                  background: apt.status === 'confirmed' ? patientTheme.highlight : apt.status === 'pending' ? '#FFF7E6' : apt.status === 'cancelled' ? '#FFF1F0' : '#F6FFED',
+                                  borderRadius: 12,
+                                  border: `1px solid ${apt.status === 'confirmed' ? patientTheme.primary : '#E8E8E8'}`,
+                                  transition: 'all 0.3s ease',
+                                  cursor: 'pointer',
+                                }}
+                                hoverable
+                                onClick={() => setLocation('/dashboard/patient/appointments')}
                               >
                                 <Row justify="space-between" align="middle">
                                   <Col flex="auto">
@@ -840,15 +970,22 @@ export default function PatientDashboard() {
                   )}
                 </Card>
 
+              </Col>
+              <Col xs={24} lg={12}>
                 <Card
-                  title="Prescriptions"
+                  title={<Title level={4} style={{ margin: 0, color: '#262626', fontWeight: 600 }}>Prescriptions</Title>}
                   extra={
                     <Space>
-                      <Button type="primary">Current</Button>
+                      <Button type="primary" style={{ background: patientTheme.primary, borderColor: patientTheme.primary }}>Current</Button>
                       <Button>Past</Button>
                     </Space>
                   }
-                  style={{ marginBottom: 24 }}
+                  style={{ 
+                    marginBottom: 24,
+                    borderRadius: 16,
+                    boxShadow: '0 2px 12px rgba(26, 143, 227, 0.08)',
+                    border: '1px solid #E3F2FF',
+                  }}
                 >
                   {prescriptionsLoading ? (
                     <Skeleton active paragraph={{ rows: 3 }} />
@@ -871,14 +1008,30 @@ export default function PatientDashboard() {
                     <Empty description="No prescriptions yet" />
                   )}
                 </Card>
+              </Col>
+            </Row>
 
-                <Card title="Care Timeline">
+            <Row gutter={[24, 24]}>
+              <Col xs={24} lg={16}>
+                <Card 
+                  title={<Title level={4} style={{ margin: 0, color: '#262626', fontWeight: 600 }}>Care Timeline</Title>}
+                  style={{ 
+                    borderRadius: 16,
+                    boxShadow: '0 2px 12px rgba(26, 143, 227, 0.08)',
+                    border: '1px solid #E3F2FF',
+                  }}
+                >
                   <Space style={{ marginBottom: 16 }} wrap>
                     {TIMELINE_FILTERS.map((filter) => (
                       <Tag
                         key={filter}
-                        color={timelineFilter === filter ? 'blue' : undefined}
-                        style={{ cursor: 'pointer' }}
+                        color={timelineFilter === filter ? patientTheme.primary : undefined}
+                        style={{ 
+                          cursor: 'pointer',
+                          padding: '4px 12px',
+                          borderRadius: 12,
+                          transition: 'all 0.3s ease',
+                        }}
                         onClick={() => setTimelineFilter(filter)}
                       >
                         {filter.charAt(0).toUpperCase() + filter.slice(1)}
@@ -920,42 +1073,79 @@ export default function PatientDashboard() {
 
               <Col xs={24} lg={8}>
                 <Space direction="vertical" style={{ width: '100%' }} size={24}>
-                  <Card title="Next Appointment">
+                  <Card 
+                    title={<Title level={4} style={{ margin: 0, color: '#262626', fontWeight: 600 }}>Next Appointment</Title>}
+                    style={{ 
+                      borderRadius: 16,
+                      boxShadow: '0 2px 12px rgba(26, 143, 227, 0.08)',
+                      border: '1px solid #E3F2FF',
+                      marginBottom: 24,
+                    }}
+                  >
                     <Space direction="vertical" style={{ width: '100%' }} size={12}>
                       <Text type="secondary">with {nextAppointment?.doctor || 'your care team'}</Text>
-                      <Card style={{ background: '#E6F4FF', textAlign: 'center' }}>
-                        <Text type="secondary">In</Text>
-                        <Title level={3} style={{ margin: '8px 0 0' }}>
+                      <Card style={{ 
+                        background: `linear-gradient(135deg, ${patientTheme.highlight} 0%, ${patientTheme.primary}15 100%)`,
+                        textAlign: 'center',
+                        borderRadius: 12,
+                        border: `1px solid ${patientTheme.primary}30`,
+                      }}>
+                        <Text type="secondary" style={{ fontSize: 12 }}>In</Text>
+                        <Title level={3} style={{ margin: '8px 0 0', color: patientTheme.primary }}>
                           {nextAppointmentDisplay}
                         </Title>
                       </Card>
-                      <Button block onClick={() => setLocation('/dashboard/patient/appointments')}>
+                      <Button 
+                        block 
+                        type="primary"
+                        style={{ 
+                          background: patientTheme.primary,
+                          borderColor: patientTheme.primary,
+                          height: 40,
+                          borderRadius: 10,
+                        }}
+                        onClick={() => setLocation('/dashboard/patient/appointments')}
+                      >
                         View Details
                       </Button>
                     </Space>
                   </Card>
 
-                  <Card title="Latest Lab Result">
+                  <Card 
+                    title={<Title level={4} style={{ margin: 0, color: '#262626', fontWeight: 600 }}>Latest Lab Result</Title>}
+                    style={{ 
+                      borderRadius: 16,
+                      boxShadow: '0 2px 12px rgba(26, 143, 227, 0.08)',
+                      border: '1px solid #E3F2FF',
+                      marginBottom: 24,
+                    }}
+                  >
                     {labReportsLoading ? (
                       <Skeleton active paragraph={{ rows: 3 }} />
                     ) : labReportsData.length ? (
-                      <Space direction="vertical" size={12}>
-                        <Text type="secondary">
+                      <Space direction="vertical" size={12} style={{ width: '100%' }}>
+                        <Text type="secondary" style={{ fontSize: 12 }}>
                           {labReportsData[0].testName} · {formatDateTime(labReportsData[0].reportDate)}
                         </Text>
                         <Row justify="space-between" align="middle">
                           <Col>
-                            <Text strong>{labReportsData[0].testType}</Text>
+                            <Text strong style={{ color: patientTheme.primary }}>{labReportsData[0].testType}</Text>
                           </Col>
                           <Col>
-                            <Title level={4} style={{ margin: 0 }}>
+                            <Tag color={patientTheme.accent} style={{ borderRadius: 12 }}>
                               {labReportsData[0].status || 'Completed'}
-                            </Title>
+                            </Tag>
                           </Col>
                         </Row>
-                        <Tag color="orange">Review</Tag>
                         <Button 
                           block 
+                          type="primary"
+                          style={{ 
+                            background: patientTheme.primary,
+                            borderColor: patientTheme.primary,
+                            height: 40,
+                            borderRadius: 10,
+                          }}
                           onClick={() => {
                             setSelectedLabReport(labReportsData[0]);
                             setIsLabReportModalOpen(true);
@@ -969,7 +1159,14 @@ export default function PatientDashboard() {
                     )}
                   </Card>
 
-                  <Card title="Notifications">
+                  <Card 
+                    title={<Title level={4} style={{ margin: 0, color: '#262626', fontWeight: 600 }}>Notifications</Title>}
+                    style={{ 
+                      borderRadius: 16,
+                      boxShadow: '0 2px 12px rgba(26, 143, 227, 0.08)',
+                      border: '1px solid #E3F2FF',
+                    }}
+                  >
                     {notificationsLoading ? (
                       <Skeleton active paragraph={{ rows: 3 }} />
                     ) : notifications.length ? (
@@ -1010,5 +1207,6 @@ export default function PatientDashboard() {
         loading={labReportsLoading}
       />
     </Layout>
+    </>
   );
 }

@@ -266,7 +266,7 @@ export default function DoctorPrescriptionsPage() {
           </Space>
         </Header>
         
-        <Content style={{ margin: '24px', background: '#f5f5f5', minHeight: 'calc(100vh - 112px)' }}>
+        <Content style={{ margin: '0 24px 24px', marginTop: 0, background: '#f5f5f5', minHeight: 'calc(100vh - 112px)' }}>
           <div style={{ background: '#fff', padding: '24px', borderRadius: '8px', marginBottom: '24px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
               <div>

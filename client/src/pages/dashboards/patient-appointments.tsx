@@ -390,7 +390,7 @@ export default function PatientAppointments() {
           </Space>
         </Header>
 
-        <Content style={{ padding: '24px', background: '#f5f5f5' }}>
+        <Content style={{ padding: '0 24px 24px', paddingTop: 0, background: '#f5f5f5' }}>
           <div style={{ marginBottom: '24px' }}>
             <Title level={2} style={{ margin: 0 }}>
               My Appointments

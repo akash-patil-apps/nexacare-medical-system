@@ -906,7 +906,8 @@ export default function DoctorDashboard() {
             background: doctorTheme.highlight,
             height: '100vh',
             overflowY: 'auto',
-            padding: isMobile ? '12px 16px' : isTablet ? '16px 20px' : '16px 24px 24px',
+            padding: isMobile ? '0 16px 16px' : isTablet ? '0 20px 20px' : '0 24px 24px',
+            paddingTop: 0,
           }}
         >
           <div style={{ paddingBottom: 24, maxWidth: '1320px', margin: '0 auto' }}>

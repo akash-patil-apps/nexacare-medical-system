@@ -353,7 +353,7 @@ export default function DoctorAppointments() {
           </Space>
         </Header>
         
-        <Content style={{ margin: '24px', background: '#f5f5f5', minHeight: 'calc(100vh - 112px)' }}>
+        <Content style={{ margin: '0 24px 24px', marginTop: 0, background: '#f5f5f5', minHeight: 'calc(100vh - 112px)' }}>
           <div style={{ background: '#fff', padding: '24px', borderRadius: '8px', marginBottom: '24px' }}>
             <Title level={2} style={{ margin: '0 0 16px 0', color: '#1890ff' }}>
               <CalendarOutlined style={{ marginRight: '8px' }} />

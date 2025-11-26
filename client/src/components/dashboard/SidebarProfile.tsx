@@ -1,5 +1,5 @@
 import { Avatar, Button, Tag, Typography } from 'antd';
-import { SettingOutlined, LogoutOutlined } from '@ant-design/icons';
+import { SettingOutlined } from '@ant-design/icons';
 import type { ReactNode } from 'react';
 
 const { Text } = Typography;
@@ -8,52 +8,66 @@ type SidebarProfileProps = {
   collapsed: boolean;
   name?: string | null;
   roleLabel: string;
-  roleColor: string;
   avatarIcon: ReactNode;
   onSettingsClick?: () => void;
-  onLogoutClick?: () => void;
 };
 
 export function SidebarProfile({
   collapsed,
   name,
   roleLabel,
-  roleColor,
   avatarIcon,
   onSettingsClick,
-  onLogoutClick,
 }: SidebarProfileProps) {
   return (
     <div
       style={{
         marginTop: 'auto',
-        borderTop: '1px solid #f0f0f0',
+        borderTop: '1px solid #D9D9D9',
         padding: '16px',
         display: 'flex',
         alignItems: 'center',
         gap: '12px',
+        background: '#fff',
+        flexShrink: 0,
       }}
     >
-      <Avatar size={collapsed ? 48 : 40} icon={avatarIcon} />
+      <Avatar 
+        size={collapsed ? 48 : 40} 
+        icon={avatarIcon}
+        style={{ flexShrink: 0 }}
+      />
       {!collapsed && (
-        <div style={{ display: 'flex', flexDirection: 'column', flex: 1 }}>
-          <Text strong style={{ lineHeight: 1.2 }}>
-            {name || 'User'}
-          </Text>
-          <Tag color={roleColor} style={{ width: 'fit-content', marginTop: 4 }}>
-            {roleLabel}
-          </Tag>
-        </div>
-      )}
-      {!collapsed && (
-        <div style={{ display: 'flex', gap: 4 }}>
+        <>
+          <div style={{ display: 'flex', flexDirection: 'column', flex: 1, gap: 4, minWidth: 0 }}>
+            <Text strong style={{ lineHeight: 1.2, color: '#262626', fontSize: '14px', fontWeight: 600 }}>
+              {name || 'User'}
+            </Text>
+            <Tag 
+              style={{ 
+                width: 'fit-content',
+                background: '#1A8FE3',
+                color: '#fff',
+                border: 'none',
+                borderRadius: 12,
+                padding: '2px 8px',
+                fontSize: '11px',
+                fontWeight: 500,
+                textTransform: 'uppercase',
+              }}
+            >
+              {roleLabel}
+            </Tag>
+          </div>
           {onSettingsClick && (
-            <Button type="text" icon={<SettingOutlined />} onClick={onSettingsClick} />
+            <Button 
+              type="text" 
+              icon={<SettingOutlined style={{ color: '#8C8C8C', fontSize: '18px' }} />} 
+              onClick={onSettingsClick}
+              style={{ flexShrink: 0, padding: 0, width: '32px', height: '32px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+            />
           )}
-          {onLogoutClick && (
-            <Button type="text" icon={<LogoutOutlined />} onClick={onLogoutClick} />
-          )}
-        </div>
+        </>
       )}
     </div>
   );
