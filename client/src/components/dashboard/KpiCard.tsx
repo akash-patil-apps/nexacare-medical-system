@@ -11,6 +11,8 @@ interface KpiCardProps {
   icon?: ReactNode;
   trendLabel?: string;
   trendType?: TrendType;
+  trendColor?: string;
+  trendBg?: string;
   onView?: () => void;
 }
 
@@ -36,11 +38,12 @@ export function KpiCard({
     <Card 
       style={{ 
         height: '100%', 
+        width: '100%',
         display: 'flex', 
         flexDirection: 'column',
         borderRadius: 12,
-        boxShadow: '0 1px 3px rgba(0, 0, 0, 0.1), 0 1px 2px rgba(0, 0, 0, 0.06)',
-        border: '1px solid #E3F2FF',
+        boxShadow: '0 2px 8px rgba(0, 0, 0, 0.08)',
+        border: 'none',
         transition: 'all 0.2s ease',
         cursor: onView ? 'pointer' : 'default',
         background: '#fff',
@@ -57,33 +60,36 @@ export function KpiCard({
       }}
       onClick={onView}
     >
-      <div style={{ width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12 }}>
-        <Text type="secondary" style={{ fontSize: '13px', fontWeight: 400, color: '#6b7280', lineHeight: 1.5 }}>
+      {/* Icon and Label in same row - Icon on left */}
+      <div style={{ width: '100%', display: 'flex', alignItems: 'center', gap: '8px', marginBottom: 16 }}>
+        {icon && (
+          <div style={{ 
+            fontSize: '20px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            color: '#6b7280',
+          }}>
+            {icon}
+          </div>
+        )}
+        <Text type="secondary" style={{ fontSize: '13px', fontWeight: 400, color: '#6b7280', lineHeight: 1.5, flex: 1 }}>
           {label}
         </Text>
-        <div style={{ 
-          fontSize: '20px',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-        }}>
-          {icon}
-        </div>
       </div>
       <Title 
         level={1} 
         style={{ 
-          margin: '12px 0 16px', 
+          margin: '0 0 16px', 
           fontSize: '32px', 
           lineHeight: '40px', 
           wordBreak: 'break-word',
           fontWeight: 700,
           color: '#262626',
-          textAlign: 'center',
+          textAlign: 'left',
           flex: 1,
           display: 'flex',
           alignItems: 'center',
-          justifyContent: 'center',
         }}
       >
         {value}

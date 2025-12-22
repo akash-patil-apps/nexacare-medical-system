@@ -12,42 +12,62 @@ export function QuickActionTile({
   label,
   icon,
   onClick,
-  variant = 'primary',
+  variant = 'secondary',
 }: QuickActionTileProps) {
+  const isPrimary = variant === 'primary';
+  const buttonId = `quick-action-${label.toLowerCase().replace(/\s+/g, '-')}`;
+  
   return (
-    <Button
-      block
-      size="large"
-      icon={icon}
-      onClick={onClick}
-      style={{
-        height: 48,
-        borderRadius: 12,
-        fontSize: '14px',
-        fontWeight: 500,
-        background: '#fff',
-        border: '1px solid #e5e7eb',
-        color: '#2563eb',
-        boxShadow: '0 1px 2px rgba(0, 0, 0, 0.05)',
-        transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        gap: 8,
-        padding: '12px 16px',
-      }}
-      type="default"
+    <>
+      <style>{`
+        #${buttonId} .anticon {
+          font-size: 18px !important;
+        }
+      `}</style>
+      <Button
+        id={buttonId}
+        size="large"
+        icon={icon}
+        onClick={onClick}
+        style={{
+          height: 'auto',
+          borderRadius: 12,
+          fontSize: '14px',
+          fontWeight: 600,
+          background: isPrimary ? '#1A8FE3' : '#fff',
+          border: isPrimary ? '1px solid #1A8FE3' : '1px solid #e5e7eb',
+          color: isPrimary ? '#fff' : '#6b7280',
+          boxShadow: '0 1px 2px rgba(0, 0, 0, 0.05)',
+          transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          gap: 8,
+          padding: '8px 16px',
+          flex: 1,
+          minWidth: 0,
+        }}
+      type={isPrimary ? 'primary' : 'default'}
       onMouseEnter={(e) => {
-        e.currentTarget.style.background = '#f9fafb';
-        e.currentTarget.style.borderColor = '#2563eb';
+        if (!isPrimary) {
+          e.currentTarget.style.background = '#f9fafb';
+          e.currentTarget.style.borderColor = '#d1d5db';
+          e.currentTarget.style.boxShadow = '0 2px 4px rgba(0, 0, 0, 0.1)';
+        } else {
+          e.currentTarget.style.background = '#1589D6';
+          e.currentTarget.style.borderColor = '#1589D6';
+          e.currentTarget.style.boxShadow = '0 2px 4px rgba(26, 143, 227, 0.3)';
+        }
       }}
       onMouseLeave={(e) => {
-        e.currentTarget.style.background = '#fff';
-        e.currentTarget.style.borderColor = '#e5e7eb';
+        e.currentTarget.style.background = isPrimary ? '#1A8FE3' : '#fff';
+        e.currentTarget.style.borderColor = isPrimary ? '#1A8FE3' : '#e5e7eb';
+        e.currentTarget.style.boxShadow = '0 1px 2px rgba(0, 0, 0, 0.05)';
       }}
     >
       {label}
     </Button>
+    </>
   );
 }
 

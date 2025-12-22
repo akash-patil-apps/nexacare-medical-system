@@ -94,6 +94,20 @@ router.get('/doctor/:doctorId', async (req, res) => {
   }
 });
 
+// Get appointments by doctor ID and date (for slot availability checking)
+router.get('/doctor/:doctorId/date/:date', async (req, res) => {
+  try {
+    const doctorId = +req.params.doctorId;
+    const date = req.params.date; // Format: YYYY-MM-DD
+    
+    const appointments = await appointmentService.getAppointmentsByDoctorAndDate(doctorId, date);
+    res.json(appointments);
+  } catch (err) {
+    console.error('Get doctor appointments by date error:', err);
+    res.status(400).json({ message: 'Failed to fetch appointments' });
+  }
+});
+
 // Get appointments by hospital ID
 router.get('/hospital/:hospitalId', async (req, res) => {
   try {

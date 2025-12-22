@@ -19,8 +19,11 @@ import {
   message,
   Radio,
   InputNumber,
-  Breadcrumb
+  Breadcrumb,
+  Drawer
 } from 'antd';
+
+const { Content, Sider } = Layout;
 import {
   CalendarOutlined,
   MedicineBoxOutlined,
@@ -32,12 +35,18 @@ import {
   StarOutlined,
   ArrowLeftOutlined,
   ArrowRightOutlined,
-  HomeOutlined
+  HomeOutlined,
+  SearchOutlined,
+  ThunderboltOutlined,
+  MenuUnfoldOutlined,
+  CloseCircleOutlined
 } from '@ant-design/icons';
 import { useAuth } from '../hooks/use-auth';
 import { useLocation } from 'wouter';
 import { useQueryClient } from '@tanstack/react-query';
 import dayjs from 'dayjs';
+import { PatientSidebar } from '../components/layout/PatientSidebar';
+import { useResponsive } from '../hooks/use-responsive';
 
 const { Option } = Select;
 const { TextArea } = Input;
@@ -79,15 +88,18 @@ interface Doctor {
   fullName: string;
   mobileNumber: string;
   email: string;
+  photo?: string;
 }
 
 export default function BookAppointment() {
   const { user } = useAuth();
   const [, setLocation] = useLocation();
   const queryClient = useQueryClient();
+  const { isMobile } = useResponsive();
   const [form] = Form.useForm();
   const [currentStep, setCurrentStep] = useState(0);
   const [loading, setLoading] = useState(false);
+  const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false);
   const [hospitals, setHospitals] = useState<Hospital[]>([]);
   const [doctors, setDoctors] = useState<Doctor[]>([]);
   const [selectedHospital, setSelectedHospital] = useState<Hospital | null>(null);
@@ -95,6 +107,7 @@ export default function BookAppointment() {
   const [availableSlots, setAvailableSlots] = useState<string[]>([]);
   const [selectedDate, setSelectedDate] = useState<dayjs.Dayjs | null>(null);
   const [selectedSlot, setSelectedSlot] = useState<string>('');
+  const [slotBookings, setSlotBookings] = useState<Record<string, number>>({}); // Track bookings per slot: { "14:00-14:30": 3 }
   const [selectedCity, setSelectedCity] = useState<string>('');
   const [availableCities, setAvailableCities] = useState<string[]>([]);
   const [searchTerm, setSearchTerm] = useState<string>('');
@@ -201,14 +214,32 @@ export default function BookAppointment() {
       setLoading(true);
       console.log(`🔍 Loading doctors for hospital ${hospitalId}`);
       const response = await fetch(`/api/doctors/hospital/${hospitalId}`);
+      
+      if (!response.ok) {
+        throw new Error(`Failed to load doctors: ${response.status}`);
+      }
+      
       const data = await response.json();
       console.log('📋 Doctors API response:', data);
       console.log('📋 Doctors count:', data?.length || 0);
-      setDoctors(data || []);
-      console.log('✅ Doctors state updated:', data?.length || 0, 'doctors');
+      
+      const doctorsList = Array.isArray(data) ? data : [];
+      setDoctors(doctorsList);
+      console.log('✅ Doctors state updated:', doctorsList.length, 'doctors');
+      
+      // Auto-advance to doctor selection step after doctors are loaded
+      if (doctorsList.length > 0) {
+        setTimeout(() => {
+          console.log('🚀 Auto-advancing to doctor selection step (step 1)');
+          setCurrentStep(1);
+        }, 500);
+      } else {
+        message.warning('No doctors available in this hospital');
+      }
     } catch (error) {
       console.error('Error loading doctors:', error);
-      message.error('Failed to load doctors');
+      message.error('Failed to load doctors. Please try again.');
+      setDoctors([]);
     } finally {
       setLoading(false);
     }
@@ -218,23 +249,204 @@ export default function BookAppointment() {
     console.log(`🏥 Hospital selected: ${hospitalId}`);
     const hospital = filteredHospitals.find(h => h.id === hospitalId);
     console.log('🏥 Selected hospital:', hospital);
-    setSelectedHospital(hospital || null);
+    
+    // Set hospital first, then load doctors
+    if (hospital) {
+      setSelectedHospital(hospital);
     setSelectedDoctor(null);
     setAvailableSlots([]);
     setSelectedSlot('');
+      setDoctors([]); // Clear previous doctors
     form.setFieldsValue({ 
       hospitalId: hospitalId,
       doctorId: undefined, 
       timeSlot: undefined 
     });
     
-    if (hospitalId) {
+      // Load doctors for the selected hospital
       loadDoctorsByHospital(hospitalId);
-            // Auto-advance to doctor selection step after doctors are loaded
-            setTimeout(() => {
-              console.log('🚀 Auto-advancing to doctor selection step (step 1)');
-              setCurrentStep(1);
-            }, 1500);
+    }
+  };
+
+  // Helper function to get doctor's available slots
+  const getDoctorSlots = (doctor: Doctor): string[] => {
+    try {
+      if (!doctor.availableSlots) return [];
+      
+        let slots: string[];
+        if (typeof doctor.availableSlots === 'string') {
+          if (doctor.availableSlots.startsWith('[') && doctor.availableSlots.endsWith(']')) {
+            // JSON array format
+            slots = JSON.parse(doctor.availableSlots);
+          } else {
+            // Comma-separated string format
+          slots = doctor.availableSlots.split(',').map((slot: string) => slot.trim()).filter(s => s);
+          }
+        } else {
+        slots = Array.isArray(doctor.availableSlots) ? doctor.availableSlots : [];
+        }
+      return slots;
+      } catch (error) {
+        console.error('Error parsing available slots:', error);
+      return [];
+    }
+  };
+
+  /**
+   * Fetches booked appointments for a doctor on a specific date
+   * Returns a map of slot -> booking count: { "14:00-14:30": 3 }
+   * Each slot can have max 5 patients
+   */
+  const fetchBookedAppointments = async (doctorId: number, date: string) => {
+    try {
+      const token = localStorage.getItem('auth-token');
+      const response = await fetch(`/api/appointments/doctor/${doctorId}/date/${date}`, {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+      if (!response.ok) {
+        console.warn('Failed to fetch booked appointments, using empty data');
+        return {};
+      }
+      const appointments = await response.json();
+      const appointmentsList = Array.isArray(appointments) ? appointments : [];
+      
+      // Count bookings per slot
+      const bookings: Record<string, number> = {};
+      appointmentsList.forEach((apt: any) => {
+        // Use timeSlot if available, otherwise use appointmentTime
+        const slot = apt.timeSlot || apt.appointmentTime;
+        if (slot) {
+          // Normalize slot format for matching
+          const normalizedSlot = slot.trim();
+          bookings[normalizedSlot] = (bookings[normalizedSlot] || 0) + 1;
+        }
+      });
+      
+      console.log('📊 Bookings per slot:', bookings);
+      return bookings;
+    } catch (error) {
+      console.error('Error fetching booked appointments:', error);
+      return {};
+    }
+  };
+
+  /**
+   * Determines doctor availability status.
+   * 
+   * NEW LOGIC:
+   * - "Not Available" ONLY when doctor is unavailable for ENTIRE day (isAvailable=false OR status='out' OR no slots)
+   * - "Available" or "Busy" when doctor has slots (even if some time ranges are unavailable)
+   * - Individual slots will show color coding (green/yellow/red) based on booking count
+   * 
+   * Scenarios:
+   * 1. Doctor unavailable 2pm-4pm, patient at 3pm: Shows "Available" (has other slots)
+   * 2. Doctor has slots but some are fully booked: Shows "Available" (slots show red/yellow/green)
+   * 3. Doctor not available entire day: Shows "Not Available"
+   */
+  const getDoctorAvailabilityStatus = (doctor: Doctor): {
+    statusText: string;
+    statusColor: string;
+    statusBg: string;
+    statusIcon: React.ReactNode;
+    hasSlots: boolean;
+  } => {
+    // Only show "Not Available" if doctor is unavailable for ENTIRE day
+    if (!doctor.isAvailable || doctor.status === 'out') {
+      return {
+        statusText: 'Not Available',
+        statusColor: '#EF4444',
+        statusBg: '#FEE2E2',
+        statusIcon: <CloseCircleOutlined />,
+        hasSlots: false,
+      };
+    }
+
+    const doctorSlots = getDoctorSlots(doctor);
+    const hasAnySlots = doctorSlots.length > 0;
+
+    // No slots at all for the day
+    if (!hasAnySlots) {
+      return {
+        statusText: 'Not Available',
+        statusColor: '#EF4444',
+        statusBg: '#FEE2E2',
+        statusIcon: <CloseCircleOutlined />,
+        hasSlots: false,
+      };
+    }
+
+    // If status is 'busy' but has slots, show as busy
+    if (doctor.status === 'busy') {
+      return {
+        statusText: 'Busy',
+        statusColor: '#F59E0B',
+        statusBg: '#FEF3C7',
+        statusIcon: <ClockCircleOutlined />,
+        hasSlots: true,
+      };
+    }
+
+    // Doctor has slots (even if some time ranges are unavailable, we show as Available)
+    // Individual slot availability will be shown with color coding when user selects date
+    return {
+      statusText: 'Available',
+      statusColor: '#10B981',
+      statusBg: '#D1FAE5',
+      statusIcon: <CheckCircleOutlined />,
+      hasSlots: true,
+    };
+  };
+
+  /**
+   * Gets slot availability color based on booking count
+   * - Green: ≤2 bookings (3+ slots available)
+   * - Yellow: 3-4 bookings (1-2 slots available)
+   * - Red: 5 bookings (fully booked)
+   * Each slot has a limit of 5 patients
+   */
+  const getSlotAvailabilityColor = (slot: string, maxSlots: number = 5): {
+    color: string;
+    bgColor: string;
+    borderColor: string;
+    textColor: string;
+    isAvailable: boolean;
+    availableCount: number;
+  } => {
+    const bookings = slotBookings[slot] || 0;
+    const availableCount = maxSlots - bookings;
+
+    if (availableCount >= 3) {
+      // Green: 3+ slots available (≤2 bookings)
+      return {
+        color: 'green',
+        bgColor: '#D1FAE5',
+        borderColor: '#10B981',
+        textColor: '#047857',
+        isAvailable: true,
+        availableCount,
+      };
+    } else if (availableCount >= 1) {
+      // Yellow: 1-2 slots available (3-4 bookings)
+      return {
+        color: 'yellow',
+        bgColor: '#FEF3C7',
+        borderColor: '#F59E0B',
+        textColor: '#92400E',
+        isAvailable: true,
+        availableCount,
+      };
+    } else {
+      // Red: 0 slots available (5 bookings - fully booked)
+      return {
+        color: 'red',
+        bgColor: '#FEE2E2',
+        borderColor: '#EF4444',
+        textColor: '#991B1B',
+        isAvailable: false,
+        availableCount: 0,
+      };
     }
   };
 
@@ -243,40 +455,130 @@ export default function BookAppointment() {
     setSelectedDoctor(doctor || null);
     setAvailableSlots([]);
     setSelectedSlot('');
+    setSlotBookings({});
     form.setFieldsValue({ timeSlot: undefined });
     
     if (doctor) {
-      try {
-        let slots: string[];
-        if (typeof doctor.availableSlots === 'string') {
-          if (doctor.availableSlots.startsWith('[') && doctor.availableSlots.endsWith(']')) {
-            // JSON array format
-            slots = JSON.parse(doctor.availableSlots);
-          } else {
-            // Comma-separated string format
-            slots = doctor.availableSlots.split(',').map((slot: string) => slot.trim());
-          }
-        } else {
-          slots = doctor.availableSlots as string[];
-        }
+      const slots = getDoctorSlots(doctor);
+      
+      // If the date is already selected and it's today, hide past slots immediately
+      if (selectedDate) {
+        const filteredSlots = slots.filter(slot => !isSlotInPast(slot, selectedDate));
+        setAvailableSlots(filteredSlots);
+        console.log(`📅 Filtered slots after doctor select: ${filteredSlots.length} available (${slots.length - filteredSlots.length} past slots hidden)`);
+      } else {
         setAvailableSlots(slots);
-      } catch (error) {
-        console.error('Error parsing available slots:', error);
-        setAvailableSlots([]);
       }
       
-              // Auto-advance to date & time selection step
-              setTimeout(() => {
-                console.log('🚀 Auto-advancing to date & time selection step (step 2)');
-                setCurrentStep(2);
-              }, 500);
+      // Auto-advance to date & time selection step
+      setTimeout(() => {
+        console.log('🚀 Auto-advancing to date & time selection step (step 2)');
+        setCurrentStep(2);
+      }, 500);
     }
   };
 
-  const handleDateChange = (date: dayjs.Dayjs | null) => {
+  /**
+   * Helper function to check if a time slot has ended
+   * Returns true if the slot should be filtered out (slot has completely ended)
+   * 
+   * Logic:
+   * - If selected date is in the future: all slots are valid (return false)
+   * - If selected date is today: check if slot END time has already passed
+   * - Patients can book as long as current time is BEFORE the slot end time
+   * - Example: Current time is 4:55 PM, slot is 4:30-5:00 PM
+   *   → Slot ends at 5:00 PM, current time (4:55 PM) is before 5:00 PM → Should be shown (return false)
+   * - Example: Current time is 5:05 PM, slot is 4:30-5:00 PM
+   *   → Slot ended at 5:00 PM, current time (5:05 PM) is after 5:00 PM → Should be filtered (return true)
+   */
+  const isSlotInPast = (slot: string, selectedDate: dayjs.Dayjs | null): boolean => {
+    if (!selectedDate) return false;
+    
+    const now = dayjs();
+    const today = now.format('YYYY-MM-DD');
+    const selectedDateStr = selectedDate.format('YYYY-MM-DD');
+    
+    // Only filter past slots if the selected date is today
+    if (selectedDateStr !== today) {
+      return false; // Future dates - all slots are valid
+    }
+    
+    try {
+      // Parse slot time (format: "HH:MM-HH:MM" or "HH:MM")
+      let slotEndTime = slot;
+
+      if (slot.includes('-')) {
+        // If slot has range format "HH:MM-HH:MM", use the END time (after the dash)
+        slotEndTime = slot.split('-')[1].trim();
+      } else {
+        // If slot is single time "HH:MM", assume it's a 30-minute slot
+        // So end time would be start time + 30 minutes
+        const [rawHours, rawMinutes] = slot.split(':').map(Number);
+        if (!isNaN(rawHours) && !isNaN(rawMinutes)) {
+          const startTime = dayjs().hour(rawHours).minute(rawMinutes);
+          const endTime = startTime.add(30, 'minute');
+          slotEndTime = endTime.format('HH:mm');
+        }
+      }
+
+      // Parse end time string (e.g., "09:00", "14:30", "17:00")
+      let [hours, minutes] = slotEndTime.split(':').map(Number);
+      if (isNaN(hours) || isNaN(minutes)) {
+        console.warn(`Invalid time format for slot: ${slot}`);
+        return false; // Invalid time format, don't filter
+      }
+
+      // Our data uses "02:00-02:30", "03:00-03:30", etc. to represent AFTERNOON slots (2 PM, 3 PM, 4 PM...)
+      // but without AM/PM. To avoid treating them as 2 AM / 3 AM, normalize:
+      // - Morning slots are 09:00-12:00
+      // - Afternoon slots are 02:00-05:00 (should be 14:00-17:00)
+      if (hours >= 2 && hours <= 5) {
+        hours += 12; // Convert 2,3,4,5 → 14,15,16,17
+      }
+      
+      // Create a dayjs object for the slot END time today
+      const slotEndDateTime = dayjs().hour(hours).minute(minutes).second(0).millisecond(0);
+      
+      // Check if slot END time has already passed
+      // Only filter if current time is AFTER slot end time (slot has completely ended)
+      // If current time equals end time, still allow booking (slot is still active)
+      const hasEnded = now.isAfter(slotEndDateTime);
+      
+      if (hasEnded) {
+        console.log(`⏰ Filtering out ended slot: ${slot} (ended at ${slotEndDateTime.format('HH:mm')}, current time: ${now.format('HH:mm')})`);
+      } else {
+        console.log(`✅ Slot still available: ${slot} (ends at ${slotEndDateTime.format('HH:mm')}, current time: ${now.format('HH:mm')})`);
+      }
+      
+      return hasEnded;
+    } catch (error) {
+      console.error('Error checking if slot is in past:', error, 'slot:', slot);
+      return false; // On error, don't filter
+    }
+  };
+
+  const handleDateChange = async (date: dayjs.Dayjs | null) => {
     setSelectedDate(date);
     setSelectedSlot('');
+    setSlotBookings({});
     form.setFieldsValue({ timeSlot: undefined });
+    
+    // When date changes, update available slots and fetch booked appointments
+    if (date && selectedDoctor) {
+      const allSlots = getDoctorSlots(selectedDoctor);
+      
+      // Filter out past slots if the selected date is today
+      const filteredSlots = allSlots.filter(slot => !isSlotInPast(slot, date));
+      
+      setAvailableSlots(filteredSlots);
+      console.log(`📅 Filtered slots: ${filteredSlots.length} available (${allSlots.length - filteredSlots.length} past slots hidden)`);
+      
+      // Fetch booked appointments for this doctor and date
+      const dateStr = date.format('YYYY-MM-DD');
+      const bookings = await fetchBookedAppointments(selectedDoctor.id, dateStr);
+      setSlotBookings(bookings);
+      console.log('📅 Booked appointments for', dateStr, ':', bookings);
+    }
   };
 
   const handleSlotSelect = (slot: string) => {
@@ -350,7 +652,7 @@ export default function BookAppointment() {
   // Auto-advance functions - no manual Next/Previous needed
 
   const handleCancel = () => {
-    setLocation('/appointments');
+    setLocation('/dashboard/patient/appointments');
   };
 
   const handlePrevious = () => {
@@ -434,7 +736,7 @@ export default function BookAppointment() {
         queryClient.invalidateQueries({ queryKey: ['patient-appointments'] });
         
         message.success('Appointment booked successfully! Please wait for confirmation.');
-        setLocation('/appointments');
+        setLocation('/dashboard/patient/appointments');
       } else {
         const errorData = await response.json();
         console.error('❌ Booking failed:', errorData);
@@ -454,45 +756,60 @@ export default function BookAppointment() {
       icon: <EnvironmentOutlined />,
       content: (
         <div>
-          {/* City Selector */}
-          <Row gutter={[16, 16]} style={{ marginBottom: '24px' }}>
+          {/* Search and Filter Section */}
+          <Row gutter={[16, 16]} style={{ marginBottom: '32px' }}>
             <Col xs={24} md={8}>
-              <Text strong style={{ marginBottom: '8px', display: 'block' }}>Search Hospital:</Text>
+              <Text strong style={{ marginBottom: '8px', display: 'block', fontSize: '14px', color: '#374151' }}>
+                Search Hospital
+              </Text>
               <Input
                 placeholder="Search by hospital name..."
                 value={searchTerm}
                 onChange={handleSearchChange}
-                prefix={<EnvironmentOutlined />}
+                prefix={<SearchOutlined style={{ color: '#9CA3AF' }} />}
                 allowClear
+                style={{ borderRadius: '8px' }}
+                size="large"
               />
             </Col>
             <Col xs={24} md={8}>
-              <Text strong style={{ marginBottom: '8px', display: 'block' }}>Filter by Specialty:</Text>
+              <Text strong style={{ marginBottom: '8px', display: 'block', fontSize: '14px', color: '#374151' }}>
+                Filter by Specialty
+              </Text>
               <Select
-                placeholder="All specialties"
+                placeholder="All Specialties"
                 value={selectedSpecialty || undefined}
                 onChange={handleSpecialtyChange}
-                style={{ width: '100%' }}
+                style={{ width: '100%', borderRadius: '8px' }}
                 allowClear
+                suffixIcon={<ArrowRightOutlined style={{ transform: 'rotate(90deg)', color: '#9CA3AF' }} />}
+                size="large"
               >
                 {allSpecialties.map(specialty => (
                   <Option key={specialty} value={specialty}>
-                    🏥 {specialty}
+                    {specialty}
                   </Option>
                 ))}
               </Select>
             </Col>
             <Col xs={24} md={8}>
-              <Text strong style={{ marginBottom: '8px', display: 'block' }}>Select City:</Text>
+              <Text strong style={{ marginBottom: '8px', display: 'block', fontSize: '14px', color: '#374151' }}>
+                Select City
+              </Text>
               <Select
                 value={selectedCity}
                 onChange={handleCityChange}
-                style={{ width: '100%' }}
+                style={{ width: '100%', borderRadius: '8px' }}
                 placeholder="Select city"
+                suffixIcon={<ArrowRightOutlined style={{ transform: 'rotate(90deg)', color: '#9CA3AF' }} />}
+                size="large"
               >
                 {availableCities.map(city => (
                   <Option key={city} value={city}>
-                    📍 {city}
+                    <Space>
+                      <EnvironmentOutlined style={{ color: '#9CA3AF' }} />
+                      {city}
+                    </Space>
                   </Option>
                 ))}
               </Select>
@@ -500,13 +817,11 @@ export default function BookAppointment() {
           </Row>
 
           {/* Results Count */}
-          {filteredHospitals.length !== hospitals.length && (
-            <div style={{ marginBottom: '16px' }}>
-              <Text type="secondary">
-                Showing {filteredHospitals.length} of {hospitals.length} hospitals
+          <div style={{ marginBottom: '24px' }}>
+            <Text style={{ fontSize: '14px', color: '#6B7280' }}>
+              Showing {filteredHospitals.length} hospitals in {selectedCity}
               </Text>
             </div>
-          )}
           
           <Form.Item
             name="hospitalId"
@@ -518,10 +833,10 @@ export default function BookAppointment() {
 
           {/* Hospital List */}
           {filteredHospitals.length === 0 ? (
-            <Card style={{ textAlign: 'center', padding: '40px' }}>
-              <EnvironmentOutlined style={{ fontSize: '48px', color: '#ccc', marginBottom: '16px' }} />
-              <Title level={4} type="secondary">No Hospitals Found</Title>
-              <Text type="secondary">
+            <Card style={{ textAlign: 'center', padding: '60px 20px', borderRadius: '16px' }}>
+              <EnvironmentOutlined style={{ fontSize: '48px', color: '#9CA3AF', marginBottom: '16px' }} />
+              <Title level={4} style={{ color: '#6B7280', marginBottom: '8px' }}>No Hospitals Found</Title>
+              <Text style={{ color: '#9CA3AF' }}>
                 {hospitals.length === 0 
                   ? `No hospitals are available in ${selectedCity}. Please select a different city.`
                   : 'No hospitals match your search criteria. Try adjusting your filters.'
@@ -529,151 +844,161 @@ export default function BookAppointment() {
               </Text>
             </Card>
           ) : (
-            <Row gutter={[16, 16]}>
-              {filteredHospitals.map(hospital => (
+            <Row gutter={[24, 24]}>
+              {filteredHospitals.map(hospital => {
+                const departments = typeof hospital.departments === 'string' 
+                  ? JSON.parse(hospital.departments) 
+                  : hospital.departments || [];
+                const status = hospital.is_verified ? 'Available' : 'Pending';
+                const statusColor = hospital.is_verified ? '#10B981' : '#F59E0B';
+                const statusBg = hospital.is_verified ? '#D1FAE5' : '#FEF3C7';
+                
+                return (
                 <Col xs={24} sm={12} lg={8} key={hospital.id}>
                   <Card
                     hoverable
                     onClick={() => handleHospitalSelect(hospital.id)}
                     style={{
                       height: '100%',
-                      borderRadius: 12,
-                      border: selectedHospital?.id === hospital.id ? '1px solid #2563eb' : '1px solid #e2e8f0',
+                        borderRadius: '16px',
+                        border: selectedHospital?.id === hospital.id ? '2px solid #2563eb' : '1px solid #E5E7EB',
                       boxShadow: selectedHospital?.id === hospital.id
                         ? '0 12px 24px rgba(37, 99, 235, 0.12)'
-                        : '0 6px 16px rgba(15, 23, 42, 0.08)',
-                      transition: 'border 0.2s ease, box-shadow 0.2s ease',
+                          : '0 2px 8px rgba(0, 0, 0, 0.08)',
+                        transition: 'all 0.2s ease',
                       cursor: 'pointer',
                       background: '#ffffff',
                     }}
-                    bodyStyle={{ padding: '20px' }}
+                    styles={{ body: { padding: '24px' } }}
                   >
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                        <div style={{ maxWidth: '75%' }}>
-                          <Title level={4} style={{ margin: 0, color: '#0f172a', fontSize: 20 }}>
+                        {/* Hospital Name and Status */}
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
+                          <Title level={4} style={{ margin: 0, color: '#111827', fontSize: '20px', fontWeight: 700, flex: 1 }}>
                             {hospital.name}
                           </Title>
-                          <Text type="secondary" style={{ fontSize: 13, display: 'block', marginTop: 4 }}>
+                          <Tag
+                            style={{
+                              background: statusBg,
+                              color: statusColor,
+                              border: 'none',
+                              borderRadius: '12px',
+                              padding: '4px 12px',
+                              fontSize: '12px',
+                              fontWeight: 500,
+                              margin: 0,
+                            }}
+                          >
+                            {status}
+                          </Tag>
+                        </div>
+
+                        {/* Address */}
+                        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
+                          <EnvironmentOutlined style={{ color: '#9CA3AF', fontSize: '16px', marginTop: 2, flexShrink: 0 }} />
+                          <div>
+                            <Text style={{ fontSize: '14px', color: '#374151', display: 'block' }}>
                             {hospital.address}
                           </Text>
-                          <Text type="secondary" style={{ fontSize: 12, display: 'block' }}>
+                            <Text style={{ fontSize: '14px', color: '#374151', display: 'block' }}>
                             {hospital.city}, {hospital.state}
                           </Text>
                         </div>
-                        <Tag color={hospital.is_verified ? 'success' : 'default'} variant="borderless">
-                          {hospital.is_verified ? 'Verified' : 'Pending'}
-                        </Tag>
                       </div>
 
+                        {/* Established and Total Beds */}
                       <div style={{
-                        display: 'grid',
-                        gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
-                        gap: 12,
+                          display: 'flex',
+                          gap: 24,
                       }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                            <CalendarOutlined style={{ color: '#9CA3AF', fontSize: '16px' }} />
                         <div>
-                          <Text type="secondary" style={{ fontSize: 12 }}>Established</Text>
-                          <div style={{ fontSize: 16, fontWeight: 600 }}>{hospital.establishedYear}</div>
+                              <Text style={{ fontSize: '12px', color: '#6B7280', display: 'block' }}>Established</Text>
+                              <Text strong style={{ fontSize: '16px', color: '#111827' }}>{hospital.establishedYear || 'N/A'}</Text>
                         </div>
+                          </div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                            <MedicineBoxOutlined style={{ color: '#9CA3AF', fontSize: '16px' }} />
                         <div>
-                          <Text type="secondary" style={{ fontSize: 12 }}>Total Beds</Text>
-                          <div style={{ fontSize: 16, fontWeight: 600 }}>{hospital.totalBeds}</div>
+                              <Text style={{ fontSize: '12px', color: '#6B7280', display: 'block' }}>Total Beds</Text>
+                              <Text strong style={{ fontSize: '16px', color: '#111827' }}>{hospital.totalBeds || 0}</Text>
+                            </div>
                         </div>
                       </div>
 
+                        {/* Departments */}
                       <div>
-                        <Text type="secondary" style={{ fontSize: 12 }}>Departments</Text>
-                        <div style={{ marginTop: 10, display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                          {JSON.parse(hospital.departments).slice(0, 3).map((dept: string) => (
+                          <Text style={{ fontSize: '12px', color: '#6B7280', fontWeight: 500, display: 'block', marginBottom: 8 }}>
+                            Departments
+                          </Text>
+                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                            {departments.slice(0, 4).map((dept: string) => (
                             <Tag
                               key={dept}
-                              variant="borderless"
-                              style={{ background: '#f1f5f9', color: '#1e293b', fontSize: 12, padding: '2px 10px' }}
+                                style={{
+                                  background: '#F3F4F6',
+                                  color: '#374151',
+                                  border: 'none',
+                                  borderRadius: '8px',
+                                  padding: '4px 10px',
+                                  fontSize: '12px',
+                                  margin: 0,
+                                }}
                             >
                               {dept}
                             </Tag>
                           ))}
-                          {JSON.parse(hospital.departments).length > 3 && (
-                            <Tag
-                              variant="borderless"
-                              style={{ background: '#e2e8f0', color: '#475569', fontSize: 12, padding: '2px 10px' }}
-                            >
-                              +{JSON.parse(hospital.departments).length - 3}
+                            {departments.length > 4 && (
+                              <Tag
+                                style={{
+                                  background: '#F3F4F6',
+                                  color: '#6B7280',
+                                  border: 'none',
+                                  borderRadius: '8px',
+                                  padding: '4px 10px',
+                                  fontSize: '12px',
+                                  margin: 0,
+                                }}
+                              >
+                                +{departments.length - 4}
                             </Tag>
                           )}
                         </div>
                       </div>
 
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <Text type="secondary" style={{ fontSize: 12 }}>
-                          {hospital.operating_hours || 'Hours not available'}
+                        {/* Availability Status */}
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 8, paddingTop: 8, borderTop: '1px solid #E5E7EB' }}>
+                          {hospital.emergencyServices ? (
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                              <ThunderboltOutlined style={{ color: '#10B981', fontSize: '16px' }} />
+                              <Text style={{ fontSize: '14px', color: '#10B981', fontWeight: 500 }}>
+                                Emergency Available
                         </Text>
-                        <Tag variant="borderless" color={hospital.emergencyServices ? 'blue' : 'default'}>
-                          {hospital.emergencyServices ? 'Emergency Available' : 'No Emergency'}
-                        </Tag>
+                            </div>
+                          ) : null}
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                            <ClockCircleOutlined style={{ color: hospital.operatingHours ? '#10B981' : '#EF4444', fontSize: '16px' }} />
+                            <Text style={{ fontSize: '14px', color: hospital.operatingHours ? '#10B981' : '#EF4444', fontWeight: 500 }}>
+                              {hospital.operatingHours || 'Hours not available'}
+                            </Text>
+                          </div>
                       </div>
                     </div>
                   </Card>
                 </Col>
-              ))}
+                );
+              })}
             </Row>
           )}
 
-          {selectedHospital && (
-            <Card style={{ marginTop: 24, border: '2px solid #1890ff', background: '#f0f8ff' }}>
-              <Row gutter={[16, 16]}>
-                <Col span={24}>
-                  <Title level={4} style={{ margin: 0, color: '#1890ff' }}>
-                    ✅ Selected: {selectedHospital.name}
-                  </Title>
-                  <Text type="secondary">
-                    {selectedHospital.address}, {selectedHospital.city}, {selectedHospital.state}
-                  </Text>
-                </Col>
-                <Col span={12}>
-                  <Text strong>Established:</Text> {selectedHospital.establishedYear}
-                </Col>
-                <Col span={12}>
-                  <Text strong>Total Beds:</Text> {selectedHospital.totalBeds}
-                </Col>
-                <Col span={24}>
-                  <Text strong>Departments:</Text>
-                  <div style={{ marginTop: 4 }}>
-                    {JSON.parse(selectedHospital.departments).map((dept: string) => (
-                      <Tag key={dept} color="blue">{dept}</Tag>
-                    ))}
-                  </div>
-                </Col>
-                <Col span={24}>
-                  <Text strong>Emergency Services:</Text>{' '}
-                  <Tag color={selectedHospital.emergencyServices ? 'green' : 'red'}>
-                    {selectedHospital.emergencyServices ? 'Available' : 'Not Available'}
-                  </Tag>
-                </Col>
-                <Col span={24}>
-                  <div style={{ textAlign: 'center', marginTop: '16px', padding: '16px', background: '#e6f7ff', borderRadius: '8px' }}>
-                    <Text strong style={{ color: '#1890ff', fontSize: '16px' }}>
-                      🏥 Hospital Selected! Loading doctors...
-                    </Text>
-                    <br />
-                    <Text type="secondary" style={{ fontSize: '14px' }}>
-                      {loading ? 'Fetching doctors...' : `Found ${doctors.length} doctors available`}
-                    </Text>
-                    <br />
-                    <Button 
-                      type="primary" 
-                      size="large"
-                      onClick={() => setCurrentStep(1)}
-                      style={{ marginTop: '12px' }}
-                      disabled={loading}
-                    >
-                      {loading ? 'Loading Doctors...' : `View ${doctors.length} Doctors`}
-                    </Button>
-                  </div>
-                </Col>
-              </Row>
-            </Card>
-          )}
+          <Form.Item
+            name="hospitalId"
+            rules={[{ required: true, message: 'Please select a hospital' }]}
+            style={{ display: 'none' }}
+          >
+            <Input />
+          </Form.Item>
         </div>
       )
     },
@@ -682,78 +1007,185 @@ export default function BookAppointment() {
       icon: <UserOutlined />,
       content: (
         <div>
-          {selectedHospital && (
+          {!selectedHospital ? (
+            <div style={{ textAlign: 'center', padding: '60px 20px' }}>
+              <Text style={{ color: '#6B7280' }}>Please select a hospital first</Text>
+            </div>
+          ) : (
             <div>
-              <div style={{ marginBottom: '16px', padding: '12px', background: '#f6ffed', border: '1px solid #b7eb8f', borderRadius: '8px' }}>
-                <Text strong style={{ color: '#52c41a' }}>
-                  📊 {loading ? 'Loading doctors...' : `Found ${doctors.length} doctors in ${selectedHospital.name}`}
+              {/* Doctor Count */}
+              <div style={{ marginBottom: '24px' }}>
+                <Text style={{ fontSize: '14px', color: '#6B7280' }}>
+                  {loading && doctors.length === 0 ? (
+                    'Loading doctors...'
+                  ) : (
+                    <>
+                      Showing <Text strong style={{ color: '#111827' }}>{doctors.length}</Text> doctors available
+                    </>
+                  )}
                 </Text>
               </div>
               
-              {doctors.length > 0 ? (
+              {loading && doctors.length === 0 ? (
+                <div style={{ textAlign: 'center', padding: '60px 20px' }}>
+                  <Spin size="large" />
+                  <div style={{ marginTop: '16px' }}>
+                    <Text style={{ color: '#6B7280' }}>Loading doctors...</Text>
+                  </div>
+                </div>
+              ) : doctors.length > 0 ? (
                 <div>
-                  <Text strong style={{ fontSize: '16px', marginBottom: '16px', display: 'block' }}>
-                    Select a doctor by clicking on their card:
+                  {/* Group doctors by specialty */}
+                  {(() => {
+                    // Group doctors by specialty
+                    const doctorsBySpecialty = doctors.reduce((acc, doctor) => {
+                      const specialty = doctor.specialty || 'General';
+                      if (!acc[specialty]) {
+                        acc[specialty] = [];
+                      }
+                      acc[specialty].push(doctor);
+                      return acc;
+                    }, {} as Record<string, Doctor[]>);
+
+                    // Sort specialties alphabetically
+                    const sortedSpecialties = Object.keys(doctorsBySpecialty).sort();
+
+                    return (
+                      <div>
+                        {/* Display doctors grouped by specialty */}
+                        {sortedSpecialties.map((specialty, specialtyIndex) => {
+                          const specialtyDoctors = doctorsBySpecialty[specialty];
+                          
+                          return (
+                            <div key={specialty} style={{ marginBottom: specialtyIndex < sortedSpecialties.length - 1 ? '40px' : '0' }}>
+                              {/* Specialty Header */}
+                              <div style={{ marginBottom: '20px' }}>
+                                <Title level={4} style={{ margin: 0, fontSize: '20px', fontWeight: 600, color: '#111827' }}>
+                                  {specialty}
+                                </Title>
+                                <Text style={{ fontSize: '14px', color: '#6B7280' }}>
+                                  {specialtyDoctors.length} doctor{specialtyDoctors.length !== 1 ? 's' : ''} available
                   </Text>
-                  <Row gutter={[16, 16]}>
-                    {doctors.map(doctor => (
+                              </div>
+
+                              {/* Doctors Grid */}
+                              <Row gutter={[24, 24]}>
+                                {specialtyDoctors.map(doctor => {
+                                  // Get availability status (only checks if doctor has slots, not specific time availability)
+                                  const availability = getDoctorAvailabilityStatus(doctor);
+                                  const { statusText, statusColor, statusBg, statusIcon } = availability;
+
+                                  // Get doctor initials for avatar
+                                  const getDoctorInitials = (name: string) => {
+                                    if (!name) return 'DR';
+                                    const names = name.split(' ');
+                                    if (names.length >= 2) {
+                                      return `${names[0][0]}${names[1][0]}`.toUpperCase();
+                                    }
+                                    return name.substring(0, 2).toUpperCase();
+                                  };
+
+                                  return (
                       <Col xs={24} sm={12} lg={8} key={doctor.id}>
                         <Card
                           hoverable
                           style={{
-                            border: selectedDoctor?.id === doctor.id ? '2px solid #52c41a' : '1px solid #d9d9d9',
+                                          border: selectedDoctor?.id === doctor.id ? '2px solid #1A8FE3' : '1px solid #E5E7EB',
+                                          borderRadius: '16px',
+                                          boxShadow: selectedDoctor?.id === doctor.id 
+                                            ? '0 4px 12px rgba(26, 143, 227, 0.15)' 
+                                            : '0 2px 8px rgba(0, 0, 0, 0.08)',
                             cursor: 'pointer',
                             height: '100%',
-                            opacity: doctor.isAvailable ? 1 : 0.6
+                                          background: '#fff',
+                                          transition: 'all 0.2s ease',
                           }}
                           onClick={() => handleDoctorSelect(doctor.id)}
-                          bodyStyle={{ padding: '16px' }}
-                        >
-                          <div style={{ marginBottom: '12px' }}>
-                            <Title level={4} style={{ margin: 0, color: selectedDoctor?.id === doctor.id ? '#52c41a' : '#262626' }}>
+                                        styles={{ body: { padding: '24px' } }}
+                                      >
+                                        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                                          {/* Doctor Photo and Name */}
+                                          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                                            <Avatar
+                                              size={64}
+                                              src={doctor.photo || undefined}
+                                              style={{
+                                                backgroundColor: '#1A8FE3',
+                                                fontSize: '20px',
+                                                fontWeight: 600,
+                                                flexShrink: 0,
+                                              }}
+                                            >
+                                              {!doctor.photo && getDoctorInitials(doctor.fullName || 'Dr. Unknown')}
+                                            </Avatar>
+                                            <div style={{ flex: 1, minWidth: 0 }}>
+                                              <Title level={4} style={{ margin: 0, fontSize: '20px', fontWeight: 700, color: '#111827', marginBottom: '4px' }}>
                               {doctor.fullName || 'Dr. Unknown'}
                             </Title>
-                            <Text type="secondary" style={{ fontSize: '12px' }}>
+                                              <Text style={{ fontSize: '14px', color: '#6B7280' }}>
                               {doctor.specialty}
                             </Text>
+                                            </div>
                           </div>
                           
-                          <Row gutter={[8, 8]} style={{ marginBottom: '12px' }}>
-                            <Col span={12}>
-                              <Text strong style={{ fontSize: '12px' }}>Experience:</Text>
-                              <div style={{ fontSize: '12px' }}>{doctor.experience} years</div>
-                            </Col>
-                            <Col span={12}>
-                              <Text strong style={{ fontSize: '12px' }}>Fee:</Text>
-                              <div style={{ fontSize: '12px' }}>₹{doctor.consultationFee}</div>
-                            </Col>
-                          </Row>
-
-                          <div style={{ marginBottom: '12px' }}>
-                            <Text strong style={{ fontSize: '12px' }}>Qualification:</Text>
-                            <div style={{ fontSize: '12px' }}>{doctor.qualification}</div>
+                                          {/* Experience and Fee */}
+                                          <div style={{ display: 'flex', gap: 24 }}>
+                                            <div>
+                                              <Text style={{ fontSize: '12px', color: '#6B7280', display: 'block', marginBottom: '4px' }}>Experience</Text>
+                                              <Text strong style={{ fontSize: '16px', color: '#111827' }}>{doctor.experience} years</Text>
+                                            </div>
+                                            <div>
+                                              <Text style={{ fontSize: '12px', color: '#6B7280', display: 'block', marginBottom: '4px' }}>Fee</Text>
+                                              <Text strong style={{ fontSize: '16px', color: '#111827' }}>
+                                                ₹{typeof doctor.consultationFee === 'string' 
+                                                  ? parseFloat(doctor.consultationFee).toFixed(2) 
+                                                  : (Number(doctor.consultationFee) || 0).toFixed(2)}
+                                              </Text>
+                                            </div>
                           </div>
 
-                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                            <Tag color={doctor.isAvailable ? 'green' : 'red'} size="small">
-                              {doctor.isAvailable ? '✅ Available' : '❌ Not Available'}
-                            </Tag>
-                            <Tag color={doctor.status === 'in' ? 'green' : 'orange'} size="small">
-                              {doctor.status === 'in' ? '🟢 In' : doctor.status === 'out' ? '🔴 Out' : '🟡 Busy'}
-                            </Tag>
+                                          {/* Qualification */}
+                                          <div>
+                                            <Text style={{ fontSize: '12px', color: '#6B7280', display: 'block', marginBottom: '4px' }}>Qualification</Text>
+                                            <Text style={{ fontSize: '14px', color: '#111827' }}>{doctor.qualification || 'MBBS, MD'}</Text>
                           </div>
 
-                          {doctor.bio && (
-                            <div style={{ marginTop: '8px' }}>
-                              <Text style={{ fontSize: '11px', color: '#666' }}>
-                                {doctor.bio.length > 100 ? `${doctor.bio.substring(0, 100)}...` : doctor.bio}
-                              </Text>
+                                          {/* Status Button */}
+                                          <div>
+                                            <Button
+                                              type="default"
+                                              icon={statusIcon}
+                                              style={{
+                                                width: '100%',
+                                                height: '40px',
+                                                borderRadius: '8px',
+                                                background: statusBg,
+                                                border: `1px solid ${statusColor}`,
+                                                color: statusColor,
+                                                fontWeight: 500,
+                                                fontSize: '14px',
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                justifyContent: 'center',
+                                                gap: '8px',
+                                              }}
+                                              disabled
+                                            >
+                                              {statusText}
+                                            </Button>
                             </div>
-                          )}
+                                        </div>
                         </Card>
                       </Col>
-                    ))}
+                                  );
+                                })}
                   </Row>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    );
+                  })()}
                   
                   <Form.Item
                     name="doctorId"
@@ -764,69 +1196,15 @@ export default function BookAppointment() {
                   </Form.Item>
                 </div>
               ) : (
-                <div>
-                  <Card style={{ textAlign: 'center', padding: '40px' }}>
-                    <UserOutlined style={{ fontSize: '48px', color: '#ccc', marginBottom: '16px' }} />
-                    <Title level={4} type="secondary">No Doctors Found</Title>
-                    <Text type="secondary">
+                <Card style={{ textAlign: 'center', padding: '60px 20px', borderRadius: '16px' }}>
+                  <UserOutlined style={{ fontSize: '48px', color: '#9CA3AF', marginBottom: '16px' }} />
+                  <Title level={4} style={{ color: '#6B7280', marginBottom: '8px' }}>No Doctors Found</Title>
+                  <Text style={{ color: '#9CA3AF' }}>
                       {loading ? 'Loading doctors...' : 'No doctors are available in this hospital. Please select a different hospital.'}
                     </Text>
-                  </Card>
-                  
-                  {/* Debug: Show doctors as simple list */}
-                  {doctors.length > 0 && (
-                    <Card style={{ marginTop: '16px', background: '#fff7e6' }}>
-                      <Title level={5}>Debug: Doctors List ({doctors.length})</Title>
-                      <div style={{ maxHeight: '200px', overflowY: 'auto' }}>
-                        {doctors.map(doctor => (
-                          <div key={doctor.id} style={{ padding: '8px', borderBottom: '1px solid #f0f0f0' }}>
-                            <Text strong>{doctor.fullName}</Text> - {doctor.specialty} (₹{doctor.consultationFee})
-                          </div>
-                        ))}
-                      </div>
                     </Card>
                   )}
                 </div>
-              )}
-            </div>
-          )}
-
-          {selectedDoctor && (
-            <Card style={{ marginTop: 24, border: '1px solid #52c41a' }}>
-              <Row gutter={[16, 16]}>
-                <Col span={4}>
-                  <Avatar size={64} icon={<UserOutlined />} />
-                </Col>
-                <Col span={20}>
-                  <Title level={4} style={{ margin: 0, color: '#52c41a' }}>
-                    {selectedDoctor.fullName || 'Dr. Unknown'}
-                  </Title>
-                  <Text type="secondary">{selectedDoctor.specialty}</Text>
-                  <div style={{ marginTop: 8 }}>
-                    <Space wrap>
-                      <Tag icon={<StarOutlined />} color="gold">
-                        {selectedDoctor.experience} years experience
-                      </Tag>
-                      <Tag icon={<DollarOutlined />} color="green">
-                        ₹{selectedDoctor.consultationFee}
-                      </Tag>
-                      <Tag color={selectedDoctor.status === 'in' ? 'green' : 'orange'}>
-                        {selectedDoctor.status === 'in' ? 'Available Now' : 'Available'}
-                      </Tag>
-                    </Space>
-                  </div>
-                  <div style={{ marginTop: 8 }}>
-                    <Text type="secondary">{selectedDoctor.bio}</Text>
-                  </div>
-                  <div style={{ marginTop: 8 }}>
-                    <Text strong>Languages: </Text>
-                    {(selectedDoctor.languages || '').split(',').map((lang: string) => (
-                      <Tag key={lang.trim()} size="small">{lang.trim()}</Tag>
-                    ))}
-                  </div>
-                </Col>
-              </Row>
-            </Card>
           )}
         </div>
       )
@@ -836,17 +1214,15 @@ export default function BookAppointment() {
       icon: <CalendarOutlined />,
       content: (
         <div>
-
-          <Row gutter={[24, 24]}>
-            <Col span={24}>
-              <Card variant="borderless" style={{ borderRadius: '12px', border: '1px solid #e2e8f0', marginBottom: 16 }}>
+          {/* Date Selection */}
+          <Card variant="borderless" style={{ borderRadius: '12px', border: '1px solid #e2e8f0', marginBottom: 24 }}>
                 <div
                   style={{
                     display: 'flex',
                     alignItems: 'center',
                     gap: 8,
-                    overflowX: 'auto',
-                    paddingBottom: 6,
+                width: '100%',
+                justifyContent: 'space-between',
                   }}
                 >
                   {[0, 1, 2, 3, 4, 5, 6].map(offset => {
@@ -863,7 +1239,7 @@ export default function BookAppointment() {
                           flexDirection: 'column',
                           alignItems: 'center',
                           justifyContent: 'center',
-                          minWidth: 96,
+                      flex: 1,
                           padding: '10px 14px',
                           borderRadius: 12,
                           border: `1px solid ${isSelected ? '#ff385c' : '#d1d5db'}`,
@@ -875,7 +1251,7 @@ export default function BookAppointment() {
                           boxShadow: isSelected ? '0 4px 12px rgba(255, 56, 92, 0.2)' : undefined,
                         }}
                       >
-                        <Text style={{ fontSize: 12, letterSpacing: '0.08em' }}>
+                    <Text style={{ fontSize: 12, letterSpacing: '0.08em', fontWeight: 500 }}>
                           {date.format('ddd').toUpperCase()}
                         </Text>
                         <Text style={{ fontSize: 15, fontWeight: 700, marginTop: 2 }}>
@@ -886,33 +1262,81 @@ export default function BookAppointment() {
                   })}
                 </div>
               </Card>
-              <Card variant="borderless" style={{ borderRadius: '12px', border: '1px solid #e2e8f0' }}>
+
+          {/* Time Slots Section */}
+          <Card variant="borderless" style={{ borderRadius: '12px', border: '1px solid #e2e8f0', marginBottom: 24, background: '#ffffff' }}>
                 <div
                   style={{
                     display: 'grid',
-                    gridTemplateColumns: 'repeat(auto-fill, minmax(120px, 1fr))',
+                gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))',
                     gap: 12,
+                padding: '20px',
                   }}
                 >
                   {availableSlots.length > 0 ? (
                     availableSlots.map(slot => {
                       const isSelected = selectedSlot === slot;
+                  const slotAvailability = getSlotAvailabilityColor(slot);
+                  const { bgColor, borderColor, textColor, isAvailable, availableCount } = slotAvailability;
+                  
+                  // If slot is fully booked (red), disable it
+                  const isDisabled = !isAvailable;
+                  
+                  // Lighter green background with darker border for available slots
+                  const finalBgColor = isSelected 
+                    ? '#16a34a' 
+                    : isDisabled 
+                      ? '#F3F4F6' 
+                      : slotAvailability.color === 'green'
+                        ? '#ECFDF5' // Lighter green
+                        : slotAvailability.color === 'yellow'
+                          ? '#FFFBEB' // Lighter yellow
+                          : bgColor;
+                  
+                  const finalBorderColor = isSelected 
+                    ? '#16a34a' 
+                    : isDisabled 
+                      ? '#D1D5DB' 
+                      : slotAvailability.color === 'green'
+                        ? '#10B981' // Darker green border
+                        : slotAvailability.color === 'yellow'
+                          ? '#F59E0B' // Darker yellow border
+                          : borderColor;
+                  
                       return (
                         <button
                           key={slot}
-                          onClick={() => handleSlotSelect(slot)}
+                      onClick={() => !isDisabled && handleSlotSelect(slot)}
+                      disabled={isDisabled}
                           style={{
-                            height: 42,
+                        height: 56,
                             borderRadius: 8,
-                            border: `1px solid ${isSelected ? '#16a34a' : '#9ae6b4'}`,
-                            background: isSelected ? '#16a34a' : '#ffffff',
-                            color: isSelected ? '#ffffff' : '#047857',
+                        border: `1px solid ${finalBorderColor}`,
+                        background: finalBgColor,
+                        color: isSelected 
+                          ? '#ffffff' 
+                          : isDisabled 
+                            ? '#9CA3AF' 
+                            : slotAvailability.color === 'green'
+                              ? '#047857' // Darker green text
+                              : slotAvailability.color === 'yellow'
+                                ? '#92400E' // Darker yellow text
+                                : textColor,
                             fontWeight: 600,
                             fontSize: 14,
-                            cursor: 'pointer',
-                          }}
-                        >
-                          {slot}
+                        cursor: isDisabled ? 'not-allowed' : 'pointer',
+                        opacity: isDisabled ? 0.6 : 1,
+                        display: 'flex',
+                        flexDirection: 'column',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        transition: 'all 0.2s ease',
+                      }}
+                      title={isDisabled 
+                        ? 'Fully booked (5/5 patients)' 
+                        : `${availableCount} slot${availableCount !== 1 ? 's' : ''} available (${availableCount}/5)`}
+                    >
+                      <span>{slot}</span>
                         </button>
                       );
                     })
@@ -920,28 +1344,80 @@ export default function BookAppointment() {
                     <Alert message="No slots available for the selected date" type="warning" showIcon />
                   )}
                 </div>
-              </Card>
-            </Col>
-          </Row>
+            
+            {/* Separating Line */}
+            <div style={{
+              height: '1px',
+              background: '#E5E7EB',
+              margin: '20px 0',
+            }} />
+            
+            {/* Available Time Slots Heading and Legend */}
+            <div style={{ padding: '0 20px 20px 20px' }}>
+              <Title level={4} style={{ margin: '0 0 16px 0', fontSize: '18px', fontWeight: 600, color: '#111827' }}>
+                Available Time Slots
+              </Title>
+              
+              {/* Legend */}
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 24, alignItems: 'center' }}>
+                {/* Available */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <div
+                    style={{
+                      width: 20,
+                      height: 20,
+                      borderRadius: 4,
+                      background: '#ECFDF5',
+                      border: '1px solid #10B981',
+                    }}
+                  />
+                  <Text style={{ fontSize: '14px', color: '#374151' }}>Available</Text>
+                </div>
 
-          {selectedDate && selectedSlot && (
-            <Card style={{ marginTop: 24, border: '1px solid #722ed1' }}>
-              <Row gutter={[16, 16]}>
-                <Col span={8}>
-                  <Text strong>Date:</Text>
-                  <div>{selectedDate.format('dddd, DD/MM/YYYY')}</div>
-                </Col>
-                <Col span={8}>
-                  <Text strong>Time:</Text>
-                  <div>{selectedSlot}</div>
-                </Col>
-                <Col span={8}>
-                  <Text strong>Duration:</Text>
-                  <div>30 minutes</div>
-                </Col>
-              </Row>
+                {/* Limited Availability (Yellow) */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <div
+                    style={{
+                      width: 20,
+                      height: 20,
+                      borderRadius: 4,
+                      background: '#FFFBEB',
+                      border: '1px solid #F59E0B',
+                    }}
+                  />
+                  <Text style={{ fontSize: '14px', color: '#374151' }}>Limited (1-2 slots)</Text>
+                </div>
+
+                {/* Fully Booked (Red) */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <div
+                    style={{
+                      width: 20,
+                      height: 20,
+                      borderRadius: 4,
+                      background: '#FEE2E2',
+                      border: '1px solid #EF4444',
+                    }}
+                  />
+                  <Text style={{ fontSize: '14px', color: '#374151' }}>Slot Full (5/5)</Text>
+                </div>
+
+                {/* Not Available */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <div
+                    style={{
+                      width: 20,
+                      height: 20,
+                      borderRadius: 4,
+                      background: '#F3F4F6',
+                      border: '1px solid #D1D5DB',
+                    }}
+                  />
+                  <Text style={{ fontSize: '14px', color: '#374151' }}>Not Available</Text>
+                </div>
+              </div>
+            </div>
             </Card>
-          )}
         </div>
       )
     },
@@ -1030,8 +1506,300 @@ export default function BookAppointment() {
   console.log('🎯 Current step:', currentStep, 'Selected hospital:', selectedHospital?.name, 'Doctors count:', doctors.length);
 
   return (
-    <Layout style={{ minHeight: '100vh', background: '#f5f5f5' }}>
-      {/* Header */}
+    <>
+      <style>{`
+        /* Override medical-container padding for book-appointment page */
+        body:has(.book-appointment-wrapper) .medical-container {
+          padding: 0 !important;
+          display: block !important;
+          align-items: unset !important;
+          justify-content: unset !important;
+          background: transparent !important;
+        }
+        /* Allow scrolling on book-appointment page */
+        body:has(.book-appointment-wrapper) {
+          overflow: auto !important;
+          overflow-x: hidden !important;
+        }
+        html:has(.book-appointment-wrapper) {
+          overflow: auto !important;
+          overflow-x: hidden !important;
+        }
+        /* Patient sidebar menu styles */
+        .patient-dashboard-menu .ant-menu-item {
+          border-radius: 12px !important;
+          margin: 4px 8px !important;
+          height: 48px !important;
+          line-height: 48px !important;
+          transition: all 0.3s ease !important;
+          padding-left: 16px !important;
+          background: transparent !important;
+          border: none !important;
+        }
+        .patient-dashboard-menu .ant-menu-item:hover {
+          background: transparent !important;
+        }
+        .patient-dashboard-menu .ant-menu-item:hover,
+        .patient-dashboard-menu .ant-menu-item:hover .ant-menu-title-content {
+          color: #595959 !important;
+        }
+        .patient-dashboard-menu .ant-menu-item-selected {
+          background: #1A8FE3 !important;
+          font-weight: 500 !important;
+          border: none !important;
+          padding-left: 16px !important;
+        }
+        .patient-dashboard-menu .ant-menu-item-selected,
+        .patient-dashboard-menu .ant-menu-item-selected .ant-menu-title-content {
+          color: #fff !important;
+        }
+        .patient-dashboard-menu .ant-menu-item-selected .ant-menu-item-icon,
+        .patient-dashboard-menu .ant-menu-item-selected .anticon,
+        .patient-dashboard-menu .ant-menu-item-selected img {
+          color: #fff !important;
+          filter: brightness(0) invert(1) !important;
+        }
+        .patient-dashboard-menu .ant-menu-item:not(.ant-menu-item-selected) {
+          color: #8C8C8C !important;
+          background: transparent !important;
+        }
+        .patient-dashboard-menu .ant-menu-item:not(.ant-menu-item-selected) .ant-menu-title-content {
+          color: #8C8C8C !important;
+        }
+        .patient-dashboard-menu .ant-menu-item:not(.ant-menu-item-selected) .ant-menu-item-icon,
+        .patient-dashboard-menu .ant-menu-item:not(.ant-menu-item-selected) .anticon,
+        .patient-dashboard-menu .ant-menu-item:not(.ant-menu-item-selected) img {
+          color: #8C8C8C !important;
+        }
+        .patient-dashboard-menu .ant-menu-item-selected::after {
+          display: none !important;
+        }
+        .patient-dashboard-menu .ant-menu-item-icon,
+        .patient-dashboard-menu .anticon {
+          font-size: 18px !important;
+          width: 18px !important;
+          height: 18px !important;
+        }
+      `}</style>
+      <Layout style={{ minHeight: '100vh', background: '#F3F4F6' }} className="book-appointment-wrapper">
+        {/* Desktop/Tablet Sidebar */}
+        {!isMobile && (
+          <Sider
+            width={260}
+            style={{
+              position: 'fixed',
+              top: 0,
+              left: 0,
+              height: '100vh',
+              width: 260,
+              background: '#fff',
+              boxShadow: '0 2px 16px rgba(26, 143, 227, 0.08)',
+              display: 'flex',
+              flexDirection: 'column',
+              zIndex: 10,
+              borderLeft: '1px solid #E3F2FF',
+              borderBottom: '1px solid #E3F2FF',
+            }}
+          >
+            <PatientSidebar selectedMenuKey="appointments" />
+          </Sider>
+        )}
+
+        {/* Mobile Drawer */}
+        {isMobile && (
+          <Drawer
+            title="Navigation"
+            placement="left"
+            onClose={() => setMobileDrawerOpen(false)}
+            open={mobileDrawerOpen}
+            styles={{ body: { padding: 0 } }}
+            width={260}
+          >
+            <PatientSidebar selectedMenuKey="appointments" onMenuClick={() => setMobileDrawerOpen(false)} />
+          </Drawer>
+        )}
+
+        <Layout
+          style={{
+            marginLeft: isMobile ? 0 : 260,
+            minHeight: '100vh',
+            background: '#F3F4F6',
+            overflow: 'hidden',
+          }}
+        >
+        <Content
+          style={{
+            background: '#F3F4F6',
+            height: '100vh',
+            overflowY: 'auto',
+            padding: 0,
+          }}
+        >
+          {/* Mobile Menu Button */}
+          {(isMobile && (currentStep === 0 || currentStep === 1)) && (
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '16px', background: '#F3F4F6' }}>
+              <Button
+                type="text"
+                icon={<MenuUnfoldOutlined />}
+                onClick={() => setMobileDrawerOpen(true)}
+                style={{ fontSize: '18px' }}
+              />
+              <div style={{ width: 32 }} /> {/* Spacer for centering */}
+            </div>
+          )}
+
+          {/* Header - Select Hospital step */}
+          {currentStep === 0 && (
+          <div style={{ 
+            background: '#F3F4F6', 
+            padding: '16px 32px',
+          }}>
+            <div style={{ 
+              display: 'flex', 
+              alignItems: 'center',
+              position: 'relative',
+            }}>
+              {/* Back Button - Left Aligned */}
+              <div style={{ position: 'absolute', left: 0 }}>
+                <Button 
+                  icon={<ArrowLeftOutlined />} 
+                  onClick={() => setLocation('/dashboard/patient')}
+                  type="text"
+                  style={{ padding: 0, height: 'auto', fontSize: '14px', color: '#6B7280' }}
+                >
+                  Back
+                </Button>
+              </div>
+              
+              {/* Title and Subtitle - Centered */}
+              <div style={{ 
+                display: 'flex', 
+                flexDirection: 'column', 
+                alignItems: 'center', 
+                justifyContent: 'center',
+                textAlign: 'center',
+                width: '100%',
+                flex: 1,
+              }}>
+                <Title level={2} style={{ margin: 0, fontSize: '32px', fontWeight: 700, color: '#111827' }}>
+                  Select Hospital
+                </Title>
+                <Text style={{ fontSize: '16px', color: '#6B7280', marginTop: '4px' }}>
+                  Choose a hospital in your region
+                </Text>
+              </div>
+            </div>
+            {/* Line Separator */}
+            <div style={{
+              height: '1px',
+              background: '#E5E7EB',
+              marginTop: '16px',
+            }} />
+          </div>
+        )}
+
+          {/* Header - Select Doctor step */}
+          {currentStep === 1 && selectedHospital && (
+          <div style={{ 
+            background: '#F3F4F6', 
+            padding: '16px 32px',
+          }}>
+            <div style={{ 
+              display: 'flex', 
+              alignItems: 'center',
+              position: 'relative',
+            }}>
+              {/* Back Button - Left Aligned */}
+              <div style={{ position: 'absolute', left: 0 }}>
+                <Button 
+                  icon={<ArrowLeftOutlined />} 
+                  onClick={handlePrevious}
+                  type="text"
+                  style={{ padding: 0, height: 'auto', fontSize: '14px', color: '#6B7280' }}
+                >
+                  Back
+                </Button>
+              </div>
+              
+              {/* Title and Subtitle - Centered */}
+              <div style={{ 
+                display: 'flex', 
+                flexDirection: 'column', 
+                alignItems: 'center', 
+                justifyContent: 'center',
+                textAlign: 'center',
+                width: '100%',
+                flex: 1,
+              }}>
+                <Title level={2} style={{ margin: 0, fontSize: '32px', fontWeight: 700, color: '#111827' }}>
+                  Select Doctor
+                </Title>
+                <Text style={{ fontSize: '16px', color: '#6B7280', marginTop: '4px' }}>
+                  {selectedHospital.name}
+                </Text>
+              </div>
+            </div>
+            {/* Line Separator */}
+            <div style={{
+              height: '1px',
+              background: '#E5E7EB',
+              marginTop: '16px',
+            }} />
+          </div>
+        )}
+
+      {/* Header - Select Date & Time step */}
+      {currentStep === 2 && selectedDoctor && selectedHospital && (
+        <div style={{ 
+          background: '#F3F4F6', 
+          padding: '16px 32px',
+        }}>
+          <div style={{ 
+            display: 'flex', 
+            alignItems: 'center',
+            position: 'relative',
+          }}>
+            {/* Back Button - Left Aligned */}
+            <div style={{ position: 'absolute', left: 0 }}>
+              <Button 
+                icon={<ArrowLeftOutlined />} 
+                onClick={handlePrevious}
+                type="text"
+                style={{ padding: 0, height: 'auto', fontSize: '14px', color: '#6B7280' }}
+              >
+                Back
+              </Button>
+            </div>
+            
+            {/* Title and Subtitle - Centered */}
+            <div style={{ 
+              display: 'flex', 
+              flexDirection: 'column', 
+              alignItems: 'center', 
+              justifyContent: 'center',
+              textAlign: 'center',
+              width: '100%',
+              flex: 1,
+            }}>
+              <Title level={2} style={{ margin: 0, fontSize: '32px', fontWeight: 700, color: '#111827' }}>
+                Select Date & Time
+              </Title>
+              <Text style={{ fontSize: '16px', color: '#6B7280', marginTop: '4px' }}>
+                {selectedDoctor.fullName} - {selectedHospital.name}
+              </Text>
+            </div>
+          </div>
+          {/* Line Separator */}
+          <div style={{
+            height: '1px',
+            background: '#E5E7EB',
+            marginTop: '16px',
+          }} />
+        </div>
+      )}
+
+      {/* Standard Header for Confirm step */}
+      {currentStep === 3 && (
       <div style={{ 
         background: '#fff', 
         padding: '16px 24px',
@@ -1043,32 +1811,29 @@ export default function BookAppointment() {
             <Space>
               <Button 
                 icon={<ArrowLeftOutlined />} 
-                onClick={() => setLocation('/appointments')}
+                onClick={handlePrevious}
                 type="text"
               >
-                Back to Appointments
+                Back
               </Button>
-              <Divider type="vertical" />
-              <Breadcrumb>
-                <Breadcrumb.Item>
-                  <HomeOutlined />
-                  <span onClick={() => setLocation('/dashboard')} style={{ cursor: 'pointer' }}>
-                    Dashboard
-                  </span>
-                </Breadcrumb.Item>
-                <Breadcrumb.Item>
-                  <CalendarOutlined />
-                  Book Appointment
-                </Breadcrumb.Item>
-              </Breadcrumb>
             </Space>
           </Col>
         </Row>
       </div>
+      )}
 
       {/* Content */}
-      <div style={{ padding: '32px 24px', maxWidth: '1320px', margin: '0 auto', width: '100%' }}>
-        <Spin spinning={loading}>
+          <div style={{ padding: (currentStep === 0 || currentStep === 1 || currentStep === 2) ? '32px' : '32px 24px', maxWidth: '1320px', margin: '0 auto', width: '100%', minHeight: '400px' }}>
+        <Spin spinning={loading} tip={loading ? (currentStep === 0 ? 'Loading hospitals...' : currentStep === 1 ? 'Loading doctors...' : 'Loading...') : undefined}>
+          {currentStep === 0 || currentStep === 1 || currentStep === 2 ? (
+            <Form
+              form={form}
+              layout="vertical"
+              requiredMark={false}
+            >
+              {steps[currentStep]?.content || <div style={{ textAlign: 'center', padding: '40px' }}><Text>Loading...</Text></div>}
+            </Form>
+          ) : (
           <Card style={{ marginBottom: 24 }}>
             <div style={{ textAlign: 'center', marginBottom: 32 }}>
               <CalendarOutlined style={{ fontSize: '48px', color: '#1890ff', marginBottom: '16px' }} />
@@ -1078,7 +1843,6 @@ export default function BookAppointment() {
               <Text type="secondary" style={{ fontSize: '16px' }}>
                 {steps[currentStep].icon}
               </Text>
-              <div style={{ marginTop: '8px', fontSize: '12px', color: '#666' }} />
             </div>
 
             <Form
@@ -1094,8 +1858,6 @@ export default function BookAppointment() {
 
             <div style={{ textAlign: 'center' }}>
               <Space size="large">
-                
-                {/* Previous Button */}
                 {currentStep > 0 && (
                   <Button 
                     onClick={handlePrevious}
@@ -1105,7 +1867,6 @@ export default function BookAppointment() {
                   </Button>
                 )}
                 
-                {/* Next Button - Only show if auto-advance failed or user wants manual control */}
                 {currentStep < steps.length - 1 && (
                   <Button 
                     type="primary"
@@ -1116,7 +1877,6 @@ export default function BookAppointment() {
                   </Button>
                 )}
                 
-                {/* Book Appointment Button */}
                 {currentStep === steps.length - 1 && (
                   <Button
                     type="primary"
@@ -1132,8 +1892,12 @@ export default function BookAppointment() {
               </Space>
             </div>
           </Card>
+          )}
         </Spin>
       </div>
+        </Content>
     </Layout>
+    </Layout>
+    </>
   );
 }

@@ -52,6 +52,47 @@ export const bookAppointment = async (
 };
 
 /**
+ * Get appointments for a specific doctor on a specific date (for slot availability)
+ */
+export const getAppointmentsByDoctorAndDate = async (doctorId: number, date: string) => {
+  console.log(`📅 Fetching appointments for doctor ${doctorId} on date ${date}`);
+  try {
+    // Convert date string (YYYY-MM-DD) to Date object for comparison
+    // The database stores appointmentDate as timestamp, so we need to compare dates properly
+    const dateObj = new Date(date);
+    const startOfDay = new Date(dateObj);
+    startOfDay.setHours(0, 0, 0, 0);
+    const endOfDay = new Date(dateObj);
+    endOfDay.setHours(23, 59, 59, 999);
+    
+    const appointmentsData = await db
+      .select({
+        id: appointments.id,
+        timeSlot: appointments.timeSlot,
+        appointmentTime: appointments.appointmentTime,
+        status: appointments.status,
+      })
+      .from(appointments)
+      .where(
+        and(
+          eq(appointments.doctorId, doctorId),
+          // Compare date part only (appointmentDate is stored as timestamp)
+          sql`DATE(${appointments.appointmentDate}) = DATE(${sql.raw(`'${date}'`)})`,
+          // Include all statuses (pending, confirmed, completed) to count bookings
+          // Cancelled appointments don't count
+          sql`${appointments.status} != 'cancelled'`
+        )
+      );
+
+    console.log(`📋 Found ${appointmentsData.length} appointments for doctor ${doctorId} on ${date}`);
+    return appointmentsData;
+  } catch (error) {
+    console.error('Error fetching appointments by doctor and date:', error);
+    throw new Error('Failed to fetch appointments');
+  }
+};
+
+/**
  * Get all appointments assigned to a specific doctor.
  */
 export const getAppointmentsByDoctor = async (doctorId: number) => {
@@ -181,7 +222,7 @@ export const getAppointmentsByDoctor = async (doctorId: number) => {
 
 /**
  * Get all appointments for a specific patient.
- * Only shows confirmed/completed/cancelled appointments (pending appointments are not visible until receptionist confirms).
+ * Shows all appointments including pending ones so patients can see their newly booked appointments.
  */
 export const getAppointmentsByPatient = async (patientId: number) => {
   console.log(`📅 Fetching appointments for patient ${patientId}`);
@@ -212,16 +253,10 @@ export const getAppointmentsByPatient = async (patientId: number) => {
       .leftJoin(doctors, eq(appointments.doctorId, doctors.id))
       .leftJoin(users, eq(doctors.userId, users.id))
       .leftJoin(hospitals, eq(appointments.hospitalId, hospitals.id))
-      .where(
-        and(
-          eq(appointments.patientId, patientId),
-          // Only show confirmed, completed, or cancelled appointments (not pending)
-          sql`${appointments.status} IN ('confirmed', 'completed', 'cancelled')`
-        )
-      )
+      .where(eq(appointments.patientId, patientId))
       .orderBy(desc(appointments.appointmentDate));
 
-    console.log(`📋 Found ${result.length} confirmed/completed appointments for patient (pending appointments hidden)`);
+    console.log(`📋 Found ${result.length} appointments for patient (including pending)`);
     return result;
   } catch (error) {
     console.error('Error fetching patient appointments:', error);

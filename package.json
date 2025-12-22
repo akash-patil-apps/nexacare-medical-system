@@ -19,6 +19,7 @@
     "check-user": "tsx scripts/check-user.ts",
     "create-test-user": "tsx scripts/create-test-user.ts",
     "export-test-data": "tsx scripts/export-test-data.ts",
+    "export-all-credentials": "tsx scripts/export-all-credentials.ts",
     "export-to-pdf": "tsx scripts/export-to-pdf.ts",
     "fix-mobile-numbers": "tsx scripts/fix-mobile-numbers.ts",
     "cleanup-and-reseed": "tsx scripts/cleanup-and-reseed.ts",

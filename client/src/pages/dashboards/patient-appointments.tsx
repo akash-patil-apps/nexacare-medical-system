@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { 
   Layout, 
   Card, 
@@ -9,39 +9,34 @@ import {
   Tag, 
   Space, 
   Typography,
-  Avatar,
-  Menu,
-  Dropdown,
-  Badge,
   Input,
   Select,
   Modal,
-  Statistic,
-  message
+  message,
+  Empty,
+  Drawer,
+  Spin
 } from 'antd';
 import { 
-  UserOutlined, 
   CalendarOutlined, 
-  MedicineBoxOutlined, 
-  FileTextOutlined,
-  BellOutlined,
-  SettingOutlined,
-  LogoutOutlined,
-  PlusOutlined,
-  CheckCircleOutlined,
   ClockCircleOutlined,
+  CheckCircleOutlined,
+  DeleteOutlined,
   SearchOutlined,
-  FilterOutlined,
+  PlusOutlined,
   EyeOutlined,
   EditOutlined,
-  DeleteOutlined
+  MenuUnfoldOutlined,
+  ArrowRightOutlined
 } from '@ant-design/icons';
 import { useAuth } from '../../hooks/use-auth';
 import { useLocation } from 'wouter';
 import { useQueryClient } from '@tanstack/react-query';
 import { Popconfirm } from 'antd';
+import { PatientSidebar } from '../../components/layout/PatientSidebar';
+import { useResponsive } from '../../hooks/use-responsive';
 
-const { Header, Content, Sider } = Layout;
+const { Content, Sider } = Layout;
 const { Title, Text } = Typography;
 const { Option } = Select;
 
@@ -66,17 +61,17 @@ interface Appointment {
 }
 
 export default function PatientAppointments() {
-  const { user, logout } = useAuth();
+  const { user } = useAuth();
   const [, setLocation] = useLocation();
   const queryClient = useQueryClient();
-  const [collapsed, setCollapsed] = useState(false);
+  const { isMobile } = useResponsive();
+  const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false);
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState('all');
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedAppointment, setSelectedAppointment] = useState<Appointment | null>(null);
   const [isViewModalOpen, setIsViewModalOpen] = useState(false);
-  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
 
   // Load appointments from API
   const loadAppointments = async () => {
@@ -92,7 +87,27 @@ export default function PatientAppointments() {
       if (response.ok) {
         const data = await response.json();
         console.log('📅 Loaded appointments:', data);
-        setAppointments(data);
+        // Transform API data to match our interface
+        const transformedData = data.map((apt: any) => ({
+          id: apt.id,
+          doctorName: apt.doctor?.fullName || apt.doctorName || 'Unknown Doctor',
+          doctorSpecialty: apt.doctor?.specialty || apt.doctorSpecialty || 'General',
+          hospitalName: apt.hospital?.name || apt.hospitalName || 'Unknown Hospital',
+          appointmentDate: apt.appointmentDate || apt.date || '',
+          appointmentTime: apt.appointmentTime || apt.time || apt.timeSlot || '',
+          timeSlot: apt.timeSlot || apt.appointmentTime || '',
+          reason: apt.reason || 'Consultation',
+          status: apt.status || 'pending',
+          type: apt.type || 'online',
+          priority: apt.priority || 'normal',
+          symptoms: apt.symptoms || '',
+          notes: apt.notes || '',
+          createdAt: apt.createdAt || '',
+          confirmedAt: apt.confirmedAt,
+          completedAt: apt.completedAt,
+          cancelledAt: apt.cancelledAt,
+        }));
+        setAppointments(transformedData);
       } else {
         console.error('Failed to load appointments');
         message.error('Failed to load appointments');
@@ -109,73 +124,47 @@ export default function PatientAppointments() {
     loadAppointments();
   }, []);
 
-  // Auto-refresh appointments every 10 seconds (less aggressive)
+  // Auto-refresh appointments every 10 seconds
   useEffect(() => {
     const interval = setInterval(() => {
       loadAppointments();
-    }, 10000); // Changed from 3000ms to 10000ms (10 seconds)
+    }, 10000);
 
     return () => clearInterval(interval);
   }, []);
 
-  // Listen for appointment updates from other tabs/windows (cross-tab communication)
+  // Listen for appointment updates
   useEffect(() => {
     const handleStorageChange = (e: StorageEvent) => {
       if (e.key === 'appointment-updated') {
-        console.log('🔄 Patient appointments: Update detected, refreshing...');
         loadAppointments();
       }
     };
     
-    const handleCustomEvent = () => {
-      console.log('🔄 Patient appointments: Custom event detected, refreshing...');
-      loadAppointments();
-    };
-    
-    window.addEventListener('storage', handleStorageChange);
-    window.addEventListener('appointment-updated', handleCustomEvent);
-    
-    return () => {
-      window.removeEventListener('storage', handleStorageChange);
-      window.removeEventListener('appointment-updated', handleCustomEvent);
-    };
-  }, []);
-
-  // Refresh appointments when returning from booking page
-  useEffect(() => {
-    const handleVisibilityChange = () => {
-      if (!document.hidden) {
-        loadAppointments();
-      }
-    };
-
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
-  }, []);
-
-  // Listen for appointment updates from other tabs/windows
-  useEffect(() => {
-    const handleStorageChange = (e: StorageEvent) => {
-      if (e.key === 'appointment-updated') {
-        console.log('🔄 Appointment updated detected, refreshing patient appointments...');
-        loadAppointments();
-      }
-    };
     window.addEventListener('storage', handleStorageChange);
     return () => window.removeEventListener('storage', handleStorageChange);
   }, []);
 
-  const filteredAppointments = appointments.filter(appointment => {
-    const matchesFilter = filter === 'all' || appointment.status === filter;
-    const matchesSearch = searchTerm === '' || 
-      appointment.doctorName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      appointment.hospitalName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      appointment.reason.toLowerCase().includes(searchTerm.toLowerCase());
-    return matchesFilter && matchesSearch;
-  });
+  const filteredAppointments = useMemo(() => {
+    return appointments.filter(appointment => {
+      const matchesFilter = filter === 'all' || appointment.status.toLowerCase() === filter.toLowerCase();
+      const matchesSearch = searchTerm === '' || 
+        appointment.doctorName.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        appointment.hospitalName.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        appointment.reason.toLowerCase().includes(searchTerm.toLowerCase());
+      return matchesFilter && matchesSearch;
+    });
+  }, [appointments, filter, searchTerm]);
+
+  const stats = useMemo(() => ({
+    total: appointments.length,
+    upcoming: appointments.filter(a => a.status === 'confirmed' || a.status === 'pending').length,
+    completed: appointments.filter(a => a.status === 'completed').length,
+    cancelled: appointments.filter(a => a.status === 'cancelled').length,
+  }), [appointments]);
 
   const getStatusColor = (status: string) => {
-    switch (status) {
+    switch (status.toLowerCase()) {
       case 'confirmed': return 'green';
       case 'pending': return 'orange';
       case 'completed': return 'blue';
@@ -185,11 +174,41 @@ export default function PatientAppointments() {
   };
 
   const getPriorityColor = (priority: string) => {
-    switch (priority) {
-      case 'High': return 'red';
-      case 'Medium': return 'orange';
-      case 'Normal': return 'green';
+    switch (priority?.toLowerCase()) {
+      case 'high': return 'red';
+      case 'medium': return 'orange';
+      case 'normal': return 'green';
       default: return 'default';
+    }
+  };
+
+  const handleViewAppointment = (appointment: Appointment) => {
+    setSelectedAppointment(appointment);
+    setIsViewModalOpen(true);
+  };
+
+  const handleCancelAppointment = async (appointmentId: number) => {
+    try {
+      const token = localStorage.getItem('auth-token');
+      const response = await fetch(`/api/appointments/${appointmentId}/cancel`, {
+        method: 'PUT',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      });
+
+      if (response.ok) {
+        message.success('Appointment cancelled successfully');
+        loadAppointments();
+        queryClient.invalidateQueries({ queryKey: ['/api/appointments/my'] });
+      } else {
+        const error = await response.json();
+        message.error(error.message || 'Failed to cancel appointment');
+      }
+    } catch (error) {
+      console.error('Error cancelling appointment:', error);
+      message.error('Failed to cancel appointment');
     }
   };
 
@@ -218,7 +237,7 @@ export default function PatientAppointments() {
       render: (record: Appointment) => (
         <Space direction="vertical" size={0}>
           <Text>{record.appointmentDate}</Text>
-          <Text type="secondary">{record.appointmentTime}</Text>
+          <Text type="secondary">{record.appointmentTime || record.timeSlot}</Text>
         </Space>
       ),
     },
@@ -243,7 +262,7 @@ export default function PatientAppointments() {
       key: 'priority',
       render: (priority: string) => (
         <Tag color={getPriorityColor(priority)}>
-          {priority}
+          {priority || 'Normal'}
         </Tag>
       ),
     },
@@ -259,15 +278,6 @@ export default function PatientAppointments() {
           >
             View
           </Button>
-          {record.status === 'pending' && (
-            <Button 
-              size="small" 
-              icon={<EditOutlined />}
-              onClick={() => handleEditAppointment(record)}
-            >
-              Edit
-            </Button>
-          )}
           {record.status === 'pending' && (
             <Popconfirm
               title="Cancel Appointment"
@@ -286,220 +296,286 @@ export default function PatientAppointments() {
     },
   ];
 
-  const userMenuItems = [
-    {
-      key: 'profile',
-      icon: <UserOutlined />,
-      label: 'Profile',
-    },
-    {
-      key: 'settings',
-      icon: <SettingOutlined />,
-      label: 'Settings',
-    },
-    {
-      type: 'divider' as const,
-    },
-    {
-      key: 'logout',
-      icon: <LogoutOutlined />,
-      label: 'Logout',
-      onClick: logout,
-    },
-  ];
-
-  const sidebarMenu = [
-    {
-      key: 'dashboard',
-      icon: <UserOutlined />,
-      label: 'Dashboard',
-    },
-    {
-      key: 'appointments',
-      icon: <CalendarOutlined />,
-      label: 'Appointments',
-    },
-    {
-      key: 'prescriptions',
-      icon: <MedicineBoxOutlined />,
-      label: 'Prescriptions',
-    },
-    {
-      key: 'reports',
-      icon: <FileTextOutlined />,
-      label: 'Lab Reports',
-    },
-  ];
-
-  const stats = {
-    total: appointments.length,
-    upcoming: appointments.filter(a => a.status === 'confirmed' || a.status === 'pending').length,
-    completed: appointments.filter(a => a.status === 'completed').length,
-    cancelled: appointments.filter(a => a.status === 'cancelled').length,
-  };
-
   return (
-    <Layout style={{ minHeight: '100vh' }}>
-      <Sider 
-        collapsible 
-        collapsed={collapsed}
-        style={{
-          background: '#fff',
-          boxShadow: '2px 0 8px rgba(0,0,0,0.1)'
-        }}
-      >
-        <div style={{ 
-          padding: '16px', 
-          textAlign: 'center',
-          borderBottom: '1px solid #f0f0f0'
-        }}>
-          <MedicineBoxOutlined style={{ fontSize: '24px', color: '#1890ff' }} />
-          {!collapsed && (
-            <Title level={4} style={{ margin: '8px 0 0 0', color: '#1890ff' }}>
-              NexaCare
-            </Title>
-          )}
-        </div>
-        <Menu
-          mode="inline"
-          defaultSelectedKeys={['appointments']}
-          items={sidebarMenu}
-          style={{ border: 'none' }}
-        />
-      </Sider>
+    <>
+      <style>{`
+        /* Override medical-container padding for appointments page */
+        body:has(.patient-appointments-wrapper) .medical-container {
+          padding: 0 !important;
+          display: block !important;
+          align-items: unset !important;
+          justify-content: unset !important;
+          background: transparent !important;
+        }
+        /* Allow scrolling on appointments page */
+        body:has(.patient-appointments-wrapper) {
+          overflow: auto !important;
+          overflow-x: hidden !important;
+        }
+        html:has(.patient-appointments-wrapper) {
+          overflow: auto !important;
+          overflow-x: hidden !important;
+        }
+        /* Patient sidebar menu styles */
+        .patient-dashboard-menu .ant-menu-item {
+          border-radius: 12px !important;
+          margin: 4px 8px !important;
+          height: 48px !important;
+          line-height: 48px !important;
+          transition: all 0.3s ease !important;
+          padding-left: 16px !important;
+          background: transparent !important;
+          border: none !important;
+        }
+        .patient-dashboard-menu .ant-menu-item:hover {
+          background: transparent !important;
+        }
+        .patient-dashboard-menu .ant-menu-item:hover,
+        .patient-dashboard-menu .ant-menu-item:hover .ant-menu-title-content {
+          color: #595959 !important;
+        }
+        .patient-dashboard-menu .ant-menu-item-selected {
+          background: #1A8FE3 !important;
+          font-weight: 500 !important;
+          border: none !important;
+          padding-left: 16px !important;
+        }
+        .patient-dashboard-menu .ant-menu-item-selected,
+        .patient-dashboard-menu .ant-menu-item-selected .ant-menu-title-content {
+          color: #fff !important;
+        }
+        .patient-dashboard-menu .ant-menu-item-selected .ant-menu-item-icon,
+        .patient-dashboard-menu .ant-menu-item-selected .anticon,
+        .patient-dashboard-menu .ant-menu-item-selected img {
+          color: #fff !important;
+          filter: brightness(0) invert(1) !important;
+        }
+        .patient-dashboard-menu .ant-menu-item:not(.ant-menu-item-selected) {
+          color: #8C8C8C !important;
+          background: transparent !important;
+        }
+        .patient-dashboard-menu .ant-menu-item:not(.ant-menu-item-selected) .ant-menu-title-content {
+          color: #8C8C8C !important;
+        }
+        .patient-dashboard-menu .ant-menu-item:not(.ant-menu-item-selected) .ant-menu-item-icon,
+        .patient-dashboard-menu .ant-menu-item:not(.ant-menu-item-selected) .anticon,
+        .patient-dashboard-menu .ant-menu-item:not(.ant-menu-item-selected) img {
+          color: #8C8C8C !important;
+        }
+        .patient-dashboard-menu .ant-menu-item-selected::after {
+          display: none !important;
+        }
+        .patient-dashboard-menu .ant-menu-item-icon,
+        .patient-dashboard-menu .anticon {
+          font-size: 18px !important;
+          width: 18px !important;
+          height: 18px !important;
+        }
+      `}</style>
+      <Layout style={{ minHeight: '100vh', background: '#F3F4F6' }} className="patient-appointments-wrapper">
+        {/* Desktop/Tablet Sidebar */}
+        {!isMobile && (
+          <Sider
+            width={260}
+            style={{
+              position: 'fixed',
+              top: 0,
+              left: 0,
+              height: '100vh',
+              background: '#fff',
+              boxShadow: '0 2px 16px rgba(26, 143, 227, 0.08)',
+              display: 'flex',
+              flexDirection: 'column',
+              zIndex: 10,
+              borderLeft: '1px solid #E3F2FF',
+              borderBottom: '1px solid #E3F2FF',
+            }}
+          >
+            <PatientSidebar selectedMenuKey="appointments" />
+          </Sider>
+        )}
 
-      <Layout>
-        <Header style={{ 
-          background: '#fff', 
-          padding: '0 24px',
-          boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center'
-        }}>
-          <Space>
-            <Badge count={3} size="small">
-              <BellOutlined style={{ fontSize: '18px' }} />
-            </Badge>
-            <Dropdown menu={{ items: userMenuItems }} placement="bottomRight">
-              <Space style={{ cursor: 'pointer' }}>
-                <Avatar icon={<UserOutlined />} />
-                <Text strong>{user?.fullName}</Text>
-              </Space>
-            </Dropdown>
-          </Space>
-        </Header>
+        {/* Mobile Drawer */}
+        {isMobile && (
+          <Drawer
+            title="Navigation"
+            placement="left"
+            onClose={() => setMobileDrawerOpen(false)}
+            open={mobileDrawerOpen}
+            styles={{ body: { padding: 0 } }}
+            width={260}
+          >
+            <PatientSidebar selectedMenuKey="appointments" onMenuClick={() => setMobileDrawerOpen(false)} />
+          </Drawer>
+        )}
 
-        <Content style={{ padding: '0 24px 24px', paddingTop: 0, background: '#f5f5f5' }}>
-          <div style={{ marginBottom: '24px' }}>
-            <Title level={2} style={{ margin: 0 }}>
-              My Appointments
-            </Title>
-            <Text type="secondary">
-              Manage your medical appointments
-            </Text>
-          </div>
-
-          {/* Statistics */}
-          <Row gutter={[16, 16]} style={{ marginBottom: '24px' }}>
-            <Col xs={24} sm={6}>
-              <Card>
-                <Statistic
-                  title="Total Appointments"
-                  value={stats.total}
-                  prefix={<CalendarOutlined />}
-                  valueStyle={{ color: '#1890ff' }}
-                />
-              </Card>
-            </Col>
-            <Col xs={24} sm={6}>
-              <Card>
-                <Statistic
-                  title="Upcoming"
-                  value={stats.upcoming}
-                  prefix={<ClockCircleOutlined />}
-                  valueStyle={{ color: '#52c41a' }}
-                />
-              </Card>
-            </Col>
-            <Col xs={24} sm={6}>
-              <Card>
-                <Statistic
-                  title="Completed"
-                  value={stats.completed}
-                  prefix={<CheckCircleOutlined />}
-                  valueStyle={{ color: '#faad14' }}
-                />
-              </Card>
-            </Col>
-            <Col xs={24} sm={6}>
-              <Card>
-                <Statistic
-                  title="Cancelled"
-                  value={stats.cancelled}
-                  prefix={<DeleteOutlined />}
-                  valueStyle={{ color: '#ff4d4f' }}
-                />
-              </Card>
-            </Col>
-          </Row>
-
-          {/* Filters and Search */}
-          <Card style={{ marginBottom: '24px' }}>
-            <Row gutter={[16, 16]} align="middle">
-              <Col xs={24} sm={12} md={8}>
-                <Input
-                  placeholder="Search appointments..."
-                  prefix={<SearchOutlined />}
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                />
-              </Col>
-              <Col xs={24} sm={12} md={8}>
-                <Select
-                  value={filter}
-                  onChange={setFilter}
-                  style={{ width: '100%' }}
-                  suffixIcon={<FilterOutlined />}
-                >
-                  <Option value="all">All Appointments</Option>
-                  <Option value="confirmed">Confirmed</Option>
-                  <Option value="pending">Pending</Option>
-                  <Option value="completed">Completed</Option>
-                  <Option value="cancelled">Cancelled</Option>
-                </Select>
-              </Col>
-              <Col xs={24} sm={24} md={8}>
+        <Layout
+          style={{
+            marginLeft: isMobile ? 0 : 260,
+            minHeight: '100vh',
+            background: '#F3F4F6',
+            overflow: 'hidden',
+          }}
+        >
+          <Content
+            style={{
+              background: '#F3F4F6',
+              height: '100vh',
+              overflowY: 'auto',
+              padding: 0,
+            }}
+          >
+            {/* Mobile Menu Button */}
+            {isMobile && (
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '16px', background: '#F3F4F6' }}>
                 <Button
-                  type="primary"
-                  icon={<PlusOutlined />}
-                  onClick={() => setLocation('/book-appointment')}
-                  style={{ width: '100%' }}
-                >
-                  Book New Appointment
-                </Button>
-              </Col>
-            </Row>
-          </Card>
+                  type="text"
+                  icon={<MenuUnfoldOutlined />}
+                  onClick={() => setMobileDrawerOpen(true)}
+                  style={{ fontSize: '18px' }}
+                />
+                <div style={{ width: 32 }} />
+              </div>
+            )}
 
-          {/* Appointments Table */}
-          <Card title="Appointments">
-            <Table
-              columns={columns}
-              dataSource={filteredAppointments}
-              rowKey="id"
-              loading={loading}
-              pagination={{
-                pageSize: 10,
-                showSizeChanger: true,
-                showQuickJumper: true,
-                showTotal: (total, range) => 
-                  `${range[0]}-${range[1]} of ${total} appointments`,
-              }}
-            />
-          </Card>
+            {/* Header Section */}
+            <div style={{ 
+              background: '#F3F4F6', 
+              padding: '24px 32px',
+            }}>
+              <Title level={2} style={{ margin: 0, fontSize: '32px', fontWeight: 700, color: '#111827' }}>
+                My Appointments
+              </Title>
+              <Text style={{ fontSize: '16px', color: '#6B7280', marginTop: '4px', display: 'block' }}>
+                Manage your medical appointments
+              </Text>
+            </div>
 
-        </Content>
+            {/* Content */}
+            <div style={{ padding: '0 32px 32px 32px', maxWidth: '1400px', margin: '0 auto', width: '100%' }}>
+              {/* KPI Cards */}
+              <Row gutter={[16, 16]} style={{ marginBottom: '24px' }}>
+                <Col xs={24} sm={12} lg={6}>
+                  <Card style={{ borderRadius: '12px', boxShadow: '0 2px 8px rgba(0, 0, 0, 0.08)' }}>
+                    <Space>
+                      <CalendarOutlined style={{ fontSize: '24px', color: '#1A8FE3' }} />
+                      <div>
+                        <Text type="secondary" style={{ fontSize: '12px', display: 'block' }}>Total Appointments</Text>
+                        <Text strong style={{ fontSize: '24px', color: '#111827' }}>{stats.total}</Text>
+                      </div>
+                    </Space>
+                  </Card>
+                </Col>
+                <Col xs={24} sm={12} lg={6}>
+                  <Card style={{ borderRadius: '12px', boxShadow: '0 2px 8px rgba(0, 0, 0, 0.08)' }}>
+                    <Space>
+                      <ClockCircleOutlined style={{ fontSize: '24px', color: '#10B981' }} />
+                      <div>
+                        <Text type="secondary" style={{ fontSize: '12px', display: 'block' }}>Upcoming</Text>
+                        <Text strong style={{ fontSize: '24px', color: '#111827' }}>{stats.upcoming}</Text>
+                      </div>
+                    </Space>
+                  </Card>
+                </Col>
+                <Col xs={24} sm={12} lg={6}>
+                  <Card style={{ borderRadius: '12px', boxShadow: '0 2px 8px rgba(0, 0, 0, 0.08)' }}>
+                    <Space>
+                      <CheckCircleOutlined style={{ fontSize: '24px', color: '#F59E0B' }} />
+                      <div>
+                        <Text type="secondary" style={{ fontSize: '12px', display: 'block' }}>Completed</Text>
+                        <Text strong style={{ fontSize: '24px', color: '#111827' }}>{stats.completed}</Text>
+                      </div>
+                    </Space>
+                  </Card>
+                </Col>
+                <Col xs={24} sm={12} lg={6}>
+                  <Card style={{ borderRadius: '12px', boxShadow: '0 2px 8px rgba(0, 0, 0, 0.08)' }}>
+                    <Space>
+                      <DeleteOutlined style={{ fontSize: '24px', color: '#EF4444' }} />
+                      <div>
+                        <Text type="secondary" style={{ fontSize: '12px', display: 'block' }}>Cancelled</Text>
+                        <Text strong style={{ fontSize: '24px', color: '#111827' }}>{stats.cancelled}</Text>
+                      </div>
+                    </Space>
+                  </Card>
+                </Col>
+              </Row>
+
+              {/* Search and Filter Bar */}
+              <Card style={{ marginBottom: '24px', borderRadius: '12px' }}>
+                <Row gutter={[16, 16]} align="middle">
+                  <Col xs={24} sm={12} md={8}>
+                    <Input
+                      placeholder="Search appointments..."
+                      prefix={<SearchOutlined />}
+                      value={searchTerm}
+                      onChange={(e) => setSearchTerm(e.target.value)}
+                      size="large"
+                      style={{ borderRadius: '8px' }}
+                    />
+                  </Col>
+                  <Col xs={24} sm={12} md={8}>
+                    <Select
+                      value={filter}
+                      onChange={setFilter}
+                      style={{ width: '100%' }}
+                      suffixIcon={<ArrowRightOutlined style={{ transform: 'rotate(90deg)', color: '#9CA3AF' }} />}
+                      size="large"
+                      style={{ borderRadius: '8px' }}
+                    >
+                      <Option value="all">All Appointments</Option>
+                      <Option value="confirmed">Confirmed</Option>
+                      <Option value="pending">Pending</Option>
+                      <Option value="completed">Completed</Option>
+                      <Option value="cancelled">Cancelled</Option>
+                    </Select>
+                  </Col>
+                  <Col xs={24} sm={24} md={8}>
+                    <Button
+                      type="primary"
+                      icon={<PlusOutlined />}
+                      onClick={() => setLocation('/book-appointment')}
+                      size="large"
+                      style={{ width: '100%', borderRadius: '8px' }}
+                    >
+                      + Book New Appointment
+                    </Button>
+                  </Col>
+                </Row>
+              </Card>
+
+              {/* Appointments Table */}
+              <Card 
+                title={<Title level={4} style={{ margin: 0 }}>Appointments</Title>}
+                style={{ borderRadius: '12px' }}
+              >
+                <Spin spinning={loading}>
+                  <Table
+                    columns={columns}
+                    dataSource={filteredAppointments}
+                    rowKey="id"
+                    loading={loading}
+                    pagination={{
+                      pageSize: 10,
+                      showSizeChanger: true,
+                      showQuickJumper: true,
+                      showTotal: (total, range) => 
+                        `${range[0]}-${range[1]} of ${total} appointments`,
+                    }}
+                    locale={{
+                      emptyText: (
+                        <Empty
+                          image={Empty.PRESENTED_IMAGE_SIMPLE}
+                          description="No data"
+                        />
+                      )
+                    }}
+                  />
+                </Spin>
+              </Card>
+            </div>
+          </Content>
+        </Layout>
       </Layout>
 
       {/* View Appointment Modal */}
@@ -515,68 +591,51 @@ export default function PatientAppointments() {
         width={600}
       >
         {selectedAppointment && (
-          <div>
-            <Space direction="vertical" size="middle" style={{ width: '100%' }}>
+          <Space direction="vertical" size="middle" style={{ width: '100%' }}>
+            <div>
+              <Text strong>Doctor: </Text>
+              <Text>{selectedAppointment.doctorName}</Text>
+              <Text type="secondary" style={{ marginLeft: '8px' }}>
+                ({selectedAppointment.doctorSpecialty})
+              </Text>
+            </div>
+            <div>
+              <Text strong>Hospital: </Text>
+              <Text>{selectedAppointment.hospitalName}</Text>
+            </div>
+            <div>
+              <Text strong>Date: </Text>
+              <Text>{selectedAppointment.appointmentDate}</Text>
+            </div>
+            <div>
+              <Text strong>Time: </Text>
+              <Text>{selectedAppointment.appointmentTime || selectedAppointment.timeSlot}</Text>
+            </div>
+            <div>
+              <Text strong>Reason: </Text>
+              <Text>{selectedAppointment.reason}</Text>
+            </div>
+            <div>
+              <Text strong>Status: </Text>
+              <Tag color={getStatusColor(selectedAppointment.status)}>
+                {selectedAppointment.status.toUpperCase()}
+              </Tag>
+            </div>
+            {selectedAppointment.symptoms && (
               <div>
-                <Text strong>Doctor: </Text>
-                <Text>{selectedAppointment.doctorName}</Text>
-                <Text type="secondary" style={{ marginLeft: '8px' }}>
-                  ({selectedAppointment.doctorSpecialty})
-                </Text>
+                <Text strong>Symptoms: </Text>
+                <Text>{selectedAppointment.symptoms}</Text>
               </div>
+            )}
+            {selectedAppointment.notes && (
               <div>
-                <Text strong>Hospital: </Text>
-                <Text>{selectedAppointment.hospitalName}</Text>
+                <Text strong>Notes: </Text>
+                <Text>{selectedAppointment.notes}</Text>
               </div>
-              <div>
-                <Text strong>Date: </Text>
-                <Text>{selectedAppointment.appointmentDate}</Text>
-              </div>
-              <div>
-                <Text strong>Time: </Text>
-                <Text>{selectedAppointment.appointmentTime}</Text>
-              </div>
-              <div>
-                <Text strong>Reason: </Text>
-                <Text>{selectedAppointment.reason}</Text>
-              </div>
-              <div>
-                <Text strong>Status: </Text>
-                <Tag color={getStatusColor(selectedAppointment.status)}>
-                  {selectedAppointment.status.toUpperCase()}
-                </Tag>
-              </div>
-              {selectedAppointment.symptoms && (
-                <div>
-                  <Text strong>Symptoms: </Text>
-                  <Text>{selectedAppointment.symptoms}</Text>
-                </div>
-              )}
-              {selectedAppointment.notes && (
-                <div>
-                  <Text strong>Notes: </Text>
-                  <Text>{selectedAppointment.notes}</Text>
-                </div>
-              )}
-            </Space>
-          </div>
+            )}
+          </Space>
         )}
       </Modal>
-
-      {/* Edit Appointment Modal */}
-      <Modal
-        title="Edit Appointment"
-        open={isEditModalOpen}
-        onCancel={() => setIsEditModalOpen(false)}
-        footer={null}
-        width={600}
-      >
-        {selectedAppointment && (
-          <div>
-            <Text>Edit functionality coming soon. Please cancel and rebook if you need to change details.</Text>
-          </div>
-        )}
-      </Modal>
-    </Layout>
+    </>
   );
 }

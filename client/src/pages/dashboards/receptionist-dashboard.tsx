@@ -1,20 +1,16 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
-import { useQuery, useMutation } from "@tanstack/react-query";
-import { Redirect, useLocation } from "wouter";
+import { useQuery } from "@tanstack/react-query";
+import { Redirect } from "wouter";
 import { 
   Layout, 
   Card, 
   Row, 
   Col, 
-  Statistic, 
   Button, 
   Table, 
   Tag, 
   Space, 
   Typography,
-  Menu,
-  Progress,
-  List,
   Modal,
   Spin,
   Form,
@@ -27,32 +23,24 @@ import {
   Divider,
   Tabs,
   Drawer,
-  Badge,
-  Empty,
 } from 'antd';
 import { 
-  UserOutlined, 
   CalendarOutlined, 
   FileTextOutlined,
-  PlusOutlined,
   CheckCircleOutlined,
   TeamOutlined,
   UserAddOutlined,
   ClockCircleOutlined,
-  PhoneOutlined,
-  MenuFoldOutlined,
   MenuUnfoldOutlined,
-  BellOutlined,
+  PhoneOutlined,
 } from '@ant-design/icons';
 import { useAuth } from '../../hooks/use-auth';
 import { useResponsive } from '../../hooks/use-responsive';
 import { useQueryClient } from '@tanstack/react-query';
 import { message } from 'antd';
-import { SidebarProfile } from '../../components/dashboard/SidebarProfile';
 import { KpiCard } from '../../components/dashboard/KpiCard';
 import { QuickActionTile } from '../../components/dashboard/QuickActionTile';
-import { NotificationItem } from '../../components/dashboard/NotificationItem';
-import { formatDateTime } from '../../lib/utils';
+import { ReceptionistSidebar } from '../../components/layout/ReceptionistSidebar';
 import dayjs from 'dayjs';
 import type { Dayjs } from 'dayjs';
 
@@ -63,17 +51,16 @@ const receptionistTheme = {
   primary: '#F97316', // Orange
   secondary: '#6366F1', // Indigo
   accent: '#22C55E', // Green
-  background: '#FFF7ED', // Light orange
+  background: '#F3F4F6', // Light grey (matching patient dashboard)
   highlight: '#FFEAD5', // Lighter orange
 };
 
 export default function ReceptionistDashboard() {
-  const { user, logout, isLoading } = useAuth();
+  const { user, isLoading } = useAuth();
   const queryClient = useQueryClient();
-  const [, setLocation] = useLocation();
   const { isMobile, isTablet } = useResponsive();
-  const [collapsed, setCollapsed] = useState(false);
   const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false);
+  const [selectedMenuKey] = useState<string>('dashboard');
   const [isBookingModalOpen, setIsBookingModalOpen] = useState(false);
   const [isWalkInModalOpen, setIsWalkInModalOpen] = useState(false);
   const [isWalkInSubmitting, setIsWalkInSubmitting] = useState(false);
@@ -82,16 +69,10 @@ export default function ReceptionistDashboard() {
   const [patientSearchLoading, setPatientSearchLoading] = useState(false);
   const [dateMode, setDateMode] = useState<'today' | 'tomorrow' | 'custom'>('today');
   const [activeAppointmentTab, setActiveAppointmentTab] = useState<string>('today');
-  const patientSearchTimeoutRef = useRef<number | undefined>();
+  const patientSearchTimeoutRef = useRef<number | undefined>(undefined);
   const appointmentStartTimeValue = Form.useWatch('appointmentStartTime', walkInForm);
   const durationMinutesValue = Form.useWatch('durationMinutes', walkInForm);
 
-  // Auto-collapse sidebar on mobile/tablet
-  useEffect(() => {
-    if (isMobile || isTablet) {
-      setCollapsed(true);
-    }
-  }, [isMobile, isTablet]);
 
   // ALL HOOKS MUST BE CALLED BEFORE ANY CONDITIONAL RETURNS
   // Get appointments with auto-refresh
@@ -133,6 +114,8 @@ export default function ReceptionistDashboard() {
           status: apt.status || 'pending',
           department: apt.doctorSpecialty || 'General',
           phone: apt.patientPhone || 'N/A',
+          type: apt.type || 'online',
+          paymentStatus: apt.paymentStatus || null,
           date: apt.appointmentDate,
           dateObj: appointmentDate,
         };
@@ -155,7 +138,7 @@ export default function ReceptionistDashboard() {
     return () => window.removeEventListener('storage', handleStorageChange);
   }, [refetchAppointments]);
 
-  const { data: walkInPatients = [], isLoading: walkInLoading, refetch: refetchWalkIns } = useQuery({
+  const { data: walkInPatients = [], refetch: refetchWalkIns } = useQuery({
     queryKey: ['/api/reception/walkins'],
     queryFn: async () => {
       const token = localStorage.getItem('auth-token');
@@ -176,7 +159,7 @@ export default function ReceptionistDashboard() {
   });
 
   // Get notifications for receptionist
-  const { data: notifications = [], isLoading: notificationsLoading } = useQuery({
+  const { data: notifications = [] } = useQuery({
     queryKey: ['/api/notifications/me'],
     queryFn: async () => {
       const token = localStorage.getItem('auth-token');
@@ -195,27 +178,6 @@ export default function ReceptionistDashboard() {
     refetchInterval: 15000,
   });
 
-  // Mark notification as read
-  const markNotificationMutation = useMutation({
-    mutationFn: async (notificationId: number) => {
-      const token = localStorage.getItem('auth-token');
-      const response = await fetch(`/api/notifications/read/${notificationId}`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
-      });
-      if (!response.ok) throw new Error('Failed to mark notification as read');
-      return response.json();
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['/api/notifications/me'] });
-      message.success('Notification marked as read.');
-    },
-    onError: () => {
-      message.error('Failed to mark notification as read.');
-    },
-  });
 
   const { data: doctors = [], isLoading: doctorsLoading } = useQuery({
     queryKey: ['/api/reception/doctors'],
@@ -238,8 +200,11 @@ export default function ReceptionistDashboard() {
 
   // Filter appointments that are today or in the future (by date and time)
   // Receptionists need to see pending (to confirm), confirmed (to check-in), and cancelled appointments
+  // Pending appointments should ALWAYS be visible (even if the slot time has already passed) so they can be confirmed.
   const futureAppointments = useMemo(() => {
     const now = new Date();
+    const todayStart = new Date(now);
+    todayStart.setHours(0, 0, 0, 0);
     
     return appointments
       .filter((apt: any) => {
@@ -256,6 +221,15 @@ export default function ReceptionistDashboard() {
         try {
           const appointmentDateTime = apt.dateObj || new Date(apt.date);
           if (isNaN(appointmentDateTime.getTime())) {
+            return false;
+          }
+          
+          // Compute day-only for past-day logic
+          const appointmentDay = new Date(appointmentDateTime);
+          appointmentDay.setHours(0, 0, 0, 0);
+          
+          // If appointment day is before today and still pending, hide from Upcoming table
+          if (apt.status === 'pending' && appointmentDay < todayStart) {
             return false;
           }
           
@@ -312,6 +286,7 @@ export default function ReceptionistDashboard() {
       });
   }, [appointments]);
 
+
   // Group appointments by date for tabs
   const appointmentsByDate = useMemo(() => {
     const now = new Date();
@@ -354,7 +329,8 @@ export default function ReceptionistDashboard() {
     return groups;
   }, [futureAppointments]);
 
-  // Get appointments for active tab
+
+  // Get appointments for active tab (only future appointments)
   const appointmentsToShow = useMemo(() => {
     if (activeAppointmentTab === 'today') {
       return appointmentsByDate.today || [];
@@ -365,7 +341,7 @@ export default function ReceptionistDashboard() {
     }
   }, [activeAppointmentTab, appointmentsByDate]);
 
-  // Generate tab items for appointments
+  // Generate tab items for appointments (only future appointments)
   const appointmentTabs = useMemo(() => {
     const tabs: Array<{ key: string; label: string; count: number }> = [];
     
@@ -414,11 +390,6 @@ export default function ReceptionistDashboard() {
       setActiveAppointmentTab('today');
     }
   }, [appointmentTabs, activeAppointmentTab]);
-
-  // Calculate comprehensive stats - use today's appointments for stats
-  const todayAppointmentsList = useMemo(() => {
-    return appointmentsByDate.today || [];
-  }, [appointmentsByDate]);
 
   const stats = useMemo(() => {
     // For stats, we need to check all appointments (not just confirmed) to show pending
@@ -579,24 +550,6 @@ export default function ReceptionistDashboard() {
     }));
   }, [doctors]);
 
-  const renderAppointmentMeta = (patient: any) => {
-    const dateLabel = patient.appointmentDate ? dayjs(patient.appointmentDate).format('DD MMM YYYY') : 'Today';
-    return (
-      <Space direction="vertical" size={4}>
-        <Space size="small" wrap>
-          <Tag color="blue">{patient.doctorName}</Tag>
-          <Tag color="orange">{patient.status?.toUpperCase()}</Tag>
-          {patient.timeSlot && <Tag color="geekblue">{patient.timeSlot}</Tag>}
-          <Tag color="purple">{dateLabel}</Tag>
-        </Space>
-        <Text type="secondary">
-          {(patient.timeSlot || patient.appointmentTime) ? `${patient.timeSlot || patient.appointmentTime} • ` : ''}
-          {patient.reason || 'Walk-in consultation'}
-        </Text>
-        <Text type="secondary">{patient.patientPhone}</Text>
-      </Space>
-    );
-  };
 
   // NOW CHECK AUTHENTICATION AND ROLE (after all hooks)
   if (isLoading) {
@@ -804,6 +757,31 @@ export default function ReceptionistDashboard() {
     return statusConfig[status.toLowerCase()] || { color: 'default', label: status.toUpperCase() };
   };
 
+  // Get booking source label
+  const getSourceConfig = (type?: string | null) => {
+    const normalized = (type || 'online').toLowerCase();
+    if (normalized === 'walk-in' || normalized === 'walkin') {
+      return { color: 'purple', label: 'Walk-in' };
+    }
+    return { color: 'blue', label: 'Online' };
+  };
+
+  // Get payment status label
+  const getPaymentConfig = (paymentStatus?: string | null) => {
+    const normalized = (paymentStatus || '').toLowerCase();
+    if (normalized === 'paid') {
+      return { color: 'green', label: 'Paid' };
+    }
+    if (normalized === 'partial') {
+      return { color: 'gold', label: 'Partial' };
+    }
+    if (normalized === 'unpaid' || normalized === 'pending') {
+      return { color: 'red', label: 'Not Paid' };
+    }
+    // Default when we don't yet track payments
+    return { color: 'default', label: 'Not Recorded' };
+  };
+
   // Check if appointment is overdue
   const isAppointmentOverdue = (appointment: any) => {
     if (!appointment.date || appointment.status === 'completed' || appointment.status === 'cancelled') {
@@ -874,6 +852,24 @@ export default function ReceptionistDashboard() {
       key: 'department',
     },
     {
+      title: 'Source',
+      dataIndex: 'type',
+      key: 'type',
+      render: (_: any, record: any) => {
+        const config = getSourceConfig(record.type);
+        return <Tag color={config.color}>{config.label}</Tag>;
+      },
+    },
+    {
+      title: 'Payment',
+      dataIndex: 'paymentStatus',
+      key: 'paymentStatus',
+      render: (_: any, record: any) => {
+        const config = getPaymentConfig(record.paymentStatus);
+        return <Tag color={config.color}>{config.label}</Tag>;
+      },
+    },
+    {
       title: 'Status',
       dataIndex: 'status',
       key: 'status',
@@ -885,102 +881,71 @@ export default function ReceptionistDashboard() {
     {
       title: 'Actions',
       key: 'actions',
-      render: (record: any) => (
-        <Space>
-          {/* Confirm button - for pending appointments */}
-          {record.status === 'pending' && (
-            <Button
+      render: (record: any) => {
+        // Check if appointment is in the past
+        const now = new Date();
+        const todayStart = new Date(now);
+        todayStart.setHours(0, 0, 0, 0);
+        
+        let isPast = false;
+        if (record.dateObj || record.date) {
+          try {
+            const appointmentDateTime = record.dateObj || new Date(record.date);
+            if (!isNaN(appointmentDateTime.getTime())) {
+              const appointmentDay = new Date(appointmentDateTime);
+              appointmentDay.setHours(0, 0, 0, 0);
+              isPast = appointmentDay < todayStart;
+            }
+          } catch (error) {
+            console.error('Error checking if appointment is past:', error);
+          }
+        }
+        
+        // Don't show actions for past appointments
+        if (isPast) {
+          return <Text type="secondary" style={{ fontSize: 12 }}>-</Text>;
+        }
+        
+        return (
+          <Space>
+            {/* Confirm button - for pending appointments */}
+            {record.status === 'pending' && (
+              <Button
+                size="small"
+                type="primary"
+                onClick={() => handleConfirmAppointment(record.id)}
+              >
+                Confirm
+              </Button>
+            )}
+            
+            {/* Check-in button - for confirmed appointments (when patient arrives) */}
+            {record.status === 'confirmed' && (
+              <Button
+                size="small"
+                type="default"
+                onClick={() => handleCheckIn(record.id)}
+              >
+                Check-in
+              </Button>
+            )}
+            
+            {/* Call button - available for all statuses */}
+            <Button 
               size="small"
-              type="primary"
-              onClick={() => handleConfirmAppointment(record.id)}
+              type="link"
+              icon={<PhoneOutlined />}
+              onClick={() => handleCall(record.phone)}
             >
-              Confirm
+              Call
             </Button>
-          )}
-          
-          {/* Check-in button - for confirmed appointments (when patient arrives) */}
-          {record.status === 'confirmed' && (
-            <Button
-              size="small"
-              type="default"
-              onClick={() => handleCheckIn(record.id)}
-            >
-              Check-in
-            </Button>
-          )}
-          
-          {/* Call button - available for all statuses */}
-          <Button 
-            size="small"
-            type="link"
-            icon={<PhoneOutlined />}
-            onClick={() => handleCall(record.phone)}
-          >
-            Call
-          </Button>
-        </Space>
-      ),
+          </Space>
+        );
+      },
     },
   ];
 
-  const sidebarMenu = [
-    {
-      key: 'dashboard',
-      icon: <TeamOutlined />,
-      label: 'Dashboard',
-    },
-    {
-      key: 'appointments',
-      icon: <CalendarOutlined />,
-      label: 'Appointments',
-    },
-    {
-      key: 'walkin',
-      icon: <UserAddOutlined />,
-      label: 'Walk-in Registration',
-    },
-    {
-      key: 'contacts',
-      icon: <PhoneOutlined />,
-      label: 'Contact Directory',
-    },
-  ];
-
-  const siderWidth = isMobile ? 0 : (collapsed ? 80 : 260);
-
-  // Sidebar content component (reusable for drawer and sider)
-  const SidebarContent = ({ onMenuClick }: { onMenuClick?: () => void }) => (
-    <>
-      <div style={{ 
-        padding: '16px', 
-        textAlign: 'center',
-        borderBottom: '1px solid #f0f0f0'
-      }}>
-        <TeamOutlined style={{ fontSize: '24px', color: '#1890ff' }} />
-        {(!collapsed || isMobile) && (
-          <Title level={4} style={{ margin: '8px 0 0 0', color: '#1890ff' }}>
-            NexaCare Reception
-          </Title>
-        )}
-      </div>
-      <Menu
-        mode="inline"
-        defaultSelectedKeys={['dashboard']}
-        items={sidebarMenu}
-        style={{ border: 'none', flex: 1 }}
-        onClick={onMenuClick}
-      />
-      <SidebarProfile
-        collapsed={collapsed && !isMobile}
-        name={user?.fullName || 'Receptionist'}
-        roleLabel="RECEPTIONIST"
-        roleColor="#F97316"
-        avatarIcon={<TeamOutlined />}
-        onSettingsClick={() => message.info('Profile settings coming soon.')}
-        onLogoutClick={logout}
-      />
-    </>
-  );
+  const siderWidth = isMobile ? 0 : 260;
 
   const handleWalkInSubmit = async (values: any) => {
     try {
@@ -1081,31 +1046,97 @@ export default function ReceptionistDashboard() {
   };
 
   return (
-    <Layout style={{ minHeight: '100vh', background: '#f5f5f5' }}>
+    <>
+      <style>{`
+        /* Override medical-container padding only when receptionist dashboard is rendered */
+        body:has(.receptionist-dashboard-wrapper) .medical-container {
+          padding: 0 !important;
+          display: block !important;
+          align-items: unset !important;
+          justify-content: unset !important;
+          background: transparent !important;
+          min-height: 100vh !important;
+        }
+        
+        .receptionist-dashboard-menu .ant-menu-item {
+          border-radius: 12px !important;
+          margin: 4px 8px !important;
+          height: 48px !important;
+          line-height: 48px !important;
+          transition: all 0.3s ease !important;
+          padding-left: 16px !important;
+          background: transparent !important;
+          border: none !important;
+        }
+        .receptionist-dashboard-menu .ant-menu-item:hover {
+          background: transparent !important;
+        }
+        .receptionist-dashboard-menu .ant-menu-item:hover,
+        .receptionist-dashboard-menu .ant-menu-item:hover .ant-menu-title-content {
+          color: #595959 !important;
+        }
+        .receptionist-dashboard-menu .ant-menu-item-selected {
+          background: #1A8FE3 !important;
+          font-weight: 500 !important;
+          border: none !important;
+          padding-left: 16px !important;
+        }
+        .receptionist-dashboard-menu .ant-menu-item-selected,
+        .receptionist-dashboard-menu .ant-menu-item-selected .ant-menu-title-content {
+          color: #fff !important;
+        }
+        .receptionist-dashboard-menu .ant-menu-item-selected .ant-menu-item-icon,
+        .receptionist-dashboard-menu .ant-menu-item-selected .anticon,
+        .receptionist-dashboard-menu .ant-menu-item-selected img {
+          color: #fff !important;
+        }
+        .receptionist-dashboard-menu .ant-menu-item:not(.ant-menu-item-selected) {
+          color: #8C8C8C !important;
+          background: transparent !important;
+        }
+        .receptionist-dashboard-menu .ant-menu-item:not(.ant-menu-item-selected) .ant-menu-title-content {
+          color: #8C8C8C !important;
+        }
+        .receptionist-dashboard-menu .ant-menu-item:not(.ant-menu-item-selected) .ant-menu-item-icon,
+        .receptionist-dashboard-menu .ant-menu-item:not(.ant-menu-item-selected) .anticon,
+        .receptionist-dashboard-menu .ant-menu-item:not(.ant-menu-item-selected) img {
+          color: #8C8C8C !important;
+        }
+        .receptionist-dashboard-menu .ant-menu-item-selected::after {
+          display: none !important;
+        }
+        .receptionist-dashboard-menu .ant-menu-item-icon,
+        .receptionist-dashboard-menu .anticon {
+          font-size: 18px !important;
+          width: 18px !important;
+          height: 18px !important;
+        }
+        /* Pending appointments row highlight */
+        .receptionist-dashboard-wrapper .appointment-row-pending td {
+          background: #FEF2F2 !important; /* light red */
+        }
+      `}</style>
+      <Layout className="receptionist-dashboard-wrapper" style={{ minHeight: '100vh', background: receptionistTheme.background }}>
       {/* Desktop/Tablet Sidebar */}
       {!isMobile && (
         <Sider 
-          trigger={null}
-          collapsible 
-          collapsed={collapsed}
-          onCollapse={setCollapsed}
           width={260}
-          collapsedWidth={80}
           style={{
             position: 'fixed',
             top: 0,
             left: 0,
             height: '100vh',
-            width: siderWidth,
+            width: 260,
             background: '#fff',
-            boxShadow: '2px 0 8px rgba(0,0,0,0.1)',
+            boxShadow: '0 2px 16px rgba(26, 143, 227, 0.08)',
             display: 'flex',
             flexDirection: 'column',
-            transition: 'width 0.2s ease',
             zIndex: 10,
+            borderLeft: '1px solid #E3F2FF',
+            borderBottom: '1px solid #E3F2FF',
           }}
         >
-          <SidebarContent />
+          <ReceptionistSidebar selectedMenuKey={selectedMenuKey} />
         </Sider>
       )}
 
@@ -1116,10 +1147,10 @@ export default function ReceptionistDashboard() {
           placement="left"
           onClose={() => setMobileDrawerOpen(false)}
           open={mobileDrawerOpen}
-          bodyStyle={{ padding: 0 }}
+          styles={{ body: { padding: 0 } }}
           width={260}
         >
-          <SidebarContent onMenuClick={() => setMobileDrawerOpen(false)} />
+          <ReceptionistSidebar selectedMenuKey={selectedMenuKey} onMenuClick={() => setMobileDrawerOpen(false)} />
         </Drawer>
       )}
 
@@ -1128,7 +1159,6 @@ export default function ReceptionistDashboard() {
           marginLeft: siderWidth,
           minHeight: '100vh',
           background: receptionistTheme.background,
-          transition: 'margin-left 0.2s ease',
           overflow: 'hidden',
         }}
       >
@@ -1136,12 +1166,18 @@ export default function ReceptionistDashboard() {
           style={{
             background: receptionistTheme.background,
             height: '100vh',
-            overflowY: 'auto',
-            padding: isMobile ? '0 16px 16px' : isTablet ? '0 20px 20px' : '0 24px 24px',
-            paddingTop: 0,
+            overflow: 'hidden',
+            padding: isMobile ? '24px 16px 16px' : isTablet ? '24px 20px 20px' : '24px 32px 24px',
+            display: 'flex',
+            flexDirection: 'column',
           }}
         >
-          <div style={{ paddingBottom: 24, maxWidth: '1320px', margin: '0 auto' }}>
+          <div style={{ 
+            display: 'flex', 
+            flexDirection: 'column', 
+            height: '100%',
+            overflow: 'hidden',
+          }}>
             {/* Mobile Menu Button */}
             {isMobile && (
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
@@ -1156,92 +1192,88 @@ export default function ReceptionistDashboard() {
               </div>
             )}
             
-            {/* Desktop/Tablet Menu Toggle */}
-            {!isMobile && (
-              <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 16 }}>
-                <Button
-                  type="text"
-                  icon={collapsed ? <MenuFoldOutlined /> : <MenuUnfoldOutlined />}
-                  onClick={() => setCollapsed(!collapsed)}
-                />
-              </div>
-            )}
-
-            {/* KPI Cards - Responsive Grid */}
+          {/* KPI Cards - Matching Patient Dashboard Design */}
             {isMobile ? (
               <div style={{ 
                 display: 'flex', 
                 overflowX: 'auto', 
-                gap: 12, 
+                gap: 16, 
                 marginBottom: 24,
                 paddingBottom: 8,
                 scrollSnapType: 'x mandatory',
                 WebkitOverflowScrolling: 'touch',
               }}>
                 {[
-                  { label: "Pending Confirmation", value: stats.pendingAppointments || 0, icon: <ClockCircleOutlined style={{ color: receptionistTheme.primary }} />, trendLabel: "Awaiting action", trendType: (stats.pendingAppointments > 0 ? "negative" : "neutral") as const, onView: () => message.info('View pending appointments') },
-                  { label: "Confirmed Today", value: stats.confirmedAppointments || 0, icon: <CheckCircleOutlined style={{ color: receptionistTheme.accent }} />, trendLabel: "Ready", trendType: "positive" as const, onView: () => message.info('View confirmed appointments') },
-                  { label: "Walk-ins Waiting", value: stats.walkInPatients || 0, icon: <UserAddOutlined style={{ color: receptionistTheme.secondary }} />, trendLabel: "In queue", trendType: (stats.walkInPatients > 0 ? "negative" : "neutral") as const, onView: () => message.info('View walk-in patients') },
-                  { label: "Check-ins Completed", value: stats.checkedInAppointments || 0, icon: <TeamOutlined style={{ color: '#16a34a' }} />, trendLabel: "Today", trendType: "positive" as const, onView: () => message.info('View checked-in patients') },
+                  { label: "Pending Confirmation", value: stats.pendingAppointments || 0, icon: <ClockCircleOutlined />, trendLabel: "Awaiting action", trendColor: "#F97316", trendBg: "#FFEAD5", onView: () => message.info('View pending appointments') },
+                  { label: "Confirmed Today", value: stats.confirmedAppointments || 0, icon: <CheckCircleOutlined />, trendLabel: "Ready", trendColor: "#22C55E", trendBg: "#D1FAE5", onView: () => message.info('View confirmed appointments') },
+                  { label: "Walk-ins Waiting", value: stats.walkInPatients || 0, icon: <UserAddOutlined />, trendLabel: "In queue", trendColor: "#6366F1", trendBg: "#E0E7FF", onView: () => message.info('View walk-in patients') },
+                  { label: "Check-ins Completed", value: stats.checkedInAppointments || 0, icon: <TeamOutlined />, trendLabel: "Today", trendColor: "#16a34a", trendBg: "#D1FAE5", onView: () => message.info('View checked-in patients') },
                 ].map((kpi, idx) => (
-                  <div key={idx} style={{ minWidth: 200, scrollSnapAlign: 'start' }}>
+                  <div key={idx} style={{ minWidth: 220, scrollSnapAlign: 'start' }}>
                     <KpiCard {...kpi} />
                   </div>
                 ))}
               </div>
             ) : (
-              <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
-                <Col xs={24} sm={12} md={6} style={{ display: 'flex' }}>
+              <div style={{ display: 'flex', gap: 16, marginBottom: 24, width: '100%' }}>
+                <div style={{ flex: 1, minWidth: 0 }}>
                   <KpiCard
                     label="Pending Confirmation"
                     value={stats.pendingAppointments || 0}
-                    icon={<ClockCircleOutlined style={{ color: receptionistTheme.primary }} />}
+                    icon={<ClockCircleOutlined />}
                     trendLabel="Awaiting action"
                     trendType={stats.pendingAppointments > 0 ? "negative" : "neutral"}
+                    trendColor="#F97316"
+                    trendBg="#FFEAD5"
                     onView={() => message.info('View pending appointments')}
                   />
-                </Col>
-                <Col xs={24} sm={12} md={6} style={{ display: 'flex' }}>
+                </div>
+                <div style={{ flex: 1, minWidth: 0 }}>
                   <KpiCard
                     label="Confirmed Today"
                     value={stats.confirmedAppointments || 0}
-                    icon={<CheckCircleOutlined style={{ color: receptionistTheme.accent }} />}
+                    icon={<CheckCircleOutlined />}
                     trendLabel="Ready"
                     trendType="positive"
+                    trendColor="#22C55E"
+                    trendBg="#D1FAE5"
                     onView={() => message.info('View confirmed appointments')}
                   />
-                </Col>
-                <Col xs={24} sm={12} md={6} style={{ display: 'flex' }}>
+                </div>
+                <div style={{ flex: 1, minWidth: 0 }}>
                   <KpiCard
                     label="Walk-ins Waiting"
                     value={stats.walkInPatients || 0}
-                    icon={<UserAddOutlined style={{ color: receptionistTheme.secondary }} />}
+                    icon={<UserAddOutlined />}
                     trendLabel="In queue"
                     trendType={stats.walkInPatients > 0 ? "negative" : "neutral"}
+                    trendColor="#6366F1"
+                    trendBg="#E0E7FF"
                     onView={() => message.info('View walk-in patients')}
                   />
-                </Col>
-                <Col xs={24} sm={12} md={6} style={{ display: 'flex' }}>
+                </div>
+                <div style={{ flex: 1, minWidth: 0 }}>
                   <KpiCard
                     label="Check-ins Completed"
                     value={stats.checkedInAppointments || 0}
-                    icon={<TeamOutlined style={{ color: '#16a34a' }} />}
+                    icon={<TeamOutlined />}
                     trendLabel="Today"
                     trendType="positive"
+                    trendColor="#16a34a"
+                    trendBg="#D1FAE5"
                     onView={() => message.info('View checked-in patients')}
                   />
-                </Col>
-              </Row>
+                </div>
+              </div>
             )}
 
-          {/* Quick Actions */}
-          <Card variant="borderless" style={{ marginBottom: 24, borderRadius: 16 }} bodyStyle={{ padding: isMobile ? 16 : 20 }}>
-            {isMobile ? (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            {/* Quick Actions - Single line with hover effects */}
+            <div style={{ marginBottom: 24, display: 'flex', gap: 12, flexWrap: isMobile ? 'wrap' : 'nowrap' }}>
                 <QuickActionTile
                   label="Create Appointment"
                   icon={<CalendarOutlined />}
                   onClick={() => setIsBookingModalOpen(true)}
+                variant="primary"
                 />
                 <QuickActionTile
                   label="Walk-in Registration"
@@ -1259,55 +1291,83 @@ export default function ReceptionistDashboard() {
                   onClick={() => message.info('Payment recording coming soon')}
                 />
               </div>
-            ) : (
-              <Row gutter={[16, 16]}>
-                <Col xs={24} sm={12} md={6}>
-                  <QuickActionTile
-                    label="Create Appointment"
-                    icon={<CalendarOutlined />}
-                    onClick={() => setIsBookingModalOpen(true)}
-                  />
-                </Col>
-                <Col xs={24} sm={12} md={6}>
-                  <QuickActionTile
-                    label="Walk-in Registration"
-                    icon={<UserAddOutlined />}
-                    onClick={openWalkInModal}
-                  />
-                </Col>
-                <Col xs={24} sm={12} md={6}>
-                  <QuickActionTile
-                    label="Check-in Patient"
-                    icon={<CheckCircleOutlined />}
-                    onClick={() => message.info('Select an appointment to check-in')}
-                  />
-                </Col>
-                <Col xs={24} sm={12} md={6}>
-                  <QuickActionTile
-                    label="Record Payment"
-                    icon={<FileTextOutlined />}
-                    onClick={() => message.info('Payment recording coming soon')}
-                  />
-                </Col>
-              </Row>
-            )}
-          </Card>
 
-          <Row gutter={[16, 16]}>
-            {/* Upcoming Appointments */}
-            <Col xs={24} lg={16}>
+            {/* Queue Status - Single line above Upcoming Appointments */}
+            <Card 
+              variant="borderless"
+              style={{ 
+                borderRadius: 16,
+                boxShadow: '0 2px 8px rgba(0, 0, 0, 0.08)',
+                border: '1px solid #E5E7EB',
+                background: '#fff',
+                marginBottom: 24,
+              }}
+            >
+              <div style={{ 
+                display: 'flex', 
+                justifyContent: 'space-between', 
+                alignItems: 'center',
+                flexWrap: isMobile ? 'wrap' : 'nowrap',
+                gap: isMobile ? 16 : 24,
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, flex: 1 }}>
+                  <Text type="secondary" style={{ fontSize: 14, minWidth: 80 }}>Waiting:</Text>
+                  <Text strong style={{ fontSize: 16, color: '#F97316' }}>{stats.pendingAppointments || 0}</Text>
+                </div>
+                <Divider type="vertical" style={{ height: 24, margin: 0 }} />
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, flex: 1 }}>
+                  <Text type="secondary" style={{ fontSize: 14, minWidth: 120 }}>In Consultation:</Text>
+                  <Text strong style={{ fontSize: 16, color: '#6366F1' }}>{stats.confirmedAppointments || 0}</Text>
+                </div>
+                <Divider type="vertical" style={{ height: 24, margin: 0 }} />
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, flex: 1 }}>
+                  <Text type="secondary" style={{ fontSize: 14, minWidth: 100 }}>Completed:</Text>
+                  <Text strong style={{ fontSize: 16, color: '#22C55E' }}>{stats.completedAppointments || 0}</Text>
+                </div>
+                <div style={{ marginLeft: 'auto', textAlign: 'right' }}>
+                  <Text type="secondary" style={{ fontSize: 12 }}>
+                    {stats.completedAppointments || 0} of {stats.todayAppointments || 0} completed today
+                  </Text>
+                </div>
+              </div>
+            </Card>
+
+            {/* Upcoming Appointments - Full width, fills remaining height */}
+          <Row gutter={[16, 16]} style={{ flex: 1, minHeight: 0, display: 'flex' }}>
+              <Col xs={24} lg={24} style={{ display: 'flex', flexDirection: 'column', minHeight: 0 }}>
               <Card 
                 variant="borderless"
-                style={{ borderRadius: 16 }}
+                style={{ 
+                  borderRadius: 16,
+                  boxShadow: '0 2px 8px rgba(0, 0, 0, 0.08)',
+                  border: '1px solid #E5E7EB',
+                  background: '#fff',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  flex: 1,
+                  minHeight: 0,
+                }}
                 title="Upcoming Appointments" 
                 extra={<Button type="link" onClick={() => message.info('View all appointments feature coming soon')}>View All</Button>}
+                bodyStyle={{ 
+                  flex: 1, 
+                  minHeight: 0, 
+                  display: 'flex', 
+                  flexDirection: 'column',
+                  overflow: 'hidden',
+                }}
               >
                 {appointmentTabs.length === 0 ? (
                   <div style={{ textAlign: 'center', padding: '40px 0' }}>
                     <Text type="secondary">
-                      {appointments.length === 0
+                      {futureAppointments.length === 0
                         ? 'No appointments found. Waiting for patients to book appointments.'
-                        : `No confirmed appointments scheduled. ${appointments.filter((a: any) => a.status === 'pending').length} pending confirmation.`}
+                        : (() => {
+                            const pendingCount = futureAppointments.filter((a: any) => a.status === 'pending').length;
+                            return pendingCount > 0
+                              ? `No confirmed appointments scheduled. ${pendingCount} pending confirmation.`
+                              : 'No confirmed appointments scheduled.';
+                          })()}
                     </Text>
                   </div>
                 ) : (
@@ -1318,7 +1378,13 @@ export default function ReceptionistDashboard() {
                       key: tab.key,
                       label: tab.label,
                       children: (
-                        <div style={{ overflowX: 'auto' }}>
+                        <div style={{ 
+                          overflowX: 'auto',
+                          overflowY: 'auto',
+                          flex: 1,
+                          minHeight: 0,
+                          maxHeight: '100%',
+                        }}>
                           <Table
                             columns={appointmentColumns}
                             dataSource={appointmentsToShow}
@@ -1326,123 +1392,29 @@ export default function ReceptionistDashboard() {
                             rowKey="id"
                             loading={appointmentsLoading}
                             size={isMobile ? "small" : "middle"}
-                            scroll={isMobile ? { x: 'max-content' } : undefined}
+                            scroll={{ 
+                              x: isMobile ? 'max-content' : undefined,
+                              y: '100%',
+                            }}
+                            rowClassName={(record: any) =>
+                              record.status === 'pending' ? 'appointment-row-pending' : ''
+                            }
                           />
                         </div>
                       ),
                     }))}
-                    style={{ marginTop: 8 }}
+                    style={{ 
+                      marginTop: 8,
+                      display: 'flex',
+                      flexDirection: 'column',
+                      flex: 1,
+                      minHeight: 0,
+                    }}
                   />
                 )}
               </Card>
             </Col>
-
-            {/* Walk-in Patients & Queue Status */}
-            <Col xs={24} lg={8}>
-              <Card title="Walk-in Patients">
-                <List
-                  dataSource={walkInPatients}
-                  loading={walkInLoading}
-                  locale={{ emptyText: 'No walk-in registrations yet' }}
-                  renderItem={(patient: any) => (
-                    <List.Item>
-                      <List.Item.Meta
-                        title={
-                          <Space size="small">
-                            <Text strong>{patient.patientName}</Text>
-                            <Tag color={patient.priority === 'high' || patient.priority === 'urgent' ? 'red' : 'purple'}>
-                              {patient.priority?.toUpperCase() || 'NORMAL'}
-                            </Tag>
-                          </Space>
-                        }
-                        description={renderAppointmentMeta(patient)}
-                      />
-                    </List.Item>
-                  )}
-                />
-              </Card>
-
-              <Card variant="borderless" style={{ borderRadius: 16, marginTop: '16px' }} title={
-                <Space>
-                  <BellOutlined />
-                  <span>Notifications</span>
-                  {notifications.filter((notif: any) => !notif.read).length > 0 && (
-                    <Badge count={notifications.filter((notif: any) => !notif.read).length} />
-                  )}
-                </Space>
-              }>
-                {notificationsLoading ? (
-                  <Spin size="small" />
-                ) : notifications.length > 0 ? (
-                  <Space direction="vertical" size={12} style={{ width: '100%' }}>
-                    {notifications.slice(0, 5).map((notif: any) => (
-                      <NotificationItem
-                        key={notif.id}
-                        title={notif.title || 'Notification'}
-                        message={notif.message || ''}
-                        timestamp={formatDateTime(notif.createdAt)}
-                        severity={notif.type === 'urgent' ? 'urgent' : 'info'}
-                        read={Boolean(notif.read)}
-                        onMarkRead={() => !notif.read && markNotificationMutation.mutate(notif.id)}
-                      />
-                    ))}
-                  </Space>
-                ) : (
-                  <Empty
-                    image={Empty.PRESENTED_IMAGE_SIMPLE}
-                    description="All caught up"
-                    style={{ padding: '20px 0' }}
-                  />
-                )}
-              </Card>
-
-              <Card variant="borderless" style={{ borderRadius: 16, marginTop: '16px' }}>
-                <Title level={5} style={{ marginBottom: 12 }}>Queue Status</Title>
-                <Space direction="vertical" size={12} style={{ width: '100%' }}>
-                  <div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
-                      <Text type="secondary">Waiting</Text>
-                      <Text strong>{stats.pendingAppointments || 0}</Text>
-                    </div>
-                    <Progress 
-                      percent={stats.todayAppointments > 0 ? Math.round((stats.pendingAppointments / stats.todayAppointments) * 100) : 0}
-                      strokeColor={receptionistTheme.primary}
-                      showInfo={false}
-                      size="small"
-                    />
-                  </div>
-                  <div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
-                      <Text type="secondary">In Consultation</Text>
-                      <Text strong>{stats.confirmedAppointments || 0}</Text>
-                    </div>
-                    <Progress 
-                      percent={stats.todayAppointments > 0 ? Math.round((stats.confirmedAppointments / stats.todayAppointments) * 100) : 0}
-                      strokeColor={receptionistTheme.secondary}
-                      showInfo={false}
-                      size="small"
-                    />
-                  </div>
-                  <div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
-                      <Text type="secondary">Completed</Text>
-                      <Text strong>{stats.completedAppointments || 0}</Text>
-                    </div>
-                    <Progress 
-                      percent={stats.todayAppointments > 0 ? Math.round((stats.completedAppointments / stats.todayAppointments) * 100) : 0}
-                      strokeColor={receptionistTheme.accent}
-                      showInfo={false}
-                      size="small"
-                    />
-                  </div>
-                  <Divider style={{ margin: '8px 0' }} />
-                  <Text type="secondary" style={{ fontSize: 12 }}>
-                    {stats.completedAppointments || 0} of {stats.todayAppointments || 0} completed today
-                  </Text>
-                </Space>
-              </Card>
-            </Col>
-          </Row>
+            </Row>
 
           {/* Booking Modal */}
           <Modal
@@ -1653,5 +1625,6 @@ export default function ReceptionistDashboard() {
         </Content>
       </Layout>
     </Layout>
+    </>
   );
 }
