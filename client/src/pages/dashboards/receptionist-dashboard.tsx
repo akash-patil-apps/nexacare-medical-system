@@ -28,11 +28,9 @@ import {
   CalendarOutlined, 
   FileTextOutlined,
   CheckCircleOutlined,
-  TeamOutlined,
   UserAddOutlined,
   ClockCircleOutlined,
   MenuUnfoldOutlined,
-  PhoneOutlined,
 } from '@ant-design/icons';
 import { useAuth } from '../../hooks/use-auth';
 import { useResponsive } from '../../hooks/use-responsive';
@@ -92,6 +90,20 @@ export default function ReceptionistDashboard() {
       }
       const data = await response.json();
       console.log('📋 Received appointments data:', data.length, 'appointments');
+      // Extract hospital name from first appointment if available
+      if (data.length > 0) {
+        const firstAppointment = data[0];
+        console.log('🔍 First appointment data:', {
+          id: firstAppointment.id,
+          hospitalName: firstAppointment.hospitalName,
+          hospitalId: firstAppointment.hospitalId,
+        });
+        if (firstAppointment.hospitalName) {
+          console.log('✅ Found hospital name from appointments:', firstAppointment.hospitalName);
+        } else {
+          console.log('⚠️ No hospitalName in first appointment');
+        }
+      }
       // Transform API data to match table format with date object
       const transformed = data.map((apt: any) => {
         // Handle different date formats
@@ -118,6 +130,7 @@ export default function ReceptionistDashboard() {
           paymentStatus: apt.paymentStatus || null,
           date: apt.appointmentDate,
           dateObj: appointmentDate,
+          hospitalName: apt.hospitalName || null, // Include hospital name from API
         };
       });
       console.log('✅ Transformed appointments - statuses:', transformed.map((t: any) => `${t.patient}: ${t.status}`));
@@ -137,6 +150,84 @@ export default function ReceptionistDashboard() {
     window.addEventListener('storage', handleStorageChange);
     return () => window.removeEventListener('storage', handleStorageChange);
   }, [refetchAppointments]);
+
+  // Get receptionist profile to access hospitalId
+  const { data: receptionistProfile } = useQuery({
+    queryKey: ['/api/reception/profile'],
+    queryFn: async () => {
+      const token = localStorage.getItem('auth-token');
+      const response = await fetch('/api/reception/profile', {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('❌ Receptionist profile API error:', response.status, errorText);
+        return null;
+      }
+      const data = await response.json();
+      console.log('📋 Receptionist profile:', data);
+      return data;
+    },
+    enabled: !!user && user.role?.toUpperCase() === 'RECEPTIONIST',
+  });
+
+  // Get hospital name for receptionist - try from appointments first, then API
+  const hospitalNameFromAppointments = useMemo(() => {
+    if (appointments.length > 0) {
+      // Check if any appointment has hospitalName
+      for (const apt of appointments) {
+        if (apt.hospitalName) {
+          return apt.hospitalName;
+        }
+      }
+    }
+    return null;
+  }, [appointments]);
+
+  const { data: hospitalNameFromAPI } = useQuery({
+    queryKey: ['/api/hospitals', receptionistProfile?.hospitalId],
+    queryFn: async () => {
+      if (!receptionistProfile?.hospitalId) {
+        console.log('⚠️ No hospitalId in receptionist profile');
+        return null;
+      }
+      console.log('🏥 Fetching hospital name for hospitalId:', receptionistProfile.hospitalId);
+      const token = localStorage.getItem('auth-token');
+      try {
+        const response = await fetch(`/api/hospitals/${receptionistProfile.hospitalId}`, {
+          headers: {
+            'Authorization': `Bearer ${token}`
+          }
+        });
+        if (!response.ok) {
+          const errorText = await response.text();
+          console.error('❌ Failed to fetch hospital:', response.status, errorText);
+          return null;
+        }
+        const data = await response.json();
+        console.log('🏥 Hospital data:', data);
+        return data.name || null;
+      } catch (error) {
+        console.error('❌ Error fetching hospital:', error);
+        return null;
+      }
+    },
+    enabled: !!receptionistProfile?.hospitalId,
+  });
+
+  // Use hospital name from API if available, otherwise from appointments
+  const hospitalName = hospitalNameFromAPI || hospitalNameFromAppointments;
+  
+  // Debug logging
+  useEffect(() => {
+    if (hospitalName) {
+      console.log('✅ Hospital name resolved:', hospitalName);
+    } else {
+      console.log('⚠️ Hospital name not available yet. API:', hospitalNameFromAPI, 'Appointments:', hospitalNameFromAppointments);
+    }
+  }, [hospitalName, hospitalNameFromAPI, hospitalNameFromAppointments]);
 
   const { data: walkInPatients = [], refetch: refetchWalkIns } = useQuery({
     queryKey: ['/api/reception/walkins'],
@@ -199,7 +290,7 @@ export default function ReceptionistDashboard() {
   });
 
   // Filter appointments that are today or in the future (by date and time)
-  // Receptionists need to see pending (to confirm), confirmed (to check-in), and cancelled appointments
+  // Receptionists need to see pending (to confirm), confirmed, and cancelled appointments
   // Pending appointments should ALWAYS be visible (even if the slot time has already passed) so they can be confirmed.
   const futureAppointments = useMemo(() => {
     const now = new Date();
@@ -233,6 +324,19 @@ export default function ReceptionistDashboard() {
             return false;
           }
           
+          // For PENDING appointments: Show if date is today or in the future (ignore time)
+          // This allows receptionists to see and confirm pending appointments even if time has passed
+          if (apt.status === 'pending') {
+            return appointmentDay >= todayStart;
+          }
+          
+          // For CONFIRMED appointments: Show if date is today or in the future (ignore time)
+          // Receptionists need to see confirmed appointments to check them in, even if time has passed
+          if (apt.status === 'confirmed') {
+            return appointmentDay >= todayStart;
+          }
+          
+          // For CANCELLED appointments: Only show if date and time are in the future
           // Parse time from appointmentTime or timeSlot
           let appointmentTime = new Date(appointmentDateTime);
           
@@ -271,7 +375,7 @@ export default function ReceptionistDashboard() {
             appointmentTime.setHours(0, 0, 0, 0);
           }
           
-          // Only include appointments that are today or in the future (by date and time)
+          // Only include cancelled appointments that are today or in the future (by date and time)
           return appointmentTime >= now;
         } catch (error) {
           console.error(`❌ Error checking date/time for appointment ${apt.id}:`, error);
@@ -407,11 +511,6 @@ export default function ReceptionistDashboard() {
     const pending = today.filter((apt: any) => apt.status === 'pending').length;
     const completed = today.filter((apt: any) => apt.status === 'completed').length;
     const cancelled = today.filter((apt: any) => apt.status === 'cancelled').length;
-    
-    // Check-ins: appointments that are confirmed and have been checked in (status might be 'checked-in' or similar)
-    const checkedIn = today.filter((apt: any) => 
-      apt.status === 'confirmed' || apt.status === 'checked-in' || apt.status === 'attended'
-    ).length;
 
     const unreadNotifications = notifications.filter((notif: any) => !notif.read).length;
 
@@ -422,7 +521,6 @@ export default function ReceptionistDashboard() {
       confirmedAppointments: confirmed,
       completedAppointments: completed,
       cancelledAppointments: cancelled,
-      checkedInAppointments: checkedIn,
       walkInPatients: walkInPatients.length,
       totalPatients: new Set(appointments.map((apt: any) => apt.patient)).size,
       noShowAppointments: 0, // TODO: Calculate based on missed appointments
@@ -709,7 +807,7 @@ export default function ReceptionistDashboard() {
       console.log('📥 Check-in response:', responseData);
 
       if (response.ok) {
-        message.success('Patient checked in successfully! They can now proceed to doctor\'s cabin.');
+        message.success('Patient checked in successfully! Status updated to IN CONSULTATION.');
         // Trigger storage event to notify other tabs/windows
         window.localStorage.setItem('appointment-updated', Date.now().toString());
         window.dispatchEvent(new CustomEvent('appointment-updated'));
@@ -732,15 +830,6 @@ export default function ReceptionistDashboard() {
     } catch (error) {
       console.error('❌ Error checking in patient:', error);
       message.error('Failed to check in patient. Please try again.');
-    }
-  };
-
-  // Handle call patient
-  const handleCall = (phone: string) => {
-    if (phone && phone !== 'N/A') {
-      window.location.href = `tel:${phone}`;
-    } else {
-      message.warning('Phone number not available');
     }
   };
 
@@ -782,21 +871,105 @@ export default function ReceptionistDashboard() {
     return { color: 'default', label: 'Not Recorded' };
   };
 
-  // Check if appointment is overdue
+  // Check if appointment is overdue (appointment time has passed but not completed/cancelled/checked-in/attended)
   const isAppointmentOverdue = (appointment: any) => {
-    if (!appointment.date || appointment.status === 'completed' || appointment.status === 'cancelled') {
+    // Don't mark appointments as overdue if they are:
+    // - completed (patient has finished consultation)
+    // - cancelled (appointment was cancelled)
+    // - checked-in (patient has arrived and checked in)
+    // - attended (patient is currently in consultation)
+    const status = appointment.status?.toLowerCase();
+    if (status === 'completed' || 
+        status === 'cancelled' || 
+        status === 'checked-in' || 
+        status === 'attended') {
       return false;
     }
+    
+    // Need both date and time to check if overdue
+    if (!appointment.date && !appointment.dateObj) {
+      return false;
+    }
+    
     try {
-      const aptDate = new Date(appointment.date);
       const now = new Date();
-      // If appointment time has passed and status is still pending or confirmed
-      if (aptDate < now && (appointment.status === 'pending' || appointment.status === 'confirmed')) {
+      const appointmentDateTime = appointment.dateObj || new Date(appointment.date);
+      
+      if (isNaN(appointmentDateTime.getTime())) {
+        return false;
+      }
+      
+      // Parse time from timeSlot or time field
+      const timeStr = (appointment.time || appointment.timeSlot || '').trim();
+      let appointmentTime = new Date(appointmentDateTime);
+      
+      if (timeStr) {
+        // Parse time string (e.g., "02:30", "02:30-03:00", "02:30 PM", "14:30")
+        const startPart = timeStr.includes('-') ? timeStr.split('-')[0].trim() : timeStr;
+        const timeMatch = startPart.match(/(\d{1,2}):(\d{2})\s*(AM|PM|am|pm)?/i);
+        
+        if (timeMatch) {
+          let hours = parseInt(timeMatch[1]);
+          const minutes = parseInt(timeMatch[2]);
+          const period = timeMatch[3]?.toUpperCase();
+          
+          // Handle 12-hour format with AM/PM
+          if (period === 'PM' && hours !== 12) {
+            hours += 12;
+          } else if (period === 'AM' && hours === 12) {
+            hours = 0;
+          } else if (!period) {
+            // No AM/PM indicator - need to determine if it's 12-hour or 24-hour format
+            // If hours are 13-23, it's definitely 24-hour format
+            // If hours are 0-12, it could be either:
+            //   - 24-hour: 0-12 = midnight to noon
+            //   - 12-hour: 1-12 = 1 AM to noon (but without AM/PM, we can't tell)
+            // For appointment times, it's very unlikely to have appointments at 1-11 AM
+            // So if hours are 1-11 without AM/PM, assume it's 12-hour format and means PM
+            if (hours >= 1 && hours <= 11) {
+              hours += 12; // Assume 12-hour format, convert to PM (2:30 PM = 14:30)
+            }
+            // If hours is 0, keep as 0 (midnight in 24-hour) or could be 12 AM
+            // If hours is 12, could be noon (12 PM) or 12:00 in 24-hour
+            // For appointments, 12:xx is likely noon (12 PM), so keep as 12
+          }
+          
+          appointmentTime.setHours(hours, minutes, 0, 0);
+        } else {
+          // Try 24-hour format (e.g., "14:30")
+          const parts = startPart.split(':');
+          if (parts.length >= 2) {
+            let hours = parseInt(parts[0]) || 0;
+            const minutes = parseInt(parts[1]) || 0;
+            
+            // If hours are 13-23, it's definitely 24-hour format
+            // If hours are 0-12, it could be 24-hour (0-12 = midnight to noon)
+            //   or 12-hour without AM/PM (1-12 = 1 AM to noon, but we'd assume PM for appointments)
+            // For appointments, if hours are 1-11, assume it's 12-hour format meaning PM
+            if (hours >= 1 && hours <= 11) {
+              hours += 12; // Assume 12-hour format, convert to PM
+            }
+            
+            appointmentTime.setHours(hours, minutes, 0, 0);
+          }
+        }
+      } else {
+        // No time info, can't determine if overdue
+        return false;
+      }
+      
+      // Check if appointment time has passed and status is still pending or confirmed
+      // Only mark as overdue if the appointment time slot has actually passed
+      // AND the patient hasn't been checked in or attended yet
+      const status = appointment.status?.toLowerCase();
+      if (appointmentTime < now && (status === 'pending' || status === 'confirmed')) {
         return true;
       }
     } catch (error) {
+      console.error('Error checking if appointment is overdue:', error);
       return false;
     }
+    
     return false;
   };
 
@@ -805,11 +978,15 @@ export default function ReceptionistDashboard() {
       title: 'Patient',
       dataIndex: 'patient',
       key: 'patient',
+      width: 180,
+      fixed: (isMobile ? false : 'left') as 'left' | false,
       render: (text: string, record: any) => (
-        <Space>
-          <Text strong={isAppointmentOverdue(record)}>{text}</Text>
-          {isAppointmentOverdue(record) && (
-            <Tag color="red" style={{ margin: 0 }}>OVERDUE</Tag>
+        <Space direction="vertical" size={0}>
+          <Text strong style={{ fontSize: 14 }}>
+            {text}
+          </Text>
+          {record.phone && record.phone !== 'N/A' && (
+            <Text type="secondary" style={{ fontSize: 12 }}>{record.phone}</Text>
           )}
         </Space>
       ),
@@ -817,6 +994,7 @@ export default function ReceptionistDashboard() {
     {
       title: 'Date',
       key: 'date',
+      width: 100,
       render: (_: any, record: any) => {
         if (!record.dateObj && !record.date) return 'N/A';
         const date = record.dateObj || new Date(record.date);
@@ -826,61 +1004,84 @@ export default function ReceptionistDashboard() {
         appointmentDate.setHours(0, 0, 0, 0);
         
         if (appointmentDate.getTime() === today.getTime()) {
-          return <Text strong>Today</Text>;
+          return <Text strong style={{ color: '#1890ff' }}>Today</Text>;
         }
         const tomorrow = new Date(today);
         tomorrow.setDate(tomorrow.getDate() + 1);
         if (appointmentDate.getTime() === tomorrow.getTime()) {
-          return <Text>Tomorrow</Text>;
+          return <Text style={{ color: '#52c41a' }}>Tomorrow</Text>;
         }
-        return dayjs(date).format('DD MMM YYYY');
+        return <Text style={{ fontSize: 13 }}>{dayjs(date).format('DD MMM YYYY')}</Text>;
       },
-    },
-    {
-      title: 'Doctor',
-      dataIndex: 'doctor',
-      key: 'doctor',
     },
     {
       title: 'Time',
       dataIndex: 'time',
       key: 'time',
+      width: 120,
+      render: (time: string) => (
+        <Text style={{ fontSize: 13, fontFamily: 'monospace' }}>{time || 'N/A'}</Text>
+      ),
+    },
+    {
+      title: 'Doctor',
+      dataIndex: 'doctor',
+      key: 'doctor',
+      width: 180,
+      ellipsis: true,
+      render: (doctor: string) => (
+        <Text style={{ fontSize: 13 }}>{doctor || 'N/A'}</Text>
+      ),
     },
     {
       title: 'Department',
       dataIndex: 'department',
       key: 'department',
+      width: 140,
+      ellipsis: true,
+      render: (dept: string) => (
+        <Text type="secondary" style={{ fontSize: 13 }}>{dept || 'General'}</Text>
+      ),
     },
     {
       title: 'Source',
       dataIndex: 'type',
       key: 'type',
+      width: 100,
+      align: 'center' as const,
       render: (_: any, record: any) => {
         const config = getSourceConfig(record.type);
-        return <Tag color={config.color}>{config.label}</Tag>;
+        return <Tag color={config.color} style={{ margin: 0, fontSize: 12, whiteSpace: 'nowrap' }}>{config.label}</Tag>;
       },
     },
     {
       title: 'Payment',
       dataIndex: 'paymentStatus',
       key: 'paymentStatus',
+      width: 130,
+      align: 'center' as const,
       render: (_: any, record: any) => {
         const config = getPaymentConfig(record.paymentStatus);
-        return <Tag color={config.color}>{config.label}</Tag>;
+        return <Tag color={config.color} style={{ margin: 0, fontSize: 12, whiteSpace: 'nowrap' }}>{config.label}</Tag>;
       },
     },
     {
       title: 'Status',
       dataIndex: 'status',
       key: 'status',
+      width: 130,
+      align: 'center' as const,
       render: (status: string) => {
         const config = getStatusConfig(status);
-        return <Tag color={config.color}>{config.label}</Tag>;
+        return <Tag color={config.color} style={{ margin: 0, fontSize: 12, fontWeight: 500, whiteSpace: 'nowrap' }}>{config.label}</Tag>;
       },
     },
     {
       title: 'Actions',
       key: 'actions',
+      width: 200,
+      align: 'center' as const,
+      fixed: (isMobile ? false : 'right') as 'right' | false,
       render: (record: any) => {
         // Check if appointment is in the past
         const now = new Date();
@@ -906,41 +1107,68 @@ export default function ReceptionistDashboard() {
           return <Text type="secondary" style={{ fontSize: 12 }}>-</Text>;
         }
         
-        return (
-          <Space>
-            {/* Confirm button - for pending appointments */}
-            {record.status === 'pending' && (
-              <Button
-                size="small"
-                type="primary"
-                onClick={() => handleConfirmAppointment(record.id)}
-              >
-                Confirm
-              </Button>
-            )}
-            
-            {/* Check-in button - for confirmed appointments (when patient arrives) */}
-            {record.status === 'confirmed' && (
-              <Button
-                size="small"
-                type="default"
-                onClick={() => handleCheckIn(record.id)}
-              >
-                Check-in
-              </Button>
-            )}
-            
-            {/* Call button - available for all statuses */}
-            <Button 
+        // Show Confirm button for pending appointments
+        if (record.status === 'pending') {
+          return (
+            <Space size={4} wrap>
+            <Button
               size="small"
-              type="link"
-              icon={<PhoneOutlined />}
-              onClick={() => handleCall(record.phone)}
+              type="primary"
+              onClick={() => handleConfirmAppointment(record.id)}
+                style={{ fontSize: 12, height: 28, minWidth: 70 }}
             >
-              Call
+              Confirm
             </Button>
-          </Space>
-        );
+              <Button
+                size="small"
+                onClick={() => {
+                  const phone = record.phone || 'N/A';
+                  if (phone === 'N/A') {
+                    message.info('Patient phone not available to message.');
+                  } else {
+                    message.info(`Message sent to patient at ${phone}`);
+                  }
+                }}
+                style={{ fontSize: 12, height: 28, minWidth: 70 }}
+              >
+                Message
+              </Button>
+            </Space>
+          );
+        }
+        
+        // Show Check-in button for confirmed appointments (when patient arrives)
+        if (record.status === 'confirmed') {
+          return (
+            <Space size={4} wrap>
+            <Button
+              size="small"
+              type="default"
+              onClick={() => handleCheckIn(record.id)}
+                style={{ fontSize: 12, height: 28, minWidth: 70 }}
+            >
+              Check-in
+            </Button>
+          <Button 
+            size="small"
+                onClick={() => {
+                  const phone = record.phone || 'N/A';
+                  if (phone === 'N/A') {
+                    message.info('Patient phone not available to message.');
+                  } else {
+                    message.info(`Message sent to patient at ${phone}`);
+                  }
+                }}
+                style={{ fontSize: 12, height: 28, minWidth: 70 }}
+              >
+                Message
+          </Button>
+        </Space>
+          );
+        }
+        
+        // For checked-in, attended, completed, or other statuses, show a dash
+        return <Text type="secondary" style={{ fontSize: 12 }}>-</Text>;
       },
     },
   ];
@@ -1115,6 +1343,58 @@ export default function ReceptionistDashboard() {
         .receptionist-dashboard-wrapper .appointment-row-pending td {
           background: #FEF2F2 !important; /* light red */
         }
+        
+        /* Overdue appointments row highlight */
+        .receptionist-dashboard-wrapper .appointment-row-overdue td {
+          background: #FFF1F0 !important; /* lighter red for overdue */
+        }
+        
+        /* Table row hover effects */
+        .receptionist-dashboard-wrapper .appointment-table-row:hover td {
+          background: #F5F5F5 !important;
+          transition: background-color 0.2s ease;
+        }
+        
+        .receptionist-dashboard-wrapper .appointment-row-pending:hover td {
+          background: #FEE2E2 !important; /* slightly darker red on hover */
+        }
+        
+        .receptionist-dashboard-wrapper .appointment-row-overdue:hover td {
+          background: #FFE7E6 !important; /* slightly darker red on hover */
+        }
+        
+        /* Table header styling */
+        .receptionist-dashboard-wrapper .ant-table-thead > tr > th {
+          background: #FAFAFA !important;
+          font-weight: 600;
+          font-size: 13px;
+          color: #262626;
+          border-bottom: 2px solid #E5E7EB;
+          padding: 14px 16px;
+          white-space: nowrap;
+        }
+        
+        /* Table cell styling */
+        .receptionist-dashboard-wrapper .ant-table-tbody > tr > td {
+          padding: 14px 16px;
+          border-bottom: 1px solid #F0F0F0;
+          vertical-align: middle;
+        }
+        
+        .receptionist-dashboard-wrapper .ant-table-tbody > tr:last-child > td {
+          border-bottom: none;
+        }
+        
+        /* Ensure tags don't wrap */
+        .receptionist-dashboard-wrapper .ant-table-tbody .ant-tag {
+          white-space: nowrap;
+          display: inline-block;
+        }
+        
+        /* Better spacing for action buttons */
+        .receptionist-dashboard-wrapper .ant-table-tbody .ant-btn {
+          white-space: nowrap;
+        }
       `}</style>
       <Layout className="receptionist-dashboard-wrapper" style={{ minHeight: '100vh', background: receptionistTheme.background }}>
       {/* Desktop/Tablet Sidebar */}
@@ -1136,7 +1416,7 @@ export default function ReceptionistDashboard() {
             borderBottom: '1px solid #E3F2FF',
           }}
         >
-          <ReceptionistSidebar selectedMenuKey={selectedMenuKey} />
+          <ReceptionistSidebar selectedMenuKey={selectedMenuKey} hospitalName={hospitalName} />
         </Sider>
       )}
 
@@ -1150,7 +1430,7 @@ export default function ReceptionistDashboard() {
           styles={{ body: { padding: 0 } }}
           width={260}
         >
-          <ReceptionistSidebar selectedMenuKey={selectedMenuKey} onMenuClick={() => setMobileDrawerOpen(false)} />
+          <ReceptionistSidebar selectedMenuKey={selectedMenuKey} onMenuClick={() => setMobileDrawerOpen(false)} hospitalName={hospitalName} />
         </Drawer>
       )}
 
@@ -1207,7 +1487,6 @@ export default function ReceptionistDashboard() {
                   { label: "Pending Confirmation", value: stats.pendingAppointments || 0, icon: <ClockCircleOutlined />, trendLabel: "Awaiting action", trendColor: "#F97316", trendBg: "#FFEAD5", onView: () => message.info('View pending appointments') },
                   { label: "Confirmed Today", value: stats.confirmedAppointments || 0, icon: <CheckCircleOutlined />, trendLabel: "Ready", trendColor: "#22C55E", trendBg: "#D1FAE5", onView: () => message.info('View confirmed appointments') },
                   { label: "Walk-ins Waiting", value: stats.walkInPatients || 0, icon: <UserAddOutlined />, trendLabel: "In queue", trendColor: "#6366F1", trendBg: "#E0E7FF", onView: () => message.info('View walk-in patients') },
-                  { label: "Check-ins Completed", value: stats.checkedInAppointments || 0, icon: <TeamOutlined />, trendLabel: "Today", trendColor: "#16a34a", trendBg: "#D1FAE5", onView: () => message.info('View checked-in patients') },
                 ].map((kpi, idx) => (
                   <div key={idx} style={{ minWidth: 220, scrollSnapAlign: 'start' }}>
                     <KpiCard {...kpi} />
@@ -1252,18 +1531,6 @@ export default function ReceptionistDashboard() {
                     onView={() => message.info('View walk-in patients')}
                   />
                 </div>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <KpiCard
-                    label="Check-ins Completed"
-                    value={stats.checkedInAppointments || 0}
-                    icon={<TeamOutlined />}
-                    trendLabel="Today"
-                    trendType="positive"
-                    trendColor="#16a34a"
-                    trendBg="#D1FAE5"
-                    onView={() => message.info('View checked-in patients')}
-                  />
-                </div>
               </div>
             )}
 
@@ -1279,11 +1546,6 @@ export default function ReceptionistDashboard() {
                   label="Walk-in Registration"
                   icon={<UserAddOutlined />}
                   onClick={openWalkInModal}
-                />
-                <QuickActionTile
-                  label="Check-in Patient"
-                  icon={<CheckCircleOutlined />}
-                  onClick={() => message.info('Select an appointment to check-in')}
                 />
                 <QuickActionTile
                   label="Record Payment"
@@ -1330,11 +1592,11 @@ export default function ReceptionistDashboard() {
                   </Text>
                 </div>
               </div>
-            </Card>
+          </Card>
 
-            {/* Upcoming Appointments - Full width, fills remaining height */}
-          <Row gutter={[16, 16]} style={{ flex: 1, minHeight: 0, display: 'flex' }}>
-              <Col xs={24} lg={24} style={{ display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+            {/* Upcoming Appointments - Full width */}
+          <Row gutter={[16, 16]}>
+              <Col xs={24} lg={24}>
               <Card 
                 variant="borderless"
                 style={{ 
@@ -1342,19 +1604,12 @@ export default function ReceptionistDashboard() {
                   boxShadow: '0 2px 8px rgba(0, 0, 0, 0.08)',
                   border: '1px solid #E5E7EB',
                   background: '#fff',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  flex: 1,
-                  minHeight: 0,
                 }}
                 title="Upcoming Appointments" 
                 extra={<Button type="link" onClick={() => message.info('View all appointments feature coming soon')}>View All</Button>}
                 bodyStyle={{ 
-                  flex: 1, 
-                  minHeight: 0, 
                   display: 'flex', 
                   flexDirection: 'column',
-                  overflow: 'hidden',
                 }}
               >
                 {appointmentTabs.length === 0 ? (
@@ -1376,14 +1631,14 @@ export default function ReceptionistDashboard() {
                     onChange={setActiveAppointmentTab}
                     items={appointmentTabs.map(tab => ({
                       key: tab.key,
-                      label: tab.label,
+                      label: (
+                        <span style={{ fontSize: 14, fontWeight: 500 }}>
+                          {tab.label}
+                        </span>
+                      ),
                       children: (
                         <div style={{ 
-                          overflowX: 'auto',
-                          overflowY: 'auto',
-                          flex: 1,
-                          minHeight: 0,
-                          maxHeight: '100%',
+                          width: '100%',
                         }}>
                           <Table
                             columns={appointmentColumns}
@@ -1392,29 +1647,32 @@ export default function ReceptionistDashboard() {
                             rowKey="id"
                             loading={appointmentsLoading}
                             size={isMobile ? "small" : "middle"}
-                            scroll={{ 
-                              x: isMobile ? 'max-content' : undefined,
-                              y: '100%',
+                            scroll={isMobile ? { x: 'max-content' } : undefined}
+                            rowClassName={(record: any) => {
+                              let className = 'appointment-table-row';
+                              if (record.status === 'pending') {
+                                className += ' appointment-row-pending';
+                              }
+                              if (isAppointmentOverdue(record)) {
+                                className += ' appointment-row-overdue';
+                              }
+                              return className;
                             }}
-                            rowClassName={(record: any) =>
-                              record.status === 'pending' ? 'appointment-row-pending' : ''
-                            }
+                            style={{
+                              fontSize: 13,
+                            }}
                           />
                         </div>
                       ),
                     }))}
                     style={{ 
                       marginTop: 8,
-                      display: 'flex',
-                      flexDirection: 'column',
-                      flex: 1,
-                      minHeight: 0,
                     }}
                   />
                 )}
               </Card>
             </Col>
-            </Row>
+          </Row>
 
           {/* Booking Modal */}
           <Modal

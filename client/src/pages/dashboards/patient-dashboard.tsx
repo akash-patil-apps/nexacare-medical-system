@@ -86,6 +86,7 @@ export default function PatientDashboard() {
 
   const {
     data: allAppointments = [],
+    refetch: refetchAppointments,
   } = useQuery({
     queryKey: ['patient-appointments'],
     queryFn: async () => {
@@ -122,71 +123,71 @@ export default function PatientDashboard() {
         };
       });
     },
-    refetchInterval: 10_000,
     refetchOnWindowFocus: false,
   });
 
-  // Filter appointments that are today or in the future (by date and time)
+  // Listen for appointment updates from other tabs/windows (e.g., when receptionist confirms)
+  useEffect(() => {
+    const handleStorageChange = (e: StorageEvent) => {
+      if (e.key === 'appointment-updated') {
+        console.log('🔄 Appointment update detected, refetching...');
+        refetchAppointments();
+      }
+    };
+    
+    // Also listen for custom events (same-window updates)
+    const handleCustomEvent = () => {
+      console.log('🔄 Custom appointment update event detected, refetching...');
+      refetchAppointments();
+    };
+    
+    window.addEventListener('storage', handleStorageChange);
+    window.addEventListener('appointment-updated', handleCustomEvent);
+    
+    return () => {
+      window.removeEventListener('storage', handleStorageChange);
+      window.removeEventListener('appointment-updated', handleCustomEvent);
+    };
+  }, [refetchAppointments]);
+
+  // Filter appointments that are today or in the future (by date only, not time)
   // Patients should see all their appointment statuses (pending, confirmed, completed, cancelled)
+  // Show appointments if the date is today or in the future, regardless of time
   const futureAppointments = useMemo(() => {
     const now = new Date();
+    const todayStart = new Date(now);
+    todayStart.setHours(0, 0, 0, 0);
     
     return allAppointments
       .filter((apt: any) => {
         // Check if appointment has valid date
         if (!apt.rawDate && !apt.dateObj) {
+          console.warn(`⚠️ Appointment ${apt.id} has no date`);
           return false;
         }
         
         try {
           const appointmentDateTime = apt.dateObj || new Date(apt.rawDate);
           if (isNaN(appointmentDateTime.getTime())) {
+            console.warn(`⚠️ Invalid date for appointment ${apt.id}:`, apt.rawDate);
             return false;
           }
           
-          // Parse time from timeSlot (preferred) or appointmentTime
-          const timeStr = (apt.timeSlot || apt.time || '').trim();
-          let appointmentTime = new Date(appointmentDateTime);
+          // Get appointment date (ignore time for comparison)
+          const appointmentDay = new Date(appointmentDateTime);
+          appointmentDay.setHours(0, 0, 0, 0);
           
-          if (timeStr) {
-            // Parse time string (e.g., "09:00", "09:00 AM", "14:30", "09:00-09:30")
-            const startPart = timeStr.includes('-') ? timeStr.split('-')[0].trim() : timeStr;
-            const timeMatch = startPart.match(/(\d{1,2}):(\d{2})\s*(AM|PM|am|pm)?/i);
-            
-            if (timeMatch) {
-              let hours = parseInt(timeMatch[1]);
-              const minutes = parseInt(timeMatch[2]);
-              const period = timeMatch[3]?.toUpperCase();
-              
-              // Handle 12-hour format
-              if (period === 'PM' && hours !== 12) {
-                hours += 12;
-              } else if (period === 'AM' && hours === 12) {
-                hours = 0;
-              }
-              
-              appointmentTime.setHours(hours, minutes, 0, 0);
-            } else {
-              // Try 24-hour format
-              const parts = startPart.split(':');
-              if (parts.length >= 2) {
-                const hours = parseInt(parts[0]) || 9;
-                const minutes = parseInt(parts[1]) || 0;
-                appointmentTime.setHours(hours, minutes, 0, 0);
-              } else {
-                // Default to 9 AM if can't parse
-                appointmentTime.setHours(9, 0, 0, 0);
-              }
-            }
-          } else {
-            // No time info, default to start of day (midnight)
-            appointmentTime.setHours(0, 0, 0, 0);
+          // Include appointments that are today or in the future (by date only)
+          // This matches the behavior of the appointments page which shows all appointments
+          const isTodayOrFuture = appointmentDay >= todayStart;
+          
+          if (!isTodayOrFuture) {
+            console.log(`⏭️ Skipping appointment ${apt.id} - date is in the past:`, appointmentDay.toISOString());
           }
           
-          // Only include appointments that are today or in the future (by date and time)
-          return appointmentTime >= now;
+          return isTodayOrFuture;
         } catch (error) {
-          console.error(`❌ Error checking date/time for appointment ${apt.id}:`, error);
+          console.error(`❌ Error checking date for appointment ${apt.id}:`, error);
           return false;
         }
       })
@@ -517,15 +518,6 @@ export default function PatientDashboard() {
           }}
         >
           <div style={{ paddingBottom: 24 }}>
-            {/* Header with NexaCare Healthcare System */}
-            <div style={{ marginBottom: 24 }}>
-              <Title level={2} style={{ margin: 0, fontSize: '28px', fontWeight: 700, color: '#111827' }}>
-                NexaCare Healthcare System
-              </Title>
-              <Text style={{ fontSize: '16px', color: '#6B7280', marginTop: '4px', display: 'block' }}>
-                Patient Dashboard
-              </Text>
-            </div>
 
             {/* Mobile Menu Button */}
             {isMobile && (

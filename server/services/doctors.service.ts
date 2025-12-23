@@ -1,8 +1,8 @@
 // server/services/doctors.service.ts
 import { db } from '../db';
-import { doctors, appointments, users } from '../../shared/schema';
+import { doctors, appointments, users, hospitals } from '../../drizzle/schema';
 import type { InsertDoctor } from '../../shared/schema-types';
-import { eq, like, and, or } from 'drizzle-orm';
+import { eq, like, and, or, sql } from 'drizzle-orm';
 
 /**
  * Create a new doctor profile.
@@ -67,13 +67,48 @@ export const getDoctorById = async (doctorId: number) => {
  */
 export const getDoctorByUserId = async (userId: number) => {
   console.log(`👨‍⚕️ Fetching doctor by user ID ${userId}`);
-  const result = await db
-    .select()
-    .from(doctors)
-    .where(eq(doctors.userId, userId))
-    .limit(1);
-  
-  return result[0] || null;
+  try {
+    // First, get the doctor data
+    const [doctorData] = await db
+      .select()
+      .from(doctors)
+      .where(eq(doctors.userId, userId))
+      .limit(1);
+    
+    if (!doctorData) {
+      console.log(`⚠️ No doctor found for user ID ${userId}`);
+      return null;
+    }
+    
+    // Then, get the hospital name if hospitalId exists
+    let hospitalName: string | null = null;
+    if (doctorData.hospitalId) {
+      const [hospital] = await db
+        .select({ name: hospitals.name })
+        .from(hospitals)
+        .where(eq(hospitals.id, doctorData.hospitalId))
+        .limit(1);
+      
+      hospitalName = hospital?.name || null;
+    }
+    
+    // Combine the results
+    const doctor = {
+      ...doctorData,
+      hospitalName,
+    };
+    
+    console.log(`✅ Doctor profile fetched:`, { 
+      id: doctor.id, 
+      hospitalId: doctor.hospitalId, 
+      hospitalName: doctor.hospitalName 
+    });
+    
+    return doctor;
+  } catch (error: any) {
+    console.error(`❌ Error fetching doctor by user ID ${userId}:`, error);
+    throw error;
+  }
 };
 
 /**
@@ -81,36 +116,121 @@ export const getDoctorByUserId = async (userId: number) => {
  */
 export const getDoctorsByHospital = async (hospitalId: number) => {
   console.log(`👨‍⚕️ Fetching doctors for hospital ${hospitalId}`);
-  const result = await db
-    .select({
-      id: doctors.id,
-      userId: doctors.userId,
-      hospitalId: doctors.hospitalId,
-      specialty: doctors.specialty,
-      licenseNumber: doctors.licenseNumber,
-      qualification: doctors.qualification,
-      experience: doctors.experience,
-      consultationFee: doctors.consultationFee,
-      isAvailable: doctors.isAvailable,
-      workingHours: doctors.workingHours,
-      availableSlots: doctors.availableSlots,
-      status: doctors.status,
-      languages: doctors.languages,
-      awards: doctors.awards,
-      bio: doctors.bio,
-      approvalStatus: doctors.approvalStatus,
-      createdAt: doctors.createdAt,
-      // User information
-      fullName: users.fullName,
-      mobileNumber: users.mobileNumber,
-      email: users.email
-    })
-    .from(doctors)
-    .innerJoin(users, eq(doctors.userId, users.id))
-    .where(eq(doctors.hospitalId, hospitalId));
-  
-  console.log(`📋 Found ${result.length} doctors in hospital`);
-  return result;
+  try {
+    // Validate hospitalId
+    if (!hospitalId || isNaN(hospitalId) || hospitalId <= 0) {
+      console.error(`❌ Invalid hospitalId: ${hospitalId}`);
+      throw new Error('Invalid hospital ID');
+    }
+
+    // First, get all doctors in the hospital
+    const doctorsData = await db
+      .select({
+        id: doctors.id,
+        userId: doctors.userId,
+        hospitalId: doctors.hospitalId,
+        specialty: doctors.specialty,
+        licenseNumber: doctors.licenseNumber,
+        qualification: doctors.qualification,
+        experience: doctors.experience,
+        consultationFee: doctors.consultationFee,
+        isAvailable: doctors.isAvailable,
+        workingHours: doctors.workingHours,
+        availableSlots: doctors.availableSlots,
+        status: doctors.status,
+        languages: doctors.languages,
+        awards: doctors.awards,
+        bio: doctors.bio,
+        createdAt: doctors.createdAt,
+      })
+      .from(doctors)
+      .where(eq(doctors.hospitalId, hospitalId));
+    
+    console.log(`📋 Found ${doctorsData.length} doctors in database for hospital ${hospitalId}`);
+    
+    // If no doctors found, return empty array
+    if (!doctorsData || doctorsData.length === 0) {
+      console.log(`⚠️ No doctors found for hospital ${hospitalId}`);
+      return [];
+    }
+    
+    // Then, enrich each doctor with user information
+    const enrichedDoctors = await Promise.all(
+      doctorsData.map(async (doctor) => {
+        try {
+          // Get user information
+          if (!doctor.userId) {
+            console.warn(`⚠️ Doctor ${doctor.id} has no userId`);
+            return {
+              ...doctor,
+              fullName: null,
+              mobileNumber: null,
+              email: null,
+            };
+          }
+
+          console.log(`🔍 Looking up user for doctor ${doctor.id}, userId: ${doctor.userId}`);
+          
+          // Use the exact same pattern as appointments.service.ts - select only fullName (single field)
+          let fullName: string | null = null;
+          let mobileNumber: string | null = null;
+          
+          try {
+            // Get fullName (exact same pattern as appointments.service.ts line 162)
+            const [userResult] = await db
+              .select({ fullName: users.fullName })
+              .from(users)
+              .where(eq(users.id, doctor.userId))
+              .limit(1);
+            
+            if (userResult) {
+              fullName = userResult.fullName || null;
+              console.log(`✅ User data found for doctor ${doctor.id}:`, { fullName });
+            } else {
+              console.warn(`⚠️ User with ID ${doctor.userId} not found for doctor ${doctor.id}`);
+            }
+            
+            // Try to get mobileNumber separately (only if we need it, skip for now to avoid errors)
+            // We can add this later if needed, but fullName is the critical field
+          } catch (queryError: any) {
+            console.error(`❌ Query error for doctor ${doctor.id}, userId ${doctor.userId}:`, queryError?.message);
+            console.error(`❌ Error details:`, {
+              message: queryError?.message,
+              stack: queryError?.stack?.split('\n').slice(0, 3).join('\n')
+            });
+            // Continue with null values
+          }
+          
+          return {
+            ...doctor,
+            fullName,
+            mobileNumber: null, // Skip for now to avoid Drizzle errors
+            email: null, // Users table doesn't have email field
+          };
+        } catch (userError: any) {
+          console.error(`❌ Error fetching user data for doctor ${doctor.id}:`, userError);
+          console.error(`❌ Error details:`, {
+            message: userError?.message,
+            stack: userError?.stack?.split('\n').slice(0, 3).join('\n')
+          });
+          // Return doctor data without user info if user lookup fails
+          return {
+            ...doctor,
+            fullName: null,
+            mobileNumber: null,
+            email: null,
+          };
+        }
+      })
+    );
+    
+    console.log(`✅ Successfully enriched ${enrichedDoctors.length} doctors`);
+    return enrichedDoctors;
+  } catch (error: any) {
+    console.error(`❌ Error fetching doctors for hospital ${hospitalId}:`, error);
+    console.error(`❌ Error stack:`, error.stack);
+    throw error;
+  }
 };
 
 /**

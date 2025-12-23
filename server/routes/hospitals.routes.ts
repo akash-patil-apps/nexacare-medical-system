@@ -1,6 +1,6 @@
 // server/routes/hospitals.routes.ts
 import { Router } from 'express';
-import { createHospital, getAllHospitals, getHospitalStats } from '../services/hospitals.service';
+import { createHospital, getAllHospitals, getHospitalStats, getHospitalById } from '../services/hospitals.service';
 import { insertHospitalSchema } from '../../shared/schema';
 import {approveLab,approveDoctor} from '../services/hospitals.service'
 import { authenticateToken, authorizeRoles } from '../middleware/auth';
@@ -83,6 +83,25 @@ router.post(
     } catch (err) {
       console.error('Approve lab error:', err);
       res.status(500).json({ message: 'Failed to approve lab' });
+    }
+  }
+);
+
+// Get hospital by ID
+router.get(
+  '/:id',
+  authenticateToken,
+  async (req: AuthenticatedRequest, res) => {
+    try {
+      const hospitalId = Number(req.params.id);
+      const hospital = await getHospitalById(hospitalId);
+      if (!hospital) {
+        return res.status(404).json({ message: 'Hospital not found' });
+      }
+      res.json(hospital);
+    } catch (err: any) {
+      console.error('Get hospital by ID error:', err);
+      res.status(500).json({ message: err.message || 'Failed to fetch hospital' });
     }
   }
 );

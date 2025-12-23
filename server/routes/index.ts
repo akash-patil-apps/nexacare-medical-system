@@ -105,29 +105,8 @@ export async function registerRoutes(app: Express) {
   // NOTE: /api/appointments/my is handled by appointments.routes.ts
   // Do NOT add duplicate route here - it will override the real route handler
 
-  // NOTE: /api/doctors/profile should be handled by doctors.routes.ts
-  // This mock endpoint should be removed once real endpoint is implemented
-  app.get("/api/doctors/profile", authenticateToken, async (req: AuthenticatedRequest, res) => {
-    try {
-      const user = req.user;
-      if (!user) return res.status(401).json({ message: 'Unauthorized' });
-      
-      // TODO: Replace with real doctor profile fetch from doctors service
-      // For now, return basic profile from user data
-      const mockProfile = {
-        id: user.id,
-        fullName: user.fullName,
-        specialty: "General", // TODO: Fetch from doctors table
-        experience: 0, // TODO: Fetch from doctors table
-        consultationFee: 0, // TODO: Fetch from doctors table
-        isAvailable: true // TODO: Calculate from availability
-      };
-      res.json(mockProfile);
-    } catch (error) {
-      console.error('Doctor profile error:', error);
-      res.status(500).json({ message: 'Failed to fetch doctor profile' });
-    }
-  });
+  // NOTE: /api/doctors/profile is now handled by doctors.routes.ts
+  // The route is defined in doctors.routes.ts before the /:doctorId route to avoid conflicts
 
   // NOTE: /api/prescriptions/patient and /api/prescriptions/doctor are handled by prescriptions.routes.ts
   // These mock endpoints should be removed - they are overridden by the prescriptions router

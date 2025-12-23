@@ -1,5 +1,7 @@
 // server/routes/doctors.routes.ts
 import { Router } from 'express';
+import { authenticateToken } from '../middleware/auth';
+import type { AuthenticatedRequest } from '../types';
 import * as doctorsService from '../services/doctors.service';
 
 const router = Router();
@@ -18,11 +20,24 @@ router.get('/available', async (_req, res) => {
 // Get doctors by hospital
 router.get('/hospital/:hospitalId', async (req, res) => {
   try {
-    const doctors = await doctorsService.getDoctorsByHospital(+req.params.hospitalId);
+    const hospitalId = +req.params.hospitalId;
+    console.log(`📋 Route: Fetching doctors for hospital ${hospitalId}`);
+    
+    if (!hospitalId || isNaN(hospitalId) || hospitalId <= 0) {
+      console.error(`❌ Invalid hospitalId in route: ${req.params.hospitalId}`);
+      return res.status(400).json({ message: 'Invalid hospital ID' });
+    }
+    
+    const doctors = await doctorsService.getDoctorsByHospital(hospitalId);
+    console.log(`✅ Route: Returning ${doctors.length} doctors for hospital ${hospitalId}`);
     res.json(doctors);
-  } catch (err) {
-    console.error('Get doctors by hospital error:', err);
-    res.status(500).json({ message: 'Failed to fetch doctors' });
+  } catch (err: any) {
+    console.error('❌ Get doctors by hospital error:', err);
+    console.error('❌ Error stack:', err?.stack);
+    res.status(500).json({ 
+      message: 'Failed to fetch doctors',
+      error: err?.message || 'Unknown error'
+    });
   }
 });
 
@@ -34,6 +49,35 @@ router.get('/specialty/:specialty', async (req, res) => {
   } catch (err) {
     console.error('Get doctors by specialty error:', err);
     res.status(500).json({ message: 'Failed to fetch doctors' });
+  }
+});
+
+// Get doctor profile (MUST be before /:doctorId route to avoid route conflict)
+// This route must come before any routes with /:doctorId parameter
+router.get('/profile', authenticateToken, async (req: AuthenticatedRequest, res) => {
+  console.log('🔍 /api/doctors/profile route hit');
+  try {
+    const user = req.user;
+    if (!user) {
+      console.log('❌ No user in request');
+      return res.status(401).json({ message: 'Unauthorized' });
+    }
+    
+    console.log(`📋 Fetching doctor profile for user ID: ${user.id}`);
+    
+    const doctorProfile = await doctorsService.getDoctorByUserId(user.id);
+    
+    console.log(`📋 Doctor profile result:`, doctorProfile ? { id: doctorProfile.id, hospitalId: doctorProfile.hospitalId, hospitalName: doctorProfile.hospitalName } : 'null');
+    
+    if (!doctorProfile) {
+      console.log(`⚠️ No doctor profile found for user ID: ${user.id}`);
+      return res.status(404).json({ message: 'Doctor profile not found' });
+    }
+    
+    res.json(doctorProfile);
+  } catch (error: any) {
+    console.error('❌ Doctor profile error:', error);
+    res.status(500).json({ message: error.message || 'Failed to fetch doctor profile' });
   }
 });
 
@@ -171,8 +215,15 @@ router.get('/:doctorId/stats', async (req, res) => {
   }
 });
 
-// Get doctor by ID
+// Get doctor by ID (MUST be last route - catch-all for numeric IDs only)
 router.get('/:doctorId', async (req, res) => {
+  // Explicitly skip known routes that should be handled elsewhere
+  const knownRoutes = ['profile', 'available', 'search', 'register', 'specialty', 'hospital'];
+  if (knownRoutes.includes(req.params.doctorId)) {
+    console.warn(`[doctors.routes] Route /${req.params.doctorId} should be handled by a specific route, not /:doctorId`);
+    return res.status(404).json({ message: 'Route not found' });
+  }
+  
   try {
     const doctorId = Number(req.params.doctorId);
     if (!Number.isInteger(doctorId) || doctorId <= 0) {

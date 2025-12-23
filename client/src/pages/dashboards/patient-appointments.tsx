@@ -35,6 +35,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { Popconfirm } from 'antd';
 import { PatientSidebar } from '../../components/layout/PatientSidebar';
 import { useResponsive } from '../../hooks/use-responsive';
+import { formatDate } from '../../lib/utils';
 
 const { Content, Sider } = Layout;
 const { Title, Text } = Typography;
@@ -124,25 +125,28 @@ export default function PatientAppointments() {
     loadAppointments();
   }, []);
 
-  // Auto-refresh appointments every 10 seconds
-  useEffect(() => {
-    const interval = setInterval(() => {
-      loadAppointments();
-    }, 10000);
-
-    return () => clearInterval(interval);
-  }, []);
-
-  // Listen for appointment updates
+  // Listen for appointment updates from other tabs/windows (e.g., when receptionist confirms)
   useEffect(() => {
     const handleStorageChange = (e: StorageEvent) => {
       if (e.key === 'appointment-updated') {
+        console.log('🔄 Appointment update detected in patient appointments, refreshing...');
         loadAppointments();
       }
     };
     
+    // Also listen for custom events (same-window updates)
+    const handleCustomEvent = () => {
+      console.log('🔄 Custom appointment update event in patient appointments');
+      loadAppointments();
+    };
+    
     window.addEventListener('storage', handleStorageChange);
-    return () => window.removeEventListener('storage', handleStorageChange);
+    window.addEventListener('appointment-updated', handleCustomEvent);
+    
+    return () => {
+      window.removeEventListener('storage', handleStorageChange);
+      window.removeEventListener('appointment-updated', handleCustomEvent);
+    };
   }, []);
 
   const filteredAppointments = useMemo(() => {
@@ -234,12 +238,21 @@ export default function PatientAppointments() {
     {
       title: 'Date & Time',
       key: 'datetime',
-      render: (record: Appointment) => (
-        <Space direction="vertical" size={0}>
-          <Text>{record.appointmentDate}</Text>
-          <Text type="secondary">{record.appointmentTime || record.timeSlot}</Text>
-        </Space>
-      ),
+      render: (record: Appointment) => {
+        // Format the date properly
+        const formattedDate = record.appointmentDate 
+          ? (typeof record.appointmentDate === 'string' && record.appointmentDate.includes('T') 
+              ? formatDate(record.appointmentDate) 
+              : formatDate(new Date(record.appointmentDate)))
+          : 'Date unavailable';
+        
+        return (
+          <Space direction="vertical" size={0}>
+            <Text>{formattedDate}</Text>
+            <Text type="secondary">{record.appointmentTime || record.timeSlot || 'Time TBD'}</Text>
+          </Space>
+        );
+      },
     },
     {
       title: 'Reason',

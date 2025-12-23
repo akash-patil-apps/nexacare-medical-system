@@ -270,7 +270,7 @@ export const getAppointmentsByPatient = async (patientId: number) => {
 export const getAppointmentsByHospital = async (hospitalId: number) => {
   console.log(`📅 Fetching appointments for hospital ${hospitalId}`);
   try {
-    // Get all appointments for the hospital
+    // Get all appointments for the hospital with hospital name
     const appointmentsData = await db
       .select({
         id: appointments.id,
@@ -287,8 +287,10 @@ export const getAppointmentsByHospital = async (hospitalId: number) => {
         symptoms: appointments.symptoms,
         notes: appointments.notes,
         createdAt: appointments.createdAt,
+        hospitalName: hospitals.name,
       })
       .from(appointments)
+      .leftJoin(hospitals, eq(appointments.hospitalId, hospitals.id))
       .where(eq(appointments.hospitalId, hospitalId))
       .orderBy(desc(appointments.appointmentDate));
 
@@ -345,6 +347,7 @@ export const getAppointmentsByHospital = async (hospitalId: number) => {
           patientName,
           doctorName,
           doctorSpecialty,
+          hospitalName: apt.hospitalName || null,
         };
       })
     );
@@ -577,9 +580,7 @@ export const checkInAppointment = async (appointmentId: number, receptionistId: 
     
     console.log(`📋 Current appointment status: ${existingAppointment.status}`);
     
-    // Update appointment - add check-in timestamp in notes or keep status as confirmed
-    // We'll use a separate field or notes to track check-in time
-    // For now, we'll add it to notes field
+    // Update appointment - change status to checked-in and add check-in timestamp in notes
     const checkInNote = `Patient checked in at ${new Date().toLocaleString()}`;
     const existingNotes = existingAppointment.notes || '';
     const updatedNotes = existingNotes ? `${existingNotes}\n${checkInNote}` : checkInNote;
@@ -587,6 +588,7 @@ export const checkInAppointment = async (appointmentId: number, receptionistId: 
     const [result] = await db
       .update(appointments)
       .set({
+        status: 'checked-in',
         notes: updatedNotes,
         receptionistId
       })

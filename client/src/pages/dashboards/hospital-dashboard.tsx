@@ -368,6 +368,7 @@ export default function HospitalDashboard() {
         avatarIcon={<BankOutlined />}
         onSettingsClick={() => message.info('Profile settings coming soon.')}
         onLogoutClick={logout}
+        hospitalName={user?.hospitalName || null}
       />
     </>
   );

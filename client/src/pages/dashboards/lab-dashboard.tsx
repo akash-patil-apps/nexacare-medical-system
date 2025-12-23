@@ -105,6 +105,25 @@ export default function LabDashboard() {
     refetchOnMount: true,
   });
 
+  // Get lab profile to access lab name
+  const { data: labProfile } = useQuery({
+    queryKey: ['/api/labs/profile'],
+    queryFn: async () => {
+      const token = localStorage.getItem('auth-token');
+      const response = await fetch('/api/labs/profile', {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+      if (!response.ok) {
+        console.log('⚠️ Lab profile API not ready yet');
+        return null;
+      }
+      return response.json();
+    },
+    enabled: !!user && user.role?.toUpperCase() === 'LAB',
+  });
+
   // Get notifications for lab technician
   const { data: notifications = [], isLoading: notificationsLoading } = useQuery({
     queryKey: ['/api/notifications/me'],
@@ -375,6 +394,7 @@ export default function LabDashboard() {
         avatarIcon={<ExperimentOutlined />}
         onSettingsClick={() => message.info('Profile settings coming soon.')}
         onLogoutClick={logout}
+        labName={labProfile?.name || null}
       />
     </>
   );

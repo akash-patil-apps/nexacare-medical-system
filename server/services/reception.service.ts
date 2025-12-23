@@ -390,7 +390,7 @@ export const searchPatientsForReceptionist = async (
   return results;
 };
 
-async function getReceptionistContext(receptionistUserId: number) {
+export async function getReceptionistContext(receptionistUserId: number) {
   const [rec] = await db
     .select()
     .from(receptionists)

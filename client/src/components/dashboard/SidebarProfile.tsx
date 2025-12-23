@@ -10,6 +10,8 @@ type SidebarProfileProps = {
   roleLabel: string;
   avatarIcon: ReactNode;
   onSettingsClick?: () => void;
+  hospitalName?: string | null;
+  labName?: string | null;
 };
 
 export function SidebarProfile({
@@ -18,7 +20,11 @@ export function SidebarProfile({
   roleLabel,
   avatarIcon,
   onSettingsClick,
+  hospitalName,
+  labName,
 }: SidebarProfileProps) {
+  const organizationName = hospitalName || labName;
+  
   return (
     <div
       style={{
@@ -58,6 +64,16 @@ export function SidebarProfile({
             >
               {roleLabel}
             </Tag>
+            {organizationName && (
+              <Text style={{ 
+                fontSize: '12px', 
+                color: '#8C8C8C', 
+                marginTop: 2,
+                lineHeight: 1.4,
+              }}>
+                {organizationName}
+              </Text>
+            )}
           </div>
           {onSettingsClick && (
             <Button 

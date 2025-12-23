@@ -47,6 +47,14 @@ export const approveLab = async (labId: number) => {
 };
 
 /**
+ * Get hospital by ID
+ */
+export const getHospitalById = async (hospitalId: number) => {
+  const result = await db.select().from(hospitals).where(eq(hospitals.id, hospitalId)).limit(1);
+  return result[0] || null;
+};
+
+/**
  * Get hospital statistics for dashboard
  */
 export const getHospitalStats = async (hospitalId: number) => {

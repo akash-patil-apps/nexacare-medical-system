@@ -9,11 +9,13 @@ const { Text } = Typography;
 interface ReceptionistSidebarProps {
   selectedMenuKey?: string;
   onMenuClick?: () => void;
+  hospitalName?: string | null;
 }
 
 export const ReceptionistSidebar: React.FC<ReceptionistSidebarProps> = ({ 
   selectedMenuKey = 'dashboard',
-  onMenuClick 
+  onMenuClick,
+  hospitalName,
 }) => {
   const { user, logout } = useAuth();
   const [, setLocation] = useLocation();
@@ -152,75 +154,81 @@ export const ReceptionistSidebar: React.FC<ReceptionistSidebarProps> = ({
           borderRadius: '12px',
           padding: '16px',
         }}>
-          {/* First Row: Avatar + Name (top) + ID (below) */}
-          <div style={{
-            display: 'flex',
-            alignItems: 'flex-start',
-            gap: '12px',
-            marginBottom: '12px',
-          }}>
-            {/* Avatar */}
+            {/* Layer 1: Profile Photo + (Name + ID) */}
             <div style={{
-              width: '40px',
-              height: '40px',
-              borderRadius: '50%',
-              background: '#F97316',
+              display: 'flex',
+              alignItems: 'flex-start',
+              gap: '12px',
+              marginBottom: '12px',
+            }}>
+              {/* Avatar */}
+              <div style={{
+                width: '40px',
+                height: '40px',
+                borderRadius: '50%',
+                background: '#F97316',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                color: '#fff',
+                fontWeight: 600,
+                fontSize: '14px',
+                flexShrink: 0,
+              }}>
+                {userInitials}
+              </div>
+              
+              {/* Name (top) and ID (below) - stacked vertically */}
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <Text strong style={{ display: 'block', fontSize: '14px', fontWeight: 600, color: '#262626', lineHeight: 1.5, marginBottom: '4px' }}>
+                  {user?.fullName || 'Receptionist'}
+                </Text>
+                <Text style={{ display: 'block', fontSize: '12px', color: '#8C8C8C' }}>
+                  ID: {receptionistId}
+                </Text>
+              </div>
+            </div>
+            
+            {/* Layer 2: Hospital Name */}
+            {hospitalName && (
+              <div style={{
+                marginBottom: '12px',
+                paddingBottom: '12px',
+                borderBottom: '1px solid #E5E7EB',
+              }}>
+                <Text style={{ display: 'block', fontSize: '12px', color: '#8C8C8C', lineHeight: 1.4 }}>
+                  {hospitalName}
+                </Text>
+              </div>
+            )}
+            
+            {/* Layer 3: Active Receptionist Text + Settings Icon */}
+            <div style={{
               display: 'flex',
               alignItems: 'center',
-              justifyContent: 'center',
-              color: '#fff',
-              fontWeight: 600,
-              fontSize: '14px',
-              flexShrink: 0,
+              justifyContent: 'space-between',
             }}>
-              {userInitials}
+              {/* Active Receptionist on left */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <div style={{
+                  width: '8px',
+                  height: '8px',
+                  borderRadius: '50%',
+                  background: '#10B981',
+                }} />
+                <Text style={{ fontSize: '12px', color: '#10B981', fontWeight: 500 }}>
+                  Active Receptionist
+                </Text>
+              </div>
+              
+              {/* Settings Icon on right */}
+              <Button 
+                type="text" 
+                icon={<SettingOutlined style={{ color: '#8C8C8C', fontSize: '18px' }} />} 
+                onClick={() => message.info('Settings coming soon.')}
+                style={{ flexShrink: 0, padding: 0, width: '32px', height: '32px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+              />
             </div>
-            
-            {/* Name (top) and ID (below) - stacked vertically */}
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <Text strong style={{ display: 'block', fontSize: '14px', fontWeight: 600, color: '#262626', lineHeight: 1.5, marginBottom: '4px' }}>
-                {user?.fullName || 'Receptionist'}
-              </Text>
-              <Text style={{ display: 'block', fontSize: '12px', color: '#8C8C8C' }}>
-                ID: {receptionistId}
-              </Text>
-            </div>
-          </div>
-          
-          {/* Separator Line */}
-          <div style={{
-            height: '1px',
-            background: '#E5E7EB',
-            marginBottom: '12px',
-          }} />
-          
-          {/* Second Row: Active Receptionist + Settings Icon */}
-          <div style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-          }}>
-            {/* Active Receptionist on left */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <div style={{
-                width: '8px',
-                height: '8px',
-                borderRadius: '50%',
-                background: '#10B981',
-              }} />
-              <Text style={{ fontSize: '12px', color: '#10B981', fontWeight: 500 }}>
-                Active Receptionist
-              </Text>
-            </div>
-            
-            {/* Settings Icon on right */}
-            <Button 
-              type="text" 
-              icon={<SettingOutlined style={{ color: '#8C8C8C', fontSize: '18px' }} />} 
-              onClick={() => message.info('Settings coming soon.')}
-              style={{ flexShrink: 0, padding: 0, width: '32px', height: '32px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-            />
-          </div>
         </div>
       </div>
     </div>

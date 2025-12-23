@@ -36,6 +36,24 @@ router.post(
 );
 
 router.get(
+  "/profile",
+  authenticateToken,
+  authorizeRoles("lab"),
+  async (req: AuthenticatedRequest, res) => {
+    try {
+      const lab = await getLabByUserId(req.user!.id);
+      if (!lab) {
+        return res.status(404).json({ message: 'Lab not found for this user' });
+      }
+      res.json(lab);
+    } catch (err) {
+      console.error('Get lab profile error:', err);
+      res.status(500).json({ message: 'Failed to fetch lab profile' });
+    }
+  }
+);
+
+router.get(
   "/me/reports",
   authenticateToken,
   authorizeRoles("lab"),

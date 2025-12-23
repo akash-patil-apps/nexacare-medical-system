@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { authenticateToken, authorizeRoles } from '../middleware/auth';
 import type { AuthenticatedRequest } from '../types';
 import * as receptionService from '../services/reception.service';
+import { getReceptionistContext } from '../services/reception.service';
 
 const router = Router();
 
@@ -45,6 +46,28 @@ router.get(
     } catch (err) {
       console.error('Search patients error:', err);
       res.status(500).json({ message: 'Failed to search patients' });
+    }
+  }
+);
+
+/**
+ * Get receptionist profile (including hospitalId)
+ */
+router.get(
+  '/profile',
+  authenticateToken,
+  authorizeRoles('receptionist'),
+  async (req: AuthenticatedRequest, res) => {
+    try {
+      const receptionistId = req.user!.id;
+      const context = await getReceptionistContext(receptionistId);
+      if (!context) {
+        return res.status(404).json({ message: 'Receptionist not found' });
+      }
+      res.json({ hospitalId: context.hospitalId });
+    } catch (err) {
+      console.error('Get receptionist profile error:', err);
+      res.status(500).json({ message: 'Failed to fetch receptionist profile' });
     }
   }
 );
