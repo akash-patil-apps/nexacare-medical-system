@@ -68,11 +68,14 @@ export default function PatientAppointments() {
   const { isMobile } = useResponsive();
   const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false);
   const [appointments, setAppointments] = useState<Appointment[]>([]);
+  const [prescriptionsByAppointment, setPrescriptionsByAppointment] = useState<Record<number, any>>({});
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState('all');
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedAppointment, setSelectedAppointment] = useState<Appointment | null>(null);
+  const [selectedPrescription, setSelectedPrescription] = useState<any | null>(null);
   const [isViewModalOpen, setIsViewModalOpen] = useState(false);
+  const [isPrescriptionModalOpen, setIsPrescriptionModalOpen] = useState(false);
 
   // Load appointments from API
   const loadAppointments = async () => {
@@ -84,30 +87,88 @@ export default function PatientAppointments() {
           'Authorization': `Bearer ${token}`
         }
       });
+      // Also load patient prescriptions to infer checked-in/completed
+      const rxResponse = await fetch('/api/prescriptions/patient', {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
 
       if (response.ok) {
         const data = await response.json();
         console.log('📅 Loaded appointments:', data);
-        // Transform API data to match our interface
-        const transformedData = data.map((apt: any) => ({
-          id: apt.id,
-          doctorName: apt.doctor?.fullName || apt.doctorName || 'Unknown Doctor',
-          doctorSpecialty: apt.doctor?.specialty || apt.doctorSpecialty || 'General',
-          hospitalName: apt.hospital?.name || apt.hospitalName || 'Unknown Hospital',
-          appointmentDate: apt.appointmentDate || apt.date || '',
-          appointmentTime: apt.appointmentTime || apt.time || apt.timeSlot || '',
-          timeSlot: apt.timeSlot || apt.appointmentTime || '',
-          reason: apt.reason || 'Consultation',
-          status: apt.status || 'pending',
-          type: apt.type || 'online',
-          priority: apt.priority || 'normal',
-          symptoms: apt.symptoms || '',
-          notes: apt.notes || '',
-          createdAt: apt.createdAt || '',
-          confirmedAt: apt.confirmedAt,
-          completedAt: apt.completedAt,
-          cancelledAt: apt.cancelledAt,
-        }));
+        const rxData = rxResponse.ok ? await rxResponse.json() : [];
+        const rxByAppointment: Record<number, boolean> = {};
+        const rxMap: Record<number, any> = {};
+        (rxData || []).forEach((rx: any) => {
+          if (rx.appointmentId) {
+            rxByAppointment[rx.appointmentId] = true;
+            rxMap[rx.appointmentId] = rx;
+          }
+        });
+        setPrescriptionsByAppointment(rxMap);
+
+        // Transform API data to match our interface and derive status
+        const now = new Date();
+        const transformedData = data.map((apt: any) => {
+          const appointmentDateRaw = apt.appointmentDate || apt.date || '';
+          const appointmentTimeRaw = apt.appointmentTime || apt.time || apt.timeSlot || '';
+          // Try to build a Date from date + time; fall back to date only
+          let start: Date | null = null;
+          if (appointmentDateRaw) {
+            const datePart = new Date(appointmentDateRaw);
+            if (!Number.isNaN(datePart.getTime())) {
+              if (appointmentTimeRaw) {
+                // Construct combined string; fallback to date if parsing fails
+                const combined = new Date(`${appointmentDateRaw}T${appointmentTimeRaw}`);
+                start = Number.isNaN(combined.getTime()) ? datePart : combined;
+              } else {
+                start = datePart;
+              }
+            }
+          }
+
+          const hasPrescription = !!(rxByAppointment[apt.id]);
+          const baseStatus = (apt.status || 'pending').toLowerCase();
+          let derivedStatus = baseStatus;
+
+          if (baseStatus === 'cancelled') {
+            derivedStatus = 'cancelled';
+          } else if (hasPrescription) {
+            // Consider prescription as checked-in/completed even if receptionist forgot
+            derivedStatus = 'checked-in';
+          } else if (start) {
+            if (start < now) {
+              derivedStatus = baseStatus === 'completed' ? 'completed' : 'absent';
+            } else {
+              derivedStatus = 'upcoming';
+            }
+          } else {
+            // If no date info, fall back to base status
+            derivedStatus = baseStatus;
+          }
+
+          return {
+            id: apt.id,
+            doctorName: apt.doctor?.fullName || apt.doctorName || 'Unknown Doctor',
+            doctorSpecialty: apt.doctor?.specialty || apt.doctorSpecialty || 'General',
+            hospitalName: apt.hospital?.name || apt.hospitalName || 'Unknown Hospital',
+            appointmentDate: appointmentDateRaw,
+            appointmentTime: appointmentTimeRaw,
+            timeSlot: apt.timeSlot || apt.appointmentTime || '',
+            reason: apt.reason || 'Consultation',
+            status: derivedStatus,
+            type: apt.type || 'online',
+            priority: apt.priority || 'normal',
+            symptoms: apt.symptoms || '',
+            notes: apt.notes || '',
+            createdAt: apt.createdAt || '',
+            confirmedAt: apt.confirmedAt,
+            completedAt: apt.completedAt,
+            cancelledAt: apt.cancelledAt,
+            hasPrescription,
+          };
+        });
         setAppointments(transformedData);
       } else {
         console.error('Failed to load appointments');
@@ -162,8 +223,8 @@ export default function PatientAppointments() {
 
   const stats = useMemo(() => ({
     total: appointments.length,
-    upcoming: appointments.filter(a => a.status === 'confirmed' || a.status === 'pending').length,
-    completed: appointments.filter(a => a.status === 'completed').length,
+    upcoming: appointments.filter(a => a.status === 'upcoming').length,
+    completed: appointments.filter(a => a.status === 'checked-in' || a.status === 'completed').length,
     cancelled: appointments.filter(a => a.status === 'cancelled').length,
   }), [appointments]);
 
@@ -171,10 +232,47 @@ export default function PatientAppointments() {
     switch (status.toLowerCase()) {
       case 'confirmed': return 'green';
       case 'pending': return 'orange';
+      case 'upcoming': return 'green';
+      case 'checked-in': return 'blue';
       case 'completed': return 'blue';
+      case 'absent': return 'red';
       case 'cancelled': return 'red';
       default: return 'default';
     }
+  };
+
+  const handleViewPrescription = () => {
+    if (!selectedAppointment) return;
+    const rx = prescriptionsByAppointment[selectedAppointment.id];
+    if (rx) {
+      setSelectedPrescription(rx);
+      setIsPrescriptionModalOpen(true);
+    }
+  };
+
+  const renderMedications = (rx: any) => {
+    if (!rx?.medications) return null;
+    let meds: any[] = [];
+    try {
+      meds = JSON.parse(rx.medications);
+    } catch (e) {
+      return <Text>{rx.medications}</Text>;
+    }
+    if (!Array.isArray(meds)) return <Text>{rx.medications}</Text>;
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+        {meds.map((m, idx) => (
+          <div key={idx} style={{ padding: 8, background: '#f5f5f5', borderRadius: 8 }}>
+            <div><Text strong>Name: </Text>{m.name}</div>
+            <div><Text strong>Dosage: </Text>{m.dosage} {m.unit}</div>
+            <div><Text strong>Frequency: </Text>{m.frequency}</div>
+            <div><Text strong>Timing: </Text>{m.timing}</div>
+            <div><Text strong>Duration: </Text>{m.duration}</div>
+            {m.instructions && <div><Text strong>Instructions: </Text>{m.instructions}</div>}
+          </div>
+        ))}
+      </div>
+    );
   };
 
   const getPriorityColor = (priority: string) => {
@@ -597,6 +695,11 @@ export default function PatientAppointments() {
         open={isViewModalOpen}
         onCancel={() => setIsViewModalOpen(false)}
         footer={[
+          selectedAppointment && prescriptionsByAppointment[selectedAppointment.id] && (
+            <Button key="view-rx" type="primary" onClick={handleViewPrescription}>
+              View Prescription
+            </Button>
+          ),
           <Button key="close" onClick={() => setIsViewModalOpen(false)}>
             Close
           </Button>
@@ -647,6 +750,47 @@ export default function PatientAppointments() {
               </div>
             )}
           </Space>
+        )}
+      </Modal>
+
+      {/* Prescription Modal */}
+      <Modal
+        title="Prescription Details"
+        open={isPrescriptionModalOpen}
+        onCancel={() => setIsPrescriptionModalOpen(false)}
+        footer={[
+          <Button key="close" onClick={() => setIsPrescriptionModalOpen(false)}>
+            Close
+          </Button>
+        ]}
+        width={700}
+      >
+        {selectedPrescription ? (
+          <Space direction="vertical" size="middle" style={{ width: '100%' }}>
+            <div>
+              <Text strong>Diagnosis: </Text>
+              <Text>{selectedPrescription.diagnosis || 'N/A'}</Text>
+            </div>
+            {selectedPrescription.instructions && (
+              <div>
+                <Text strong>Instructions: </Text>
+                <Text>{selectedPrescription.instructions}</Text>
+              </div>
+            )}
+            <div>
+              <Text strong>Medications:</Text>
+              <div style={{ marginTop: 8 }}>
+                {renderMedications(selectedPrescription)}
+              </div>
+            </div>
+            {selectedPrescription.createdAt && (
+              <div>
+                <Text type="secondary">Issued on: {selectedPrescription.createdAt}</Text>
+              </div>
+            )}
+          </Space>
+        ) : (
+          <Text>No prescription found.</Text>
         )}
       </Modal>
     </>

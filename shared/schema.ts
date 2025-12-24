@@ -359,10 +359,18 @@ export interface Medication {
   unit: string; // tablets, ml, mg, etc.
 }
 
-export const insertPrescriptionSchema = createInsertSchema(prescriptions).omit({
-  id: true,
-  createdAt: true,
+// Manual Zod schema for prescriptions (avoiding createInsertSchema compatibility issues with Zod v3.25+)
+// NOTE: followUpDate is removed from form - the database column still exists but is unused
+export const insertPrescriptionSchema = z.object({
+  appointmentId: z.number().int().positive().optional().nullable(),
+  patientId: z.number().int().positive(),
+  hospitalId: z.number().int().positive(),
+  diagnosis: z.string().min(1),
+  medications: z.string().min(1), // JSON string
+  instructions: z.string().optional().nullable(),
+  isActive: z.boolean().optional().default(true),
 });
+
 export const updatePrescriptionSchema = insertPrescriptionSchema.partial();
 
 

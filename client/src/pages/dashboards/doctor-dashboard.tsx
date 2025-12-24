@@ -1,11 +1,9 @@
 import { useState, useEffect, useMemo } from "react";
-import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Redirect, useLocation } from "wouter";
 import { 
   Layout, 
   Card, 
-  Row, 
-  Col, 
   Button, 
   Table, 
   Tag, 
@@ -15,7 +13,9 @@ import {
   message,
   Spin,
   Tabs,
-  Drawer
+  Drawer,
+  List,
+  Divider
 } from 'antd';
 import { 
   UserOutlined, 
@@ -26,9 +26,8 @@ import {
   TeamOutlined,
   ExperimentOutlined,
   BellOutlined,
-  MenuFoldOutlined,
-  MenuUnfoldOutlined,
-  SettingOutlined
+  SettingOutlined,
+  MenuUnfoldOutlined
 } from '@ant-design/icons';
 import { useAuth } from '../../hooks/use-auth';
 import { useResponsive } from '../../hooks/use-responsive';
@@ -49,7 +48,7 @@ const doctorTheme = {
 };
 
 export default function DoctorDashboard() {
-  const { user, logout, isLoading } = useAuth();
+  const { user, isLoading } = useAuth();
   const queryClient = useQueryClient();
   const [, setLocation] = useLocation();
   const { isMobile, isTablet } = useResponsive();
@@ -57,7 +56,8 @@ export default function DoctorDashboard() {
   const [isPrescriptionModalOpen, setIsPrescriptionModalOpen] = useState(false);
   const [selectedPatientId, setSelectedPatientId] = useState<number | undefined>(undefined);
   const [selectedAppointmentId, setSelectedAppointmentId] = useState<number | undefined>(undefined);
-  const [activeAppointmentTab, setActiveAppointmentTab] = useState<string>('today');
+  const [selectedPatientName, setSelectedPatientName] = useState<string | undefined>(undefined);
+  const [activeAppointmentTab, setActiveAppointmentTab] = useState<string>('upcoming');
   const [isLabRequestModalOpen, setIsLabRequestModalOpen] = useState(false);
 
 
@@ -96,7 +96,7 @@ export default function DoctorDashboard() {
   }, [doctorProfile?.hospitalName]);
 
   // Get lab reports for doctor
-  const { data: labReports = [], isLoading: labReportsLoading } = useQuery({
+  const { data: labReports = [] } = useQuery({
     queryKey: ['/api/labs/doctor/reports'],
     queryFn: async () => {
       const token = localStorage.getItem('auth-token');
@@ -116,7 +116,7 @@ export default function DoctorDashboard() {
   });
 
   // Get prescriptions for doctor
-  const { data: prescriptions = [], isLoading: prescriptionsLoading } = useQuery({
+  const { data: prescriptions = [] } = useQuery({
     queryKey: ['/api/prescriptions/doctor'],
     queryFn: async () => {
       const token = localStorage.getItem('auth-token');
@@ -135,8 +135,78 @@ export default function DoctorDashboard() {
     refetchInterval: 10000,
   });
 
+  const [selectedPrescription, setSelectedPrescription] = useState<any | undefined>(undefined);
+  const [markingCheckedId, setMarkingCheckedId] = useState<number | null>(null);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [historyDrawerOpen, setHistoryDrawerOpen] = useState(false);
+  const [historyAppointments, setHistoryAppointments] = useState<any[]>([]);
+  const [historyPrescriptions, setHistoryPrescriptions] = useState<any[]>([]);
+
+  const prescriptionsByAppointmentId = useMemo(() => {
+    const map = new Map<string | number, any>();
+    prescriptions.forEach((p: any) => {
+      const appointmentKey =
+        p.appointmentId ??
+        p.appointment_id ??
+        (p.appointment ? p.appointment.id : undefined);
+      if (appointmentKey) {
+        map.set(appointmentKey, p);
+      }
+      if (p.patientId ?? p.patient_id) {
+        map.set(`patient-${(p.patientId ?? p.patient_id)}`, p);
+      }
+    });
+    return map;
+  }, [prescriptions]);
+
+  const fetchPatientHistory = async (patientId: number, appointmentId?: number) => {
+    const token = localStorage.getItem('auth-token');
+    if (!token) {
+      message.error('Authentication required');
+      return;
+    }
+    setHistoryLoading(true);
+    try {
+      const [appointmentsRes, prescriptionsRes] = await Promise.all([
+        fetch(`/api/appointments/patient/${patientId}`, {
+          headers: { Authorization: `Bearer ${token}` }
+        }),
+        fetch(`/api/prescriptions/doctor`, {
+          headers: { Authorization: `Bearer ${token}` }
+        })
+      ]);
+
+      const appointmentsData = appointmentsRes.ok ? await appointmentsRes.json() : [];
+      const prescriptionsData = prescriptionsRes.ok ? await prescriptionsRes.json() : [];
+
+      // Only show history with this doctor
+      const doctorId = doctorProfile?.id;
+      const historyApts = Array.isArray(appointmentsData)
+        ? appointmentsData.filter((apt: any) => apt.doctorId === doctorId)
+        : [];
+      const historyPresc = Array.isArray(prescriptionsData)
+        ? prescriptionsData.filter((p: any) => {
+            const samePatient = (p.patientId ?? p.patient_id) === patientId;
+            const sameApt = appointmentId
+              ? (p.appointmentId ?? p.appointment_id ?? p.appointment?.id) === appointmentId
+              : true;
+            return samePatient && sameApt;
+          })
+        : [];
+
+      setHistoryAppointments(historyApts);
+      setHistoryPrescriptions(historyPresc);
+      setHistoryDrawerOpen(true);
+    } catch (error) {
+      console.error('❌ Error loading patient history:', error);
+      message.error('Failed to load patient history');
+    } finally {
+      setHistoryLoading(false);
+    }
+  };
+
   // Get notifications for doctor
-  const { data: notifications = [], isLoading: notificationsLoading } = useQuery({
+  const { data: notifications = [] } = useQuery({
     queryKey: ['/api/notifications/me'],
     queryFn: async () => {
       const token = localStorage.getItem('auth-token');
@@ -156,22 +226,23 @@ export default function DoctorDashboard() {
   });
 
   // Mark notification as read
-  const markNotificationMutation = useMutation({
-    mutationFn: async (notificationId: number) => {
-      const token = localStorage.getItem('auth-token');
-      const response = await fetch(`/api/notifications/${notificationId}/read`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
-      });
-      if (!response.ok) throw new Error('Failed to mark notification as read');
-      return response.json();
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['/api/notifications/me'] });
-    },
-  });
+  // Notification mutation available if needed later (currently unused)
+  // const markNotificationMutation = useMutation({
+  //   mutationFn: async (notificationId: number) => {
+  //     const token = localStorage.getItem('auth-token');
+  //     const response = await fetch(`/api/notifications/${notificationId}/read`, {
+  //       method: 'POST',
+  //       headers: {
+  //         'Authorization': `Bearer ${token}`
+  //       }
+  //     });
+  //     if (!response.ok) throw new Error('Failed to mark notification as read');
+  //     return response.json();
+  //   },
+  //   onSuccess: () => {
+  //     queryClient.invalidateQueries({ queryKey: ['/api/notifications/me'] });
+  //   },
+  // });
 
   // Get doctor appointments with auto-refresh
   const { data: allAppointments = [], isLoading: appointmentsLoading, refetch: refetchAppointments } = useQuery({
@@ -233,56 +304,77 @@ export default function DoctorDashboard() {
   });
 
 
-  // Filter confirmed appointments that are today or in the future (by date only - simpler logic)
+  // Filter active (doctor-facing) appointments that are in the future (by start time)
   const confirmedFutureAppointments = useMemo(() => {
     const now = new Date();
-    const today = new Date(now);
-    today.setHours(0, 0, 0, 0); // Start of today
+    // Keep visible while patient is on the way or in room
+    const activeStatuses = ['confirmed', 'in_consultation', 'checked-in', 'checked', 'checked_in', 'attended'];
+
+    const parseStartDateTime = (apt: any) => {
+      const base = apt.dateObj || (apt.date ? new Date(apt.date) : null);
+      if (!base || isNaN(base.getTime())) return null;
+      const start = new Date(base);
+      const timeStr = (apt.time || apt.timeSlot || '').toString().trim();
+      if (timeStr) {
+        const startPart = timeStr.includes('-') ? timeStr.split('-')[0].trim() : timeStr;
+        const match = startPart.match(/(\d{1,2}):(\d{2})(?:\s*(AM|PM|am|pm))?/);
+        if (match) {
+          let hours = parseInt(match[1], 10);
+          const minutes = parseInt(match[2], 10);
+          const period = match[3]?.toUpperCase();
+          if (period === 'PM' && hours !== 12) hours += 12;
+          if (period === 'AM' && hours === 12) hours = 0;
+          start.setHours(hours, minutes, 0, 0);
+        }
+      }
+      return start;
+    };
     
     console.log('🔍 Filtering appointments. Total:', allAppointments.length);
     console.log('🔍 Current date/time:', now.toISOString());
     
     const filtered = allAppointments
       .filter((apt: any) => {
-        // Only show confirmed appointments
-        if (apt.status !== 'confirmed') {
+        const status = (apt.status || '').toLowerCase();
+        // Only show active statuses
+        if (!activeStatuses.includes(status)) {
           console.log(`⏭️  Skipping appointment ${apt.id} - status: ${apt.status}`);
           return false;
         }
         
-        // Check if appointment has valid date
-        if (!apt.date && !apt.dateObj) {
-          console.log(`⏭️  Skipping appointment ${apt.id} - no date`);
+        const start = parseStartDateTime(apt);
+        if (!start) {
+          console.log(`⏭️  Skipping appointment ${apt.id} - no valid start time`);
           return false;
         }
-        
-        try {
-          // Get appointment date (ignore time for comparison)
-          const appointmentDate = apt.dateObj || new Date(apt.date);
-          if (isNaN(appointmentDate.getTime())) {
-            console.log(`⏭️  Skipping appointment ${apt.id} - invalid date:`, apt.date);
-            return false;
-          }
-          
-          // Set to start of day for comparison
-          const appointmentDay = new Date(appointmentDate);
-          appointmentDay.setHours(0, 0, 0, 0);
-          
-          // Include appointments that are today or in the future (by date only)
-          const isFutureOrToday = appointmentDay >= today;
-          
-          console.log(`📅 Appointment ${apt.id}: date=${appointmentDay.toISOString()}, today=${today.toISOString()}, include=${isFutureOrToday}`);
-          
-          return isFutureOrToday;
-        } catch (error) {
-          console.error(`❌ Error checking date for appointment ${apt.id}:`, error, apt);
-          return false;
+        const isFuture = start.getTime() >= now.getTime();
+        if (!isFuture) {
+          console.log(`⏭️  Skipping appointment ${apt.id} - start ${start.toISOString()} is in the past`);
         }
+        return isFuture;
       })
       .sort((a: any, b: any) => {
-        // Sort by date and time (earliest first)
-        const dateTimeA = a.dateObj || new Date(a.date);
-        const dateTimeB = b.dateObj || new Date(b.date);
+        // Sort by start time (earliest first)
+        const parseStart = (apt: any) => {
+          const base = apt.dateObj || (apt.date ? new Date(apt.date) : null);
+          const start = base ? new Date(base) : new Date();
+          const timeStr = (apt.time || apt.timeSlot || '').toString().trim();
+          if (timeStr) {
+            const startPart = timeStr.includes('-') ? timeStr.split('-')[0].trim() : timeStr;
+            const match = startPart.match(/(\d{1,2}):(\d{2})(?:\s*(AM|PM|am|pm))?/);
+            if (match) {
+              let hours = parseInt(match[1], 10);
+              const minutes = parseInt(match[2], 10);
+              const period = match[3]?.toUpperCase();
+              if (period === 'PM' && hours !== 12) hours += 12;
+              if (period === 'AM' && hours === 12) hours = 0;
+              start.setHours(hours, minutes, 0, 0);
+            }
+          }
+          return start;
+        };
+        const dateTimeA = parseStart(a);
+        const dateTimeB = parseStart(b);
         return dateTimeA.getTime() - dateTimeB.getTime();
       });
     
@@ -321,8 +413,6 @@ export default function DoctorDashboard() {
       } else {
         // Future dates - use date string as key
         const dateStr = dayjs(appointmentDate).format('YYYY-MM-DD');
-        const displayDate = dayjs(appointmentDate).format('DD MMM YYYY');
-        
         if (!groups[dateStr]) {
           groups[dateStr] = [];
         }
@@ -333,57 +423,42 @@ export default function DoctorDashboard() {
     return groups;
   }, [confirmedFutureAppointments]);
 
-  // Get appointments for active tab
+  // Checked/completed appointments for today (after doctor marks checked)
+  const checkedTodayAppointments = useMemo(() => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    return allAppointments.filter((apt: any) => {
+      const status = (apt.status || '').toLowerCase();
+      // Keep checked-in in Upcoming; only move to Checked tab once doctor marks checked/completed/attended
+      if (!['checked', 'completed', 'attended'].includes(status)) return false;
+      if (!apt.date && !apt.dateObj) return false;
+
+      const appointmentDate = apt.dateObj || new Date(apt.date);
+      if (isNaN(appointmentDate.getTime())) return false;
+
+      const appointmentDay = new Date(appointmentDate);
+      appointmentDay.setHours(0, 0, 0, 0);
+
+      return appointmentDay.getTime() === today.getTime();
+    });
+  }, [allAppointments]);
+
+  // Get appointments for active tab (upcoming vs checked)
   const appointmentsToShow = useMemo(() => {
-    if (activeAppointmentTab === 'today') {
-      return appointmentsByDate.today || [];
-    } else if (activeAppointmentTab === 'tomorrow') {
-      return appointmentsByDate.tomorrow || [];
-    } else {
-      return appointmentsByDate[activeAppointmentTab] || [];
+    if (activeAppointmentTab === 'checked') {
+      return checkedTodayAppointments;
     }
-  }, [activeAppointmentTab, appointmentsByDate]);
+    return confirmedFutureAppointments;
+  }, [activeAppointmentTab, confirmedFutureAppointments, checkedTodayAppointments]);
 
   // Generate tab items for appointments
   const appointmentTabs = useMemo(() => {
-    const tabs: Array<{ key: string; label: string; count: number }> = [];
-    
-    // Today tab
-    if (appointmentsByDate.today && appointmentsByDate.today.length > 0) {
-      tabs.push({
-        key: 'today',
-        label: `Today (${appointmentsByDate.today.length})`,
-        count: appointmentsByDate.today.length,
-      });
-    }
-    
-    // Tomorrow tab
-    if (appointmentsByDate.tomorrow && appointmentsByDate.tomorrow.length > 0) {
-      tabs.push({
-        key: 'tomorrow',
-        label: `Tomorrow (${appointmentsByDate.tomorrow.length})`,
-        count: appointmentsByDate.tomorrow.length,
-      });
-    }
-    
-    // Future date tabs
-    Object.keys(appointmentsByDate)
-      .filter(key => key !== 'today' && key !== 'tomorrow')
-      .sort()
-      .forEach(dateKey => {
-        const appointments = appointmentsByDate[dateKey];
-        if (appointments && appointments.length > 0) {
-          const displayDate = dayjs(dateKey).format('DD MMM');
-          tabs.push({
-            key: dateKey,
-            label: `${displayDate} (${appointments.length})`,
-            count: appointments.length,
-          });
-        }
-      });
-    
-    return tabs;
-  }, [appointmentsByDate]);
+    return [
+      { key: 'upcoming', label: `Upcoming (${confirmedFutureAppointments.length})`, count: confirmedFutureAppointments.length },
+      { key: 'checked', label: `Checked (${checkedTodayAppointments.length})`, count: checkedTodayAppointments.length },
+    ];
+  }, [confirmedFutureAppointments.length, checkedTodayAppointments.length]);
 
   // Update active tab if current tab has no appointments
   useEffect(() => {
@@ -598,14 +673,17 @@ export default function DoctorDashboard() {
   
   console.log('✅ User has DOCTOR role, rendering dashboard');
 
-  const handleOpenPrescriptionModal = (appointment?: any) => {
+  const handleOpenPrescriptionModal = (appointment?: any, prescription?: any) => {
     if (appointment?.patientId) {
       setSelectedPatientId(appointment.patientId);
       setSelectedAppointmentId(appointment.id);
+      setSelectedPatientName(appointment.patient || appointment.patientName);
     } else {
       setSelectedPatientId(undefined);
       setSelectedAppointmentId(undefined);
+      setSelectedPatientName(undefined);
     }
+    setSelectedPrescription(prescription);
     setIsPrescriptionModalOpen(true);
   };
 
@@ -613,6 +691,7 @@ export default function DoctorDashboard() {
     setIsPrescriptionModalOpen(false);
     setSelectedPatientId(undefined);
     setSelectedAppointmentId(undefined);
+    setSelectedPrescription(undefined);
   };
 
   const handleMenuClick = (e: { key: string }) => {
@@ -697,27 +776,103 @@ export default function DoctorDashboard() {
       title: 'Status',
       dataIndex: 'status',
       key: 'status',
-      render: (status: string) => (
-        <Tag color={status === 'confirmed' ? 'green' : 'orange'}>
-          {status.toUpperCase()}
+      render: (status: string) => {
+        const value = (status || '').toLowerCase();
+        const colorMap: Record<string, string> = {
+          confirmed: 'green',
+          in_consultation: 'blue',
+          'checked-in': 'geekblue',
+          checked_in: 'geekblue',
+          checked: 'geekblue',
+          attended: 'blue',
+          completed: 'success',
+        };
+        const labelMap: Record<string, string> = {
+          'checked-in': 'CHECKED',
+          checked_in: 'CHECKED',
+          checked: 'CHECKED',
+        };
+        const displayLabel = labelMap[value] || status.toUpperCase();
+        return (
+          <Tag color={colorMap[value] || 'orange'}>
+            {displayLabel}
         </Tag>
-      ),
+        );
+      },
     },
     {
       title: 'Action',
       key: 'action',
-      render: (_: any, record: any) => (
+      render: (_: any, record: any) => {
+        const status = (record.status || '').toLowerCase();
+        const existingPrescription =
+          prescriptionsByAppointmentId.get(record.id) ||
+          prescriptionsByAppointmentId.get(record.appointmentId) ||
+          (record.patientId ? prescriptionsByAppointmentId.get(`patient-${record.patientId}`) : undefined);
+        const hasPrescription = !!existingPrescription;
+        const isFinal = ['completed', 'cancelled', 'attended'].includes(status);
+        const isChecked = ['checked', 'checked-in', 'checked_in', 'completed', 'attended'].includes(status);
+
+        const handleChecked = async () => {
+          if (!record.id || !hasPrescription) return;
+          try {
+            setMarkingCheckedId(record.id);
+            const token = localStorage.getItem('auth-token');
+            if (!token) {
+              message.error('Authentication required');
+              return;
+            }
+            const res = await fetch(`/api/appointments/${record.id}/status`, {
+              method: 'PATCH',
+              headers: {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({ status: 'checked' }),
+            });
+            const data = await res.json();
+            if (!res.ok) {
+              message.error(data.message || 'Failed to mark checked');
+              return;
+            }
+            message.success('Appointment moved to Checked');
+            queryClient.invalidateQueries({ queryKey: ['/api/appointments/my'] });
+            queryClient.invalidateQueries({ queryKey: ['/api/prescriptions/doctor'] });
+          } catch (error) {
+            console.error('❌ Error marking checked:', error);
+            message.error('Failed to mark checked');
+          } finally {
+            setMarkingCheckedId(null);
+          }
+        };
+
+        return (
+          <Space>
         <Button
           type="link"
-          onClick={() => handleOpenPrescriptionModal(record)}
-          disabled={
-            !record.patientId ||
-            ['completed', 'cancelled', 'attended'].includes((record.status || '').toLowerCase())
-          }
-        >
-          Add Prescription
+              onClick={() => handleOpenPrescriptionModal(record, existingPrescription)}
+              disabled={!record.patientId || isFinal}
+            >
+              {hasPrescription ? 'View / Edit Prescription' : 'Add Prescription'}
         </Button>
-      ),
+            <Button
+              type="link"
+              onClick={handleChecked}
+              disabled={!hasPrescription || isChecked || isFinal}
+              loading={markingCheckedId === record.id}
+            >
+              Checked
+            </Button>
+            <Button
+              type="link"
+              onClick={() => fetchPatientHistory(record.patientId, record.id)}
+              disabled={!record.patientId}
+            >
+              History
+            </Button>
+          </Space>
+        );
+      },
     },
   ];
 
@@ -1233,14 +1388,58 @@ export default function DoctorDashboard() {
       <PrescriptionForm
         isOpen={isPrescriptionModalOpen}
         onClose={handleClosePrescriptionModal}
+        prescription={selectedPrescription}
         doctorId={user?.id}
         hospitalId={doctorProfile?.hospitalId}
         patientId={selectedPatientId}
+        patientName={selectedPatientName}
         appointmentId={selectedAppointmentId}
         patientsOverride={todaysPendingPatients}
         hideHospitalSelect
         appointmentIdMap={todaysAppointmentIdMap}
       />
+
+      <Drawer
+        title="Patient History"
+        placement="right"
+        width={isMobile ? '100%' : 420}
+        onClose={() => setHistoryDrawerOpen(false)}
+        open={historyDrawerOpen}
+      >
+        {historyLoading ? (
+          <Spin />
+        ) : (
+          <>
+            <Divider orientation="left">Previous Visits</Divider>
+            <List
+              dataSource={historyAppointments}
+              renderItem={(item: any) => (
+                <List.Item>
+                  <div style={{ display: 'flex', flexDirection: 'column' }}>
+                    <Text strong>{item.appointmentDate || item.date}</Text>
+                    <Text type="secondary">{item.status}</Text>
+                    <Text type="secondary">{item.reason || 'Consultation'}</Text>
+                  </div>
+                </List.Item>
+              )}
+              locale={{ emptyText: 'No previous appointments' }}
+            />
+            <Divider orientation="left">Prescriptions (by you)</Divider>
+            <List
+              dataSource={historyPrescriptions}
+              renderItem={(item: any) => (
+                <List.Item>
+                  <div style={{ display: 'flex', flexDirection: 'column' }}>
+                    <Text strong>Prescription #{item.id}</Text>
+                    <Text type="secondary">{item.createdAt}</Text>
+                  </div>
+                </List.Item>
+              )}
+              locale={{ emptyText: 'No prescriptions' }}
+            />
+          </>
+        )}
+      </Drawer>
 
       {/* Lab Request Modal */}
       <LabRequestModal

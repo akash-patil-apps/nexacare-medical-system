@@ -860,129 +860,133 @@ export default function BookAppointment() {
                     onClick={() => handleHospitalSelect(hospital.id)}
                     style={{
                       height: '100%',
-                        borderRadius: '16px',
-                        border: selectedHospital?.id === hospital.id ? '2px solid #2563eb' : '1px solid #E5E7EB',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      borderRadius: '16px',
+                      border: selectedHospital?.id === hospital.id ? '2px solid #2563eb' : '1px solid #E5E7EB',
                       boxShadow: selectedHospital?.id === hospital.id
                         ? '0 12px 24px rgba(37, 99, 235, 0.12)'
                           : '0 2px 8px rgba(0, 0, 0, 0.08)',
-                        transition: 'all 0.2s ease',
+                      transition: 'all 0.2s ease',
                       cursor: 'pointer',
                       background: '#ffffff',
                     }}
-                    styles={{ body: { padding: '24px' } }}
+                    styles={{ body: { padding: '24px', display: 'flex', flexDirection: 'column', gap: 16, height: '100%' } }}
                   >
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-                        {/* Hospital Name and Status */}
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
-                          <Title level={4} style={{ margin: 0, color: '#111827', fontSize: '20px', fontWeight: 700, flex: 1 }}>
-                            {hospital.name}
-                          </Title>
-                          <Tag
-                            style={{
-                              background: statusBg,
-                              color: statusColor,
-                              border: 'none',
-                              borderRadius: '12px',
-                              padding: '4px 12px',
-                              fontSize: '12px',
-                              fontWeight: 500,
-                              margin: 0,
-                            }}
-                          >
-                            {status}
-                          </Tag>
-                        </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 16, height: '100%' }}>
+                      {/* Hospital Name and Status */}
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
+                        <Title level={4} style={{ margin: 0, color: '#111827', fontSize: '20px', fontWeight: 700, flex: 1, lineHeight: 1.3 }}>
+                          {hospital.name}
+                        </Title>
+                        <Tag
+                          style={{
+                            background: statusBg,
+                            color: statusColor,
+                            border: 'none',
+                            borderRadius: '12px',
+                            padding: '4px 12px',
+                            fontSize: '12px',
+                            fontWeight: 600,
+                            margin: 0,
+                            height: 28,
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                          }}
+                        >
+                          {status}
+                        </Tag>
+                      </div>
 
-                        {/* Address */}
-                        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
-                          <EnvironmentOutlined style={{ color: '#9CA3AF', fontSize: '16px', marginTop: 2, flexShrink: 0 }} />
-                          <div>
-                            <Text style={{ fontSize: '14px', color: '#374151', display: 'block' }}>
+                      {/* Address */}
+                      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
+                        <EnvironmentOutlined style={{ color: '#9CA3AF', fontSize: '16px', marginTop: 2, flexShrink: 0 }} />
+                        <div style={{ display: 'grid', gap: 2 }}>
+                          <Text style={{ fontSize: '14px', color: '#374151', lineHeight: 1.4 }}>
                             {hospital.address}
                           </Text>
-                            <Text style={{ fontSize: '14px', color: '#374151', display: 'block' }}>
+                          <Text style={{ fontSize: '14px', color: '#374151', lineHeight: 1.4 }}>
                             {hospital.city}, {hospital.state}
                           </Text>
                         </div>
                       </div>
 
-                        {/* Established and Total Beds */}
-                      <div style={{
-                          display: 'flex',
-                          gap: 24,
-                      }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                            <CalendarOutlined style={{ color: '#9CA3AF', fontSize: '16px' }} />
-                        <div>
-                              <Text style={{ fontSize: '12px', color: '#6B7280', display: 'block' }}>Established</Text>
-                              <Text strong style={{ fontSize: '16px', color: '#111827' }}>{hospital.establishedYear || 'N/A'}</Text>
-                        </div>
+                      {/* Established and Total Beds */}
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 12 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                          <CalendarOutlined style={{ color: '#9CA3AF', fontSize: '16px' }} />
+                          <div style={{ display: 'grid', gap: 2 }}>
+                            <Text style={{ fontSize: '12px', color: '#6B7280', display: 'block' }}>Established</Text>
+                            <Text strong style={{ fontSize: '16px', color: '#111827' }}>{hospital.establishedYear || 'N/A'}</Text>
                           </div>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                            <MedicineBoxOutlined style={{ color: '#9CA3AF', fontSize: '16px' }} />
-                        <div>
-                              <Text style={{ fontSize: '12px', color: '#6B7280', display: 'block' }}>Total Beds</Text>
-                              <Text strong style={{ fontSize: '16px', color: '#111827' }}>{hospital.totalBeds || 0}</Text>
-                            </div>
+                        </div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                          <MedicineBoxOutlined style={{ color: '#9CA3AF', fontSize: '16px' }} />
+                          <div style={{ display: 'grid', gap: 2 }}>
+                            <Text style={{ fontSize: '12px', color: '#6B7280', display: 'block' }}>Total Beds</Text>
+                            <Text strong style={{ fontSize: '16px', color: '#111827' }}>{hospital.totalBeds || 0}</Text>
+                          </div>
                         </div>
                       </div>
 
-                        {/* Departments */}
+                      {/* Departments */}
                       <div>
-                          <Text style={{ fontSize: '12px', color: '#6B7280', fontWeight: 500, display: 'block', marginBottom: 8 }}>
-                            Departments
-                          </Text>
-                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                            {departments.slice(0, 4).map((dept: string) => (
+                        <Text style={{ fontSize: '12px', color: '#6B7280', fontWeight: 500, display: 'block', marginBottom: 8 }}>
+                          Departments
+                        </Text>
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                          {departments.slice(0, 4).map((dept: string) => (
                             <Tag
                               key={dept}
-                                style={{
-                                  background: '#F3F4F6',
-                                  color: '#374151',
-                                  border: 'none',
-                                  borderRadius: '8px',
-                                  padding: '4px 10px',
-                                  fontSize: '12px',
-                                  margin: 0,
-                                }}
+                              style={{
+                                background: '#F3F4F6',
+                                color: '#374151',
+                                border: 'none',
+                                borderRadius: '8px',
+                                padding: '4px 10px',
+                                fontSize: '12px',
+                                lineHeight: 1.2,
+                                margin: 0,
+                              }}
                             >
                               {dept}
                             </Tag>
                           ))}
-                            {departments.length > 4 && (
-                              <Tag
-                                style={{
-                                  background: '#F3F4F6',
-                                  color: '#6B7280',
-                                  border: 'none',
-                                  borderRadius: '8px',
-                                  padding: '4px 10px',
-                                  fontSize: '12px',
-                                  margin: 0,
-                                }}
-                              >
-                                +{departments.length - 4}
+                          {departments.length > 4 && (
+                            <Tag
+                              style={{
+                                background: '#F3F4F6',
+                                color: '#6B7280',
+                                border: 'none',
+                                borderRadius: '8px',
+                                padding: '4px 10px',
+                                fontSize: '12px',
+                                lineHeight: 1.2,
+                                margin: 0,
+                              }}
+                            >
+                              +{departments.length - 4}
                             </Tag>
                           )}
                         </div>
                       </div>
 
-                        {/* Availability Status */}
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: 8, paddingTop: 8, borderTop: '1px solid #E5E7EB' }}>
-                          {hospital.emergencyServices ? (
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                              <ThunderboltOutlined style={{ color: '#10B981', fontSize: '16px' }} />
-                              <Text style={{ fontSize: '14px', color: '#10B981', fontWeight: 500 }}>
-                                Emergency Available
-                        </Text>
-                            </div>
-                          ) : null}
+                      {/* Availability Status */}
+                      <div style={{ marginTop: 'auto', display: 'grid', gap: 8, paddingTop: 12, borderTop: '1px solid #E5E7EB' }}>
+                        {hospital.emergencyServices && (
                           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                            <ClockCircleOutlined style={{ color: hospital.operatingHours ? '#10B981' : '#EF4444', fontSize: '16px' }} />
-                            <Text style={{ fontSize: '14px', color: hospital.operatingHours ? '#10B981' : '#EF4444', fontWeight: 500 }}>
-                              {hospital.operatingHours || 'Hours not available'}
+                            <ThunderboltOutlined style={{ color: '#10B981', fontSize: '16px' }} />
+                            <Text style={{ fontSize: '14px', color: '#10B981', fontWeight: 600 }}>
+                              Emergency Available
                             </Text>
                           </div>
+                        )}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                          <ClockCircleOutlined style={{ color: hospital.operatingHours ? '#10B981' : '#EF4444', fontSize: '16px' }} />
+                          <Text style={{ fontSize: '14px', color: hospital.operatingHours ? '#10B981' : '#EF4444', fontWeight: 600 }}>
+                            {hospital.operatingHours || 'Hours not available'}
+                          </Text>
+                        </div>
                       </div>
                     </div>
                   </Card>

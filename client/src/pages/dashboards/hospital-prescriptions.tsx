@@ -290,5 +290,4 @@ export default function HospitalPrescriptionsPage() {
       </Layout>
     </Layout>
   );
-}
 } 

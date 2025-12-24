@@ -4,6 +4,8 @@ import { z } from "zod";
 import { authenticateToken, authorizeRoles } from "../middleware/auth";
 import type { AuthenticatedRequest } from "../types";
 import * as prescriptionService from "../services/prescription.service";
+import * as doctorsService from "../services/doctors.service";
+import * as patientsService from "../services/patients.service";
 import { insertPrescriptionSchema } from "../../shared/schema"; 
 
 const router = Router();
@@ -15,13 +17,58 @@ router.post(
   authorizeRoles("DOCTOR"),
   async (req: AuthenticatedRequest, res) => {
     try {
-      const doctorId = req.user!.id;
+      console.log("📋 Creating prescription - Request body:", JSON.stringify(req.body, null, 2));
+      console.log("👨‍⚕️ User ID from token:", req.user!.id);
+      
+      // Get doctor ID from user ID
+      const doctorProfile = await doctorsService.getDoctorByUserId(req.user!.id);
+      if (!doctorProfile || !doctorProfile.id) {
+        console.error("❌ Doctor profile not found for user ID:", req.user!.id);
+        return res.status(404).json({ error: "Doctor profile not found" });
+      }
+      
+      const doctorId = doctorProfile.id;
+      console.log("✅ Doctor ID:", doctorId);
+      
+      // Parse with Zod schema
       const parsed = insertPrescriptionSchema.parse(req.body);
-      const result = await prescriptionService.issuePrescription({ ...parsed, doctorId });
+      console.log("✅ Parsed prescription data:", JSON.stringify(parsed, null, 2));
+      
+      // Ensure required fields are present
+      if (!parsed.patientId) {
+        return res.status(400).json({ error: "patientId is required" });
+      }
+      if (!parsed.hospitalId) {
+        return res.status(400).json({ error: "hospitalId is required" });
+      }
+      if (!parsed.diagnosis) {
+        return res.status(400).json({ error: "diagnosis is required" });
+      }
+      if (!parsed.medications) {
+        return res.status(400).json({ error: "medications is required" });
+      }
+      
+      // Build final prescription data with doctorId
+      const prescriptionData = { ...parsed, doctorId };
+      console.log("📤 Final prescription data to insert:", JSON.stringify(prescriptionData, null, 2));
+      
+      const result = await prescriptionService.issuePrescription(prescriptionData);
+      console.log("✅ Prescription created successfully:", result.id);
       res.status(201).json(result);
     } catch (err) {
-      console.error("Issue prescription error:", err);
-      res.status(400).json({ error: "Invalid data or server error" });
+      console.error("❌ Issue prescription error:", err);
+      if (err instanceof z.ZodError) {
+        console.error("🔍 Validation errors:", JSON.stringify(err.errors, null, 2));
+        res.status(400).json({ 
+          error: "Invalid data", 
+          details: err.errors.map(e => ({
+            field: e.path.join('.'),
+            message: e.message
+          }))
+        });
+      } else {
+        res.status(400).json({ error: "Invalid data or server error", details: err instanceof Error ? err.message : String(err) });
+      }
     }
   }
 );
@@ -33,7 +80,13 @@ router.get(
   authorizeRoles("PATIENT"),
   async (req: AuthenticatedRequest, res) => {
     try {
-      const prescriptions = await prescriptionService.getPrescriptionsForPatient(req.user!.id);
+      // Map user -> patient profile
+      const patientProfile = await patientsService.getPatientByUserId(req.user!.id);
+      if (!patientProfile || !patientProfile.id) {
+        console.error("❌ Patient profile not found for user ID:", req.user!.id);
+        return res.status(404).json({ error: "Patient profile not found" });
+      }
+      const prescriptions = await prescriptionService.getPrescriptionsForPatient(patientProfile.id);
       res.json(prescriptions);
     } catch (err) {
       console.error("Fetch patient prescriptions failed:", err);
@@ -50,8 +103,13 @@ router.get(
   async (req: AuthenticatedRequest, res) => {
     try {
       const { hospitalId, from, to } = req.query;
+      const patientProfile = await patientsService.getPatientByUserId(req.user!.id);
+      if (!patientProfile || !patientProfile.id) {
+        console.error("❌ Patient profile not found for user ID:", req.user!.id);
+        return res.status(404).json({ error: "Patient profile not found" });
+      }
       const result = await prescriptionService.getPrescriptionsByFilters({
-        patientId: req.user!.id,
+        patientId: patientProfile.id,
         hospitalId: hospitalId ? Number(hospitalId) : undefined,
         from: from ? new Date(from as string) : undefined,
         to: to ? new Date(to as string) : undefined,

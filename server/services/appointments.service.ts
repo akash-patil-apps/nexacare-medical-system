@@ -138,8 +138,8 @@ export const getAppointmentsByDoctor = async (doctorId: number) => {
       .where(
         and(
           eq(appointments.doctorId, doctorId),
-          // Only show confirmed, completed, or cancelled appointments (not pending)
-          sql`${appointments.status} IN ('confirmed', 'completed', 'cancelled')`
+          // Doctor should see active/checked/completed states
+          sql`${appointments.status} IN ('confirmed', 'checked-in', 'attended', 'checked', 'completed', 'cancelled')`
         )
       )
       .orderBy(desc(appointments.appointmentDate));

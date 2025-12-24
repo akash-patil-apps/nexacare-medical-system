@@ -1,5 +1,5 @@
 import { useMemo, useState, useEffect } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { 
   Layout, 
   Card, 
@@ -27,7 +27,6 @@ import {
   UploadOutlined,
   HistoryOutlined,
 } from '@ant-design/icons';
-import { useAuth } from '../../hooks/use-auth';
 import { useLocation } from 'wouter';
 import { useOnboardingCheck } from '../../hooks/use-onboarding-check';
 import { useResponsive } from '../../hooks/use-responsive';
@@ -36,7 +35,6 @@ import { QuickActionTile } from '../../components/dashboard/QuickActionTile';
 import { PrescriptionCard } from '../../components/dashboard/PrescriptionCard';
 import LabReportViewerModal from '../../components/modals/lab-report-viewer-modal';
 import { formatDate, formatDateTime } from '../../lib/utils';
-import dayjs from 'dayjs';
 import { PatientSidebar } from '../../components/layout/PatientSidebar';
 
 const { Content, Sider } = Layout;
@@ -73,11 +71,11 @@ const fetchWithAuth = async <T,>(url: string, init?: RequestInit): Promise<T> =>
 
 
 export default function PatientDashboard() {
-  const { user } = useAuth();
+  const queryClient = useQueryClient();
   const [, setLocation] = useLocation();
   const { isMobile, isTablet } = useResponsive();
   const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false);
-  const [activeAppointmentTab, setActiveAppointmentTab] = useState<string>('today');
+  const [activeAppointmentTab, setActiveAppointmentTab] = useState<string>('upcoming');
   const [selectedLabReport, setSelectedLabReport] = useState<any>(null);
   const [isLabReportModalOpen, setIsLabReportModalOpen] = useState(false);
   const [selectedMenuKey] = useState<string>('dashboard');
@@ -130,14 +128,19 @@ export default function PatientDashboard() {
   useEffect(() => {
     const handleStorageChange = (e: StorageEvent) => {
       if (e.key === 'appointment-updated') {
-        console.log('🔄 Appointment update detected, refetching...');
+        console.log('🔄 Appointment update detected from storage event, invalidating and refetching patient appointments...');
+        // Invalidate the query first, then refetch for more reliable updates
+        queryClient.invalidateQueries({ queryKey: ['patient-appointments'] });
         refetchAppointments();
       }
     };
     
     // Also listen for custom events (same-window updates)
-    const handleCustomEvent = () => {
-      console.log('🔄 Custom appointment update event detected, refetching...');
+    const handleCustomEvent = (e: Event) => {
+      const customEvent = e as CustomEvent;
+      console.log('🔄 Custom appointment update event detected, invalidating and refetching patient appointments...', customEvent.detail);
+      // Invalidate the query first, then refetch for more reliable updates
+      queryClient.invalidateQueries({ queryKey: ['patient-appointments'] });
       refetchAppointments();
     };
     
@@ -148,150 +151,103 @@ export default function PatientDashboard() {
       window.removeEventListener('storage', handleStorageChange);
       window.removeEventListener('appointment-updated', handleCustomEvent);
     };
-  }, [refetchAppointments]);
+  }, [refetchAppointments, queryClient]);
 
-  // Filter appointments that are today or in the future (by date only, not time)
-  // Patients should see all their appointment statuses (pending, confirmed, completed, cancelled)
-  // Show appointments if the date is today or in the future, regardless of time
+  // Filter appointments that are in the future (date + start time)
+  // Patients should see upcoming items only if start time >= now
   const futureAppointments = useMemo(() => {
     const now = new Date();
-    const todayStart = new Date(now);
-    todayStart.setHours(0, 0, 0, 0);
+
+    const parseStartDateTime = (apt: any) => {
+      const base = apt.dateObj || (apt.rawDate ? new Date(apt.rawDate) : null);
+      if (!base || isNaN(base.getTime())) return null;
+      const start = new Date(base);
+
+      const timeStr = (apt.timeSlot || apt.time || '').toString().trim();
+      if (timeStr) {
+        const startPart = timeStr.includes('-') ? timeStr.split('-')[0].trim() : timeStr;
+        const match = startPart.match(/(\d{1,2}):(\d{2})(?:\s*(AM|PM|am|pm))?/);
+        if (match) {
+          let hours = parseInt(match[1], 10);
+          const minutes = parseInt(match[2], 10);
+          const period = match[3]?.toUpperCase();
+          if (period === 'PM' && hours !== 12) hours += 12;
+          if (period === 'AM' && hours === 12) hours = 0;
+          start.setHours(hours, minutes, 0, 0);
+        }
+      }
+      return start;
+    };
     
     return allAppointments
       .filter((apt: any) => {
-        // Check if appointment has valid date
-        if (!apt.rawDate && !apt.dateObj) {
-          console.warn(`⚠️ Appointment ${apt.id} has no date`);
-          return false;
+        const start = parseStartDateTime(apt);
+        if (!start) return false;
+        const isUpcoming = start.getTime() >= now.getTime();
+        if (!isUpcoming) {
+          console.log(`⏭️ Skipping appointment ${apt.id} - start is in the past:`, start.toISOString());
         }
-        
-        try {
-          const appointmentDateTime = apt.dateObj || new Date(apt.rawDate);
-          if (isNaN(appointmentDateTime.getTime())) {
-            console.warn(`⚠️ Invalid date for appointment ${apt.id}:`, apt.rawDate);
-            return false;
-          }
-          
-          // Get appointment date (ignore time for comparison)
-          const appointmentDay = new Date(appointmentDateTime);
-          appointmentDay.setHours(0, 0, 0, 0);
-          
-          // Include appointments that are today or in the future (by date only)
-          // This matches the behavior of the appointments page which shows all appointments
-          const isTodayOrFuture = appointmentDay >= todayStart;
-          
-          if (!isTodayOrFuture) {
-            console.log(`⏭️ Skipping appointment ${apt.id} - date is in the past:`, appointmentDay.toISOString());
-          }
-          
-          return isTodayOrFuture;
-        } catch (error) {
-          console.error(`❌ Error checking date for appointment ${apt.id}:`, error);
-          return false;
-        }
+        return isUpcoming;
       })
       .sort((a: any, b: any) => {
-        // Sort by date and time (earliest first)
-        const dateTimeA = a.dateObj || new Date(a.rawDate);
-        const dateTimeB = b.dateObj || new Date(b.rawDate);
-        return dateTimeA.getTime() - dateTimeB.getTime();
+        // Sort by start time (earliest first)
+        const aStart = parseStartDateTime(a) || new Date();
+        const bStart = parseStartDateTime(b) || new Date();
+        return aStart.getTime() - bStart.getTime();
       });
   }, [allAppointments]);
 
-  // Group appointments by date for tabs
-  const appointmentsByDate = useMemo(() => {
-    const now = new Date();
-    const today = new Date(now);
-    today.setHours(0, 0, 0, 0);
-    
-    const tomorrow = new Date(today);
-    tomorrow.setDate(tomorrow.getDate() + 1);
-    
-    const groups: Record<string, any[]> = {
-      today: [],
-      tomorrow: [],
-    };
-    
-    futureAppointments.forEach((apt: any) => {
-      if (!apt.dateObj && !apt.rawDate) return;
-      
-      const appointmentDate = apt.dateObj || new Date(apt.rawDate);
-      appointmentDate.setHours(0, 0, 0, 0);
-      
-      const dateKey = appointmentDate.getTime();
-      const todayKey = today.getTime();
-      const tomorrowKey = tomorrow.getTime();
-      
-      if (dateKey === todayKey) {
-        groups.today.push(apt);
-      } else if (dateKey === tomorrowKey) {
-        groups.tomorrow.push(apt);
-      } else {
-        // Future dates - use date string as key
-        const dateStr = dayjs(appointmentDate).format('YYYY-MM-DD');
-        
-        if (!groups[dateStr]) {
-          groups[dateStr] = [];
-        }
-        groups[dateStr].push(apt);
-      }
+  // Checked/completed appointments
+  const checkedAppointments = useMemo(() => {
+    return allAppointments.filter((apt: any) => {
+      const status = (apt.status || '').toLowerCase();
+      return ['checked-in', 'checked', 'completed', 'attended'].includes(status);
     });
-    
+  }, [allAppointments]);
+
+  const appointmentsByDate = useMemo(() => {
+    const groups: Record<string, any[]> = {};
+    futureAppointments.forEach((apt: any) => {
+      const dateObj = apt.dateObj || (apt.rawDate ? new Date(apt.rawDate) : null);
+      if (!dateObj || isNaN(dateObj.getTime())) return;
+      const key = dateObj.toISOString().split('T')[0];
+      if (!groups[key]) groups[key] = [];
+      groups[key].push(apt);
+    });
+    // sort each group
+    Object.keys(groups).forEach(key => {
+      groups[key].sort((a, b) => {
+        const aTime = a.dateObj || new Date(a.rawDate);
+        const bTime = b.dateObj || new Date(b.rawDate);
+        return aTime.getTime() - bTime.getTime();
+      });
+    });
     return groups;
   }, [futureAppointments]);
 
-  // Get appointments for active tab
   const appointmentsToShow = useMemo(() => {
-    if (activeAppointmentTab === 'today') {
-      return appointmentsByDate.today || [];
-    } else if (activeAppointmentTab === 'tomorrow') {
-      return appointmentsByDate.tomorrow || [];
-    } else {
-      return appointmentsByDate[activeAppointmentTab] || [];
+    if (activeAppointmentTab === 'checked') {
+      return checkedAppointments;
     }
-  }, [activeAppointmentTab, appointmentsByDate]);
+    if (activeAppointmentTab === 'upcoming') {
+      return futureAppointments;
+    }
+    return appointmentsByDate[activeAppointmentTab] || [];
+  }, [activeAppointmentTab, futureAppointments, checkedAppointments, appointmentsByDate]);
 
-  // Generate tab items for appointments
   const appointmentTabs = useMemo(() => {
     const tabs: Array<{ key: string; label: string; count: number }> = [];
-    
-    // Today tab
-    if (appointmentsByDate.today && appointmentsByDate.today.length > 0) {
-      tabs.push({
-        key: 'today',
-        label: `Today (${appointmentsByDate.today.length})`,
-        count: appointmentsByDate.today.length,
-      });
-    }
-    
-    // Tomorrow tab
-    if (appointmentsByDate.tomorrow && appointmentsByDate.tomorrow.length > 0) {
-      tabs.push({
-        key: 'tomorrow',
-        label: `Tomorrow (${appointmentsByDate.tomorrow.length})`,
-        count: appointmentsByDate.tomorrow.length,
-      });
-    }
-    
-    // Future date tabs
+    tabs.push({ key: 'upcoming', label: `Upcoming (${futureAppointments.length})`, count: futureAppointments.length });
     Object.keys(appointmentsByDate)
-      .filter(key => key !== 'today' && key !== 'tomorrow')
       .sort()
-      .forEach(dateKey => {
-        const appointments = appointmentsByDate[dateKey];
-        if (appointments && appointments.length > 0) {
-          const displayDate = dayjs(dateKey).format('DD MMM');
-          tabs.push({
-            key: dateKey,
-            label: `${displayDate} (${appointments.length})`,
-            count: appointments.length,
-          });
-        }
+      .forEach(key => {
+        const labelDate = formatDate(key);
+        const count = appointmentsByDate[key]?.length || 0;
+        tabs.push({ key, label: `${labelDate} (${count})`, count });
       });
-    
+    tabs.push({ key: 'checked', label: `Checked (${checkedAppointments.length})`, count: checkedAppointments.length });
     return tabs;
-  }, [appointmentsByDate]);
+  }, [futureAppointments.length, checkedAppointments.length, appointmentsByDate]);
 
   // Update active tab if current tab has no appointments
   useEffect(() => {
@@ -337,7 +293,7 @@ export default function PatientDashboard() {
         id: rx.id,
         name: primary?.name || rx.diagnosis || 'Prescription',
         dosage,
-        nextDose: primary?.schedule || formatDateTime(rx.followUpDate),
+        nextDose: primary?.schedule || (rx.followUpDate ? formatDateTime(rx.followUpDate) : 'Not scheduled'),
         refillsRemaining: primary?.refills ? `${primary.refills} refills left` : 'N/A',
         adherence: 1,
         createdAt: rx.createdAt || null,
@@ -683,6 +639,14 @@ export default function PatientDashboard() {
                       </Text>
                     </div>
                   ) : (
+                    <>
+                      {futureAppointments.some((apt: any) => (apt.status || '').toLowerCase() === 'pending') && (
+                        <div style={{ marginBottom: 12 }}>
+                          <Tag color="orange" style={{ padding: '4px 8px', borderRadius: 8 }}>
+                            Waiting for receptionist confirmation on pending bookings.
+                          </Tag>
+                        </div>
+                      )}
                     <Tabs
                       activeKey={activeAppointmentTab}
                       onChange={setActiveAppointmentTab}
@@ -690,6 +654,7 @@ export default function PatientDashboard() {
                         key: tab.key,
                         label: tab.label,
                         children: (
+                            <div style={{ maxHeight: isMobile ? '60vh' : '50vh', overflowY: 'auto', paddingRight: 4 }}>
                           <Space direction="vertical" style={{ width: '100%' }} size={12}>
                             {appointmentsToShow.map((apt: any) => (
                               <Card
@@ -738,10 +703,12 @@ export default function PatientDashboard() {
                               </Card>
                             ))}
                           </Space>
+                            </div>
                         ),
                       }))}
                       style={{ marginTop: 8 }}
                     />
+                    </>
                   )}
                 </Card>
               </Col>

@@ -66,7 +66,7 @@ export default function ReceptionistDashboard() {
   const [patientOptions, setPatientOptions] = useState<Array<{ userId: number; patientId: number | null; fullName: string; mobileNumber: string }>>([]);
   const [patientSearchLoading, setPatientSearchLoading] = useState(false);
   const [dateMode, setDateMode] = useState<'today' | 'tomorrow' | 'custom'>('today');
-  const [activeAppointmentTab, setActiveAppointmentTab] = useState<string>('today');
+  const [activeAppointmentTab, setActiveAppointmentTab] = useState<string>('upcoming');
   const patientSearchTimeoutRef = useRef<number | undefined>(undefined);
   const appointmentStartTimeValue = Form.useWatch('appointmentStartTime', walkInForm);
   const durationMinutesValue = Form.useWatch('durationMinutes', walkInForm);
@@ -289,202 +289,108 @@ export default function ReceptionistDashboard() {
     enabled: !!user,
   });
 
-  // Filter appointments that are today or in the future (by date and time)
-  // Receptionists need to see pending (to confirm), confirmed, and cancelled appointments
-  // Pending appointments should ALWAYS be visible (even if the slot time has already passed) so they can be confirmed.
+  // Filter appointments that are in the future (by start time), keeping actionable statuses
+  // Pending/confirmed/checked-in/attended/checked/completed/cancelled (future) stay visible
   const futureAppointments = useMemo(() => {
     const now = new Date();
-    const todayStart = new Date(now);
-    todayStart.setHours(0, 0, 0, 0);
+    const activeStatuses = ['pending', 'confirmed', 'cancelled', 'checked-in', 'attended', 'checked', 'completed'];
+
+    const parseStartDateTime = (apt: any) => {
+      const base = apt.dateObj || (apt.date ? new Date(apt.date) : null);
+      if (!base || isNaN(base.getTime())) return null;
+      const start = new Date(base);
+
+      const timeStr = (apt.time || apt.timeSlot || '').toString().trim();
+      if (timeStr) {
+        const startPart = timeStr.includes('-') ? timeStr.split('-')[0].trim() : timeStr;
+        const match = startPart.match(/(\d{1,2}):(\d{2})(?:\s*(AM|PM|am|pm))?/);
+        if (match) {
+          let hours = parseInt(match[1], 10);
+          const minutes = parseInt(match[2], 10);
+          const period = match[3]?.toUpperCase();
+          if (period === 'PM' && hours !== 12) hours += 12;
+          if (period === 'AM' && hours === 12) hours = 0;
+          start.setHours(hours, minutes, 0, 0);
+        }
+      }
+      return start;
+    };
     
     return appointments
       .filter((apt: any) => {
-        // Show pending, confirmed, and cancelled appointments
-        if (apt.status !== 'confirmed' && apt.status !== 'pending' && apt.status !== 'cancelled') {
+        const status = (apt.status || '').toLowerCase();
+        // Show pending, confirmed, in-room, checked, completed, cancelled
+        if (!activeStatuses.includes(status)) {
           return false;
         }
         
-        // Check if appointment has valid date
-        if (!apt.date && !apt.dateObj) {
-          return false;
-        }
-        
-        try {
-          const appointmentDateTime = apt.dateObj || new Date(apt.date);
-          if (isNaN(appointmentDateTime.getTime())) {
-            return false;
-          }
-          
-          // Compute day-only for past-day logic
-          const appointmentDay = new Date(appointmentDateTime);
-          appointmentDay.setHours(0, 0, 0, 0);
-          
-          // If appointment day is before today and still pending, hide from Upcoming table
-          if (apt.status === 'pending' && appointmentDay < todayStart) {
-            return false;
-          }
-          
-          // For PENDING appointments: Show if date is today or in the future (ignore time)
-          // This allows receptionists to see and confirm pending appointments even if time has passed
-          if (apt.status === 'pending') {
-            return appointmentDay >= todayStart;
-          }
-          
-          // For CONFIRMED appointments: Show if date is today or in the future (ignore time)
-          // Receptionists need to see confirmed appointments to check them in, even if time has passed
-          if (apt.status === 'confirmed') {
-            return appointmentDay >= todayStart;
-          }
-          
-          // For CANCELLED appointments: Only show if date and time are in the future
-          // Parse time from appointmentTime or timeSlot
-          let appointmentTime = new Date(appointmentDateTime);
-          
-          if (apt.time) {
-            // Parse time string (e.g., "09:00", "09:00 AM", "14:30")
-            const timeStr = apt.time.trim();
-            const timeMatch = timeStr.match(/(\d{1,2}):(\d{2})\s*(AM|PM|am|pm)?/i);
-            
-            if (timeMatch) {
-              let hours = parseInt(timeMatch[1]);
-              const minutes = parseInt(timeMatch[2]);
-              const period = timeMatch[3]?.toUpperCase();
-              
-              // Handle 12-hour format
-              if (period === 'PM' && hours !== 12) {
-                hours += 12;
-              } else if (period === 'AM' && hours === 12) {
-                hours = 0;
-              }
-              
-              appointmentTime.setHours(hours, minutes, 0, 0);
-            } else {
-              // Try 24-hour format
-              const parts = timeStr.split(':');
-              if (parts.length >= 2) {
-                const hours = parseInt(parts[0]) || 9;
-                const minutes = parseInt(parts[1]) || 0;
-                appointmentTime.setHours(hours, minutes, 0, 0);
-              } else {
-                // Default to 9 AM if can't parse
-                appointmentTime.setHours(9, 0, 0, 0);
-              }
-            }
-          } else {
-            // No time info, default to start of day (midnight)
-            appointmentTime.setHours(0, 0, 0, 0);
-          }
-          
-          // Only include cancelled appointments that are today or in the future (by date and time)
-          return appointmentTime >= now;
-        } catch (error) {
-          console.error(`❌ Error checking date/time for appointment ${apt.id}:`, error);
-          return false;
-        }
+        const start = parseStartDateTime(apt);
+        if (!start) return false;
+        const isUpcoming = start.getTime() >= now.getTime();
+        return isUpcoming;
       })
       .sort((a: any, b: any) => {
-        // Sort by date and time (earliest first)
-        const dateTimeA = a.dateObj || new Date(a.date);
-        const dateTimeB = b.dateObj || new Date(b.date);
-        return dateTimeA.getTime() - dateTimeB.getTime();
+        // Sort by start time (earliest first)
+        const parseStart = (apt: any) => {
+          const base = apt.dateObj || (apt.date ? new Date(apt.date) : null);
+          const start = base ? new Date(base) : new Date();
+          const timeStr = (apt.time || apt.timeSlot || '').toString().trim();
+          if (timeStr) {
+            const startPart = timeStr.includes('-') ? timeStr.split('-')[0].trim() : timeStr;
+            const match = startPart.match(/(\d{1,2}):(\d{2})(?:\s*(AM|PM|am|pm))?/);
+            if (match) {
+              let hours = parseInt(match[1], 10);
+              const minutes = parseInt(match[2], 10);
+              const period = match[3]?.toUpperCase();
+              if (period === 'PM' && hours !== 12) hours += 12;
+              if (period === 'AM' && hours === 12) hours = 0;
+              start.setHours(hours, minutes, 0, 0);
+            }
+          }
+          return start;
+        };
+        const aStart = parseStart(a);
+        const bStart = parseStart(b);
+        return aStart.getTime() - bStart.getTime();
       });
   }, [appointments]);
 
 
-  // Group appointments by date for tabs
-  const appointmentsByDate = useMemo(() => {
-    const now = new Date();
-    const today = new Date(now);
+  // Checked/completed appointments for today (for quick visibility)
+  const checkedTodayAppointments = useMemo(() => {
+    const today = new Date();
     today.setHours(0, 0, 0, 0);
-    
-    const tomorrow = new Date(today);
-    tomorrow.setDate(tomorrow.getDate() + 1);
-    
-    const groups: Record<string, any[]> = {
-      today: [],
-      tomorrow: [],
-    };
-    
-    futureAppointments.forEach((apt: any) => {
-      if (!apt.dateObj && !apt.date) return;
-      
+
+    return appointments.filter((apt: any) => {
+      const status = (apt.status || '').toLowerCase();
+      if (!['checked-in', 'checked', 'completed', 'attended'].includes(status)) return false;
+      if (!apt.date && !apt.dateObj) return false;
+
       const appointmentDate = apt.dateObj || new Date(apt.date);
-      appointmentDate.setHours(0, 0, 0, 0);
-      
-      const dateKey = appointmentDate.getTime();
-      const todayKey = today.getTime();
-      const tomorrowKey = tomorrow.getTime();
-      
-      if (dateKey === todayKey) {
-        groups.today.push(apt);
-      } else if (dateKey === tomorrowKey) {
-        groups.tomorrow.push(apt);
-      } else {
-        // Future dates - use date string as key
-        const dateStr = dayjs(appointmentDate).format('YYYY-MM-DD');
-        
-        if (!groups[dateStr]) {
-          groups[dateStr] = [];
-        }
-        groups[dateStr].push(apt);
-      }
-      });
-    
-    return groups;
-  }, [futureAppointments]);
+      if (isNaN(appointmentDate.getTime())) return false;
 
+      const appointmentDay = new Date(appointmentDate);
+      appointmentDay.setHours(0, 0, 0, 0);
 
-  // Get appointments for active tab (only future appointments)
+      return appointmentDay.getTime() === today.getTime();
+    });
+  }, [appointments]);
+
+  // Get appointments for active tab (upcoming vs checked)
   const appointmentsToShow = useMemo(() => {
-    if (activeAppointmentTab === 'today') {
-      return appointmentsByDate.today || [];
-    } else if (activeAppointmentTab === 'tomorrow') {
-      return appointmentsByDate.tomorrow || [];
-    } else {
-      return appointmentsByDate[activeAppointmentTab] || [];
+    if (activeAppointmentTab === 'checked') {
+      return checkedTodayAppointments;
     }
-  }, [activeAppointmentTab, appointmentsByDate]);
+    return futureAppointments;
+  }, [activeAppointmentTab, futureAppointments, checkedTodayAppointments]);
 
-  // Generate tab items for appointments (only future appointments)
+  // Generate tab items for appointments (upcoming vs checked)
   const appointmentTabs = useMemo(() => {
-    const tabs: Array<{ key: string; label: string; count: number }> = [];
-    
-    // Today tab
-    if (appointmentsByDate.today && appointmentsByDate.today.length > 0) {
-      tabs.push({
-        key: 'today',
-        label: `Today (${appointmentsByDate.today.length})`,
-        count: appointmentsByDate.today.length,
-      });
-    }
-    
-    // Tomorrow tab
-    if (appointmentsByDate.tomorrow && appointmentsByDate.tomorrow.length > 0) {
-      tabs.push({
-        key: 'tomorrow',
-        label: `Tomorrow (${appointmentsByDate.tomorrow.length})`,
-        count: appointmentsByDate.tomorrow.length,
-      });
-    }
-    
-    // Future date tabs
-    Object.keys(appointmentsByDate)
-      .filter(key => key !== 'today' && key !== 'tomorrow')
-      .sort()
-      .forEach(dateKey => {
-        const appointments = appointmentsByDate[dateKey];
-        if (appointments && appointments.length > 0) {
-          const displayDate = dayjs(dateKey).format('DD MMM');
-          tabs.push({
-            key: dateKey,
-            label: `${displayDate} (${appointments.length})`,
-            count: appointments.length,
-          });
-        }
-      });
-    
-    return tabs;
-  }, [appointmentsByDate]);
+    return [
+      { key: 'upcoming', label: `Upcoming (${futureAppointments.length})`, count: futureAppointments.length },
+      { key: 'checked', label: `Checked (${checkedTodayAppointments.length})`, count: checkedTodayAppointments.length },
+    ];
+  }, [futureAppointments.length, checkedTodayAppointments.length]);
 
   // Update active tab if current tab has no appointments
   useEffect(() => {
@@ -713,67 +619,47 @@ export default function ReceptionistDashboard() {
 
       if (response.ok) {
         message.success('Appointment confirmed successfully! It will now appear in doctor and patient dashboards.');
-        // Trigger storage event to notify other tabs/windows
-        window.localStorage.setItem('appointment-updated', Date.now().toString());
-        // Also dispatch a custom event for same-window updates
-        window.dispatchEvent(new CustomEvent('appointment-updated'));
         
         console.log('✅ Appointment confirmed! Starting cache invalidation...');
         
-        // Invalidate ALL appointment queries - use more aggressive invalidation
-        // This invalidates ANY query that starts with '/api/appointments'
+        // Directly invalidate specific query keys for all dashboards
+        // This ensures patient, doctor, and receptionist dashboards all update
+        queryClient.invalidateQueries({ queryKey: ['patient-appointments'] });
+        queryClient.invalidateQueries({ queryKey: ['/api/appointments/my'] });
+        queryClient.invalidateQueries({ queryKey: ['doctor-appointments'] });
+        
+        // Also use predicate for any other appointment-related queries
         queryClient.invalidateQueries({ 
           predicate: (query) => {
             const key = query.queryKey[0];
-            return typeof key === 'string' && (
-              key.includes('/api/appointments') || 
-              key.includes('patient-appointments') ||
-              key.includes('doctor-appointments')
-            );
+            return typeof key === 'string' && key.includes('/api/appointments');
           }
         });
+        
+        // Trigger storage event to notify other tabs/windows (for cross-tab updates)
+        window.localStorage.setItem('appointment-updated', Date.now().toString());
+        // Also dispatch a custom event for same-window updates
+        window.dispatchEvent(new CustomEvent('appointment-updated', { detail: { appointmentId, status: 'confirmed' } }));
         
         // Force immediate refetch of receptionist appointments
         await refetchAppointments();
         console.log('✅ Receptionist appointments refetched');
         
-        // Trigger refetches after short delays to ensure all dashboards update
+        // Trigger immediate refetch of patient appointments (same window)
+        queryClient.refetchQueries({ queryKey: ['patient-appointments'] });
+        console.log('✅ Patient appointments query invalidated and refetched');
+        
+        // Trigger refetches after short delay to ensure all dashboards update
         setTimeout(() => {
-          console.log('🔄 Refetching all appointment queries (500ms delay)...');
-          // Refetch ALL appointment queries aggressively
-          queryClient.refetchQueries({ 
-            predicate: (query) => {
-              const key = query.queryKey[0];
-              return typeof key === 'string' && (
-                key.includes('/api/appointments') || 
-                key.includes('patient-appointments') ||
-                key.includes('doctor-appointments')
-              );
-            }
-          });
+          console.log('🔄 Refetching all appointment queries (300ms delay)...');
+          // Directly refetch specific queries
+          queryClient.refetchQueries({ queryKey: ['patient-appointments'] });
+          queryClient.refetchQueries({ queryKey: ['/api/appointments/my'] });
           // Trigger another storage event to notify other tabs
           window.localStorage.setItem('appointment-updated', Date.now().toString());
-          window.dispatchEvent(new CustomEvent('appointment-updated'));
+          window.dispatchEvent(new CustomEvent('appointment-updated', { detail: { appointmentId, status: 'confirmed' } }));
           console.log('✅ Storage event dispatched');
-        }, 500);
-        
-        setTimeout(() => {
-          console.log('🔄 Second refetch (2000ms delay)...');
-          // Second refetch to ensure updates are visible
-          queryClient.refetchQueries({ 
-            predicate: (query) => {
-              const key = query.queryKey[0];
-              return typeof key === 'string' && (
-                key.includes('/api/appointments') || 
-                key.includes('patient-appointments') ||
-                key.includes('doctor-appointments')
-              );
-            }
-          });
-          window.localStorage.setItem('appointment-updated', Date.now().toString());
-          window.dispatchEvent(new CustomEvent('appointment-updated'));
-          console.log('✅ Second storage event dispatched');
-        }, 2000);
+        }, 300);
       } else {
         console.error('❌ Confirm appointment failed:', responseData);
         message.error(responseData.message || 'Failed to confirm appointment');
@@ -784,62 +670,14 @@ export default function ReceptionistDashboard() {
     }
   };
 
-  // Handle check-in appointment (when patient arrives at hospital)
-  const handleCheckIn = async (appointmentId: number) => {
-    try {
-      console.log(`🔄 Checking in patient for appointment ${appointmentId}`);
-      const token = localStorage.getItem('auth-token');
-      
-      if (!token) {
-        message.error('Authentication required');
-        return;
-      }
-
-      const response = await fetch(`/api/appointments/${appointmentId}/check-in`, {
-        method: 'PATCH',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        }
-      });
-
-      const responseData = await response.json();
-      console.log('📥 Check-in response:', responseData);
-
-      if (response.ok) {
-        message.success('Patient checked in successfully! Status updated to IN CONSULTATION.');
-        // Trigger storage event to notify other tabs/windows
-        window.localStorage.setItem('appointment-updated', Date.now().toString());
-        window.dispatchEvent(new CustomEvent('appointment-updated'));
-        
-        // Invalidate appointment queries
-        queryClient.invalidateQueries({ queryKey: ['/api/appointments/my'] });
-        
-        // Force immediate refetch
-        await refetchAppointments();
-        
-        setTimeout(() => {
-          queryClient.refetchQueries({ queryKey: ['/api/appointments/my'] });
-          window.localStorage.setItem('appointment-updated', Date.now().toString());
-          window.dispatchEvent(new CustomEvent('appointment-updated'));
-        }, 500);
-      } else {
-        console.error('❌ Check-in failed:', responseData);
-        message.error(responseData.message || 'Failed to check in patient');
-      }
-    } catch (error) {
-      console.error('❌ Error checking in patient:', error);
-      message.error('Failed to check in patient. Please try again.');
-    }
-  };
-
   // Get appointment status with better labels
   const getStatusConfig = (status: string) => {
     const statusConfig: Record<string, { color: string; label: string }> = {
       pending: { color: 'orange', label: 'WAITING' },
       confirmed: { color: 'blue', label: 'CONFIRMED' },
-      'checked-in': { color: 'cyan', label: 'IN CONSULTATION' },
+      'checked-in': { color: 'geekblue', label: 'CHECKED' },
       attended: { color: 'cyan', label: 'IN CONSULTATION' },
+      checked: { color: 'geekblue', label: 'CHECKED' },
       completed: { color: 'green', label: 'COMPLETED' },
       cancelled: { color: 'red', label: 'CANCELLED' },
     };
@@ -920,18 +758,50 @@ export default function ReceptionistDashboard() {
             hours = 0;
           } else if (!period) {
             // No AM/PM indicator - need to determine if it's 12-hour or 24-hour format
-            // If hours are 13-23, it's definitely 24-hour format
-            // If hours are 0-12, it could be either:
-            //   - 24-hour: 0-12 = midnight to noon
-            //   - 12-hour: 1-12 = 1 AM to noon (but without AM/PM, we can't tell)
-            // For appointment times, it's very unlikely to have appointments at 1-11 AM
-            // So if hours are 1-11 without AM/PM, assume it's 12-hour format and means PM
+            // For appointment times without AM/PM, we need to intelligently determine AM vs PM
+            // Strategy: Check both AM and PM, use whichever makes sense based on current time
+            const now = new Date();
+            const appointmentDate = new Date(appointmentDateTime);
+            
+            // Try AM interpretation
+            appointmentDate.setHours(hours, minutes, 0, 0);
+            const asAM = new Date(appointmentDate);
+            
+            // Try PM interpretation (for hours 1-11)
+            let asPM: Date | null = null;
             if (hours >= 1 && hours <= 11) {
-              hours += 12; // Assume 12-hour format, convert to PM (2:30 PM = 14:30)
+              asPM = new Date(appointmentDate);
+              asPM.setHours(hours + 12, minutes, 0, 0);
+            }
+            
+            // Determine which interpretation makes more sense
+            if (hours >= 1 && hours <= 11 && asPM) {
+              // For hours 1-11, we have both AM and PM options
+              const isAMOverdue = asAM < now;
+              const isPMOverdue = asPM < now;
+              const isPMFuture = asPM > now;
+              
+              // If AM is overdue and PM is still future, use AM (appointment was this morning)
+              if (isAMOverdue && isPMFuture) {
+                // Keep hours as AM (no change)
+              } 
+              // If both are overdue, prefer AM (more common for appointments)
+              else if (isAMOverdue && isPMOverdue) {
+                // Keep hours as AM
+              }
+              // If AM is future but PM is overdue, use PM (appointment was this afternoon)
+              else if (!isAMOverdue && isPMOverdue) {
+                hours += 12; // Use PM
+              }
+              // If both are future, prefer AM for morning hours (1-11)
+              else {
+                // Default to AM for morning hours
+                // Keep hours as AM (no change)
+              }
             }
             // If hours is 0, keep as 0 (midnight in 24-hour) or could be 12 AM
             // If hours is 12, could be noon (12 PM) or 12:00 in 24-hour
-            // For appointments, 12:xx is likely noon (12 PM), so keep as 12
+            // For appointments, 12:xx without AM/PM is likely noon (12 PM), so keep as 12
           }
           
           appointmentTime.setHours(hours, minutes, 0, 0);
@@ -944,10 +814,42 @@ export default function ReceptionistDashboard() {
             
             // If hours are 13-23, it's definitely 24-hour format
             // If hours are 0-12, it could be 24-hour (0-12 = midnight to noon)
-            //   or 12-hour without AM/PM (1-12 = 1 AM to noon, but we'd assume PM for appointments)
-            // For appointments, if hours are 1-11, assume it's 12-hour format meaning PM
+            //   or 12-hour without AM/PM (1-12 = 1 AM to noon)
+            // For appointments, we need to intelligently determine AM vs PM
             if (hours >= 1 && hours <= 11) {
-              hours += 12; // Assume 12-hour format, convert to PM
+              // Check both AM and PM interpretations
+              const now = new Date();
+              const appointmentDate = new Date(appointmentDateTime);
+              
+              // Try AM
+              appointmentDate.setHours(hours, minutes, 0, 0);
+              const asAM = new Date(appointmentDate);
+              
+              // Try PM
+              const asPM = new Date(appointmentDate);
+              asPM.setHours(hours + 12, minutes, 0, 0);
+              
+              const isAMOverdue = asAM < now;
+              const isPMOverdue = asPM < now;
+              const isPMFuture = asPM > now;
+              
+              // If AM is overdue and PM is still future, use AM
+              if (isAMOverdue && isPMFuture) {
+                // Keep hours as AM (no change)
+              }
+              // If both are overdue, prefer AM
+              else if (isAMOverdue && isPMOverdue) {
+                // Keep hours as AM
+              }
+              // If AM is future but PM is overdue, use PM
+              else if (!isAMOverdue && isPMOverdue) {
+                hours += 12; // Use PM
+              }
+              // If both are future, prefer AM for morning hours
+              else {
+                // Default to AM for morning hours
+                // Keep hours as AM (no change)
+              }
             }
             
             appointmentTime.setHours(hours, minutes, 0, 0);
@@ -1137,20 +1039,12 @@ export default function ReceptionistDashboard() {
           );
         }
         
-        // Show Check-in button for confirmed appointments (when patient arrives)
+        // For confirmed appointments, allow messaging only (no check-in)
         if (record.status === 'confirmed') {
           return (
             <Space size={4} wrap>
-            <Button
-              size="small"
-              type="default"
-              onClick={() => handleCheckIn(record.id)}
-                style={{ fontSize: 12, height: 28, minWidth: 70 }}
-            >
-              Check-in
-            </Button>
-          <Button 
-            size="small"
+              <Button 
+                size="small"
                 onClick={() => {
                   const phone = record.phone || 'N/A';
                   if (phone === 'N/A') {
@@ -1162,8 +1056,8 @@ export default function ReceptionistDashboard() {
                 style={{ fontSize: 12, height: 28, minWidth: 70 }}
               >
                 Message
-          </Button>
-        </Space>
+              </Button>
+            </Space>
           );
         }
         

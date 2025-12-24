@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { 
   Modal, 
@@ -6,7 +6,6 @@ import {
   Input, 
   Button, 
   Select, 
-  DatePicker, 
   Space, 
   Typography, 
   Divider,
@@ -25,6 +24,7 @@ import {
   FileTextOutlined
 } from '@ant-design/icons';
 import { apiRequest } from "../lib/queryClient";
+import { getAuthToken } from "../lib/auth";
 import type { Medication } from "../../../shared/schema";
 
 const { Title, Text } = Typography;
@@ -36,6 +36,7 @@ interface PrescriptionFormProps {
   onClose: () => void;
   prescription?: any;
   patientId?: number;
+  patientName?: string;
   doctorId?: number;
   hospitalId?: number;
   appointmentId?: number;
@@ -49,6 +50,7 @@ export default function PrescriptionForm({
   onClose,
   prescription,
   patientId,
+  patientName,
   doctorId,
   hospitalId,
   appointmentId,
@@ -62,6 +64,7 @@ export default function PrescriptionForm({
   const [isMedicationModalOpen, setIsMedicationModalOpen] = useState(false);
   const [medicationForm] = Form.useForm();
   const queryClient = useQueryClient();
+  const prevIsOpenRef = useRef(false);
 
   // Fetch patients for doctor to select from
   const { data: patients } = useQuery({
@@ -91,14 +94,30 @@ export default function PrescriptionForm({
         ? patients
         : []);
 
+  const selectedPatientOption =
+    patientId && Array.isArray(resolvedPatients)
+      ? resolvedPatients.find((p: any) => p.id === patientId)
+      : null;
+
+  const fallbackPatientOption =
+    !selectedPatientOption && patientId
+      ? {
+          id: patientId,
+          fullName: patientName || `Patient #${patientId}`,
+          mobileNumber: undefined,
+        }
+      : null;
+
   const resolvedHospitals =
     Array.isArray(hospitals?.hospitals)
       ? hospitals.hospitals
       : Array.isArray(hospitals)
         ? hospitals
         : [];
+  // Reset form only when modal first opens (not on every prop change)
   useEffect(() => {
-    if (isOpen) {
+    // Only reset when modal transitions from closed to open
+    if (isOpen && !prevIsOpenRef.current) {
       form.resetFields();
       setMedications([]);
       const derivedAppointmentId =
@@ -111,24 +130,96 @@ export default function PrescriptionForm({
         appointmentId: derivedAppointmentId ?? undefined,
       });
     }
-  }, [isOpen, patientId, hospitalId, appointmentId, appointmentIdMap, form]);
+    // Update ref to track previous state
+    prevIsOpenRef.current = isOpen;
+  }, [isOpen]); // Only depend on isOpen to prevent clearing fields while typing
 
 
   const createPrescriptionMutation = useMutation({
     mutationFn: async (data: any) => {
-      const response = await apiRequest('POST', '/prescriptions', {
-        ...data,
+      const token = getAuthToken();
+      if (!token) {
+        throw new Error('Authentication required. Please log in again.');
+      }
+
+      // Don't send doctorId - backend will get it from the authenticated user
+      const { doctorId: _, ...cleanData } = data;
+      
+      const requestBody: any = {
+        ...cleanData,
         medications: JSON.stringify(medications),
-        patientId: data.patientId || patientId,
-        doctorId: doctorId,
-        hospitalId: data.hospitalId || hospitalId,
-        appointmentId: appointmentId,
+        patientId: cleanData.patientId || patientId,
+        hospitalId: cleanData.hospitalId || hospitalId,
+      };
+      
+      // Include appointmentId from form selection or prop
+      if (cleanData.appointmentId || appointmentId) {
+        requestBody.appointmentId = cleanData.appointmentId || appointmentId;
+      }
+
+      // Exclude fields not in the schema (followUpDate, id, createdAt, updatedAt, etc.)
+      const { followUpDate, id, createdAt, updatedAt, doctorId: __, ...cleanRequestBody } = requestBody;
+
+      const response = await fetch('/api/prescriptions', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(cleanRequestBody),
+        credentials: 'include',
       });
-      return response.json();
+
+      // Check content type before parsing
+      const contentType = response.headers.get('content-type');
+      const isJson = contentType && contentType.includes('application/json');
+
+      if (!response.ok) {
+        let errorMessage = 'Failed to create prescription';
+        let errorDetails: any = null;
+        
+        if (isJson) {
+          try {
+            const errorData = await response.json();
+            errorMessage = errorData.message || errorData.error || errorMessage;
+            errorDetails = errorData.details;
+            
+            // If there are validation details, format them nicely
+            if (errorDetails && Array.isArray(errorDetails)) {
+              const validationErrors = errorDetails.map((e: any) => `${e.field}: ${e.message}`).join(', ');
+              errorMessage = `${errorMessage}. ${validationErrors}`;
+            } else if (errorDetails && typeof errorDetails === 'string') {
+              errorMessage = `${errorMessage}. ${errorDetails}`;
+            }
+          } catch (e) {
+            errorMessage = `Server error (${response.status}). Please try again.`;
+          }
+        } else {
+          // Response is HTML or plain text
+          const text = await response.text();
+          if (text.includes('<!DOCTYPE') || text.includes('<html')) {
+            errorMessage = `Server error (${response.status}). Please check your authentication and try again.`;
+          } else {
+            errorMessage = text || `Server error (${response.status})`;
+          }
+        }
+        
+        throw new Error(errorMessage);
+      }
+
+      // Response is OK, parse JSON
+      if (isJson) {
+        return await response.json();
+      } else {
+        throw new Error('Server returned non-JSON response');
+      }
     },
     onSuccess: () => {
       message.success('Prescription created successfully!');
       queryClient.invalidateQueries({ queryKey: ['/api/prescriptions'] });
+      queryClient.invalidateQueries({ queryKey: ['patient-prescriptions'] });
+      queryClient.invalidateQueries({ queryKey: ['doctor-prescriptions'] });
+      queryClient.invalidateQueries({ queryKey: ['hospital-prescriptions'] });
       onClose();
       form.resetFields();
       setMedications([]);
@@ -140,15 +231,66 @@ export default function PrescriptionForm({
 
   const updatePrescriptionMutation = useMutation({
     mutationFn: async (data: any) => {
-      const response = await apiRequest('PUT', `/prescriptions/${prescription.id}`, {
-        ...data,
-        medications: JSON.stringify(medications),
+      const token = getAuthToken();
+      if (!token) {
+        throw new Error('Authentication required. Please log in again.');
+      }
+
+      // Exclude fields not in the schema (followUpDate, id, createdAt, updatedAt, etc.)
+      const { followUpDate, id, createdAt, updatedAt, doctorId: __, ...cleanUpdateData } = data;
+      
+      const response = await fetch(`/api/prescriptions/${prescription.id}`, {
+        method: 'PUT',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          ...cleanUpdateData,
+          medications: JSON.stringify(medications),
+          appointmentId: cleanUpdateData.appointmentId || appointmentId,
+        }),
+        credentials: 'include',
       });
-      return response.json();
+
+      // Check content type before parsing
+      const contentType = response.headers.get('content-type');
+      const isJson = contentType && contentType.includes('application/json');
+
+      if (!response.ok) {
+        let errorMessage = 'Failed to update prescription';
+        
+        if (isJson) {
+          try {
+            const errorData = await response.json();
+            errorMessage = errorData.message || errorData.error || errorMessage;
+          } catch (e) {
+            errorMessage = `Server error (${response.status}). Please try again.`;
+          }
+        } else {
+          const text = await response.text();
+          if (text.includes('<!DOCTYPE') || text.includes('<html')) {
+            errorMessage = `Server error (${response.status}). Please check your authentication and try again.`;
+          } else {
+            errorMessage = text || `Server error (${response.status})`;
+          }
+        }
+        throw new Error(errorMessage);
+      }
+
+      // Response is OK, parse JSON
+      if (isJson) {
+        return await response.json();
+      } else {
+        throw new Error('Server returned non-JSON response');
+      }
     },
     onSuccess: () => {
       message.success('Prescription updated successfully!');
       queryClient.invalidateQueries({ queryKey: ['/api/prescriptions'] });
+      queryClient.invalidateQueries({ queryKey: ['patient-prescriptions'] });
+      queryClient.invalidateQueries({ queryKey: ['doctor-prescriptions'] });
+      queryClient.invalidateQueries({ queryKey: ['hospital-prescriptions'] });
       onClose();
     },
     onError: (error: any) => {
@@ -224,6 +366,17 @@ export default function PrescriptionForm({
                     });
                   }}
                 >
+                  {selectedPatientOption && !resolvedPatients?.some((p: any) => p.id === selectedPatientOption.id) && (
+                    <Option key={selectedPatientOption.id} value={selectedPatientOption.id}>
+                      {selectedPatientOption.fullName || selectedPatientOption.name || `Patient #${selectedPatientOption.id}`}
+                      {selectedPatientOption.mobileNumber ? ` (${selectedPatientOption.mobileNumber})` : ''}
+                    </Option>
+                  )}
+                  {fallbackPatientOption && (
+                    <Option key={fallbackPatientOption.id} value={fallbackPatientOption.id}>
+                      {fallbackPatientOption.fullName}
+                    </Option>
+                  )}
                   {resolvedPatients?.map((patient: any) => (
                     <Option key={patient.id} value={patient.id}>
                       {patient.fullName || patient.name || 'Unknown'}{' '}
@@ -287,16 +440,6 @@ export default function PrescriptionForm({
             />
           </Form.Item>
 
-          <Form.Item
-            name="followUpDate"
-            label="Follow-up Date"
-          >
-            <DatePicker
-              style={{ width: '100%' }}
-              placeholder="Select follow-up date"
-            />
-          </Form.Item>
-
           <Divider />
 
           <div style={{ marginBottom: '16px' }}>
@@ -308,7 +451,9 @@ export default function PrescriptionForm({
               <Button
                 type="primary"
                 icon={<PlusOutlined />}
-                onClick={() => setIsMedicationModalOpen(true)}
+                onClick={() => {
+                  setIsMedicationModalOpen(true);
+                }}
               >
                 Add Medication
               </Button>
@@ -386,6 +531,9 @@ export default function PrescriptionForm({
         }}
         footer={null}
         width={600}
+        zIndex={2000}
+        getContainer={() => document.body}
+        maskClosable={true}
       >
         <Form
           form={medicationForm}

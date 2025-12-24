@@ -2,6 +2,7 @@
 import { db } from "../db";
 import { patients } from "../../shared/schema";
 import { InsertPatient } from "../../shared/schema-types";
+import { eq } from "drizzle-orm";
 
 /**
  * Get patient by ID.
@@ -11,7 +12,7 @@ export const getPatientById = async (patientId: number) => {
   const result = await db
     .select()
     .from(patients)
-    .where((condition: any) => condition(patientId));
+    .where(eq(patients.id, patientId));
   
   return result[0] || null;
 };
@@ -24,8 +25,8 @@ export const getPatientByUserId = async (userId: number) => {
   const result = await db
     .select()
     .from(patients)
-    .where((condition: any) => condition(userId));
-  
+    .where(eq(patients.userId, userId));
+
   return result[0] || null;
 };
 
