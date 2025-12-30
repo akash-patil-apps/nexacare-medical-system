@@ -22,6 +22,13 @@
       "when": 1758963173668,
       "tag": "0002_thankful_unicorn",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1767086695747,
+      "tag": "0003_clever_johnny_storm",
+      "breakpoints": true
     }
   ]
 }

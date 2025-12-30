@@ -334,6 +334,100 @@ export default function LabDashboard() {
     },
   ];
 
+  const renderMobileReportCard = (record: any, opts?: { accentBorder?: boolean; badgeText?: string }) => {
+    const status = (record.status || 'pending').toLowerCase();
+    const result = record.result || 'Pending';
+    const priority = record.priority || 'Normal';
+    const accentBorder = opts?.accentBorder ?? false;
+
+    const statusColor =
+      status === 'completed' || status === 'ready' ? 'green' :
+      status === 'processing' ? 'blue' :
+      'orange';
+
+    const resultColor =
+      result === 'Normal' ? 'green' :
+      result === 'Abnormal' ? 'red' :
+      'orange';
+
+    const priorityColor =
+      priority === 'Critical' ? 'red' :
+      priority === 'High' ? 'orange' :
+      'blue';
+
+    return (
+      <Card
+        key={`${opts?.badgeText || 'report'}-${record.id}`}
+        size="small"
+        variant="borderless"
+        style={{
+          borderRadius: 16,
+          border: accentBorder ? `2px solid ${labTheme.accent}` : '1px solid #E5E7EB',
+          background: '#fff',
+          boxShadow: '0 2px 8px rgba(0, 0, 0, 0.06)',
+        }}
+        bodyStyle={{ padding: 14 }}
+      >
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
+          <div style={{ minWidth: 0, flex: 1 }}>
+            <Text strong style={{ fontSize: 14, display: 'block', lineHeight: 1.4 }}>
+              {record.patient || 'Unknown'}
+            </Text>
+            <Text type="secondary" style={{ fontSize: 12, display: 'block', lineHeight: 1.4 }}>
+              {record.testName || 'Test'} • {record.date || 'N/A'}
+            </Text>
+          </div>
+
+          <Space size={6} wrap style={{ justifyContent: 'flex-end' }}>
+            {opts?.badgeText && (
+              <Tag color="orange" style={{ margin: 0, fontSize: 12, fontWeight: 600 }}>
+                {opts.badgeText}
+              </Tag>
+            )}
+            <Tag color={priorityColor} style={{ margin: 0, fontSize: 12 }}>
+              {priority}
+            </Tag>
+            <Tag color={resultColor} style={{ margin: 0, fontSize: 12 }}>
+              {result}
+            </Tag>
+          </Space>
+        </div>
+
+        <div style={{ marginTop: 12, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
+          <Space size={8} wrap>
+            <Tag color={statusColor} style={{ margin: 0, fontSize: 12 }}>
+              {status.toUpperCase()}
+            </Tag>
+            {status !== 'completed' && (
+              <Select
+                size="small"
+                value={status}
+                onChange={(newStatus) => updateStatusMutation.mutate({ reportId: record.id, status: newStatus })}
+                style={{ width: 140 }}
+              >
+                <Option value="pending">Pending</Option>
+                <Option value="processing">Processing</Option>
+                <Option value="ready">Ready</Option>
+                <Option value="completed">Completed</Option>
+              </Select>
+            )}
+          </Space>
+
+          <Button
+            size="small"
+            type="link"
+            onClick={() => {
+              setSelectedReport(record);
+              setIsUploadModalOpen(true);
+            }}
+          >
+            Edit
+          </Button>
+        </div>
+      </Card>
+    );
+  };
+
   const sidebarMenu = [
     {
       key: 'dashboard',
@@ -380,6 +474,7 @@ export default function LabDashboard() {
         )}
       </div>
       <Menu
+        className="lab-dashboard-menu"
         mode="inline"
         defaultSelectedKeys={['dashboard']}
         items={sidebarMenu}
@@ -400,7 +495,67 @@ export default function LabDashboard() {
   );
 
   return (
-    <Layout style={{ minHeight: '100vh', background: '#f5f5f5' }}>
+    <>
+      <style>{`
+        /* Override medical-container padding only when lab dashboard is rendered */
+        body:has(.lab-dashboard-wrapper) .medical-container {
+          padding: 0 !important;
+          display: block !important;
+          align-items: unset !important;
+          justify-content: unset !important;
+          background: transparent !important;
+          min-height: 100vh !important;
+        }
+
+        .lab-dashboard-menu .ant-menu-item {
+          border-radius: 12px !important;
+          margin: 4px 8px !important;
+          height: 48px !important;
+          line-height: 48px !important;
+          transition: all 0.3s ease !important;
+          padding-left: 16px !important;
+          background: transparent !important;
+          border: none !important;
+        }
+        .lab-dashboard-menu .ant-menu-item:hover {
+          background: transparent !important;
+        }
+        .lab-dashboard-menu .ant-menu-item:hover,
+        .lab-dashboard-menu .ant-menu-item:hover .ant-menu-title-content {
+          color: #595959 !important;
+        }
+        .lab-dashboard-menu .ant-menu-item-selected {
+          background: ${labTheme.primary} !important;
+          font-weight: 500 !important;
+          border: none !important;
+          padding-left: 16px !important;
+        }
+        .lab-dashboard-menu .ant-menu-item-selected,
+        .lab-dashboard-menu .ant-menu-item-selected .ant-menu-title-content {
+          color: #fff !important;
+        }
+        .lab-dashboard-menu .ant-menu-item-selected .ant-menu-item-icon,
+        .lab-dashboard-menu .ant-menu-item-selected .anticon {
+          color: #fff !important;
+        }
+        .lab-dashboard-menu .ant-menu-item:not(.ant-menu-item-selected) {
+          color: #8C8C8C !important;
+          background: transparent !important;
+        }
+        .lab-dashboard-menu .ant-menu-item:not(.ant-menu-item-selected) .ant-menu-title-content {
+          color: #8C8C8C !important;
+        }
+        .lab-dashboard-menu .ant-menu-item-selected::after {
+          display: none !important;
+        }
+        .lab-dashboard-menu .ant-menu-item-icon,
+        .lab-dashboard-menu .anticon {
+          font-size: 18px !important;
+          width: 18px !important;
+          height: 18px !important;
+        }
+      `}</style>
+      <Layout className="lab-dashboard-wrapper" style={{ minHeight: '100vh', background: labTheme.background }}>
       {/* Desktop/Tablet Sidebar */}
       {!isMobile && (
       <Sider 
@@ -456,8 +611,7 @@ export default function LabDashboard() {
             background: labTheme.background,
             height: '100vh',
             overflowY: 'auto',
-            padding: isMobile ? '0 16px 16px' : isTablet ? '0 20px 20px' : '0 24px 24px',
-            paddingTop: 0,
+            padding: isMobile ? '24px 16px 16px' : isTablet ? '24px 20px 20px' : '24px 24px 24px',
           }}
         >
           <div style={{ paddingBottom: 24, maxWidth: '1320px', margin: '0 auto' }}>
@@ -644,29 +798,47 @@ export default function LabDashboard() {
                     }
                     style={{ borderRadius: 16, border: `2px solid ${labTheme.accent}` }}
                   >
-                    <div style={{ overflowX: 'auto' }}>
-                      <Table
-                        columns={reportColumns}
-                        dataSource={doctorRequests.map((report: any) => ({
-                          ...report,
-                          id: report.id,
-                          patient: report.patientName || report.patient || 'Unknown',
-                          testName: report.testName || 'Test',
-                          date: report.reportDate ? new Date(report.reportDate).toLocaleDateString() : 'N/A',
-                          result: 'Requested',
-                          priority: report.priority || 'Normal',
-                          status: report.status || 'pending',
-                        }))}
-                        pagination={false}
-                        rowKey="id"
-                        variant="borderless"
-                        size={isMobile ? "small" : "middle"}
-                        scroll={isMobile ? { x: 'max-content' } : undefined}
-                        style={{
-                          backgroundColor: labTheme.background
-                        }}
-                      />
-                    </div>
+                    {isMobile ? (
+                      <Space direction="vertical" size={12} style={{ width: '100%' }}>
+                        {doctorRequests.map((report: any) => {
+                          const row = {
+                            ...report,
+                            id: report.id,
+                            patient: report.patientName || report.patient || 'Unknown',
+                            testName: report.testName || 'Test',
+                            date: report.reportDate ? new Date(report.reportDate).toLocaleDateString() : 'N/A',
+                            result: 'Requested',
+                            priority: report.priority || 'Normal',
+                            status: report.status || 'pending',
+                          };
+                          return renderMobileReportCard(row, { accentBorder: true, badgeText: 'New' });
+                        })}
+                      </Space>
+                    ) : (
+                      <div style={{ overflowX: 'auto' }}>
+                        <Table
+                          columns={reportColumns}
+                          dataSource={doctorRequests.map((report: any) => ({
+                            ...report,
+                            id: report.id,
+                            patient: report.patientName || report.patient || 'Unknown',
+                            testName: report.testName || 'Test',
+                            date: report.reportDate ? new Date(report.reportDate).toLocaleDateString() : 'N/A',
+                            result: 'Requested',
+                            priority: report.priority || 'Normal',
+                            status: report.status || 'pending',
+                          }))}
+                          pagination={false}
+                          rowKey="id"
+                          variant="borderless"
+                          size={isMobile ? "small" : "middle"}
+                          scroll={isMobile ? { x: 'max-content' } : undefined}
+                          style={{
+                            backgroundColor: labTheme.background
+                          }}
+                        />
+                      </div>
+                    )}
                   </Card>
                 )}
 
@@ -692,21 +864,36 @@ export default function LabDashboard() {
                   }
                 style={{ borderRadius: 16 }}
               >
-                  <div style={{ overflowX: 'auto' }}>
-                <Table
-                  columns={reportColumns}
-                      dataSource={labReports.filter((r: any) => !doctorRequests.find((dr: any) => dr.id === r.id))}
-                  pagination={false}
-                  rowKey="id"
-                  variant="borderless"
-                      size={isMobile ? "small" : "middle"}
-                      scroll={isMobile ? { x: 'max-content' } : undefined}
-                      loading={labReportsLoading}
-                  style={{
-                    backgroundColor: labTheme.background
-                  }}
-                />
-                  </div>
+                  {isMobile ? (
+                    <Space direction="vertical" size={12} style={{ width: '100%' }}>
+                      {labReportsLoading ? (
+                        <>
+                          <Card size="small" style={{ borderRadius: 16 }}><Spin /></Card>
+                          <Card size="small" style={{ borderRadius: 16 }}><Spin /></Card>
+                        </>
+                      ) : (
+                        labReports
+                          .filter((r: any) => !doctorRequests.find((dr: any) => dr.id === r.id))
+                          .map((r: any) => renderMobileReportCard(r))
+                      )}
+                    </Space>
+                  ) : (
+                    <div style={{ overflowX: 'auto' }}>
+                      <Table
+                        columns={reportColumns}
+                        dataSource={labReports.filter((r: any) => !doctorRequests.find((dr: any) => dr.id === r.id))}
+                        pagination={false}
+                        rowKey="id"
+                        variant="borderless"
+                        size={isMobile ? "small" : "middle"}
+                        scroll={isMobile ? { x: 'max-content' } : undefined}
+                        loading={labReportsLoading}
+                        style={{
+                          backgroundColor: labTheme.background
+                        }}
+                      />
+                    </div>
+                  )}
               </Card>
               </Space>
             </Col>
@@ -815,6 +1002,7 @@ export default function LabDashboard() {
         }}
         report={selectedReport}
       />
-    </Layout>
+      </Layout>
+    </>
   );
 }

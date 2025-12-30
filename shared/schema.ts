@@ -188,9 +188,19 @@ export const prescriptions = pgTable("prescriptions", {
   medications: text("medications").notNull(), // JSON string with detailed medication info
   instructions: text("instructions"),
   followUpDate: timestamp("follow_up_date"),
+  editableUntil: timestamp("editable_until"),
   isActive: boolean("is_active").default(true),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at"), // to see when doctor updated the given prescription
+});
+
+export const prescriptionAudits = pgTable("prescription_audits", {
+  id: serial("id").primaryKey(),
+  prescriptionId: integer("prescription_id").references(() => prescriptions.id).notNull(),
+  doctorId: integer("doctor_id").references(() => doctors.id).notNull(),
+  action: text("action").notNull(), // created | updated | extended
+  message: text("message").notNull(), // human readable summary
+  createdAt: timestamp("created_at").defaultNow(),
 });
 
 // Lab Reports

@@ -148,4 +148,26 @@ router.post(
   }
 );
 
+/**
+ * Get comprehensive patient information by patientId.
+ */
+router.get(
+  '/patients/:patientId/info',
+  authenticateToken,
+  authorizeRoles('receptionist', 'doctor'),
+  async (req: AuthenticatedRequest, res) => {
+    try {
+      const patientId = Number(req.params.patientId);
+      const patientInfo = await receptionService.getPatientInfo(patientId);
+      if (!patientInfo) {
+        return res.status(404).json({ message: 'Patient not found' });
+      }
+      res.json(patientInfo);
+    } catch (err) {
+      console.error('Get patient info error:', err);
+      res.status(500).json({ message: 'Failed to fetch patient information' });
+    }
+  }
+);
+
 export default router;

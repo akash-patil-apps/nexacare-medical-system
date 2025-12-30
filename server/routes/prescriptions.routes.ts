@@ -122,24 +122,26 @@ router.get(
   }
 );
 
-// 4. Update prescription by doctor
+// 4. Update prescription by doctor (with edit window guard)
 router.put(
   "/:id",
   authenticateToken,
   authorizeRoles("DOCTOR"),
   async (req: AuthenticatedRequest, res) => {
     try {
+      const doctorProfile = await doctorsService.getDoctorByUserId(req.user!.id);
+      if (!doctorProfile) return res.status(404).json({ error: "Doctor profile not found" });
       const prescriptionId = Number(req.params.id);
       const updated = await prescriptionService.updatePrescription(
-        req.user!.id,
+        doctorProfile.id,
         prescriptionId,
         req.body
       );
       if (!updated) return res.status(404).json({ message: "Prescription not found or unauthorized" });
       res.json(updated);
-    } catch (err) {
+    } catch (err: any) {
       console.error("Update prescription error:", err);
-      res.status(500).json({ error: "Failed to update" });
+      res.status(500).json({ error: err.message || "Failed to update" });
     }
   }
 );
@@ -171,9 +173,19 @@ router.get(
   authorizeRoles("DOCTOR"),
   async (req: AuthenticatedRequest, res) => {
     try {
+      // Get doctor ID from user ID (prescriptions.doctorId references doctors.id, not users.id)
+      const doctorProfile = await doctorsService.getDoctorByUserId(req.user!.id);
+      if (!doctorProfile || !doctorProfile.id) {
+        console.error("❌ Doctor profile not found for user ID:", req.user!.id);
+        return res.status(404).json({ error: "Doctor profile not found" });
+      }
+      
+      const doctorId = doctorProfile.id;
+      console.log("📋 Fetching prescriptions for doctor ID:", doctorId, "(user ID:", req.user!.id, ")");
+      
       const { search, hospitalId, from, to, status, limit } = req.query;
       const prescriptions = await prescriptionService.getPrescriptionsForDoctor({
-        doctorId: req.user!.id,
+        doctorId: doctorId, // Use doctor table ID, not user ID
         search: search as string,
         hospitalId: hospitalId ? Number(hospitalId) : undefined,
         from: from ? new Date(from as string) : undefined,
@@ -181,10 +193,31 @@ router.get(
         status: status as string,
         limit: limit ? Number(limit) : undefined,
       });
+      
+      console.log(`✅ Found ${prescriptions.length} prescriptions for doctor ${doctorId}`);
       res.json(prescriptions);
     } catch (err) {
-      console.error("Fetch doctor prescriptions failed:", err);
+      console.error("❌ Fetch doctor prescriptions failed:", err);
       res.status(500).json({ error: "Failed to fetch prescriptions" });
+    }
+  }
+);
+
+// 7. Extend prescription edit window (doctor only)
+router.post(
+  "/:id/extend",
+  authenticateToken,
+  authorizeRoles("DOCTOR"),
+  async (req: AuthenticatedRequest, res) => {
+    try {
+      const doctorProfile = await doctorsService.getDoctorByUserId(req.user!.id);
+      if (!doctorProfile) return res.status(404).json({ error: "Doctor profile not found" });
+      const prescriptionId = Number(req.params.id);
+      const extended = await prescriptionService.extendPrescription(prescriptionId, doctorProfile.id);
+      res.json(extended);
+    } catch (err: any) {
+      console.error("Extend prescription error:", err);
+      res.status(500).json({ error: err.message || "Failed to extend" });
     }
   }
 );

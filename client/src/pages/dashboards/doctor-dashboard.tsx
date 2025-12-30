@@ -36,6 +36,16 @@ import { KpiCard } from '../../components/dashboard/KpiCard';
 import { QuickActionTile } from '../../components/dashboard/QuickActionTile';
 import LabRequestModal from '../../components/modals/lab-request-modal';
 import dayjs from 'dayjs';
+import { formatTimeSlot12h } from '../../lib/time';
+import { subscribeToAppointmentEvents } from '../../lib/appointments-events';
+import { 
+  APPOINTMENT_STATUS, 
+  getStatusConfig, 
+  normalizeStatus, 
+  isFinalStatus, 
+  canCreatePrescription 
+} from '../../lib/appointment-status';
+import { getISTNow, toIST, getISTStartOfDay, isSameDayIST } from '../../lib/timezone';
 
 const { Content, Sider } = Layout;
 const { Title, Text } = Typography;
@@ -44,7 +54,7 @@ const doctorTheme = {
   primary: '#1D4ED8',
   highlight: '#E0E7FF',
   accent: '#7C3AED',
-  background: '#F3F4F6', // Match patient/receptionist background
+  background: '#F5F7FF', // Per DASHBOARD_STYLE_GUIDE.md (Doctor background)
 };
 
 export default function DoctorDashboard() {
@@ -116,7 +126,7 @@ export default function DoctorDashboard() {
   });
 
   // Get prescriptions for doctor
-  const { data: prescriptions = [] } = useQuery({
+  const { data: prescriptions = [], refetch: refetchPrescriptions } = useQuery({
     queryKey: ['/api/prescriptions/doctor'],
     queryFn: async () => {
       const token = localStorage.getItem('auth-token');
@@ -129,10 +139,14 @@ export default function DoctorDashboard() {
         console.log('⚠️ Prescriptions API not ready yet');
         return [];
       }
-      return response.json();
+      const data = await response.json();
+      console.log('📋 Prescriptions fetched:', data.length, 'prescriptions');
+      console.log('📋 Sample prescription:', data[0] ? { id: data[0].id, appointmentId: data[0].appointmentId || data[0].appointment_id, patientId: data[0].patientId } : 'none');
+      return data;
     },
     enabled: !!user && user.role?.toUpperCase() === 'DOCTOR',
     refetchInterval: 10000,
+    refetchIntervalInBackground: true,
   });
 
   const [selectedPrescription, setSelectedPrescription] = useState<any | undefined>(undefined);
@@ -142,20 +156,23 @@ export default function DoctorDashboard() {
   const [historyAppointments, setHistoryAppointments] = useState<any[]>([]);
   const [historyPrescriptions, setHistoryPrescriptions] = useState<any[]>([]);
 
+  // Map prescriptions by appointment ID for quick lookup
+  // This tracks whether a doctor has given a prescription to a patient for a specific appointment
   const prescriptionsByAppointmentId = useMemo(() => {
     const map = new Map<string | number, any>();
+    console.log('📋 Building prescriptions map. Total prescriptions:', prescriptions.length);
     prescriptions.forEach((p: any) => {
+      // Try multiple field names for appointmentId (handles different API response formats)
       const appointmentKey =
         p.appointmentId ??
         p.appointment_id ??
         (p.appointment ? p.appointment.id : undefined);
       if (appointmentKey) {
         map.set(appointmentKey, p);
-      }
-      if (p.patientId ?? p.patient_id) {
-        map.set(`patient-${(p.patientId ?? p.patient_id)}`, p);
+        console.log(`✅ Mapped prescription ${p.id} to appointment ${appointmentKey}`);
       }
     });
+    console.log('📋 Prescriptions map built. Total entries:', map.size);
     return map;
   }, [prescriptions]);
 
@@ -284,7 +301,7 @@ export default function DoctorDashboard() {
           patientId: apt.patientId,
           patient: apt.patientName || 'Unknown Patient',
           patientMobile: apt.patientMobile,
-          time: apt.appointmentTime || apt.timeSlot || 'N/A',
+          time: (apt.appointmentTime || apt.timeSlot) ? formatTimeSlot12h(apt.appointmentTime || apt.timeSlot) : 'N/A',
           status: apt.status || 'pending',
           type: apt.type || 'Consultation',
           priority: apt.priority || 'Normal',
@@ -298,23 +315,52 @@ export default function DoctorDashboard() {
       return transformed;
     },
     enabled: !!user && user.role?.toUpperCase() === 'DOCTOR',
-    refetchInterval: 3000, // Refetch every 3 seconds for faster updates
     refetchOnWindowFocus: true, // Refetch when window gains focus
     refetchOnMount: true, // Refetch when component mounts
   });
 
+  // Real-time: server pushes appointment updates (no polling).
+  useEffect(() => {
+    const unsubscribe = subscribeToAppointmentEvents({
+      onEvent: () => {
+        queryClient.invalidateQueries({ queryKey: ['/api/appointments/my'] });
+        refetchAppointments();
+      },
+    });
+    return unsubscribe;
+  }, [queryClient, refetchAppointments]);
 
-  // Filter active (doctor-facing) appointments that are in the future (by start time)
-  const confirmedFutureAppointments = useMemo(() => {
-    const now = new Date();
-    // Keep visible while patient is on the way or in room
-    const activeStatuses = ['confirmed', 'in_consultation', 'checked-in', 'checked', 'checked_in', 'attended'];
 
-    const parseStartDateTime = (apt: any) => {
-      const base = apt.dateObj || (apt.date ? new Date(apt.date) : null);
+  // Active appointment statuses (using universal status constants)
+  // These are appointments that are confirmed and ready for doctor to see
+  // Note: Currently hospital timings are 9 AM - 5 PM, but in the future:
+  // - Hospital admins will be able to configure hospital timings and slots
+  // - Doctors will be able to set their own availability timings
+  const activeStatuses = useMemo(
+    () => [
+      APPOINTMENT_STATUS.CONFIRMED,
+      APPOINTMENT_STATUS.CHECKED_IN,
+      APPOINTMENT_STATUS.IN_CONSULTATION,
+      APPOINTMENT_STATUS.ATTENDED,
+      // Legacy support
+      'checked', 'checked_in', 'in_consultation',
+    ],
+    [],
+  );
+
+  /**
+   * Parse appointment start date/time in IST
+   * All date/time operations use IST to avoid timezone confusion
+   */
+  const parseStartDateTime = (apt: any): Date | null => {
+    const base = apt?.dateObj || (apt?.date ? new Date(apt.date) : null);
       if (!base || isNaN(base.getTime())) return null;
-      const start = new Date(base);
-      const timeStr = (apt.time || apt.timeSlot || '').toString().trim();
+    
+    // Convert to IST
+    const start = toIST(base);
+    if (!start) return null;
+    
+    const timeStr = (apt?.time || apt?.timeSlot || '').toString().trim();
       if (timeStr) {
         const startPart = timeStr.includes('-') ? timeStr.split('-')[0].trim() : timeStr;
         const match = startPart.match(/(\d{1,2}):(\d{2})(?:\s*(AM|PM|am|pm))?/);
@@ -324,153 +370,184 @@ export default function DoctorDashboard() {
           const period = match[3]?.toUpperCase();
           if (period === 'PM' && hours !== 12) hours += 12;
           if (period === 'AM' && hours === 12) hours = 0;
+        // Legacy convention: "02:00-05:00" slots represent AFTERNOON when AM/PM is missing
+        // Note: Currently hospital timings are 9 AM - 5 PM, but this will be configurable in the future
+        if (!period && hours >= 2 && hours <= 5) hours += 12;
           start.setHours(hours, minutes, 0, 0);
         }
       }
       return start;
     };
+
+  // Use IST-based same day check
+  const isSameDay = (a: Date | null, b: Date | null) => {
+    if (!a || !b) return false;
+    return isSameDayIST(a, b);
+  };
+
+  // Today appointments (includes past times for today) - All in IST
+  const confirmedTodayAppointments = useMemo(() => {
+    const now = getISTNow();
+    const today = getISTStartOfDay(now);
+
+    return allAppointments
+      .filter((apt: any) => {
+        const normalizedStatus = normalizeStatus(apt.status);
+        // Check if status is active (using universal status constants)
+        if (!activeStatuses.includes(normalizedStatus) && !activeStatuses.includes(apt.status?.toLowerCase())) {
+          return false;
+        }
+        const start = parseStartDateTime(apt);
+        if (!start) return false;
+        return isSameDay(start, today);
+      })
+      .sort((a: any, b: any) => {
+        const sa = parseStartDateTime(a) || new Date(0);
+        const sb = parseStartDateTime(b) || new Date(0);
+        return sa.getTime() - sb.getTime();
+      });
+  }, [allAppointments, activeStatuses]);
+
+  // Upcoming appointments (end time >= now) - includes same-day future times and future days
+  const confirmedFutureAppointments = useMemo(() => {
+    const now = getISTNow();
+    const today = getISTStartOfDay(now);
     
     console.log('🔍 Filtering appointments. Total:', allAppointments.length);
-    console.log('🔍 Current date/time:', now.toISOString());
+    console.log('🔍 Current date/time (IST):', now.toISOString());
+
+    const parseEndDateTime = (apt: any) => {
+      const base = apt?.dateObj || (apt?.date ? new Date(apt.date) : null);
+      if (!base || isNaN(base.getTime())) return null;
+      const end = toIST(base);
+      if (!end) return null;
+
+      const timeStr = (apt?.time || apt?.timeSlot || '').toString().trim();
+      if (timeStr && timeStr.includes('-')) {
+        const parts = timeStr.split('-');
+        const endPart = parts[1]?.trim();
+        const match = endPart?.match(/(\d{1,2}):(\d{2})(?:\s*(AM|PM|am|pm))?/);
+        if (match) {
+          let hours = parseInt(match[1], 10);
+          const minutes = parseInt(match[2], 10);
+          const period = match[3]?.toUpperCase();
+          if (period === 'PM' && hours !== 12) hours += 12;
+          if (period === 'AM' && hours === 12) hours = 0;
+          // Legacy convention: 2-5 without AM/PM is afternoon
+          if (!period && hours >= 2 && hours <= 5) hours += 12;
+          end.setHours(hours, minutes, 0, 0);
+          return end;
+        }
+      }
+      // Fallback: if no end time, use start time + 30 minutes
+      const start = parseStartDateTime(apt);
+      if (!start) return null;
+      end.setTime(start.getTime() + 30 * 60 * 1000);
+      return end;
+    };
     
     const filtered = allAppointments
       .filter((apt: any) => {
-        const status = (apt.status || '').toLowerCase();
-        // Only show active statuses
-        if (!activeStatuses.includes(status)) {
+        const normalizedStatus = normalizeStatus(apt.status);
+        // Only show active statuses (using universal status constants)
+        if (!activeStatuses.includes(normalizedStatus) && !activeStatuses.includes(apt.status?.toLowerCase())) {
           console.log(`⏭️  Skipping appointment ${apt.id} - status: ${apt.status}`);
           return false;
         }
         
-        const start = parseStartDateTime(apt);
-        if (!start) {
-          console.log(`⏭️  Skipping appointment ${apt.id} - no valid start time`);
+        const end = parseEndDateTime(apt);
+        if (!end) {
+          console.log(`⏭️  Skipping appointment ${apt.id} - no valid end time`);
           return false;
         }
-        const isFuture = start.getTime() >= now.getTime();
-        if (!isFuture) {
-          console.log(`⏭️  Skipping appointment ${apt.id} - start ${start.toISOString()} is in the past`);
+        // Upcoming includes:
+        // - Same-day future (end >= now AND same day)
+        // - Future days
+        const isSameDayFuture = isSameDay(end, today) && end.getTime() >= now.getTime();
+        const isFutureDay = end.getTime() >= now.getTime() && !isSameDay(end, today);
+        const include = isSameDayFuture || isFutureDay;
+        if (!include) {
+          console.log(`⏭️  Skipping appointment ${apt.id} - end ${end.toISOString()} is not future or same-day future`);
         }
-        return isFuture;
+        return include;
       })
       .sort((a: any, b: any) => {
         // Sort by start time (earliest first)
-        const parseStart = (apt: any) => {
-          const base = apt.dateObj || (apt.date ? new Date(apt.date) : null);
-          const start = base ? new Date(base) : new Date();
-          const timeStr = (apt.time || apt.timeSlot || '').toString().trim();
-          if (timeStr) {
-            const startPart = timeStr.includes('-') ? timeStr.split('-')[0].trim() : timeStr;
-            const match = startPart.match(/(\d{1,2}):(\d{2})(?:\s*(AM|PM|am|pm))?/);
-            if (match) {
-              let hours = parseInt(match[1], 10);
-              const minutes = parseInt(match[2], 10);
-              const period = match[3]?.toUpperCase();
-              if (period === 'PM' && hours !== 12) hours += 12;
-              if (period === 'AM' && hours === 12) hours = 0;
-              start.setHours(hours, minutes, 0, 0);
-            }
-          }
-          return start;
-        };
-        const dateTimeA = parseStart(a);
-        const dateTimeB = parseStart(b);
+        const dateTimeA = parseStartDateTime(a) || new Date(0);
+        const dateTimeB = parseStartDateTime(b) || new Date(0);
         return dateTimeA.getTime() - dateTimeB.getTime();
       });
     
     console.log(`✅ Filtered to ${filtered.length} confirmed future appointments`);
     return filtered;
-  }, [allAppointments]);
+  }, [allAppointments, activeStatuses]);
 
-  // Group appointments by date for tabs
-  const appointmentsByDate = useMemo(() => {
-    const now = new Date();
-    const today = new Date(now);
-    today.setHours(0, 0, 0, 0);
-    
-    const tomorrow = new Date(today);
-    tomorrow.setDate(tomorrow.getDate() + 1);
-    
-    const groups: Record<string, any[]> = {
-      today: [],
-      tomorrow: [],
-    };
-    
-    confirmedFutureAppointments.forEach((apt: any) => {
-      if (!apt.dateObj && !apt.date) return;
-      
-      const appointmentDate = apt.dateObj || new Date(apt.date);
-      appointmentDate.setHours(0, 0, 0, 0);
-      
-      const dateKey = appointmentDate.getTime();
-      const todayKey = today.getTime();
-      const tomorrowKey = tomorrow.getTime();
-      
-      if (dateKey === todayKey) {
-        groups.today.push(apt);
-      } else if (dateKey === tomorrowKey) {
-        groups.tomorrow.push(apt);
-      } else {
-        // Future dates - use date string as key
-        const dateStr = dayjs(appointmentDate).format('YYYY-MM-DD');
-        if (!groups[dateStr]) {
-          groups[dateStr] = [];
-        }
-        groups[dateStr].push(apt);
-      }
-    });
-    
-    return groups;
-  }, [confirmedFutureAppointments]);
+  // For stats + prescription modal patient list: use today's confirmed appointments (includes past times today)
+  const todayAppointments = confirmedTodayAppointments;
 
-  // Checked/completed appointments for today (after doctor marks checked)
+  // Checked/completed appointments for today (after doctor marks completed) - All in IST
+  // Note: Currently hospital timings are 9 AM - 5 PM IST, but in the future:
+  // - Hospital admins will be able to configure hospital timings and slots
+  // - Doctors will be able to set their own availability timings
   const checkedTodayAppointments = useMemo(() => {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
+    const today = getISTStartOfDay();
 
     return allAppointments.filter((apt: any) => {
+      const normalizedStatus = normalizeStatus(apt.status);
+      // Keep checked-in in Upcoming; only move to Checked tab once doctor marks completed
+      // Using universal status constants
+      if (normalizedStatus !== APPOINTMENT_STATUS.COMPLETED) {
+        // Legacy support for 'checked' and 'attended' statuses
       const status = (apt.status || '').toLowerCase();
-      // Keep checked-in in Upcoming; only move to Checked tab once doctor marks checked/completed/attended
-      if (!['checked', 'completed', 'attended'].includes(status)) return false;
+        if (!['checked', 'attended'].includes(status)) return false;
+      }
+      
       if (!apt.date && !apt.dateObj) return false;
 
-      const appointmentDate = apt.dateObj || new Date(apt.date);
-      if (isNaN(appointmentDate.getTime())) return false;
+      const appointmentDate = toIST(apt.dateObj || apt.date);
+      if (!appointmentDate) return false;
 
-      const appointmentDay = new Date(appointmentDate);
-      appointmentDay.setHours(0, 0, 0, 0);
-
-      return appointmentDay.getTime() === today.getTime();
+      return isSameDayIST(appointmentDate, today);
     });
   }, [allAppointments]);
 
-  // Get appointments for active tab (upcoming vs checked)
+  // Get appointments for active tab (today vs upcoming vs checked)
   const appointmentsToShow = useMemo(() => {
     if (activeAppointmentTab === 'checked') {
       return checkedTodayAppointments;
     }
+    if (activeAppointmentTab === 'today') {
+      return confirmedTodayAppointments;
+    }
     return confirmedFutureAppointments;
-  }, [activeAppointmentTab, confirmedFutureAppointments, checkedTodayAppointments]);
+  }, [activeAppointmentTab, confirmedFutureAppointments, checkedTodayAppointments, confirmedTodayAppointments]);
 
-  // Generate tab items for appointments
+  // Generate tab items for appointments - Order: Upcoming, Checked, Today
   const appointmentTabs = useMemo(() => {
     return [
       { key: 'upcoming', label: `Upcoming (${confirmedFutureAppointments.length})`, count: confirmedFutureAppointments.length },
       { key: 'checked', label: `Checked (${checkedTodayAppointments.length})`, count: checkedTodayAppointments.length },
+      { key: 'today', label: `Today (${confirmedTodayAppointments.length})`, count: confirmedTodayAppointments.length },
     ];
-  }, [confirmedFutureAppointments.length, checkedTodayAppointments.length]);
+  }, [confirmedFutureAppointments.length, checkedTodayAppointments.length, confirmedTodayAppointments.length]);
 
-  // Update active tab if current tab has no appointments
+  // Update active tab if current tab has no appointments - Default to 'upcoming' (first tab)
   useEffect(() => {
     if (appointmentTabs.length > 0 && !appointmentTabs.find(tab => tab.key === activeAppointmentTab)) {
       setActiveAppointmentTab(appointmentTabs[0].key);
     } else if (appointmentTabs.length === 0) {
-      setActiveAppointmentTab('today');
+      setActiveAppointmentTab('upcoming');
     }
   }, [appointmentTabs, activeAppointmentTab]);
 
-  // For stats - use today's confirmed appointments
-  const todayAppointments = appointmentsByDate.today || [];
+  // Check if appointment time has passed today (in IST)
+  const isPastToday = (apt: any): boolean => {
+    const start = parseStartDateTime(apt);
+    if (!start) return false;
+    const now = getISTNow();
+    const today = getISTStartOfDay(now);
+    return isSameDay(start, today) && start.getTime() < now.getTime();
+  };
   
   console.log('📅 All appointments from API:', allAppointments.length);
   console.log('📅 Today appointments:', todayAppointments.length);
@@ -522,6 +599,13 @@ export default function DoctorDashboard() {
   const unreadNotifications = useMemo(() => {
     return notifications.filter((notif: any) => !notif.read);
   }, [notifications]);
+  
+  // Calculate completed appointments using universal status constants
+  const completedAppointmentsCount = useMemo(() => {
+    return allAppointments.filter((apt: any) => 
+      normalizeStatus(apt.status) === APPOINTMENT_STATUS.COMPLETED
+    ).length;
+  }, [allAppointments]);
 
   // Generate doctor ID (must be before conditional returns)
   const doctorId = useMemo(() => {
@@ -545,19 +629,16 @@ export default function DoctorDashboard() {
     return 'DR';
   }, [user?.fullName]);
 
-  // Calculate stats using confirmed future appointments
-  const stats = confirmedFutureAppointments.length > 0 ? {
-    totalPatients: new Set(confirmedFutureAppointments.map((apt: any) => apt.patient)).size,
-    todayAppointments: todayAppointments.length,
-    completedAppointments: allAppointments.filter((apt: any) => apt.status === 'completed').length,
-    pendingPrescriptions: prescriptions.filter((p: any) => p.status === 'pending' || !p.status).length,
-    totalPrescriptions: prescriptions.length,
-    pendingLabReports: pendingLabReports.length,
-    unreadNotifications: unreadNotifications.length,
-  } : {
-    totalPatients: 0,
-    todayAppointments: 0,
-    completedAppointments: allAppointments.filter((apt: any) => apt.status === 'completed').length,
+  // Calculate stats - Always use actual counts regardless of future appointments
+  // Note: Currently hospital timings are 9 AM - 5 PM IST, but in the future:
+  // - Hospital admins will be able to configure hospital timings and slots
+  // - Doctors will be able to set their own availability timings
+  const stats = {
+    totalPatients: confirmedFutureAppointments.length > 0 
+      ? new Set(confirmedFutureAppointments.map((apt: any) => apt.patient)).size 
+      : 0,
+    todayAppointments: confirmedTodayAppointments.length, // Use confirmedTodayAppointments directly
+    completedAppointments: completedAppointmentsCount,
     pendingPrescriptions: prescriptions.filter((p: any) => p.status === 'pending' || !p.status).length,
     totalPrescriptions: prescriptions.length,
     pendingLabReports: pendingLabReports.length,
@@ -635,7 +716,7 @@ export default function DoctorDashboard() {
     console.log('⏳ Doctor Dashboard - Auth loading...');
     return (
       <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh' }}>
-        <Spin size="large" tip="Loading..." />
+        <Spin size="large" tip="Loading dashboard…" />
       </div>
     );
   }
@@ -687,11 +768,20 @@ export default function DoctorDashboard() {
     setIsPrescriptionModalOpen(true);
   };
 
-  const handleClosePrescriptionModal = () => {
+  const handleClosePrescriptionModal = async () => {
     setIsPrescriptionModalOpen(false);
     setSelectedPatientId(undefined);
     setSelectedAppointmentId(undefined);
     setSelectedPrescription(undefined);
+    // Force refetch prescriptions to update the UI after modal closes
+    try {
+      console.log('🔄 Refetching prescriptions after modal close...');
+      await queryClient.invalidateQueries({ queryKey: ['/api/prescriptions/doctor'] });
+      const result = await refetchPrescriptions();
+      console.log('✅ Prescriptions refetched after modal close. Count:', result.data?.length || 0);
+    } catch (error) {
+      console.error('❌ Error refetching prescriptions after modal close:', error);
+    }
   };
 
   const handleMenuClick = (e: { key: string }) => {
@@ -723,49 +813,194 @@ export default function DoctorDashboard() {
     }
   };
 
+  const renderMobileAppointmentCard = (record: any) => {
+    const normalizedStatus = normalizeStatus(record.status);
+    const statusConfig = getStatusConfig(normalizedStatus);
+    const existingPrescription =
+      prescriptionsByAppointmentId.get(record.id) ||
+      prescriptionsByAppointmentId.get(record.appointmentId) ||
+      (record.patientId ? prescriptionsByAppointmentId.get(`patient-${record.patientId}`) : undefined);
+    const hasPrescription = !!existingPrescription;
+    const isFinal = isFinalStatus(normalizedStatus);
+    const isChecked = normalizedStatus === APPOINTMENT_STATUS.COMPLETED;
+
+    const dateLabel = (() => {
+      if (!record.dateObj && !record.date) return 'N/A';
+      const appointmentDate = toIST(record.dateObj || record.date);
+      if (!appointmentDate) return 'N/A';
+      const today = getISTStartOfDay();
+      if (isSameDayIST(appointmentDate, today)) return 'Today';
+      const tomorrow = new Date(today);
+      tomorrow.setDate(tomorrow.getDate() + 1);
+      if (isSameDayIST(appointmentDate, tomorrow)) return 'Tomorrow';
+      return dayjs(appointmentDate).format('DD MMM YYYY');
+    })();
+    const pastToday = activeAppointmentTab === 'today' && isPastToday(record);
+
+    const handleChecked = async () => {
+      if (!record.id || !hasPrescription) return;
+      try {
+        setMarkingCheckedId(record.id);
+        const token = localStorage.getItem('auth-token');
+        if (!token) {
+          message.error('Authentication required');
+          return;
+        }
+        const res = await fetch(`/api/appointments/${record.id}/status`, {
+          method: 'PATCH',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ status: APPOINTMENT_STATUS.COMPLETED }),
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          message.error(data.message || 'Failed to mark as complete');
+          return;
+        }
+        message.success('Appointment marked as complete');
+        queryClient.invalidateQueries({ queryKey: ['/api/appointments/my'] });
+        queryClient.invalidateQueries({ queryKey: ['/api/prescriptions/doctor'] });
+      } catch (error) {
+        console.error('❌ Error marking as complete:', error);
+        message.error('Failed to mark as complete');
+      } finally {
+        setMarkingCheckedId(null);
+      }
+    };
+
+    return (
+      <Card
+        key={record.id}
+        size="small"
+        variant="borderless"
+        style={{
+          borderRadius: 16,
+          border: '1px solid #E5E7EB',
+          background: '#fff',
+          boxShadow: '0 2px 8px rgba(0, 0, 0, 0.06)',
+        }}
+        bodyStyle={{ padding: 14 }}
+      >
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
+          <div style={{ minWidth: 0, flex: 1 }}>
+            <Text strong style={{ fontSize: 14, display: 'block', lineHeight: 1.4 }}>
+              {record.patient || record.patientName || 'Unknown Patient'}
+            </Text>
+            <Text type="secondary" style={{ fontSize: 12, display: 'block', lineHeight: 1.4 }}>
+              {dateLabel} • <span style={{ fontFamily: 'monospace' }}>{record.time || 'N/A'}</span>
+            </Text>
+          </div>
+
+          <Space size={6} wrap style={{ justifyContent: 'flex-end' }}>
+            {pastToday && (
+              <Tag color="default" style={{ margin: 0, fontSize: 12, fontWeight: 600 }}>
+                PAST
+              </Tag>
+            )}
+            {record.priority && (
+              <Tag
+                color={String(record.priority).toLowerCase() === 'high' ? 'red' : String(record.priority).toLowerCase() === 'urgent' ? 'orange' : 'blue'}
+                style={{ margin: 0, fontSize: 12 }}
+              >
+                {record.priority}
+              </Tag>
+            )}
+            <Tag color={statusConfig.color} style={{ margin: 0, fontSize: 12 }}>
+              {statusConfig.label}
+            </Tag>
+          </Space>
+        </div>
+
+        <div style={{ marginTop: 10, display: 'flex', justifyContent: 'space-between', gap: 12 }}>
+          <Text type="secondary" style={{ fontSize: 12 }}>
+            Type: {record.type || 'N/A'}
+          </Text>
+          <Text type="secondary" style={{ fontSize: 12 }}>
+            {hasPrescription ? 'Prescription added' : 'No prescription'}
+          </Text>
+        </div>
+
+        <div style={{ marginTop: 12 }}>
+          <Space size={6} wrap>
+            <Button
+              size="small"
+              type="primary"
+              onClick={() => handleOpenPrescriptionModal(record, existingPrescription)}
+              disabled={!record.patientId || isFinal || !canCreatePrescription(normalizedStatus)}
+            >
+              {hasPrescription ? 'View / Edit' : 'Add Rx'}
+            </Button>
+            <Button
+              size="small"
+              onClick={handleChecked}
+              disabled={!hasPrescription || isChecked || isFinal}
+              loading={markingCheckedId === record.id}
+            >
+              Mark Complete
+            </Button>
+            <Button
+              size="small"
+              onClick={() => fetchPatientHistory(record.patientId, record.id)}
+              disabled={!record.patientId}
+            >
+              History
+            </Button>
+          </Space>
+        </div>
+      </Card>
+    );
+  };
+
   // Define appointment columns after handlers are defined
+  // Column widths optimized to prevent horizontal scrolling and keep Action column visible
   const appointmentColumns = [
     {
       title: 'Patient',
       dataIndex: 'patient',
       key: 'patient',
+      width: 150,
+      ellipsis: true,
     },
     {
       title: 'Date',
       key: 'date',
+      width: 100,
       render: (_: any, record: any) => {
         if (!record.dateObj && !record.date) return 'N/A';
-        const date = record.dateObj || new Date(record.date);
-        const today = new Date();
-        today.setHours(0, 0, 0, 0);
-        const appointmentDate = new Date(date);
-        appointmentDate.setHours(0, 0, 0, 0);
+        const appointmentDate = toIST(record.dateObj || record.date);
+        if (!appointmentDate) return 'N/A';
+        const today = getISTStartOfDay();
         
-        if (appointmentDate.getTime() === today.getTime()) {
+        if (isSameDayIST(appointmentDate, today)) {
           return <Text strong>Today</Text>;
         }
         const tomorrow = new Date(today);
         tomorrow.setDate(tomorrow.getDate() + 1);
-        if (appointmentDate.getTime() === tomorrow.getTime()) {
+        if (isSameDayIST(appointmentDate, tomorrow)) {
           return <Text>Tomorrow</Text>;
         }
-        return dayjs(date).format('DD MMM YYYY');
+        return dayjs(appointmentDate).format('DD MMM YYYY');
       },
     },
     {
       title: 'Time',
       dataIndex: 'time',
       key: 'time',
+      width: 110,
     },
     {
       title: 'Type',
       dataIndex: 'type',
       key: 'type',
+      width: 90,
     },
     {
       title: 'Priority',
       dataIndex: 'priority',
       key: 'priority',
+      width: 100,
       render: (priority: string) => (
         <Tag color={priority === 'High' || priority === 'high' ? 'red' : priority === 'urgent' ? 'orange' : 'blue'}>
           {priority}
@@ -776,26 +1011,13 @@ export default function DoctorDashboard() {
       title: 'Status',
       dataIndex: 'status',
       key: 'status',
+      width: 120,
       render: (status: string) => {
-        const value = (status || '').toLowerCase();
-        const colorMap: Record<string, string> = {
-          confirmed: 'green',
-          in_consultation: 'blue',
-          'checked-in': 'geekblue',
-          checked_in: 'geekblue',
-          checked: 'geekblue',
-          attended: 'blue',
-          completed: 'success',
-        };
-        const labelMap: Record<string, string> = {
-          'checked-in': 'CHECKED',
-          checked_in: 'CHECKED',
-          checked: 'CHECKED',
-        };
-        const displayLabel = labelMap[value] || status.toUpperCase();
+        const normalizedStatus = normalizeStatus(status);
+        const statusConfig = getStatusConfig(normalizedStatus);
         return (
-          <Tag color={colorMap[value] || 'orange'}>
-            {displayLabel}
+          <Tag color={statusConfig.color}>
+            {statusConfig.label}
         </Tag>
         );
       },
@@ -803,15 +1025,34 @@ export default function DoctorDashboard() {
     {
       title: 'Action',
       key: 'action',
+      width: 280,
+      fixed: 'right' as const,
       render: (_: any, record: any) => {
-        const status = (record.status || '').toLowerCase();
+        const normalizedStatus = normalizeStatus(record.status);
+        // Check for existing prescription by appointment ID (primary lookup)
+        // Try multiple keys to handle different data formats
+        const appointmentIdKey = record.id || record.appointmentId;
         const existingPrescription =
-          prescriptionsByAppointmentId.get(record.id) ||
-          prescriptionsByAppointmentId.get(record.appointmentId) ||
-          (record.patientId ? prescriptionsByAppointmentId.get(`patient-${record.patientId}`) : undefined);
+          (appointmentIdKey && prescriptionsByAppointmentId.get(appointmentIdKey)) ||
+          (record.appointmentId && prescriptionsByAppointmentId.get(record.appointmentId));
         const hasPrescription = !!existingPrescription;
-        const isFinal = ['completed', 'cancelled', 'attended'].includes(status);
-        const isChecked = ['checked', 'checked-in', 'checked_in', 'completed', 'attended'].includes(status);
+        
+        // Debug logging to track prescription lookup
+        if (record.id && process.env.NODE_ENV === 'development') {
+          const mapKeys = Array.from(prescriptionsByAppointmentId.keys());
+          console.log(`🔍 Appointment ${record.id} prescription check:`, {
+            appointmentId: record.id,
+            hasPrescription,
+            prescriptionId: existingPrescription?.id,
+            prescriptionAppointmentId: existingPrescription?.appointmentId || existingPrescription?.appointment_id,
+            totalPrescriptions: prescriptions.length,
+            mapSize: prescriptionsByAppointmentId.size,
+            mapKeys: mapKeys.slice(0, 10), // Show first 10 keys
+          });
+        }
+        
+        const isFinal = isFinalStatus(normalizedStatus);
+        const isChecked = normalizedStatus === APPOINTMENT_STATUS.COMPLETED;
 
         const handleChecked = async () => {
           if (!record.id || !hasPrescription) return;
@@ -828,7 +1069,7 @@ export default function DoctorDashboard() {
                 'Authorization': `Bearer ${token}`,
                 'Content-Type': 'application/json',
               },
-              body: JSON.stringify({ status: 'checked' }),
+              body: JSON.stringify({ status: APPOINTMENT_STATUS.COMPLETED }),
             });
             const data = await res.json();
             if (!res.ok) {
@@ -851,7 +1092,7 @@ export default function DoctorDashboard() {
         <Button
           type="link"
               onClick={() => handleOpenPrescriptionModal(record, existingPrescription)}
-              disabled={!record.patientId || isFinal}
+              disabled={!record.patientId || isFinal || !canCreatePrescription(normalizedStatus)}
             >
               {hasPrescription ? 'View / Edit Prescription' : 'Add Prescription'}
         </Button>
@@ -861,7 +1102,7 @@ export default function DoctorDashboard() {
               disabled={!hasPrescription || isChecked || isFinal}
               loading={markingCheckedId === record.id}
             >
-              Checked
+              Mark Complete
             </Button>
             <Button
               type="link"
@@ -1123,6 +1364,12 @@ export default function DoctorDashboard() {
           width: 18px !important;
           height: 18px !important;
         }
+
+        /* Today tab: visually de-emphasize appointments whose start time is already past */
+        .doctor-dashboard-wrapper .appointment-row-past td {
+          background: #F3F4F6 !important;
+          color: #6B7280 !important;
+        }
       `}</style>
       <Layout className="doctor-dashboard-wrapper" style={{ minHeight: '100vh', background: doctorTheme.background }}>
       {/* Desktop/Tablet Sidebar */}
@@ -1212,7 +1459,7 @@ export default function DoctorDashboard() {
                 WebkitOverflowScrolling: 'touch',
               }}>
                 {[
-                  { label: "Today's Appointments", value: stats.todayAppointments || 0, icon: <CalendarOutlined />, trendLabel: `${appointmentsToShow.length} confirmed`, trendColor: doctorTheme.primary, trendBg: doctorTheme.highlight, onView: () => setLocation('/dashboard/doctor/appointments') },
+                  { label: "Today's Appointments", value: stats.todayAppointments || 0, icon: <CalendarOutlined />, trendLabel: `${todayAppointments.length} scheduled`, trendColor: doctorTheme.primary, trendBg: doctorTheme.highlight, onView: () => setLocation('/dashboard/doctor/appointments') },
                   { label: "Lab Results Pending", value: stats.pendingLabReports || 0, icon: <ExperimentOutlined />, trendLabel: "Awaiting review", trendColor: stats.pendingLabReports > 0 ? "#EF4444" : "#6B7280", trendBg: stats.pendingLabReports > 0 ? "#FEE2E2" : "#F3F4F6", onView: () => message.info('Lab results widget below') },
                   { label: "Completed Today", value: stats.completedAppointments || 0, icon: <CheckCircleOutlined />, trendLabel: "Live", trendColor: "#22C55E", trendBg: "#D1FAE5", onView: () => setLocation('/dashboard/doctor/appointments') },
                   { label: "Notifications", value: stats.unreadNotifications || 0, icon: <BellOutlined />, trendLabel: "Unread", trendColor: stats.unreadNotifications > 0 ? "#F97316" : "#6B7280", trendBg: stats.unreadNotifications > 0 ? "#FFEAD5" : "#F3F4F6", onView: () => message.info('Notifications widget below') },
@@ -1236,7 +1483,7 @@ export default function DoctorDashboard() {
                     label="Today's Appointments"
                     value={stats.todayAppointments || 0}
                     icon={<CalendarOutlined />}
-                    trendLabel={`${appointmentsToShow.length} confirmed`}
+                    trendLabel={`${todayAppointments.length} scheduled`}
                     trendColor={doctorTheme.primary}
                     trendBg={doctorTheme.highlight}
                     onView={() => setLocation('/dashboard/doctor/appointments')}
@@ -1328,7 +1575,7 @@ export default function DoctorDashboard() {
                 overflow: 'hidden',
               }}
               title={
-                <Title level={4} style={{ margin: 0 }}>Upcoming Appointments</Title>
+                <Title level={4} style={{ margin: 0 }}>Appointments</Title>
               }
               extra={
                 <Button type="link" onClick={() => setLocation('/dashboard/doctor/appointments')}>
@@ -1358,6 +1605,18 @@ export default function DoctorDashboard() {
                               overflow: 'auto',
                               marginTop: 8,
                             }}>
+                              {isMobile ? (
+                                <Space direction="vertical" size={12} style={{ width: '100%' }}>
+                                  {appointmentsLoading ? (
+                                    <>
+                                      <Card size="small" style={{ borderRadius: 16 }}><Spin /></Card>
+                                      <Card size="small" style={{ borderRadius: 16 }}><Spin /></Card>
+                                    </>
+                                  ) : (
+                                    appointmentsToShow.map(renderMobileAppointmentCard)
+                                  )}
+                                </Space>
+                              ) : (
                               <Table
                                 columns={appointmentColumns}
                                 dataSource={appointmentsToShow}
@@ -1365,8 +1624,12 @@ export default function DoctorDashboard() {
                                 rowKey="id"
                                 loading={appointmentsLoading}
                                 size={isMobile ? "small" : "middle"}
-                                scroll={isMobile ? { x: 'max-content' } : { y: 'calc(100vh - 500px)' }}
+                                scroll={isMobile ? { x: 'max-content' } : { x: 'max-content', y: 'calc(100vh - 500px)' }}
+                                  rowClassName={(record: any) =>
+                                    activeAppointmentTab === 'today' && isPastToday(record) ? 'appointment-row-past' : ''
+                                  }
                               />
+                              )}
                             </div>
                           ),
                         }))}

@@ -36,6 +36,9 @@ import { Popconfirm } from 'antd';
 import { PatientSidebar } from '../../components/layout/PatientSidebar';
 import { useResponsive } from '../../hooks/use-responsive';
 import { formatDate } from '../../lib/utils';
+import { formatTimeSlot12h } from '../../lib/time';
+import { subscribeToAppointmentEvents } from '../../lib/appointments-events';
+import dayjs from 'dayjs';
 
 const { Content, Sider } = Layout;
 const { Title, Text } = Typography;
@@ -101,9 +104,10 @@ export default function PatientAppointments() {
         const rxByAppointment: Record<number, boolean> = {};
         const rxMap: Record<number, any> = {};
         (rxData || []).forEach((rx: any) => {
-          if (rx.appointmentId) {
-            rxByAppointment[rx.appointmentId] = true;
-            rxMap[rx.appointmentId] = rx;
+          const aptId = rx.appointmentId || rx.appointment_id;
+          if (aptId) {
+            rxByAppointment[aptId] = true;
+            rxMap[aptId] = rx;
           }
         });
         setPrescriptionsByAppointment(rxMap);
@@ -135,11 +139,12 @@ export default function PatientAppointments() {
           if (baseStatus === 'cancelled') {
             derivedStatus = 'cancelled';
           } else if (hasPrescription) {
-            // Consider prescription as checked-in/completed even if receptionist forgot
-            derivedStatus = 'checked-in';
+            derivedStatus = 'completed';
+          } else if (baseStatus === 'completed') {
+            derivedStatus = 'completed';
           } else if (start) {
             if (start < now) {
-              derivedStatus = baseStatus === 'completed' ? 'completed' : 'absent';
+              derivedStatus = 'absent';
             } else {
               derivedStatus = 'upcoming';
             }
@@ -184,6 +189,14 @@ export default function PatientAppointments() {
 
   useEffect(() => {
     loadAppointments();
+  }, []);
+
+  // Real-time: server pushes appointment updates (no polling).
+  useEffect(() => {
+    const unsubscribe = subscribeToAppointmentEvents({
+      onEvent: () => loadAppointments(),
+    });
+    return unsubscribe;
   }, []);
 
   // Listen for appointment updates from other tabs/windows (e.g., when receptionist confirms)
@@ -347,7 +360,9 @@ export default function PatientAppointments() {
         return (
           <Space direction="vertical" size={0}>
             <Text>{formattedDate}</Text>
-            <Text type="secondary">{record.appointmentTime || record.timeSlot || 'Time TBD'}</Text>
+            <Text type="secondary">
+              {record.appointmentTime || record.timeSlot ? formatTimeSlot12h(record.appointmentTime || record.timeSlot) : 'Time TBD'}
+            </Text>
           </Space>
         );
       },
@@ -785,7 +800,12 @@ export default function PatientAppointments() {
             </div>
             {selectedPrescription.createdAt && (
               <div>
-                <Text type="secondary">Issued on: {selectedPrescription.createdAt}</Text>
+                <Text type="secondary">
+                  Issued on:{' '}
+                  {dayjs(selectedPrescription.createdAt).isValid()
+                    ? dayjs(selectedPrescription.createdAt).format('DD MMM YYYY, hh:mm A')
+                    : selectedPrescription.createdAt}
+                </Text>
               </div>
             )}
           </Space>

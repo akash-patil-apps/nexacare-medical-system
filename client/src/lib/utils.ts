@@ -19,7 +19,7 @@ const WEEKDAY_FORMATTER = new Intl.DateTimeFormat(DATE_LOCALE, {
 const TIME_FORMATTER = new Intl.DateTimeFormat(DATE_LOCALE, {
   hour: "2-digit",
   minute: "2-digit",
-  hour12: false,
+  hour12: true,
 })
 
 const formatDisplayParts = (date: Date) => {

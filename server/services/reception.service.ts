@@ -1,5 +1,5 @@
 // server/services/reception.service.ts
-import { and, eq, isNull, asc, ilike, or } from 'drizzle-orm';
+import { and, eq, isNull, asc, desc, ilike, or } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 import { db } from '../db';
 import {
@@ -8,6 +8,8 @@ import {
   patients,
   receptionists,
   users,
+  labReports,
+  prescriptions,
 } from '../../shared/schema';
 import type { InsertReceptionist } from '../../shared/schema-types';
 import { hashPassword } from './auth.service';
@@ -400,4 +402,82 @@ export async function getReceptionistContext(receptionistUserId: number) {
   if (!rec) return null;
 
   return rec;
+}
+
+/**
+ * Get comprehensive patient information including profile, lab tests, prescriptions, and history.
+ */
+export async function getPatientInfo(patientId: number) {
+  console.log(`📋 Fetching comprehensive patient info for patient ${patientId}`);
+  
+  try {
+    // Get patient profile
+    const [patient] = await db
+      .select()
+      .from(patients)
+      .where(eq(patients.id, patientId))
+      .limit(1);
+
+    if (!patient) {
+      console.log(`⚠️ Patient ${patientId} not found`);
+      return null;
+    }
+
+    // Get user info
+    const [user] = await db
+      .select({
+        id: users.id,
+        fullName: users.fullName,
+        email: users.email,
+        mobileNumber: users.mobileNumber,
+      })
+      .from(users)
+      .where(eq(users.id, patient.userId))
+      .limit(1);
+
+    // Get lab reports
+    const labReportsList = await db
+      .select()
+      .from(labReports)
+      .where(eq(labReports.patientId, patientId))
+      .orderBy(desc(labReports.reportDate));
+
+    // Get prescriptions
+    const prescriptionsList = await db
+      .select()
+      .from(prescriptions)
+      .where(eq(prescriptions.patientId, patientId))
+      .orderBy(desc(prescriptions.createdAt));
+
+    // Get appointments history
+    const appointmentsHistory = await db
+      .select({
+        id: appointments.id,
+        appointmentDate: appointments.appointmentDate,
+        appointmentTime: appointments.appointmentTime,
+        timeSlot: appointments.timeSlot,
+        reason: appointments.reason,
+        status: appointments.status,
+        doctorName: users.fullName,
+      })
+      .from(appointments)
+      .leftJoin(doctors, eq(appointments.doctorId, doctors.id))
+      .leftJoin(users, eq(doctors.userId, users.id))
+      .where(eq(appointments.patientId, patientId))
+      .orderBy(desc(appointments.appointmentDate))
+      .limit(20); // Last 20 appointments
+
+    return {
+      patient: {
+        ...patient,
+        user: user || null,
+      },
+      labReports: labReportsList,
+      prescriptions: prescriptionsList,
+      appointments: appointmentsHistory,
+    };
+  } catch (error) {
+    console.error(`❌ Error fetching patient info for patient ${patientId}:`, error);
+    throw error;
+  }
 }

@@ -4,6 +4,7 @@ import { appointments, patients, doctors, hospitals, users } from '../../drizzle
 import { eq, and, desc } from 'drizzle-orm';
 import { sql } from 'drizzle-orm';
 import type { InsertAppointment } from '../../shared/schema-types';
+import { emitAppointmentChanged } from '../events/appointments.events';
 
 /**
  * Book a new appointment.
@@ -44,6 +45,7 @@ export const bookAppointment = async (
     }).returning();
 
     console.log(`✅ Appointment created: ${appointment.id}`);
+    await emitAppointmentChanged(appointment.id, "created");
     return appointment;
   } catch (error) {
     console.error('Error creating appointment:', error);
@@ -409,6 +411,7 @@ export const updateAppointmentStatus = async (
     }
     
     console.log(`✅ Appointment ${appointmentId} status updated to ${status}`);
+    await emitAppointmentChanged(result.id, "status-updated");
     return result;
   } catch (error) {
     console.error('Error updating appointment status:', error);
@@ -436,6 +439,7 @@ export const cancelAppointment = async (appointmentId: number, userId: number) =
     }
     
     console.log(`✅ Appointment ${appointmentId} cancelled`);
+    await emitAppointmentChanged(result.id, "cancelled");
     return result;
   } catch (error) {
     console.error('Error cancelling appointment:', error);
@@ -464,6 +468,7 @@ export const confirmAppointment = async (appointmentId: number, userId: number) 
     }
     
     console.log(`✅ Appointment ${appointmentId} confirmed`);
+    await emitAppointmentChanged(result.id, "confirmed");
     return result;
   } catch (error) {
     console.error('Error confirming appointment:', error);
@@ -492,6 +497,7 @@ export const completeAppointment = async (appointmentId: number, userId: number)
     }
     
     console.log(`✅ Appointment ${appointmentId} completed`);
+    await emitAppointmentChanged(result.id, "completed");
     return result;
   } catch (error) {
     console.error('Error completing appointment:', error);
@@ -548,6 +554,7 @@ export const confirmAppointmentByReceptionist = async (appointmentId: number, re
       confirmedAt: result.confirmedAt
     });
     
+    await emitAppointmentChanged(result.id, "confirmed");
     return result;
   } catch (error) {
     console.error('❌ Error confirming appointment:', error);
@@ -607,6 +614,7 @@ export const checkInAppointment = async (appointmentId: number, receptionistId: 
       notes: result.notes
     });
     
+    await emitAppointmentChanged(result.id, "checked-in");
     return result;
   } catch (error) {
     console.error('❌ Error checking in appointment:', error);

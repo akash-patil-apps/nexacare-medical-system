@@ -1,13 +1,46 @@
 // server/services/prescription.service.ts
 import { db } from "../db";
-import { prescriptions } from "../../shared/schema";
+import { prescriptions, prescriptionAudits } from "../../shared/schema";
 import { eq, and, gte, lte } from "drizzle-orm";
 import { InsertPrescription } from "../../shared/schema-types";
 
+const addDays = (date: Date, days: number) => {
+  const d = new Date(date);
+  d.setDate(d.getDate() + days);
+  return d;
+};
+
+const nowUtc = () => new Date();
+
+const ensureEditable = (prescription: any) => {
+  const createdAt = prescription.createdAt ? new Date(prescription.createdAt) : nowUtc();
+  const editableUntil = prescription.editableUntil ? new Date(prescription.editableUntil) : addDays(createdAt, 7);
+  const now = nowUtc();
+  if (now > editableUntil) {
+    throw new Error('Edit window expired. Please extend the prescription to edit.');
+  }
+  return editableUntil;
+};
+
+const createAudit = async (prescriptionId: number, doctorId: number, action: string, message: string) => {
+  await db.insert(prescriptionAudits).values({
+    prescriptionId,
+    doctorId,
+    action,
+    message,
+    createdAt: nowUtc(),
+  });
+};
+
 // 1. Issue new prescription
 export const issuePrescription = async (data: InsertPrescription) => {
-  const inserted = await db.insert(prescriptions).values(data).returning();
-  return inserted[0];
+  const base = { ...data };
+  const createdAt = base.createdAt ? new Date(base.createdAt as any) : nowUtc();
+  base.editableUntil = base.editableUntil ? base.editableUntil : addDays(createdAt, 7);
+  const inserted = await db.insert(prescriptions).values(base).returning();
+  const row = inserted[0];
+  await createAudit(row.id, row.doctorId, 'created', `Created prescription. Editable until ${row.editableUntil?.toISOString?.() || row.editableUntil}`);
+  return row;
 };
 
 // 2. Get prescriptions for a patient (basic)
@@ -49,11 +82,30 @@ export const updatePrescription = async (
   prescriptionId: number,
   updates: Partial<Pick<InsertPrescription, "diagnosis" | "medications" | "instructions" | "followUpDate">>
 ) => {
-  return await db
+  const existing = await db
+    .select()
+    .from(prescriptions)
+    .where(and(eq(prescriptions.id, prescriptionId), eq(prescriptions.doctorId, doctorId)));
+  if (existing.length === 0) {
+    throw new Error('Prescription not found or not authorized');
+  }
+  ensureEditable(existing[0]);
+
+  const before = existing[0];
+  const [updated] = await db
     .update(prescriptions)
-    .set({ ...updates, updatedAt: new Date() })
+    .set({ ...updates, updatedAt: nowUtc(), editableUntil: before.editableUntil || addDays(new Date(before.createdAt ?? nowUtc()), 7) })
     .where(and(eq(prescriptions.id, prescriptionId), eq(prescriptions.doctorId, doctorId)))
     .returning();
+
+  await createAudit(
+    prescriptionId,
+    doctorId,
+    'updated',
+    `Updated prescription. Diagnosis: '${before.diagnosis}' -> '${updated.diagnosis}'. Medications changed: ${before.medications !== updated.medications}`
+  );
+
+  return updated;
 };
 
 // 5. Delete prescription (doctor-only)
@@ -61,10 +113,14 @@ export const deletePrescription = async (
   doctorId: number,
   prescriptionId: number
 ) => {
-  return await db
+  const deleted = await db
     .delete(prescriptions)
     .where(and(eq(prescriptions.id, prescriptionId), eq(prescriptions.doctorId, doctorId)))
     .returning();
+  if (deleted[0]) {
+    await createAudit(prescriptionId, doctorId, 'deleted', 'Deleted prescription');
+  }
+  return deleted;
 };
 
 // 6. Get prescriptions for doctor with filters
@@ -180,5 +236,29 @@ export const getPrescriptionById = async (
   // Hospital admin can see all prescriptions in their hospital (handled by hospitalId)
 
   return prescriptionData;
+};
+
+// 9. Extend prescription edit window
+export const extendPrescription = async (prescriptionId: number, doctorId: number) => {
+  const existing = await db
+    .select()
+    .from(prescriptions)
+    .where(and(eq(prescriptions.id, prescriptionId), eq(prescriptions.doctorId, doctorId)));
+  if (existing.length === 0) throw new Error('Prescription not found or not authorized');
+
+  const row = existing[0];
+  const createdAt = row.createdAt ? new Date(row.createdAt) : nowUtc();
+  const currentEditable = row.editableUntil ? new Date(row.editableUntil) : addDays(createdAt, 7);
+  const base = currentEditable > nowUtc() ? currentEditable : nowUtc();
+  const newEditable = addDays(base, 7); // extend by 7 days
+
+  const [updated] = await db
+    .update(prescriptions)
+    .set({ editableUntil: newEditable, updatedAt: nowUtc() })
+    .where(and(eq(prescriptions.id, prescriptionId), eq(prescriptions.doctorId, doctorId)))
+    .returning();
+
+  await createAudit(prescriptionId, doctorId, 'extended', `Extended edit window to ${newEditable.toISOString()}`);
+  return updated;
 };
 

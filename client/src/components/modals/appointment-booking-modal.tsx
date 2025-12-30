@@ -36,6 +36,7 @@ import {
 } from '@ant-design/icons';
 import { useAuth } from '../../hooks/use-auth';
 import dayjs from 'dayjs';
+import { formatTimeSlot12h } from '../../lib/time';
 
 const { Option } = Select;
 const { TextArea } = Input;
@@ -438,7 +439,7 @@ export default function AppointmentBookingModal({
                       onClick={() => handleSlotSelect(slot)}
                       style={{ height: '40px' }}
                     >
-                      {slot}
+                      {formatTimeSlot12h(slot)}
                     </Button>
                   ))}
                 </div>
@@ -463,7 +464,7 @@ export default function AppointmentBookingModal({
                 </Col>
                 <Col span={8}>
                   <Text strong>Time:</Text>
-                  <div>{selectedSlot}</div>
+                  <div>{formatTimeSlot12h(selectedSlot)}</div>
                 </Col>
                 <Col span={8}>
                   <Text strong>Duration:</Text>
@@ -569,7 +570,7 @@ export default function AppointmentBookingModal({
                 </Col>
                 <Col span={12}>
                   <Text strong>Time:</Text>
-                  <div>{selectedSlot}</div>
+                  <div>{formatTimeSlot12h(selectedSlot)}</div>
                 </Col>
               </Row>
             </Card>

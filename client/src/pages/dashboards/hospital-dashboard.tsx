@@ -1,5 +1,6 @@
 import { useState, useMemo, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
+import { formatTimeSlot12h } from "../../lib/time";
 import { 
   Layout, 
   Card, 
@@ -218,14 +219,21 @@ export default function HospitalDashboard() {
               } else if (period === 'AM' && hours === 12) {
                 hours = 0;
               }
+              // Legacy convention: "02:00-05:00" slots represent AFTERNOON (2 PM - 5 PM) when AM/PM is missing
+              if (!period && hours >= 2 && hours <= 5) {
+                hours += 12;
+              }
               
               appointmentTime.setHours(hours, minutes, 0, 0);
             } else {
               // Try 24-hour format
               const parts = timeStr.split(':');
               if (parts.length >= 2) {
-                const hours = parseInt(parts[0]) || 9;
+                let hours = parseInt(parts[0]) || 9;
                 const minutes = parseInt(parts[1]) || 0;
+                if (hours >= 2 && hours <= 5) {
+                  hours += 12;
+                }
                 appointmentTime.setHours(hours, minutes, 0, 0);
               } else {
                 // Default to 9 AM if can't parse
@@ -285,6 +293,7 @@ export default function HospitalDashboard() {
       title: 'Time',
       dataIndex: 'time',
       key: 'time',
+      render: (time: string) => (time ? formatTimeSlot12h(time) : 'N/A'),
     },
     {
       title: 'Department',
@@ -302,6 +311,47 @@ export default function HospitalDashboard() {
       ),
     },
   ];
+
+  const renderMobileAppointmentCard = (record: any) => {
+    const status = (record.status || '').toLowerCase();
+    return (
+      <Card
+        key={record.id}
+        size="small"
+        variant="borderless"
+        style={{
+          borderRadius: 16,
+          border: '1px solid #E5E7EB',
+          background: '#fff',
+          boxShadow: '0 2px 8px rgba(0, 0, 0, 0.06)',
+        }}
+        bodyStyle={{ padding: 14 }}
+      >
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
+          <div style={{ minWidth: 0, flex: 1 }}>
+            <Text strong style={{ fontSize: 14, display: 'block', lineHeight: 1.4 }}>
+              {record.patient || 'Unknown Patient'}
+            </Text>
+            <Text type="secondary" style={{ fontSize: 12, display: 'block', lineHeight: 1.4 }}>
+              {record.doctor || 'Unknown Doctor'}
+            </Text>
+          </div>
+          <Tag color={status === 'confirmed' ? 'green' : 'orange'} style={{ margin: 0, fontSize: 12 }}>
+            {(record.status || 'N/A').toUpperCase()}
+          </Tag>
+        </div>
+
+        <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 10, gap: 12 }}>
+          <Text type="secondary" style={{ fontSize: 12 }}>
+            <span style={{ fontFamily: 'monospace' }}>{record.time ? formatTimeSlot12h(record.time) : 'N/A'}</span>
+          </Text>
+          <Text type="secondary" style={{ fontSize: 12 }}>
+            {record.department || 'General'}
+          </Text>
+        </div>
+      </Card>
+    );
+  };
 
   const sidebarMenu = [
     {
@@ -354,6 +404,7 @@ export default function HospitalDashboard() {
         )}
       </div>
       <Menu
+        className="hospital-dashboard-menu"
         mode="inline"
         defaultSelectedKeys={['dashboard']}
         items={sidebarMenu}
@@ -374,7 +425,67 @@ export default function HospitalDashboard() {
   );
 
   return (
-    <Layout style={{ minHeight: '100vh', background: '#f5f5f5' }}>
+    <>
+      <style>{`
+        /* Override medical-container padding only when hospital dashboard is rendered */
+        body:has(.hospital-dashboard-wrapper) .medical-container {
+          padding: 0 !important;
+          display: block !important;
+          align-items: unset !important;
+          justify-content: unset !important;
+          background: transparent !important;
+          min-height: 100vh !important;
+        }
+
+        .hospital-dashboard-menu .ant-menu-item {
+          border-radius: 12px !important;
+          margin: 4px 8px !important;
+          height: 48px !important;
+          line-height: 48px !important;
+          transition: all 0.3s ease !important;
+          padding-left: 16px !important;
+          background: transparent !important;
+          border: none !important;
+        }
+        .hospital-dashboard-menu .ant-menu-item:hover {
+          background: transparent !important;
+        }
+        .hospital-dashboard-menu .ant-menu-item:hover,
+        .hospital-dashboard-menu .ant-menu-item:hover .ant-menu-title-content {
+          color: #595959 !important;
+        }
+        .hospital-dashboard-menu .ant-menu-item-selected {
+          background: ${hospitalTheme.primary} !important;
+          font-weight: 500 !important;
+          border: none !important;
+          padding-left: 16px !important;
+        }
+        .hospital-dashboard-menu .ant-menu-item-selected,
+        .hospital-dashboard-menu .ant-menu-item-selected .ant-menu-title-content {
+          color: #fff !important;
+        }
+        .hospital-dashboard-menu .ant-menu-item-selected .ant-menu-item-icon,
+        .hospital-dashboard-menu .ant-menu-item-selected .anticon {
+          color: #fff !important;
+        }
+        .hospital-dashboard-menu .ant-menu-item:not(.ant-menu-item-selected) {
+          color: #8C8C8C !important;
+          background: transparent !important;
+        }
+        .hospital-dashboard-menu .ant-menu-item:not(.ant-menu-item-selected) .ant-menu-title-content {
+          color: #8C8C8C !important;
+        }
+        .hospital-dashboard-menu .ant-menu-item-selected::after {
+          display: none !important;
+        }
+        .hospital-dashboard-menu .ant-menu-item-icon,
+        .hospital-dashboard-menu .anticon {
+          font-size: 18px !important;
+          width: 18px !important;
+          height: 18px !important;
+        }
+      `}</style>
+      <Layout className="hospital-dashboard-wrapper" style={{ minHeight: '100vh', background: hospitalTheme.background }}>
       {/* Desktop/Tablet Sidebar */}
       {!isMobile && (
       <Sider 
@@ -430,8 +541,7 @@ export default function HospitalDashboard() {
             background: hospitalTheme.background,
             height: '100vh',
             overflowY: 'auto',
-            padding: isMobile ? '0 16px 16px' : isTablet ? '0 20px 20px' : '0 24px 24px',
-            paddingTop: 0,
+            padding: isMobile ? '24px 16px 16px' : isTablet ? '24px 20px 20px' : '24px 24px 24px',
           }}
         >
           <div style={{ paddingBottom: 24, maxWidth: '1320px', margin: '0 auto' }}>
@@ -598,21 +708,34 @@ export default function HospitalDashboard() {
                 extra={<Button type="link" onClick={() => message.info('View all appointments feature coming soon')}>View All</Button>}
                 style={{ borderRadius: 16 }}
               >
-                <div style={{ overflowX: 'auto' }}>
-                <Table
-                  columns={appointmentColumns}
-                  dataSource={appointments}
-                  pagination={false}
-                  rowKey="id"
-                  variant="borderless"
-                    loading={appointmentsLoading}
-                    size={isMobile ? "small" : "middle"}
-                    scroll={isMobile ? { x: 'max-content' } : undefined}
-                  style={{
-                    backgroundColor: hospitalTheme.background
-                  }}
-                />
-                </div>
+                {isMobile ? (
+                  <Space direction="vertical" size={12} style={{ width: '100%' }}>
+                    {appointmentsLoading ? (
+                      <>
+                        <Card size="small" style={{ borderRadius: 16 }}><Spin /></Card>
+                        <Card size="small" style={{ borderRadius: 16 }}><Spin /></Card>
+                      </>
+                    ) : (
+                      appointments.map(renderMobileAppointmentCard)
+                    )}
+                  </Space>
+                ) : (
+                  <div style={{ overflowX: 'auto' }}>
+                    <Table
+                      columns={appointmentColumns}
+                      dataSource={appointments}
+                      pagination={false}
+                      rowKey="id"
+                      variant="borderless"
+                      loading={appointmentsLoading}
+                      size={isMobile ? "small" : "middle"}
+                      scroll={isMobile ? { x: 'max-content' } : undefined}
+                      style={{
+                        backgroundColor: hospitalTheme.background
+                      }}
+                    />
+                  </div>
+                )}
               </Card>
             </Col>
 
@@ -709,6 +832,7 @@ export default function HospitalDashboard() {
           </div>
         </Content>
       </Layout>
-    </Layout>
+      </Layout>
+    </>
   );
 }

@@ -17,6 +17,7 @@ import prescriptionsRoutes from "./prescriptions.routes";
 import locationsRoutes from "./locations.routes";
 import onboardingRoutes from "./onboarding.routes";
 import notificationsRoutes from "./notifications.routes";
+import eventsRoutes from "./events.routes";
 
 
 const router = Router();
@@ -42,6 +43,7 @@ export async function registerRoutes(app: Express) {
   app.use("/api/locations", locationsRoutes);
   app.use("/api/onboarding", onboardingRoutes);
   app.use("/api/notifications", notificationsRoutes);
+  app.use("/api/events", eventsRoutes);
   
   // NOTE: /api/prescriptions/my should use /api/prescriptions/patient for patients
   // The prescriptions router handles all prescription endpoints

@@ -47,6 +47,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import dayjs from 'dayjs';
 import { PatientSidebar } from '../components/layout/PatientSidebar';
 import { useResponsive } from '../hooks/use-responsive';
+import { formatTimeSlot12h, parseTimeTo24h } from '../lib/time';
 
 const { Option } = Select;
 const { TextArea } = Input;
@@ -504,40 +505,31 @@ export default function BookAppointment() {
     }
     
     try {
-      // Parse slot time (format: "HH:MM-HH:MM" or "HH:MM")
-      let slotEndTime = slot;
+      // Use END time for range slots: "HH:mm-HH:mm"
+      const endPart = slot.includes('-') ? slot.split('-')[1].trim() : slot.trim();
+      const parsedEnd = parseTimeTo24h(endPart);
 
-      if (slot.includes('-')) {
-        // If slot has range format "HH:MM-HH:MM", use the END time (after the dash)
-        slotEndTime = slot.split('-')[1].trim();
-      } else {
-        // If slot is single time "HH:MM", assume it's a 30-minute slot
-        // So end time would be start time + 30 minutes
-        const [rawHours, rawMinutes] = slot.split(':').map(Number);
-        if (!isNaN(rawHours) && !isNaN(rawMinutes)) {
-          const startTime = dayjs().hour(rawHours).minute(rawMinutes);
-          const endTime = startTime.add(30, 'minute');
-          slotEndTime = endTime.format('HH:mm');
-        }
-      }
+      // If slot is single time "HH:mm", assume it's a 30-minute slot (end = start + 30m)
+      const endTime =
+        parsedEnd ||
+        (() => {
+          const parsedStart = parseTimeTo24h(slot.trim());
+          if (!parsedStart) return null;
+          const dt = dayjs().hour(parsedStart.hours24).minute(parsedStart.minutes).add(30, 'minute');
+          return { hours24: dt.hour(), minutes: dt.minute() };
+        })();
 
-      // Parse end time string (e.g., "09:00", "14:30", "17:00")
-      let [hours, minutes] = slotEndTime.split(':').map(Number);
-      if (isNaN(hours) || isNaN(minutes)) {
+      if (!endTime) {
         console.warn(`Invalid time format for slot: ${slot}`);
         return false; // Invalid time format, don't filter
       }
 
-      // Our data uses "02:00-02:30", "03:00-03:30", etc. to represent AFTERNOON slots (2 PM, 3 PM, 4 PM...)
-      // but without AM/PM. To avoid treating them as 2 AM / 3 AM, normalize:
-      // - Morning slots are 09:00-12:00
-      // - Afternoon slots are 02:00-05:00 (should be 14:00-17:00)
-      if (hours >= 2 && hours <= 5) {
-        hours += 12; // Convert 2,3,4,5 → 14,15,16,17
-      }
-      
       // Create a dayjs object for the slot END time today
-      const slotEndDateTime = dayjs().hour(hours).minute(minutes).second(0).millisecond(0);
+      const slotEndDateTime = dayjs()
+        .hour(endTime.hours24)
+        .minute(endTime.minutes)
+        .second(0)
+        .millisecond(0);
       
       // Check if slot END time has already passed
       // Only filter if current time is AFTER slot end time (slot has completely ended)
@@ -1340,7 +1332,7 @@ export default function BookAppointment() {
                         ? 'Fully booked (5/5 patients)' 
                         : `${availableCount} slot${availableCount !== 1 ? 's' : ''} available (${availableCount}/5)`}
                     >
-                      <span>{slot}</span>
+                      <span>{formatTimeSlot12h(slot)}</span>
                         </button>
                       );
                     })
@@ -1461,7 +1453,7 @@ export default function BookAppointment() {
                   </div>
                   <div style={{ flex: '1 1 220px', padding: '16px 20px', borderRadius: 12, border: '1px solid #f0f2f5', background: '#f9fafb' }}>
                     <Text type="secondary" style={{ fontSize: 12 }}>Time</Text>
-                    <div style={{ fontSize: 16, fontWeight: 600, marginTop: 6 }}>{selectedSlot}</div>
+                    <div style={{ fontSize: 16, fontWeight: 600, marginTop: 6 }}>{formatTimeSlot12h(selectedSlot)}</div>
                   </div>
                   <div style={{ flex: '1 1 220px', padding: '16px 20px', borderRadius: 12, border: '1px solid #f0f2f5', background: '#f9fafb' }}>
                     <Text type="secondary" style={{ fontSize: 12 }}>Consultation Fee</Text>

@@ -240,20 +240,6 @@ router.patch('/:appointmentId/cancel', async (req: AuthenticatedRequest, res) =>
   }
 });
 
-// Confirm appointment
-router.patch('/:appointmentId/confirm', async (req: AuthenticatedRequest, res) => {
-  try {
-    const appointment = await appointmentService.confirmAppointment(
-      +req.params.appointmentId, 
-      req.user?.id || 1
-    );
-    res.json(appointment);
-  } catch (err) {
-    console.error('Confirm appointment error:', err);
-    res.status(400).json({ message: 'Failed to confirm appointment' });
-  }
-});
-
 // Complete appointment
 router.patch('/:appointmentId/complete', async (req: AuthenticatedRequest, res) => {
   try {

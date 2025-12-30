@@ -35,6 +35,8 @@ import { QuickActionTile } from '../../components/dashboard/QuickActionTile';
 import { PrescriptionCard } from '../../components/dashboard/PrescriptionCard';
 import LabReportViewerModal from '../../components/modals/lab-report-viewer-modal';
 import { formatDate, formatDateTime } from '../../lib/utils';
+import { formatTimeSlot12h } from '../../lib/time';
+import { subscribeToAppointmentEvents } from '../../lib/appointments-events';
 import { PatientSidebar } from '../../components/layout/PatientSidebar';
 
 const { Content, Sider } = Layout;
@@ -93,6 +95,7 @@ export default function PatientDashboard() {
       return data.map((apt) => {
         // Prefer timeSlot (HH:MM or HH:MM-HH:MM) over appointmentTime, because appointmentTime may be stored as 00:00:00
         const timeValue = apt.timeSlot || apt.appointmentTime || apt.time || '';
+        const timeDisplay = timeValue ? formatTimeSlot12h(timeValue) : '';
         // Handle different date formats
         let appointmentDate = apt.appointmentDate;
         if (typeof appointmentDate === 'string') {
@@ -110,8 +113,8 @@ export default function PatientDashboard() {
           doctor: apt.doctorName || 'Doctor',
           specialty: apt.doctorSpecialty || 'General',
           date: apt.appointmentDate ? formatDate(apt.appointmentDate) : 'Date unavailable',
-          time: timeValue,
-          timeSlot: timeValue,
+          time: timeDisplay,
+          timeSlot: timeDisplay,
           status: apt.status || 'pending',
           hospital: apt.hospitalName || 'Hospital',
           rawDate: apt.appointmentDate || null,
@@ -121,8 +124,20 @@ export default function PatientDashboard() {
         };
       });
     },
-    refetchOnWindowFocus: false,
+    refetchOnWindowFocus: true,
+    refetchOnMount: true,
   });
+
+  // Real-time: server pushes appointment updates (no polling).
+  useEffect(() => {
+    const unsubscribe = subscribeToAppointmentEvents({
+      onEvent: () => {
+        queryClient.invalidateQueries({ queryKey: ['patient-appointments'] });
+        refetchAppointments();
+      },
+    });
+    return unsubscribe;
+  }, [queryClient, refetchAppointments]);
 
   // Listen for appointment updates from other tabs/windows (e.g., when receptionist confirms)
   useEffect(() => {

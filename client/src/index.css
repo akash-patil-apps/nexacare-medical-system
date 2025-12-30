@@ -14,6 +14,11 @@ html, body {
   overflow: hidden;
 }
 
+/* Prefer light rendering (helps avoid browser/OS forced-dark transformations) */
+html {
+  color-scheme: light;
+}
+
 body {
   font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', sans-serif;
   background-color: var(--bg-tertiary);

@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState, useRef, useMemo } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { 
   Modal, 
@@ -26,6 +26,7 @@ import {
 import { apiRequest } from "../lib/queryClient";
 import { getAuthToken } from "../lib/auth";
 import type { Medication } from "../../../shared/schema";
+import dayjs from "dayjs";
 
 const { Title, Text } = Typography;
 const { Option } = Select;
@@ -65,6 +66,7 @@ export default function PrescriptionForm({
   const [medicationForm] = Form.useForm();
   const queryClient = useQueryClient();
   const prevIsOpenRef = useRef(false);
+  const [isExtendLoading, setIsExtendLoading] = useState(false);
 
   // Fetch patients for doctor to select from
   const { data: patients } = useQuery({
@@ -114,12 +116,30 @@ export default function PrescriptionForm({
       : Array.isArray(hospitals)
         ? hospitals
         : [];
+  const loadMedicationsFromPrescription = (p: any | undefined) => {
+    if (!p) {
+      setMedications([]);
+      return;
+    }
+    try {
+      const meds = typeof p.medications === 'string' ? JSON.parse(p.medications) : p.medications;
+      if (Array.isArray(meds)) {
+        setMedications(meds as Medication[]);
+      } else {
+        setMedications([]);
+      }
+    } catch (err) {
+      console.warn('⚠️ Failed to parse medications from prescription', err);
+      setMedications([]);
+    }
+  };
+
   // Reset form only when modal first opens (not on every prop change)
   useEffect(() => {
     // Only reset when modal transitions from closed to open
     if (isOpen && !prevIsOpenRef.current) {
       form.resetFields();
-      setMedications([]);
+      loadMedicationsFromPrescription(prescription);
       const derivedAppointmentId =
         appointmentId ??
         (patientId ? appointmentIdMap?.[patientId] : undefined);
@@ -128,6 +148,8 @@ export default function PrescriptionForm({
         patientId: patientId ?? undefined,
         hospitalId: hospitalId ?? undefined,
         appointmentId: derivedAppointmentId ?? undefined,
+        diagnosis: prescription?.diagnosis,
+        instructions: prescription?.instructions,
       });
     }
     // Update ref to track previous state
@@ -152,9 +174,13 @@ export default function PrescriptionForm({
         hospitalId: cleanData.hospitalId || hospitalId,
       };
       
-      // Include appointmentId from form selection or prop
-      if (cleanData.appointmentId || appointmentId) {
-        requestBody.appointmentId = cleanData.appointmentId || appointmentId;
+      // Include appointmentId from form selection or prop - CRITICAL for tracking prescriptions
+      const finalAppointmentId = cleanData.appointmentId || appointmentId;
+      if (finalAppointmentId) {
+        requestBody.appointmentId = finalAppointmentId;
+        console.log('📋 Creating prescription with appointmentId:', finalAppointmentId);
+      } else {
+        console.warn('⚠️ WARNING: Creating prescription without appointmentId!');
       }
 
       // Exclude fields not in the schema (followUpDate, id, createdAt, updatedAt, etc.)
@@ -214,15 +240,32 @@ export default function PrescriptionForm({
         throw new Error('Server returned non-JSON response');
       }
     },
-    onSuccess: () => {
+    onSuccess: async (data: any) => {
       message.success('Prescription created successfully!');
+      console.log('✅ Prescription created:', data);
+      console.log('📋 Created prescription appointmentId:', data?.appointmentId || 'NOT SET');
+      
+      // Invalidate all prescription-related queries to ensure all dashboards update
       queryClient.invalidateQueries({ queryKey: ['/api/prescriptions'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/prescriptions/doctor'] }); // Doctor dashboard
       queryClient.invalidateQueries({ queryKey: ['patient-prescriptions'] });
       queryClient.invalidateQueries({ queryKey: ['doctor-prescriptions'] });
       queryClient.invalidateQueries({ queryKey: ['hospital-prescriptions'] });
-      onClose();
-      form.resetFields();
-      setMedications([]);
+      
+      // Force immediate refetch with await to ensure it completes
+      try {
+        await queryClient.refetchQueries({ queryKey: ['/api/prescriptions/doctor'] });
+        console.log('✅ Prescriptions refetched after creation');
+      } catch (error) {
+        console.error('❌ Error refetching prescriptions:', error);
+      }
+      
+      // Small delay before closing to allow UI to update
+      setTimeout(() => {
+        onClose();
+        form.resetFields();
+        setMedications([]);
+      }, 100);
     },
     onError: (error: any) => {
       message.error(error.message || 'Failed to create prescription');
@@ -285,12 +328,18 @@ export default function PrescriptionForm({
         throw new Error('Server returned non-JSON response');
       }
     },
-    onSuccess: () => {
+    onSuccess: async () => {
       message.success('Prescription updated successfully!');
+      // Invalidate all prescription-related queries to ensure all dashboards update
       queryClient.invalidateQueries({ queryKey: ['/api/prescriptions'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/prescriptions/doctor'] }); // Doctor dashboard
       queryClient.invalidateQueries({ queryKey: ['patient-prescriptions'] });
       queryClient.invalidateQueries({ queryKey: ['doctor-prescriptions'] });
       queryClient.invalidateQueries({ queryKey: ['hospital-prescriptions'] });
+      // Small delay to ensure backend has processed, then refetch
+      setTimeout(() => {
+        queryClient.refetchQueries({ queryKey: ['/api/prescriptions/doctor'] });
+      }, 300);
       onClose();
     },
     onError: (error: any) => {
@@ -318,13 +367,63 @@ export default function PrescriptionForm({
     message.success('Medication added successfully!');
   };
 
+  const isEditExpired = useMemo(() => {
+    if (!prescription || !prescription.editableUntil) return false;
+    const end = dayjs(prescription.editableUntil);
+    return end.isValid() ? end.isBefore(dayjs()) : false;
+  }, [prescription]);
+
+  const remainingLabel = useMemo(() => {
+    if (!prescription || !prescription.editableUntil) return null;
+    const end = dayjs(prescription.editableUntil);
+    if (!end.isValid()) return null;
+    const diffHours = end.diff(dayjs(), 'hour');
+    if (diffHours < 0) return 'Edit window expired';
+    if (diffHours < 24) return `Edit window: ${diffHours}h left`;
+    const diffDays = end.diff(dayjs(), 'day');
+    return `Edit window: ${diffDays} days left`;
+  }, [prescription]);
+
+  const handleExtend = async () => {
+    if (!prescription?.id) return;
+    try {
+      setIsExtendLoading(true);
+      const token = getAuthToken();
+      const res = await fetch(`/api/prescriptions/${prescription.id}/extend`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        message.error(data.error || 'Failed to extend');
+        return;
+      }
+      message.success('Edit window extended by 7 days');
+      await queryClient.invalidateQueries({ queryKey: ['/api/prescriptions/doctor'] });
+      await queryClient.invalidateQueries({ queryKey: ['/api/appointments/my'] });
+      // Refresh local view
+      loadMedicationsFromPrescription(data);
+      form.setFieldsValue({
+        patientId: patientId ?? undefined,
+        hospitalId: hospitalId ?? undefined,
+        appointmentId: appointmentId ?? undefined,
+        diagnosis: data?.diagnosis,
+        instructions: data?.instructions,
+      });
+    } catch (err) {
+      console.error('Extend error', err);
+      message.error('Failed to extend');
+    } finally {
+      setIsExtendLoading(false);
+    }
+  };
+
   const handleRemoveMedication = (index: number) => {
     setMedications(medications.filter((_, i) => i !== index));
     message.success('Medication removed');
-  };
-
-  const formatMedicationDisplay = (med: Medication) => {
-    return `${med.name} - ${med.dosage} ${med.unit} (${med.frequency}, ${med.timing})`;
   };
 
   return (
@@ -341,6 +440,14 @@ export default function PrescriptionForm({
         footer={null}
         width={800}
         destroyOnClose
+        getContainer={() => document.body}
+        zIndex={2000}
+        maskClosable={false}
+        bodyStyle={{
+          maxHeight: '70vh',
+          overflowY: 'auto',
+          padding: '24px',
+        }}
       >
         <Form
           form={form}
@@ -506,6 +613,16 @@ export default function PrescriptionForm({
 
           <Form.Item>
             <Space style={{ width: '100%', justifyContent: 'flex-end' }}>
+              {remainingLabel && (
+                <Text type={isEditExpired ? 'danger' : 'secondary'} style={{ marginRight: 12 }}>
+                  {remainingLabel}
+                </Text>
+              )}
+              {isEditExpired && (
+                <Button onClick={handleExtend} loading={isExtendLoading}>
+                  Extend edit window (+7 days)
+                </Button>
+              )}
               <Button onClick={onClose}>
                 Cancel
               </Button>
@@ -513,6 +630,7 @@ export default function PrescriptionForm({
                 type="primary"
                 htmlType="submit"
                 loading={createPrescriptionMutation.isPending || updatePrescriptionMutation.isPending}
+                disabled={!!prescription && isEditExpired && !isExtendLoading}
               >
                 {prescription ? 'Update Prescription' : 'Create Prescription'}
               </Button>
@@ -531,7 +649,7 @@ export default function PrescriptionForm({
         }}
         footer={null}
         width={600}
-        zIndex={2000}
+        zIndex={3000} // Higher than parent prescription modal to stay on top
         getContainer={() => document.body}
         maskClosable={true}
       >
