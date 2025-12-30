@@ -41,22 +41,35 @@ router.post('/', authorizeRoles('PATIENT', 'ADMIN', 'RECEPTIONIST'), async (req:
       });
     }
 
-    // Get patient ID from user
-    const patient = await db.select().from(patients).where(eq(patients.userId, user.id)).limit(1);
-    
-    console.log('🔍 Patient lookup result:', patient);
-    
-    if (patient.length === 0) {
-      console.log('❌ No patient record found for user:', user.id);
-      return res.status(400).json({ message: 'Patient profile not found. Please contact support.' });
-    }
+    // Get patient ID - for receptionists, use patientId from body if provided
+    let patientId: number;
+    if (user.role === 'RECEPTIONIST' && req.body.patientId) {
+      // Receptionist booking for a specific patient
+      patientId = req.body.patientId;
+      // Verify patient exists
+      const [patient] = await db.select().from(patients).where(eq(patients.id, patientId)).limit(1);
+      if (!patient) {
+        return res.status(400).json({ message: 'Patient not found' });
+      }
+    } else {
+      // For patients, use their own patient profile
+      const patient = await db.select().from(patients).where(eq(patients.userId, user.id)).limit(1);
+      
+      console.log('🔍 Patient lookup result:', patient);
+      
+      if (patient.length === 0) {
+        console.log('❌ No patient record found for user:', user.id);
+        return res.status(400).json({ message: 'Patient profile not found. Please contact support.' });
+      }
 
-    console.log('✅ Found patient record:', patient[0].id, 'for user:', user.id);
+      console.log('✅ Found patient record:', patient[0].id, 'for user:', user.id);
+      patientId = patient[0].id;
+    }
 
     // Update the appointment data with the correct patient ID
     const appointmentData = {
       ...req.body,
-      patientId: patient[0].id
+      patientId
     };
     
     console.log('📤 Final appointment data:', appointmentData);

@@ -329,6 +329,15 @@ export default function PatientAppointments() {
 
   const columns = [
     {
+      title: '#',
+      key: 'serial',
+      width: 60,
+      align: 'center' as const,
+      render: (_: any, __: any, index: number) => (
+        <Text type="secondary" style={{ fontWeight: 500 }}>{index + 1}</Text>
+      ),
+    },
+    {
       title: 'Doctor',
       dataIndex: 'doctorName',
       key: 'doctorName',

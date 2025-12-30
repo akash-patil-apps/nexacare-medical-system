@@ -1,5 +1,5 @@
 // server/services/reception.service.ts
-import { and, eq, isNull, asc, desc, ilike, or } from 'drizzle-orm';
+import { and, eq, isNull, asc, desc, ilike, or, count } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 import { db } from '../db';
 import {
@@ -407,6 +407,92 @@ export async function getReceptionistContext(receptionistUserId: number) {
 /**
  * Get comprehensive patient information including profile, lab tests, prescriptions, and history.
  */
+/**
+ * Lookup user and patient by mobile number for walk-in registration.
+ */
+export async function lookupUserByMobile(mobileNumber: string) {
+  console.log(`🔍 Looking up user by mobile number: ${mobileNumber}`);
+  
+  try {
+    // Validate mobile number format
+    if (!mobileNumber || typeof mobileNumber !== 'string') {
+      throw new Error('Invalid mobile number');
+    }
+
+    const trimmedMobile = mobileNumber.trim();
+    if (trimmedMobile.length < 10 || trimmedMobile.length > 15) {
+      throw new Error('Invalid mobile number length');
+    }
+
+    // Use a single optimized query with LEFT JOIN to get both user and patient in one query
+    console.log(`🔍 Executing optimized lookup query for: ${trimmedMobile}`);
+    const startTime = Date.now();
+    
+    const result = await db
+      .select({
+        user: users,
+        patient: patients,
+      })
+      .from(users)
+      .leftJoin(patients, eq(users.id, patients.userId))
+      .where(eq(users.mobileNumber, trimmedMobile))
+      .limit(1);
+    
+    const queryTime = Date.now() - startTime;
+    console.log(`⏱️ Lookup query took ${queryTime}ms`);
+
+    if (result.length === 0) {
+      console.log(`ℹ️  No user found for mobile: ${trimmedMobile}`);
+      return { user: null, patient: null };
+    }
+
+    const row = result[0];
+    const user = row.user ? {
+      id: row.user.id,
+      fullName: row.user.fullName,
+      mobileNumber: row.user.mobileNumber,
+      email: row.user.email,
+      role: row.user.role,
+    } : null;
+
+    if (!user) {
+      console.log(`ℹ️  No user found for mobile: ${trimmedMobile}`);
+      return { user: null, patient: null };
+    }
+
+    console.log(`✅ User found: ${user.fullName} (ID: ${user.id})`);
+
+    const patient = row.patient || null;
+
+    if (patient) {
+      console.log(`✅ Patient profile found: ${patient.id}`);
+    } else {
+      console.log(`ℹ️  No patient profile found for user: ${user.id}`);
+    }
+
+    return {
+      user,
+      patient,
+    };
+  } catch (error: any) {
+    console.error(`❌ Error looking up user by mobile ${mobileNumber}:`, error);
+    console.error('Error details:', {
+      message: error.message,
+      code: error.code,
+      name: error.name,
+      stack: error.stack,
+    });
+    // Provide more specific error messages
+    if (error.message?.includes('timeout') || error.message?.includes('CONNECT_TIMEOUT')) {
+      throw new Error('Database connection timeout. Please try again.');
+    }
+    if (error.message?.includes('Invalid')) {
+      throw new Error(error.message);
+    }
+    throw new Error(`Failed to lookup user: ${error.message || 'Unknown error'}`);
+  }
+}
+
 export async function getPatientInfo(patientId: number) {
   console.log(`📋 Fetching comprehensive patient info for patient ${patientId}`);
   
@@ -442,14 +528,51 @@ export async function getPatientInfo(patientId: number) {
       .where(eq(labReports.patientId, patientId))
       .orderBy(desc(labReports.reportDate));
 
-    // Get prescriptions
-    const prescriptionsList = await db
+    // Get prescriptions - limit to last 30 for performance, but show all active ones
+    const sixMonthsAgo = new Date();
+    sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
+    
+    const allPrescriptions = await db
       .select()
       .from(prescriptions)
       .where(eq(prescriptions.patientId, patientId))
       .orderBy(desc(prescriptions.createdAt));
+    
+    // Prioritize active prescriptions, then recent ones (last 6 months), then limit to 30
+    const activePrescriptions = allPrescriptions.filter(p => p.isActive !== false);
+    const recentPrescriptions = allPrescriptions.filter(p => {
+      const createdAt = p.createdAt ? new Date(p.createdAt) : null;
+      return createdAt && createdAt >= sixMonthsAgo;
+    });
+    
+    // Combine: all active + recent (up to 30 total)
+    const prescriptionSet = new Set();
+    const prescriptionsList: any[] = [];
+    
+    // First add all active prescriptions
+    activePrescriptions.forEach(p => {
+      if (!prescriptionSet.has(p.id) && prescriptionsList.length < 30) {
+        prescriptionSet.add(p.id);
+        prescriptionsList.push(p);
+      }
+    });
+    
+    // Then add recent ones
+    recentPrescriptions.forEach(p => {
+      if (!prescriptionSet.has(p.id) && prescriptionsList.length < 30) {
+        prescriptionSet.add(p.id);
+        prescriptionsList.push(p);
+      }
+    });
+    
+    // Sort by creation date descending
+    prescriptionsList.sort((a, b) => {
+      const dateA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+      const dateB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+      return dateB - dateA;
+    });
 
-    // Get appointments history
+    // Get appointments history - last 30 appointments
     const appointmentsHistory = await db
       .select({
         id: appointments.id,
@@ -465,7 +588,15 @@ export async function getPatientInfo(patientId: number) {
       .leftJoin(users, eq(doctors.userId, users.id))
       .where(eq(appointments.patientId, patientId))
       .orderBy(desc(appointments.appointmentDate))
-      .limit(20); // Last 20 appointments
+      .limit(30); // Last 30 appointments
+
+    // Get total counts for UI display
+    const [appointmentsCountResult] = await db
+      .select({ count: count() })
+      .from(appointments)
+      .where(eq(appointments.patientId, patientId));
+    
+    const appointmentsTotal = appointmentsCountResult?.count || 0;
 
     return {
       patient: {
@@ -474,7 +605,9 @@ export async function getPatientInfo(patientId: number) {
       },
       labReports: labReportsList,
       prescriptions: prescriptionsList,
+      prescriptionsTotal: allPrescriptions.length, // Total count for UI display
       appointments: appointmentsHistory,
+      appointmentsTotal, // Total count for UI display
     };
   } catch (error) {
     console.error(`❌ Error fetching patient info for patient ${patientId}:`, error);

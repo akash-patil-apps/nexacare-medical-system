@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback, useRef } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Redirect } from "wouter";
 import { 
@@ -16,7 +16,6 @@ import {
   Form,
   Input,
   Select,
-  AutoComplete,
   DatePicker,
   Segmented,
   TimePicker,
@@ -24,27 +23,34 @@ import {
   Tabs,
   Drawer,
   List,
+  Steps,
+  Alert,
+  Avatar,
 } from 'antd';
 import { 
   CalendarOutlined, 
-  FileTextOutlined,
   CheckCircleOutlined,
   TeamOutlined,
-  UserAddOutlined,
   ClockCircleOutlined,
   MenuUnfoldOutlined,
   PhoneOutlined,
+  MessageOutlined,
+  UserAddOutlined,
+  UserOutlined,
+  DollarOutlined,
+  StarOutlined,
 } from '@ant-design/icons';
 import { useAuth } from '../../hooks/use-auth';
 import { useResponsive } from '../../hooks/use-responsive';
 import { useQueryClient } from '@tanstack/react-query';
 import { message } from 'antd';
 import { KpiCard } from '../../components/dashboard/KpiCard';
-import { QuickActionTile } from '../../components/dashboard/QuickActionTile';
 import { ReceptionistSidebar } from '../../components/layout/ReceptionistSidebar';
 import dayjs from 'dayjs';
 import type { Dayjs } from 'dayjs';
-import { formatTimeSlot12h } from '../../lib/time';
+import { formatTimeSlot12h, parseTimeTo24h } from '../../lib/time';
+import { getISTStartOfDay, isSameDayIST } from '../../lib/timezone';
+import { normalizeStatus, APPOINTMENT_STATUS } from '../../lib/appointment-status';
 
 const { Content, Sider } = Layout;
 const { Title, Text } = Typography;
@@ -67,16 +73,27 @@ export default function ReceptionistDashboard() {
   const [isWalkInModalOpen, setIsWalkInModalOpen] = useState(false);
   const [isWalkInSubmitting, setIsWalkInSubmitting] = useState(false);
   const [walkInForm] = Form.useForm();
-  const [patientOptions, setPatientOptions] = useState<Array<{ userId: number; patientId: number | null; fullName: string; mobileNumber: string }>>([]);
-  const [patientSearchLoading, setPatientSearchLoading] = useState(false);
+  const [walkInStep, setWalkInStep] = useState(0); // 0: Mobile lookup, 1: User found/New user, 2: OTP (if new), 3: Registration (if new), 4: Appointment booking
+  const [foundUser, setFoundUser] = useState<any>(null); // Existing user data
+  const [foundPatient, setFoundPatient] = useState<any>(null); // Existing patient data
+  const [isCheckingMobile, setIsCheckingMobile] = useState(false);
+  const [otpVerified, setOtpVerified] = useState(false);
+  const [sendingOtp, setSendingOtp] = useState(false);
+  const [verifyingOtp, setVerifyingOtp] = useState(false);
   const [dateMode, setDateMode] = useState<'today' | 'tomorrow' | 'custom'>('today');
   const [activeAppointmentTab, setActiveAppointmentTab] = useState<string>('today');
   const [patientInfoDrawerOpen, setPatientInfoDrawerOpen] = useState(false);
   const [patientInfo, setPatientInfo] = useState<any>(null);
   const [patientInfoLoading, setPatientInfoLoading] = useState(false);
-  const patientSearchTimeoutRef = useRef<number | undefined>(undefined);
   const appointmentStartTimeValue = Form.useWatch('appointmentStartTime', walkInForm);
   const durationMinutesValue = Form.useWatch('durationMinutes', walkInForm);
+  
+  // Walk-in appointment booking state (matching patient dashboard flow)
+  const [selectedDoctor, setSelectedDoctor] = useState<any>(null);
+  const [selectedDate, setSelectedDate] = useState<dayjs.Dayjs | null>(null);
+  const [selectedSlot, setSelectedSlot] = useState<string>('');
+  const [availableSlots, setAvailableSlots] = useState<string[]>([]);
+  const [slotBookings, setSlotBookings] = useState<Record<string, number>>({});
 
 
   // ALL HOOKS MUST BE CALLED BEFORE ANY CONDITIONAL RETURNS
@@ -338,18 +355,16 @@ export default function ReceptionistDashboard() {
   }, [futureAppointments]);
 
 
-  // Completed appointments for today (for receptionist visibility)
+  // Completed appointments for today (for receptionist visibility) - Using IST
   const completedTodayAppointments = useMemo(() => {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
+    const todayIST = getISTStartOfDay();
     return appointments.filter((apt: any) => {
-      const status = (apt.status || '').toLowerCase();
-      if (status !== 'completed') return false;
+      const normalizedStatus = normalizeStatus(apt.status);
+      if (normalizedStatus !== APPOINTMENT_STATUS.COMPLETED) return false;
       if (!apt.date && !apt.dateObj) return false;
       const d = apt.dateObj || new Date(apt.date);
       if (isNaN(d.getTime())) return false;
-      d.setHours(0, 0, 0, 0);
-      return d.getTime() === today.getTime();
+      return isSameDayIST(d, todayIST);
     });
   }, [appointments]);
 
@@ -427,34 +442,76 @@ export default function ReceptionistDashboard() {
   }, [appointmentTabs, activeAppointmentTab]);
 
   const stats = useMemo(() => {
+    // Use IST for date comparison to ensure accuracy
+    const todayIST = getISTStartOfDay();
+    
     // For stats, we need to check all appointments (not just confirmed) to show pending
     const allTodayAppointments = appointments.filter((apt: any) => {
       if (!apt.date && !apt.dateObj) return false;
       const aptDate = apt.dateObj || new Date(apt.date);
-      const today = new Date();
-      aptDate.setHours(0, 0, 0, 0);
-      today.setHours(0, 0, 0, 0);
-      return aptDate.getTime() === today.getTime();
+      return isSameDayIST(aptDate, todayIST);
     });
     
     const today = allTodayAppointments;
-    const confirmed = today.filter((apt: any) => apt.status === 'confirmed').length;
-    const pending = today.filter((apt: any) => apt.status === 'pending').length;
-    const completed = today.filter((apt: any) => apt.status === 'completed').length;
-    const cancelled = today.filter((apt: any) => apt.status === 'cancelled').length;
     
-    // Check-ins: appointments that have been checked in (status is 'checked-in' or 'attended')
-    // Note: 'confirmed' means appointment is confirmed but patient hasn't arrived yet
-    const checkedIn = today.filter((apt: any) => 
-      apt.status === 'checked-in' || apt.status === 'attended' || apt.status === 'in_consultation'
-    ).length;
+    // Use normalized status for accurate filtering
+    const confirmed = today.filter((apt: any) => {
+      const normalized = normalizeStatus(apt.status);
+      return normalized === APPOINTMENT_STATUS.CONFIRMED;
+    }).length;
+    
+    const pending = today.filter((apt: any) => {
+      const normalized = normalizeStatus(apt.status);
+      return normalized === APPOINTMENT_STATUS.PENDING;
+    }).length;
+    
+    const completed = today.filter((apt: any) => {
+      const normalized = normalizeStatus(apt.status);
+      return normalized === APPOINTMENT_STATUS.COMPLETED;
+    }).length;
+    
+    const cancelled = today.filter((apt: any) => {
+      const normalized = normalizeStatus(apt.status);
+      return normalized === APPOINTMENT_STATUS.CANCELLED;
+    }).length;
+    
+    // Check-ins: appointments that have been checked in (status is 'checked-in', 'attended', or 'in_consultation')
+    const checkedIn = today.filter((apt: any) => {
+      const normalized = normalizeStatus(apt.status);
+      return normalized === APPOINTMENT_STATUS.CHECKED_IN || 
+             normalized === APPOINTMENT_STATUS.ATTENDED || 
+             normalized === APPOINTMENT_STATUS.IN_CONSULTATION;
+    }).length;
     
     // Waiting: appointments that are confirmed but not yet checked in
-    const waiting = today.filter((apt: any) => 
-      apt.status === 'confirmed' && apt.status !== 'checked-in' && apt.status !== 'attended' && apt.status !== 'in_consultation'
-    ).length;
+    const waiting = today.filter((apt: any) => {
+      const normalized = normalizeStatus(apt.status);
+      return normalized === APPOINTMENT_STATUS.CONFIRMED;
+    }).length;
 
     const unreadNotifications = notifications.filter((notif: any) => !notif.read).length;
+
+    console.log('📊 Receptionist Dashboard Stats:', {
+      totalAppointments: appointments.length,
+      todayAppointments: today.length,
+      pending,
+      confirmed,
+      completed,
+      cancelled,
+      checkedIn,
+      waiting,
+      todayIST: todayIST.toISOString(),
+      sampleStatuses: today.slice(0, 5).map((apt: any) => ({ 
+        id: apt.id, 
+        status: apt.status, 
+        normalized: normalizeStatus(apt.status),
+        date: apt.date,
+        dateObj: apt.dateObj?.toISOString(),
+        isToday: isSameDayIST(apt.dateObj || new Date(apt.date), todayIST)
+      })),
+      allAppointmentStatuses: [...new Set(appointments.map((apt: any) => apt.status))],
+      todayAppointmentStatuses: [...new Set(today.map((apt: any) => apt.status))],
+    });
 
     return {
       totalAppointments: appointments.length,
@@ -472,51 +529,6 @@ export default function ReceptionistDashboard() {
       unreadNotifications,
     };
   }, [appointments, walkInPatients, notifications]);
-
-  const handlePatientSearch = useCallback(
-    (searchTerm: string) => {
-      if (patientSearchTimeoutRef.current) {
-        window.clearTimeout(patientSearchTimeoutRef.current);
-      }
-
-      const trimmed = searchTerm.trim();
-      if (trimmed.length < 2) {
-        setPatientOptions([]);
-        setPatientSearchLoading(false);
-        return;
-      }
-
-      setPatientSearchLoading(true);
-      patientSearchTimeoutRef.current = window.setTimeout(async () => {
-        try {
-          const token = localStorage.getItem('auth-token');
-          const response = await fetch(`/api/reception/patients/search?q=${encodeURIComponent(trimmed)}`, {
-            headers: {
-              Authorization: `Bearer ${token}`,
-            },
-          });
-          if (!response.ok) {
-            throw new Error('Failed to search patients');
-          }
-          const data = await response.json();
-          setPatientOptions(data || []);
-        } catch (error) {
-          console.error('❌ Patient search error:', error);
-        } finally {
-          setPatientSearchLoading(false);
-        }
-      }, 300);
-    },
-    []
-  );
-
-  useEffect(() => {
-    return () => {
-      if (patientSearchTimeoutRef.current) {
-        window.clearTimeout(patientSearchTimeoutRef.current);
-      }
-    };
-  }, []);
 
   useEffect(() => {
     if (dateMode === 'today') {
@@ -543,36 +555,6 @@ export default function ReceptionistDashboard() {
     if (!start || !computedEndTime) return '';
     return `${start.format('hh:mm A')} - ${computedEndTime.format('hh:mm A')}`;
   }, [appointmentStartTimeValue, computedEndTime]);
-
-  const patientNameOptions = useMemo(
-    () =>
-      patientOptions.map((option) => ({
-        value: option.fullName,
-        label: (
-          <div>
-            <div style={{ fontWeight: 600 }}>{option.fullName}</div>
-            <div style={{ fontSize: 12, color: '#6b7280' }}>{option.mobileNumber}</div>
-          </div>
-        ),
-        data: option,
-      })),
-    [patientOptions]
-  );
-
-  const patientMobileOptions = useMemo(
-    () =>
-      patientOptions.map((option) => ({
-        value: option.mobileNumber,
-        label: (
-          <div>
-            <div style={{ fontWeight: 600 }}>{option.mobileNumber}</div>
-            <div style={{ fontSize: 12, color: '#6b7280' }}>{option.fullName}</div>
-          </div>
-        ),
-        data: option,
-      })),
-    [patientOptions]
-  );
 
   const doctorOptions = useMemo(() => {
     const grouped: Record<string, Array<{ label: string; value: number }>> = {};
@@ -786,6 +768,16 @@ export default function ReceptionistDashboard() {
     }
   };
 
+  // Handle message patient
+  const handleMessage = (phone: string) => {
+    if (phone && phone !== 'N/A') {
+      // Open SMS app with patient's phone number
+      window.location.href = `sms:${phone}`;
+    } else {
+      message.warning('Phone number not available');
+    }
+  };
+
   // Handle view patient info
   const handleViewPatientInfo = async (patientId: number) => {
     if (!patientId) {
@@ -800,15 +792,35 @@ export default function ReceptionistDashboard() {
           'Authorization': `Bearer ${token}`
         }
       });
+      
       if (!response.ok) {
-        throw new Error('Failed to fetch patient information');
+        const errorData = await response.json().catch(() => ({}));
+        if (response.status === 404) {
+          message.error('Patient not found');
+          return;
+        }
+        if (response.status === 500 || response.status === 503) {
+          message.error('Database connection issue. Please try again in a moment.');
+          return;
+        }
+        throw new Error(errorData.message || 'Failed to fetch patient information');
       }
+      
       const data = await response.json();
+      if (!data || !data.patient) {
+        message.warning('Patient information not available');
+        return;
+      }
+      
       setPatientInfo(data);
       setPatientInfoDrawerOpen(true);
-    } catch (error) {
+    } catch (error: any) {
       console.error('❌ Error loading patient info:', error);
-      message.error('Failed to load patient information');
+      if (error.message?.includes('timeout') || error.message?.includes('CONNECT_TIMEOUT')) {
+        message.error('Database connection timeout. Please check your connection and try again.');
+      } else {
+        message.error(error.message || 'Failed to load patient information. Please try again.');
+      }
     } finally {
       setPatientInfoLoading(false);
     }
@@ -950,7 +962,14 @@ export default function ReceptionistDashboard() {
           <div style={{ minWidth: 0, flex: 1 }}>
             <Button
               type="link"
-              style={{ padding: 0, height: 'auto', fontSize: 14, fontWeight: 600 }}
+              style={{ 
+                padding: 0, 
+                height: 'auto', 
+                fontSize: 14, 
+                fontWeight: 600,
+                color: '#1890ff',
+              }}
+              className="patient-name-link"
               onClick={() => record.patientId && handleViewPatientInfo(record.patientId)}
             >
               {record.patient || 'Unknown Patient'}
@@ -1017,6 +1036,15 @@ export default function ReceptionistDashboard() {
 
   const appointmentColumns = [
     {
+      title: '#',
+      key: 'serial',
+      width: 60,
+      align: 'center' as const,
+      render: (_: any, __: any, index: number) => (
+        <Text type="secondary" style={{ fontWeight: 500 }}>{index + 1}</Text>
+      ),
+    },
+    {
       title: 'Patient',
       dataIndex: 'patient',
       key: 'patient',
@@ -1024,7 +1052,12 @@ export default function ReceptionistDashboard() {
         <Space>
           <Button
             type="link"
-            style={{ padding: 0, height: 'auto' }}
+            style={{ 
+              padding: 0, 
+              height: 'auto',
+              color: '#1890ff',
+            }}
+            className="patient-name-link"
             onClick={() => record.patientId && handleViewPatientInfo(record.patientId)}
           >
             <Text strong={isAppointmentOverdue(record)}>{text}</Text>
@@ -1169,29 +1202,79 @@ export default function ReceptionistDashboard() {
 
   const siderWidth = isMobile ? 0 : 260;
 
-  const handleWalkInSubmit = async (values: any) => {
+  // Handle walk-in appointment booking
+  const handleWalkInAppointmentBooking = async (values: any) => {
     try {
       setIsWalkInSubmitting(true);
       const token = localStorage.getItem('auth-token');
       const appointmentDateValue = values.appointmentDate as Dayjs | undefined;
       const appointmentStartTime = values.appointmentStartTime as Dayjs | undefined;
 
-      const trimmedReason = values.reason?.trim();
+      // Get patient ID - use foundPatient if available, or foundUser to create patient profile
+      let patientId: number;
+      if (foundPatient?.id) {
+        patientId = foundPatient.id;
+      } else if (foundUser?.id) {
+        // If user exists but no patient profile, create one
+        const patientResponse = await fetch('/api/patients', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            userId: foundUser.id,
+          }),
+        });
+        if (!patientResponse.ok) {
+          const errorData = await patientResponse.json().catch(() => ({}));
+          throw new Error(errorData.message || 'Failed to create patient profile');
+        }
+        const patientData = await patientResponse.json();
+        patientId = patientData.patient?.id || patientData.id;
+        setFoundPatient(patientData.patient || patientData);
+      } else {
+        throw new Error('Patient information not available');
+      }
+
+      // Get hospital ID from receptionist context
+      const contextResponse = await fetch('/api/reception/profile', {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+        },
+      });
+      if (!contextResponse.ok) {
+        throw new Error('Failed to get hospital information');
+      }
+      const context = await contextResponse.json();
+
+      const trimmedReason = values.reason?.trim() || 'Walk-in consultation';
       const trimmedNotes = values.notes?.trim();
 
+      // Format date and time
+      const appointmentDate = appointmentDateValue ? appointmentDateValue.format('YYYY-MM-DD') : dayjs().format('YYYY-MM-DD');
+      const appointmentTime = appointmentStartTime ? appointmentStartTime.format('HH:mm') : '09:00';
+      
+      // Calculate time slot
+      const startDateTime = appointmentStartTime || dayjs().hour(9).minute(0);
+      const duration = Number(values.durationMinutes) || 30;
+      const endDateTime = startDateTime.add(duration, 'minute');
+      const timeSlot = `${startDateTime.format('HH:mm')}-${endDateTime.format('HH:mm')}`;
+
       const payload = {
-        fullName: values.fullName,
-        mobileNumber: values.mobileNumber,
+        patientId,
         doctorId: values.doctorId,
-        reason: trimmedReason || undefined,
-        priority: values.priority,
-        notes: trimmedNotes ? trimmedNotes : undefined,
-        appointmentDate: appointmentDateValue ? appointmentDateValue.format('YYYY-MM-DD') : undefined,
-        startTime: appointmentStartTime ? appointmentStartTime.format('HH:mm') : undefined,
-        durationMinutes: Number(values.durationMinutes) || 30,
+        hospitalId: context.hospitalId,
+        appointmentDate,
+        appointmentTime,
+        timeSlot,
+        reason: trimmedReason,
+        type: 'walk-in', // Mark as walk-in appointment
+        priority: values.priority || 'normal',
+        notes: trimmedNotes || undefined,
       };
 
-      const response = await fetch('/api/reception/walkins', {
+      const response = await fetch('/api/appointments', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -1203,30 +1286,21 @@ export default function ReceptionistDashboard() {
       const responseBody = await response.json();
 
       if (!response.ok) {
-        console.error('❌ Walk-in registration failed:', responseBody);
-        message.error(responseBody?.message || 'Failed to register walk-in patient');
+        console.error('❌ Walk-in appointment booking failed:', responseBody);
+        message.error(responseBody?.message || 'Failed to book appointment');
         return;
       }
 
-      message.success('Walk-in patient registered successfully');
-      walkInForm.resetFields();
-      walkInForm.setFieldsValue({
-        priority: 'normal',
-        appointmentDate: dayjs(),
-        appointmentStartTime: dayjs().hour(9).minute(0),
-        durationMinutes: 30,
-      });
-      setDateMode('today');
-      setPatientOptions([]);
-      setIsWalkInModalOpen(false);
+      message.success('Walk-in appointment booked successfully!');
+      closeWalkInModal();
 
       await Promise.all([refetchWalkIns(), refetchAppointments()]);
 
       window.localStorage.setItem('appointment-updated', Date.now().toString());
       window.dispatchEvent(new CustomEvent('appointment-updated'));
-    } catch (error) {
-      console.error('❌ Error registering walk-in patient:', error);
-      message.error('Failed to register walk-in patient. Please try again.');
+    } catch (error: any) {
+      console.error('❌ Error booking walk-in appointment:', error);
+      message.error(error.message || 'Failed to book appointment. Please try again.');
     } finally {
       setIsWalkInSubmitting(false);
     }
@@ -1234,6 +1308,10 @@ export default function ReceptionistDashboard() {
 
   const closeWalkInModal = () => {
     setIsWalkInModalOpen(false);
+    setWalkInStep(0);
+    setFoundUser(null);
+    setFoundPatient(null);
+    setOtpVerified(false);
     walkInForm.resetFields();
     walkInForm.setFieldsValue({
       priority: 'normal',
@@ -1242,14 +1320,249 @@ export default function ReceptionistDashboard() {
       durationMinutes: 30,
     });
     setDateMode('today');
-    setPatientOptions([]);
-    if (patientSearchTimeoutRef.current) {
-      window.clearTimeout(patientSearchTimeoutRef.current);
+  };
+  // Check if user exists by mobile number
+  const checkMobileNumber = async (mobileNumber: string) => {
+    console.log('🔍 checkMobileNumber called with:', mobileNumber);
+    
+    if (!mobileNumber || mobileNumber.length < 10) {
+      message.warning('Please enter a valid mobile number');
+      return;
+    }
+
+    // Validate Indian mobile number format (10 digits)
+    const mobileRegex = /^[6-9]\d{9}$/;
+    if (!mobileRegex.test(mobileNumber)) {
+      message.error('Please enter a valid Indian mobile number (10 digits starting with 6-9)');
+      return;
+    }
+
+    setIsCheckingMobile(true);
+    const startTime = Date.now();
+    
+    try {
+      const token = localStorage.getItem('auth-token');
+      if (!token) {
+        message.error('Authentication required');
+        return;
+      }
+
+      console.log(`📞 Looking up mobile number: ${mobileNumber}`);
+      const url = `/api/reception/patients/lookup?mobile=${encodeURIComponent(mobileNumber)}`;
+      console.log(`🌐 Fetch URL: ${url}`);
+
+      // Add timeout to the fetch request - increased to 30 seconds for database queries
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => {
+        console.error('⏱️ Request timeout after 30 seconds');
+        controller.abort();
+      }, 30000); // 30 second timeout for database operations
+
+      const response = await fetch(url, {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        },
+        signal: controller.signal,
+      });
+
+      clearTimeout(timeoutId);
+      const duration = Date.now() - startTime;
+      console.log(`⏱️ Lookup took ${duration}ms, status: ${response.status}`);
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        console.error('❌ Lookup failed:', {
+          status: response.status,
+          statusText: response.statusText,
+          error: errorData
+        });
+        
+        if (response.status === 500) {
+          message.error(errorData.message || 'Server error. Please try again.');
+          return;
+        }
+        throw new Error(errorData.message || 'Failed to lookup user');
+      }
+
+      const data = await response.json();
+      console.log('✅ Lookup response:', data);
+      
+      if (data.user) {
+        // User exists
+        setFoundUser(data.user);
+        setFoundPatient(data.patient || null);
+        setWalkInStep(1); // Move to next step (show user info or book appointment)
+        message.success(`User found: ${data.user.fullName}`);
+      } else {
+        // New user - proceed to registration
+        setFoundUser(null);
+        setFoundPatient(null);
+        setWalkInStep(1); // Move to registration step
+        message.info('New patient. Please complete registration.');
+      }
+    } catch (error: any) {
+      console.error('❌ Error checking mobile number:', error);
+      if (error.name === 'AbortError') {
+        message.error('Request timed out. Please check your connection and try again.');
+      } else {
+        message.error(error.message || 'Failed to check mobile number. Please try again.');
+      }
+    } finally {
+      setIsCheckingMobile(false);
     }
   };
+
+  // Send OTP for new user registration
+  const sendOtpForRegistration = async (mobileNumber: string) => {
+    setSendingOtp(true);
+    try {
+      const response = await fetch('/api/auth/otp/send', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          mobileNumber,
+          role: 'PATIENT',
+        }),
+      });
+
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.message || 'Failed to send OTP');
+      }
+
+      message.success('OTP sent to mobile number');
+      setWalkInStep(2); // Move to OTP verification step
+    } catch (error: any) {
+      console.error('Error sending OTP:', error);
+      message.error(error.message || 'Failed to send OTP. Please try again.');
+    } finally {
+      setSendingOtp(false);
+    }
+  };
+
+  // Verify OTP
+  const verifyOtpForRegistration = async (mobileNumber: string, otp: string) => {
+    if (!otp || otp.length !== 6) {
+      message.error('Please enter a valid 6-digit OTP');
+      return;
+    }
+
+    setVerifyingOtp(true);
+    try {
+      const response = await fetch('/api/auth/otp/verify', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          mobileNumber,
+          otp,
+        }),
+      });
+
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.message || 'Invalid OTP');
+      }
+
+      setOtpVerified(true);
+      message.success('OTP verified successfully');
+      setWalkInStep(3); // Move to registration form step
+    } catch (error: any) {
+      console.error('Error verifying OTP:', error);
+      message.error(error.message || 'Invalid OTP. Please try again.');
+    } finally {
+      setVerifyingOtp(false);
+    }
+  };
+
+  // Register new user and create patient profile
+  const registerNewWalkInPatient = async (values: any) => {
+    setIsWalkInSubmitting(true);
+    try {
+      const token = localStorage.getItem('auth-token');
+      
+      // First, register the user (OTP already verified)
+      const registerResponse = await fetch('/api/auth/register', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          mobileNumber: values.mobileNumber,
+          fullName: values.fullName,
+          email: `${values.mobileNumber}@nexacare.com`, // Generate email
+          password: `WalkIn@${values.mobileNumber.slice(-4)}`, // Temporary password
+          role: 'PATIENT',
+        }),
+      });
+
+      if (!registerResponse.ok) {
+        const errorData = await registerResponse.json();
+        throw new Error(errorData.message || 'Failed to register user');
+      }
+
+      const userData = await registerResponse.json();
+      
+      // Then create patient profile
+      const patientResponse = await fetch('/api/patients', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          userId: userData.user.id,
+          gender: values.gender,
+          city: values.city,
+          address: values.address,
+        }),
+      });
+
+      if (!patientResponse.ok) {
+        const errorData = await patientResponse.json().catch(() => ({}));
+        throw new Error(errorData.message || 'Failed to create patient profile');
+      }
+
+      const patientData = await patientResponse.json();
+      
+      setFoundUser({
+        id: userData.user.id,
+        fullName: userData.user.fullName,
+        mobileNumber: userData.user.mobileNumber,
+        email: userData.user.email,
+        role: userData.user.role,
+      });
+      setFoundPatient(patientData.patient || patientData);
+      message.success('Patient registered successfully!');
+      // Initialize selectedDate to today
+      const today = dayjs();
+      setSelectedDate(today);
+      walkInForm.setFieldsValue({ appointmentDate: today });
+      setWalkInStep(4); // Move to appointment booking step
+    } catch (error: any) {
+      console.error('Error registering new patient:', error);
+      message.error(error.message || 'Failed to register patient. Please try again.');
+    } finally {
+      setIsWalkInSubmitting(false);
+    }
+  };
+
   const openWalkInModal = () => {
     setIsWalkInModalOpen(true);
+    setWalkInStep(0);
+    setFoundUser(null);
+    setFoundPatient(null);
+    setOtpVerified(false);
     setDateMode('today');
+    setSelectedDoctor(null);
+    setSelectedDate(null);
+    setSelectedSlot('');
+    setAvailableSlots([]);
+    setSlotBookings({});
+    walkInForm.resetFields();
     walkInForm.setFieldsValue({
       priority: 'normal',
       appointmentDate: dayjs(),
@@ -1258,13 +1571,124 @@ export default function ReceptionistDashboard() {
     });
   };
 
-  const handlePatientOptionSelect = (_value: string, option: any) => {
-    const data = option?.data as { fullName: string; mobileNumber: string } | undefined;
-    if (!data) return;
-    walkInForm.setFieldsValue({
-      fullName: data.fullName,
-      mobileNumber: data.mobileNumber,
-    });
+  // Helper functions for walk-in booking flow (matching patient dashboard)
+  const getDoctorSlots = (doctor: any): string[] => {
+    if (!doctor || !doctor.availableSlots) return [];
+    try {
+      const slots = typeof doctor.availableSlots === 'string' 
+        ? JSON.parse(doctor.availableSlots) 
+        : doctor.availableSlots;
+      return Array.isArray(slots) ? slots : [];
+    } catch (error) {
+      console.error('Error parsing doctor slots:', error);
+      return [];
+    }
+  };
+
+  const fetchBookedAppointments = async (doctorId: number, date: string): Promise<Record<string, number>> => {
+    try {
+      const token = localStorage.getItem('auth-token');
+      const response = await fetch(`/api/appointments/doctor/${doctorId}/date/${date}`, {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+      if (!response.ok) {
+        return {};
+      }
+      const appointments = await response.json();
+      const bookings: Record<string, number> = {};
+      appointments.forEach((apt: any) => {
+        if (apt.timeSlot) {
+          bookings[apt.timeSlot] = (bookings[apt.timeSlot] || 0) + 1;
+        }
+      });
+      return bookings;
+    } catch (error) {
+      console.error('Error fetching booked appointments:', error);
+      return {};
+    }
+  };
+
+  const isSlotInPast = (slot: string, selectedDate: dayjs.Dayjs | null): boolean => {
+    if (!selectedDate) return false;
+    const now = dayjs();
+    const today = now.format('YYYY-MM-DD');
+    const selectedDateStr = selectedDate.format('YYYY-MM-DD');
+    if (selectedDateStr !== today) return false;
+    
+    try {
+      const endPart = slot.includes('-') ? slot.split('-')[1].trim() : slot.trim();
+      const parsedEnd = parseTimeTo24h(endPart);
+      const endTime = parsedEnd || (() => {
+        const parsedStart = parseTimeTo24h(slot.trim());
+        if (!parsedStart) return null;
+        const dt = dayjs().hour(parsedStart.hours24).minute(parsedStart.minutes).add(30, 'minute');
+        return { hours24: dt.hour(), minutes: dt.minute() };
+      })();
+      if (!endTime) return false;
+      const slotEndDateTime = dayjs().hour(endTime.hours24).minute(endTime.minutes).second(0).millisecond(0);
+      return now.isAfter(slotEndDateTime);
+    } catch (error) {
+      return false;
+    }
+  };
+
+  const getSlotAvailabilityColor = (slot: string, maxSlots: number = 5): {
+    color: string;
+    bgColor: string;
+    borderColor: string;
+    textColor: string;
+    isAvailable: boolean;
+    availableCount: number;
+  } => {
+    const bookings = slotBookings[slot] || 0;
+    const availableCount = maxSlots - bookings;
+    if (availableCount >= 3) {
+      return { color: 'green', bgColor: '#D1FAE5', borderColor: '#10B981', textColor: '#047857', isAvailable: true, availableCount };
+    } else if (availableCount >= 1) {
+      return { color: 'yellow', bgColor: '#FEF3C7', borderColor: '#F59E0B', textColor: '#92400E', isAvailable: true, availableCount };
+    } else {
+      return { color: 'red', bgColor: '#FEE2E2', borderColor: '#EF4444', textColor: '#991B1B', isAvailable: false, availableCount: 0 };
+    }
+  };
+
+  const handleDoctorSelect = (doctorId: number) => {
+    const doctor = doctors.find((d: any) => d.id === doctorId);
+    setSelectedDoctor(doctor || null);
+    setAvailableSlots([]);
+    setSelectedSlot('');
+    setSlotBookings({});
+    walkInForm.setFieldsValue({ timeSlot: undefined, doctorId });
+    if (doctor) {
+      const slots = getDoctorSlots(doctor);
+      if (selectedDate) {
+        const filteredSlots = slots.filter(slot => !isSlotInPast(slot, selectedDate));
+        setAvailableSlots(filteredSlots);
+      } else {
+        setAvailableSlots(slots);
+      }
+    }
+  };
+
+  const handleDateChange = async (date: dayjs.Dayjs | null) => {
+    setSelectedDate(date);
+    setSelectedSlot('');
+    setSlotBookings({});
+    walkInForm.setFieldsValue({ timeSlot: undefined, appointmentDate: date });
+    if (date && selectedDoctor) {
+      const allSlots = getDoctorSlots(selectedDoctor);
+      const filteredSlots = allSlots.filter(slot => !isSlotInPast(slot, date));
+      setAvailableSlots(filteredSlots);
+      const dateStr = date.format('YYYY-MM-DD');
+      const bookings = await fetchBookedAppointments(selectedDoctor.id, dateStr);
+      setSlotBookings(bookings);
+    }
+  };
+
+  const handleSlotSelect = (slot: string) => {
+    setSelectedSlot(slot);
+    walkInForm.setFieldsValue({ timeSlot: slot });
   };
 
   return (
@@ -1336,6 +1760,19 @@ export default function ReceptionistDashboard() {
         /* Pending appointments row highlight */
         .receptionist-dashboard-wrapper .appointment-row-pending td {
           background: #FEF2F2 !important; /* light red */
+        }
+        
+        /* Patient name link hover effects */
+        .receptionist-dashboard-wrapper .patient-name-link {
+          transition: all 0.2s ease !important;
+        }
+        .receptionist-dashboard-wrapper .patient-name-link:hover {
+          color: #40a9ff !important;
+          text-decoration: underline !important;
+          transform: translateX(2px);
+        }
+        .receptionist-dashboard-wrapper .patient-name-link:active {
+          color: #096dd9 !important;
         }
       `}</style>
       <Layout className="receptionist-dashboard-wrapper" style={{ minHeight: '100vh', background: receptionistTheme.background }}>
@@ -1429,7 +1866,7 @@ export default function ReceptionistDashboard() {
                   { label: "Pending Confirmation", value: stats.pendingAppointments || 0, icon: <ClockCircleOutlined />, trendLabel: "Awaiting action", trendColor: "#F97316", trendBg: "#FFEAD5", onView: () => message.info('View pending appointments') },
                   { label: "Confirmed Today", value: stats.confirmedAppointments || 0, icon: <CheckCircleOutlined />, trendLabel: "Ready", trendColor: "#22C55E", trendBg: "#D1FAE5", onView: () => message.info('View confirmed appointments') },
                   { label: "Walk-ins Waiting", value: stats.walkInPatients || 0, icon: <UserAddOutlined />, trendLabel: "In queue", trendColor: "#6366F1", trendBg: "#E0E7FF", onView: () => message.info('View walk-in patients') },
-                  { label: "Check-ins Completed", value: stats.checkedInAppointments || 0, icon: <TeamOutlined />, trendLabel: "Today", trendColor: "#16a34a", trendBg: "#D1FAE5", onView: () => message.info('View checked-in patients') },
+                  { label: "Completed Today", value: stats.completedAppointments || 0, icon: <TeamOutlined />, trendLabel: "Today", trendColor: "#16a34a", trendBg: "#D1FAE5", onView: () => message.info('View completed appointments') },
                 ].map((kpi, idx) => (
                   <div key={idx} style={{ minWidth: 220, scrollSnapAlign: 'start' }}>
                     <KpiCard {...kpi} />
@@ -1476,42 +1913,30 @@ export default function ReceptionistDashboard() {
                 </div>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <KpiCard
-                    label="Check-ins Completed"
-                    value={stats.checkedInAppointments || 0}
+                    label="Completed Today"
+                    value={stats.completedAppointments || 0}
                     icon={<TeamOutlined />}
                     trendLabel="Today"
                     trendType="positive"
                     trendColor="#16a34a"
                     trendBg="#D1FAE5"
-                    onView={() => message.info('View checked-in patients')}
+                    onView={() => message.info('View completed appointments')}
                   />
                 </div>
               </div>
             )}
 
-            {/* Quick Actions - Single line with hover effects */}
-            <div style={{ marginBottom: 24, display: 'flex', gap: 12, flexWrap: isMobile ? 'wrap' : 'nowrap' }}>
-                <QuickActionTile
-                  label="Create Appointment"
+            {/* Create Appointment Button - For Walk-in Patients */}
+            <div style={{ marginBottom: 24, display: 'flex', justifyContent: 'flex-end' }}>
+              <Button
+                type="primary"
+                size="large"
                   icon={<CalendarOutlined />}
-                  onClick={() => setIsBookingModalOpen(true)}
-                variant="primary"
-                />
-                <QuickActionTile
-                  label="Walk-in Registration"
-                  icon={<UserAddOutlined />}
                   onClick={openWalkInModal}
-                />
-                <QuickActionTile
-                  label="Check-in Patient"
-                  icon={<CheckCircleOutlined />}
-                  onClick={() => message.info('Select an appointment to check-in')}
-                />
-                <QuickActionTile
-                  label="Record Payment"
-                  icon={<FileTextOutlined />}
-                  onClick={() => message.info('Payment recording coming soon')}
-                />
+                style={{ borderRadius: 8 }}
+              >
+                Create Appointment (Walk-in)
+              </Button>
               </div>
 
             {/* Queue Status - Single line above Upcoming Appointments */}
@@ -1625,7 +2050,8 @@ export default function ReceptionistDashboard() {
                               )}
                             </Space>
                           ) : (
-                          <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+                          <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column', minHeight: 0, maxHeight: isMobile ? '60vh' : 'calc(100vh - 600px)' }}>
+                            <div style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden', minHeight: 0 }}>
                           <Table
                             columns={appointmentColumns}
                             dataSource={appointmentsToShow}
@@ -1633,14 +2059,14 @@ export default function ReceptionistDashboard() {
                             rowKey="id"
                             loading={appointmentsLoading}
                             size={isMobile ? "small" : "middle"}
-                              scroll={{ 
-                                x: isMobile ? 'max-content' : 'max-content',
-                                y: '100%',
-                              }}
-                              rowClassName={(record: any) =>
-                                record.status === 'pending' ? 'appointment-row-pending' : ''
-                              }
-                            />
+                                scroll={{ 
+                                  x: isMobile ? 'max-content' : 'max-content',
+                                }}
+                                rowClassName={(record: any) =>
+                                  record.status === 'pending' ? 'appointment-row-pending' : ''
+                                }
+                              />
+                            </div>
                           </div>
                           )}
                         </div>
@@ -1682,187 +2108,659 @@ export default function ReceptionistDashboard() {
           </Modal>
 
           <Modal
-            title="Register Walk-in Patient"
+            title={
+              <div>
+                <Text strong>Walk-in Patient Registration</Text>
+                <Steps
+                  current={walkInStep}
+                  size="small"
+                  style={{ marginTop: 16 }}
+                  items={
+                    foundUser
+                      ? [
+                          { title: 'Mobile Lookup' },
+                          { title: 'Patient Info' },
+                          { title: 'Book Appointment' },
+                        ]
+                      : [
+                          { title: 'Mobile Lookup' },
+                          { title: 'Registration' },
+                          { title: 'OTP Verify' },
+                          { title: 'Confirm' },
+                          { title: 'Book Appointment' },
+                        ]
+                  }
+                />
+              </div>
+            }
             open={isWalkInModalOpen}
             onCancel={closeWalkInModal}
-            onOk={() => walkInForm.submit()}
-            confirmLoading={isWalkInSubmitting}
-            okText="Register Walk-in"
+            footer={null}
             width={760}
             styles={{ body: { padding: '24px 32px' } }}
           >
+            {/* Step 0: Mobile Number Lookup */}
+            {walkInStep === 0 && (
+              <div>
+                {isCheckingMobile && (
+                  <div style={{ textAlign: 'center', marginBottom: 24 }}>
+                    <Spin size="large" />
+                    <div style={{ marginTop: 16 }}>
+                      <Text type="secondary">Searching for patient...</Text>
+                    </div>
+                  </div>
+                )}
             <Form
               layout="vertical"
               form={walkInForm}
-              onFinish={handleWalkInSubmit}
-              initialValues={{
-                priority: 'normal',
-                appointmentDate: dayjs(),
-                appointmentStartTime: dayjs().hour(9).minute(0),
-                durationMinutes: 30,
-              }}
-            >
-              <Row gutter={16}>
-                <Col span={12}>
+                  onFinish={(values) => {
+                    if (values.mobileNumber) {
+                      checkMobileNumber(values.mobileNumber);
+                    }
+                  }}
+                >
                   <Form.Item
-                    label="Patient Name"
-                    name="fullName"
-                    rules={[{ required: true, message: 'Please enter the patient name' }]}
-                  >
-                    <AutoComplete
-                      options={patientNameOptions}
-                      onSearch={handlePatientSearch}
-                      onSelect={handlePatientOptionSelect}
-                      notFoundContent={patientSearchLoading ? 'Searching...' : null}
-                      placeholder="Search or enter patient name"
-                      filterOption={false}
-                    >
-                      <Input />
-                    </AutoComplete>
-                  </Form.Item>
-                </Col>
-                <Col span={12}>
-                  <Form.Item
-                    label="Mobile Number"
+                    label="Enter Mobile Number"
                     name="mobileNumber"
                     rules={[
                       { required: true, message: 'Please enter mobile number' },
-                      { min: 10, message: 'Enter a valid mobile number' },
+                      { pattern: /^[6-9]\d{9}$/, message: 'Please enter a valid Indian mobile number (10 digits starting with 6-9)' },
                     ]}
                   >
-                    <AutoComplete
-                      options={patientMobileOptions}
-                      onSearch={handlePatientSearch}
-                      onSelect={handlePatientOptionSelect}
-                      notFoundContent={patientSearchLoading ? 'Searching...' : null}
-                      placeholder="Search or enter mobile number"
-                      filterOption={false}
-                    >
-                      <Input />
-                    </AutoComplete>
-                  </Form.Item>
-                </Col>
-              </Row>
-
-              <Row gutter={16}>
-                <Col span={12}>
-                  <Form.Item
-                    label="Assign Doctor"
-                    name="doctorId"
-                    rules={[{ required: true, message: 'Select a doctor' }]}
-                  >
-                    <Select
-                      placeholder="Select doctor"
-                      loading={doctorsLoading}
-                      options={doctorOptions}
-                      optionFilterProp="label"
-                      showSearch
-                      allowClear
-                    />
-                  </Form.Item>
-                </Col>
-                <Col span={12}>
-                  <Form.Item
-                    label="Visit Reason (optional)"
-                    name="reason"
-                  >
-                    <Input placeholder="Reason for visit (optional)" />
-                  </Form.Item>
-                </Col>
-              </Row>
-
-              <Row gutter={16} style={{ marginTop: 8 }}>
-                <Col span={8}>
-                  <Form.Item label="Date" required>
-                    <Space direction="vertical" style={{ width: '100%' }} size={12}>
-                      <Segmented
-                        options={[
-                          { label: 'Today', value: 'today' },
-                          { label: 'Tomorrow', value: 'tomorrow' },
-                          { label: 'Pick a date', value: 'custom' },
-                        ]}
-                        value={dateMode}
-                        onChange={(value) => setDateMode(value as 'today' | 'tomorrow' | 'custom')}
-                        block
-                      />
-                      <Form.Item
-                        name="appointmentDate"
-                        rules={[{ required: true, message: 'Select appointment date' }]}
-                        noStyle
-                      >
-                        <DatePicker
-                          disabled={dateMode !== 'custom'}
-                          style={{ width: '100%' }}
-                          format="DD MMM YYYY"
-                          disabledDate={(current) => !!current && current < dayjs().startOf('day')}
-                        />
-                      </Form.Item>
-                    </Space>
-                  </Form.Item>
-                </Col>
-                <Col span={8}>
-                  <Form.Item
-                    label="From"
-                    name="appointmentStartTime"
-                    rules={[{ required: true, message: 'Select start time' }]}
-                  >
-                    <TimePicker
-                      format="hh:mm A"
-                      use12Hours
-                      minuteStep={15}
-                      style={{ width: '100%' }}
-                    />
-                  </Form.Item>
-                </Col>
-                <Col span={8}>
-                  <Form.Item label="To">
                     <Input
-                      value={computedEndTime ? computedEndTime.format('hh:mm A') : ''}
-                      disabled
-                      placeholder="Auto-calculated"
+                      placeholder="Enter 10-digit mobile number"
+                      maxLength={10}
+                      style={{ fontSize: 16, padding: '12px' }}
+                      onPressEnter={() => walkInForm.submit()}
+                      disabled={isCheckingMobile}
                     />
                   </Form.Item>
-                </Col>
-              </Row>
+                  <Button
+                    type="primary"
+                    block
+                    size="large"
+                    loading={isCheckingMobile}
+                    onClick={() => walkInForm.submit()}
+                    disabled={isCheckingMobile}
+                    style={{ marginTop: 16 }}
+                  >
+                    {isCheckingMobile ? 'Searching...' : 'Lookup Patient'}
+                  </Button>
+                </Form>
+              </div>
+            )}
 
-              <Form.Item label="Duration" style={{ marginBottom: 20 }}>
-                <Segmented
-                  options={[
-                    { label: '15 min', value: 15 },
-                    { label: '30 min', value: 30 },
-                    { label: '60 min', value: 60 },
-                  ]}
-                  value={durationMinutesValue || 30}
-                  onChange={(value) => walkInForm.setFieldsValue({ durationMinutes: Number(value) })}
-                  block
+            {/* Step 1: Existing User Found */}
+            {walkInStep === 1 && foundUser && (
+              <div>
+                <Alert
+                  message="Patient Found"
+                  description={`${foundUser.fullName} is already registered. You can proceed to book an appointment.`}
+                  type="success"
+                  showIcon
+                  style={{ marginBottom: 24 }}
                 />
-                <Form.Item name="durationMinutes" noStyle />
-                {timeRangeLabel && (
-                  <Text type="secondary" style={{ display: 'block', textAlign: 'center', marginTop: 12 }}>
-                    Slot: {timeRangeLabel}
-                  </Text>
-                )}
-              </Form.Item>
+                <Card size="small" style={{ marginBottom: 24 }}>
+                  <Space direction="vertical" style={{ width: '100%' }}>
+                    <div>
+                      <Text type="secondary">Name: </Text>
+                      <Text strong>{foundUser.fullName}</Text>
+                    </div>
+                    <div>
+                      <Text type="secondary">Mobile: </Text>
+                      <Text strong>{foundUser.mobileNumber}</Text>
+                    </div>
+                    {foundUser.email && (
+                      <div>
+                        <Text type="secondary">Email: </Text>
+                        <Text strong>{foundUser.email}</Text>
+                      </div>
+                    )}
+                  </Space>
+                </Card>
+                <Button
+                  type="primary"
+                  block
+                  size="large"
+                  onClick={() => {
+                    // For existing user, step 2 is appointment booking
+                    // Initialize selectedDate to today
+                    const today = dayjs();
+                    setSelectedDate(today);
+                    walkInForm.setFieldsValue({ appointmentDate: today });
+                    setWalkInStep(2);
+                  }}
+                >
+                  Book Appointment
+                </Button>
+              </div>
+            )}
 
+            {/* Step 1: New User Registration Form */}
+            {walkInStep === 1 && !foundUser && (
+            <Form
+              layout="vertical"
+              form={walkInForm}
+                onFinish={(values) => {
+                  // Store registration data and send OTP
+                  walkInForm.setFieldsValue(values);
+                  sendOtpForRegistration(values.mobileNumber);
+                }}
+              initialValues={{
+                priority: 'normal',
+                }}
+              >
+                <Form.Item
+                  label="Mobile Number"
+                  name="mobileNumber"
+                  rules={[
+                    { required: true, message: 'Please enter mobile number' },
+                    { pattern: /^[6-9]\d{9}$/, message: 'Please enter a valid Indian mobile number (10 digits starting with 6-9)' },
+                  ]}
+                >
+                  <Input placeholder="10-digit mobile number" maxLength={10} />
+                </Form.Item>
+                <Form.Item
+                  label="Full Name"
+                  name="fullName"
+                  rules={[{ required: true, message: 'Please enter full name' }]}
+                >
+                  <Input placeholder="Enter patient's full name" />
+                </Form.Item>
               <Row gutter={16}>
-                <Col span={8}>
-                  <Form.Item label="Priority" name="priority">
-                    <Select
-                      options={[
-                        { value: 'normal', label: 'Normal' },
-                        { value: 'high', label: 'High' },
-                        { value: 'urgent', label: 'Urgent' },
-                      ]}
-                    />
+                <Col span={12}>
+                  <Form.Item
+                      label="Gender"
+                      name="gender"
+                      rules={[{ required: true, message: 'Please select gender' }]}
+                    >
+                      <Select placeholder="Select gender">
+                        <Select.Option value="male">Male</Select.Option>
+                        <Select.Option value="female">Female</Select.Option>
+                        <Select.Option value="other">Other</Select.Option>
+                      </Select>
                   </Form.Item>
                 </Col>
-                <Col span={16}>
-                  <Form.Item label="Notes" name="notes">
-                    <Input.TextArea rows={2} placeholder="Additional notes (optional)" />
+                <Col span={12}>
+                  <Form.Item
+                      label="City"
+                      name="city"
+                      rules={[{ required: true, message: 'Please enter city' }]}
+                    >
+                      <Input placeholder="Enter city" />
+                    </Form.Item>
+                  </Col>
+                </Row>
+                <Form.Item
+                  label="Address"
+                  name="address"
+                  rules={[{ required: true, message: 'Please enter address' }]}
+                >
+                  <Input.TextArea rows={2} placeholder="Enter full address" />
+                </Form.Item>
+                <Button
+                  type="primary"
+                  block
+                  size="large"
+                  htmlType="submit"
+                  loading={sendingOtp}
+                  style={{ marginTop: 16 }}
+                >
+                  Send OTP
+                </Button>
+              </Form>
+            )}
+
+            {/* Step 2: OTP Verification (New User Only) */}
+            {walkInStep === 2 && !foundUser && (
+              <div>
+                <Alert
+                  message="OTP Sent"
+                  description={`OTP has been sent to ${walkInForm.getFieldValue('mobileNumber')}. Please enter the 6-digit OTP to verify.`}
+                  type="info"
+                  showIcon
+                  style={{ marginBottom: 24 }}
+                />
+                <Form.Item
+                  label="Enter OTP"
+                    rules={[
+                    { required: true, message: 'Please enter OTP' },
+                    { pattern: /^\d{6}$/, message: 'OTP must be 6 digits' },
+                  ]}
+                >
+                  <Input
+                    placeholder="Enter 6-digit OTP"
+                    maxLength={6}
+                    style={{ fontSize: 18, textAlign: 'center', letterSpacing: 8 }}
+                    onPressEnter={(e) => {
+                      const otp = (e.target as HTMLInputElement).value;
+                      if (otp && /^\d{6}$/.test(otp)) {
+                        verifyOtpForRegistration(walkInForm.getFieldValue('mobileNumber'), otp);
+                      }
+                    }}
+                  />
+                </Form.Item>
+                <Space style={{ width: '100%', justifyContent: 'space-between', marginTop: 16 }}>
+                  <Button onClick={() => {
+                    setWalkInStep(1);
+                  }}>
+                    Back
+                  </Button>
+                  <Button
+                    type="primary"
+                    loading={verifyingOtp}
+                    onClick={() => {
+                      const otp = (document.querySelector('input[placeholder*="OTP"]') as HTMLInputElement)?.value;
+                      if (otp && /^\d{6}$/.test(otp)) {
+                        verifyOtpForRegistration(walkInForm.getFieldValue('mobileNumber'), otp);
+                      } else {
+                        message.warning('Please enter a valid 6-digit OTP');
+                      }
+                    }}
+                  >
+                    Verify OTP
+                  </Button>
+                </Space>
+              </div>
+            )}
+
+            {/* Step 3: Complete Registration (New User Only) */}
+            {walkInStep === 3 && !foundUser && otpVerified && (
+              <div>
+                <Alert
+                  message="OTP Verified"
+                  description="OTP verified successfully. Please complete the registration."
+                  type="success"
+                  showIcon
+                  style={{ marginBottom: 24 }}
+                />
+                <Form
+                  layout="vertical"
+                  form={walkInForm}
+                  onFinish={registerNewWalkInPatient}
+                  initialValues={walkInForm.getFieldsValue()}
+                >
+                  <Form.Item name="mobileNumber" hidden>
+                      <Input />
                   </Form.Item>
-                </Col>
-              </Row>
-            </Form>
+                  <Form.Item name="fullName" hidden>
+                    <Input />
+                  </Form.Item>
+                  <Form.Item name="gender" hidden>
+                    <Input />
+                  </Form.Item>
+                  <Form.Item name="city" hidden>
+                    <Input />
+                  </Form.Item>
+                  <Form.Item name="address" hidden>
+                    <Input />
+                  </Form.Item>
+                  <Card size="small" style={{ marginBottom: 24 }}>
+                    <Space direction="vertical" style={{ width: '100%' }}>
+                      <div><Text type="secondary">Name: </Text><Text strong>{walkInForm.getFieldValue('fullName')}</Text></div>
+                      <div><Text type="secondary">Mobile: </Text><Text strong>{walkInForm.getFieldValue('mobileNumber')}</Text></div>
+                      <div><Text type="secondary">Gender: </Text><Text strong>{walkInForm.getFieldValue('gender')}</Text></div>
+                      <div><Text type="secondary">City: </Text><Text strong>{walkInForm.getFieldValue('city')}</Text></div>
+                      <div><Text type="secondary">Address: </Text><Text strong>{walkInForm.getFieldValue('address')}</Text></div>
+                    </Space>
+                  </Card>
+                  <Space style={{ width: '100%', justifyContent: 'space-between' }}>
+                    <Button onClick={() => setWalkInStep(2)}>Back</Button>
+                    <Button
+                      type="primary"
+                      htmlType="submit"
+                      loading={isWalkInSubmitting}
+                    >
+                      Complete Registration
+                    </Button>
+                  </Space>
+                </Form>
+              </div>
+            )}
+
+            {/* Step 2 (existing) or Step 4 (new): Appointment Booking - Redesigned to match patient dashboard */}
+            {((walkInStep === 2 && foundUser) || (walkInStep === 4 && foundPatient)) ? (
+              <div style={{ maxHeight: '70vh', overflowY: 'auto', paddingRight: 8 }}>
+                <Form
+                  layout="vertical"
+                  form={walkInForm}
+                  onFinish={async (values) => {
+                    // Convert selected slot to appointment time and timeSlot format
+                    if (selectedSlot && selectedDate) {
+                      const [startTime] = selectedSlot.split('-');
+                      values.appointmentTime = startTime.trim();
+                      values.timeSlot = selectedSlot;
+                      values.appointmentDate = selectedDate.format('YYYY-MM-DD');
+                    }
+                    await handleWalkInAppointmentBooking(values);
+                  }}
+                  initialValues={{
+                    priority: 'normal',
+                    appointmentDate: dayjs(),
+                  }}
+                >
+                  <Alert
+                    message="Book Appointment"
+                    description={
+                      foundUser 
+                        ? `Booking appointment for ${foundUser.fullName}` 
+                        : foundPatient 
+                          ? `Booking appointment for newly registered patient`
+                          : 'Complete the appointment details below'
+                    }
+                    type="info"
+                    showIcon
+                    style={{ marginBottom: 24 }}
+                  />
+
+                  {/* Step 1: Doctor Selection */}
+                  <div style={{ marginBottom: 32 }}>
+                    <Title level={5} style={{ marginBottom: 16 }}>Select Doctor</Title>
+                    {doctorsLoading ? (
+                      <Spin />
+                    ) : doctors.length === 0 ? (
+                      <Alert message="No doctors available" type="warning" />
+                    ) : (
+                      (() => {
+                        const doctorsBySpecialty = doctors.reduce((acc: any, doc: any) => {
+                          const specialty = doc.specialty || 'General';
+                          if (!acc[specialty]) acc[specialty] = [];
+                          acc[specialty].push(doc);
+                          return acc;
+                        }, {} as Record<string, any[]>);
+                        const sortedSpecialties = Object.keys(doctorsBySpecialty).sort();
+                        return (
+                          <div>
+                            {sortedSpecialties.map((specialty) => {
+                              const specialtyDoctors = doctorsBySpecialty[specialty];
+                              return (
+                                <div key={specialty} style={{ marginBottom: 24 }}>
+                                  <Text strong style={{ fontSize: 16, display: 'block', marginBottom: 12 }}>
+                                    {specialty} ({specialtyDoctors.length} {specialtyDoctors.length === 1 ? 'doctor' : 'doctors'})
+                                  </Text>
+                                  <Row gutter={[16, 16]}>
+                                    {specialtyDoctors.map((doctor: any) => {
+                                      const getDoctorInitials = (name: string) => {
+                                        if (!name) return 'DR';
+                                        const names = name.split(' ');
+                                        if (names.length >= 2) return `${names[0][0]}${names[1][0]}`.toUpperCase();
+                                        return name.substring(0, 2).toUpperCase();
+                                      };
+                                      return (
+                                        <Col xs={24} sm={12} lg={8} key={doctor.id}>
+                                          <Card
+                                            hoverable
+                                            onClick={() => handleDoctorSelect(doctor.id)}
+                                            style={{
+                                              border: selectedDoctor?.id === doctor.id ? '2px solid #1A8FE3' : '1px solid #E5E7EB',
+                                              borderRadius: '16px',
+                                              boxShadow: selectedDoctor?.id === doctor.id 
+                                                ? '0 4px 12px rgba(26, 143, 227, 0.15)' 
+                                                : '0 2px 8px rgba(0, 0, 0, 0.08)',
+                                              cursor: 'pointer',
+                                              transition: 'all 0.2s ease',
+                                              height: '100%',
+                                            }}
+                                            styles={{ body: { padding: '24px' } }}
+                                          >
+                                            <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                                              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                                                <Avatar
+                                                  size={64}
+                                                  src={doctor.photo || undefined}
+                                                  style={{
+                                                    backgroundColor: '#1A8FE3',
+                                                    fontSize: '20px',
+                                                    fontWeight: 600,
+                                                    flexShrink: 0,
+                                                  }}
+                                                >
+                                                  {!doctor.photo && getDoctorInitials(doctor.fullName || 'Dr. Unknown')}
+                                                </Avatar>
+                                                <div style={{ flex: 1, minWidth: 0 }}>
+                                                  <Title level={4} style={{ margin: 0, fontSize: '20px', fontWeight: 700, color: '#111827', marginBottom: '4px' }}>
+                                                    {doctor.fullName || 'Dr. Unknown'}
+                                                  </Title>
+                                                  <Text style={{ fontSize: '14px', color: '#6B7280' }}>
+                                                    {doctor.specialty}
+                                                  </Text>
+                                                </div>
+                                              </div>
+                                              
+                                              <div style={{ display: 'flex', gap: 24 }}>
+                                                <div>
+                                                  <Text style={{ fontSize: '12px', color: '#6B7280', display: 'block', marginBottom: '4px' }}>Experience</Text>
+                                                  <Text strong style={{ fontSize: '16px', color: '#111827' }}>{doctor.experience || 0} years</Text>
+                                                </div>
+                                                <div>
+                                                  <Text style={{ fontSize: '12px', color: '#6B7280', display: 'block', marginBottom: '4px' }}>Fee</Text>
+                                                  <Text strong style={{ fontSize: '16px', color: '#111827' }}>
+                                                    ₹{typeof doctor.consultationFee === 'string' 
+                                                      ? parseFloat(doctor.consultationFee).toFixed(2) 
+                                                      : (Number(doctor.consultationFee) || 0).toFixed(2)}
+                                                  </Text>
+                                                </div>
+                                              </div>
+                                              
+                                              {doctor.qualification && (
+                                                <div>
+                                                  <Text style={{ fontSize: '12px', color: '#6B7280', display: 'block', marginBottom: '4px' }}>Qualification</Text>
+                                                  <Text style={{ fontSize: '14px', color: '#111827' }}>{doctor.qualification}</Text>
+                                                </div>
+                                              )}
+                                            </div>
+                                          </Card>
+                                        </Col>
+                                      );
+                                    })}
+                                  </Row>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        );
+                      })()
+                    )}
+                    <Form.Item name="doctorId" rules={[{ required: true, message: 'Please select a doctor' }]} style={{ display: 'none' }}>
+                      <Input value={selectedDoctor?.id} />
+                    </Form.Item>
+                  </div>
+
+                  {/* Step 2: Date Selection */}
+                  {selectedDoctor && (
+                    <div style={{ marginBottom: 32 }}>
+                      <Title level={5} style={{ marginBottom: 16 }}>Select Date</Title>
+                      <Card variant="borderless" style={{ borderRadius: '12px', border: '1px solid #e2e8f0', marginBottom: 24 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', justifyContent: 'space-between', flexWrap: 'wrap' }}>
+                          {[0, 1, 2, 3, 4, 5, 6].map(offset => {
+                            const date = dayjs().add(offset, 'day');
+                            const isSelected = selectedDate?.isSame(date, 'day');
+                            return (
+                              <div
+                                key={offset}
+                                onClick={() => handleDateChange(date)}
+                                style={{
+                                  display: 'flex',
+                                  flexDirection: 'column',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                  flex: 1,
+                                  minWidth: '80px',
+                                  padding: '10px 8px',
+                                  borderRadius: 12,
+                                  border: `1px solid ${isSelected ? '#1A8FE3' : '#d1d5db'}`,
+                                  background: isSelected ? '#1A8FE3' : '#ffffff',
+                                  color: isSelected ? '#ffffff' : '#111827',
+                                  cursor: 'pointer',
+                                  transition: 'all 0.2s ease',
+                                  boxShadow: isSelected ? '0 4px 12px rgba(26, 143, 227, 0.2)' : undefined,
+                                }}
+                              >
+                                <Text style={{ fontSize: 12, letterSpacing: '0.08em', fontWeight: 500 }}>
+                                  {date.format('ddd').toUpperCase()}
+                                </Text>
+                                <Text style={{ fontSize: 15, fontWeight: 700, marginTop: 2 }}>
+                                  {date.format('DD/MM/YYYY')}
+                                </Text>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </Card>
+                      <Form.Item name="appointmentDate" rules={[{ required: true, message: 'Please select a date' }]} style={{ display: 'none' }}>
+                        <Input value={selectedDate?.format('YYYY-MM-DD')} />
+                      </Form.Item>
+                    </div>
+                  )}
+
+                  {/* Step 3: Time Slot Selection */}
+                  {selectedDoctor && selectedDate && (
+                    <div style={{ marginBottom: 32 }}>
+                      <Title level={5} style={{ marginBottom: 16 }}>Select Time Slot</Title>
+                      <Card variant="borderless" style={{ borderRadius: '12px', border: '1px solid #e2e8f0', marginBottom: 24 }}>
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(120px, 1fr))', gap: 12, padding: '20px' }}>
+                          {availableSlots.length > 0 ? (
+                            availableSlots.map(slot => {
+                              const isSelected = selectedSlot === slot;
+                              const slotAvailability = getSlotAvailabilityColor(slot);
+                              const { bgColor, borderColor, textColor, isAvailable, availableCount } = slotAvailability;
+                              const isDisabled = !isAvailable;
+                              const finalBgColor = isSelected 
+                                ? '#16a34a' 
+                                : isDisabled 
+                                  ? '#F3F4F6' 
+                                  : slotAvailability.color === 'green'
+                                    ? '#ECFDF5'
+                                    : slotAvailability.color === 'yellow'
+                                      ? '#FFFBEB'
+                                      : bgColor;
+                              const finalBorderColor = isSelected 
+                                ? '#16a34a' 
+                                : isDisabled 
+                                  ? '#D1D5DB' 
+                                  : slotAvailability.color === 'green'
+                                    ? '#10B981'
+                                    : slotAvailability.color === 'yellow'
+                                      ? '#F59E0B'
+                                      : borderColor;
+                              return (
+                                <button
+                                  key={slot}
+                                  onClick={() => !isDisabled && handleSlotSelect(slot)}
+                                  disabled={isDisabled}
+                                  style={{
+                                    height: 56,
+                                    borderRadius: 8,
+                                    border: `1px solid ${finalBorderColor}`,
+                                    background: finalBgColor,
+                                    color: isSelected 
+                                      ? '#ffffff' 
+                                      : isDisabled 
+                                        ? '#9CA3AF' 
+                                        : slotAvailability.color === 'green'
+                                          ? '#047857'
+                                          : slotAvailability.color === 'yellow'
+                                            ? '#92400E'
+                                            : textColor,
+                                    fontWeight: 600,
+                                    fontSize: 14,
+                                    cursor: isDisabled ? 'not-allowed' : 'pointer',
+                                    opacity: isDisabled ? 0.6 : 1,
+                                    display: 'flex',
+                                    flexDirection: 'column',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    transition: 'all 0.2s ease',
+                                  }}
+                                  title={isDisabled 
+                                    ? 'Fully booked (5/5 patients)' 
+                                    : `${availableCount} slot${availableCount !== 1 ? 's' : ''} available (${availableCount}/5)`}
+                                >
+                                  <span>{formatTimeSlot12h(slot)}</span>
+                                </button>
+                              );
+                            })
+                          ) : (
+                            <Alert message="No slots available for the selected date" type="warning" showIcon style={{ gridColumn: '1 / -1' }} />
+                          )}
+                        </div>
+                        {/* Legend */}
+                        <div style={{ padding: '0 20px 20px 20px', display: 'flex', flexWrap: 'wrap', gap: 24, alignItems: 'center' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                            <div style={{ width: 20, height: 20, borderRadius: 4, background: '#ECFDF5', border: '1px solid #10B981' }} />
+                            <Text style={{ fontSize: '14px', color: '#374151' }}>Available</Text>
+                          </div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                            <div style={{ width: 20, height: 20, borderRadius: 4, background: '#FFFBEB', border: '1px solid #F59E0B' }} />
+                            <Text style={{ fontSize: '14px', color: '#374151' }}>Limited (1-2 slots)</Text>
+                          </div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                            <div style={{ width: 20, height: 20, borderRadius: 4, background: '#FEE2E2', border: '1px solid #EF4444' }} />
+                            <Text style={{ fontSize: '14px', color: '#374151' }}>Slot Full (5/5)</Text>
+                          </div>
+                        </div>
+                      </Card>
+                      <Form.Item name="timeSlot" rules={[{ required: true, message: 'Please select a time slot' }]} style={{ display: 'none' }}>
+                        <Input value={selectedSlot} />
+                      </Form.Item>
+                    </div>
+                  )}
+
+                  {/* Step 4: Appointment Details */}
+                  {selectedDoctor && selectedDate && selectedSlot && (
+                    <div style={{ marginBottom: 32 }}>
+                      <Title level={5} style={{ marginBottom: 16 }}>Appointment Details</Title>
+                      <Row gutter={16}>
+                        <Col span={12}>
+                          <Form.Item
+                            label="Visit Reason"
+                            name="reason"
+                            rules={[{ required: true, message: 'Please enter visit reason' }]}
+                          >
+                            <Input placeholder="Reason for visit" />
+                          </Form.Item>
+                        </Col>
+                        <Col span={12}>
+                          <Form.Item label="Priority" name="priority">
+                            <Select
+                              options={[
+                                { value: 'normal', label: 'Normal' },
+                                { value: 'high', label: 'High' },
+                                { value: 'urgent', label: 'Urgent' },
+                              ]}
+                            />
+                          </Form.Item>
+                        </Col>
+                      </Row>
+                      <Form.Item label="Notes" name="notes">
+                        <Input.TextArea rows={3} placeholder="Additional notes (optional)" />
+                      </Form.Item>
+                    </div>
+                  )}
+
+                  <Space style={{ width: '100%', justifyContent: 'space-between', marginTop: 24 }}>
+                    <Button onClick={() => {
+                      if (foundUser && walkInStep === 2) {
+                        setWalkInStep(1);
+                      } else if (walkInStep === 4) {
+                        setWalkInStep(3);
+                      }
+                    }}>
+                      Back
+                    </Button>
+                    <Button
+                      type="primary"
+                      htmlType="submit"
+                      loading={isWalkInSubmitting}
+                      size="large"
+                      disabled={!selectedDoctor || !selectedDate || !selectedSlot}
+                    >
+                      Book Appointment
+                    </Button>
+                  </Space>
+                </Form>
+              </div>
+            ) : null}
           </Modal>
 
           {/* Patient Info Drawer */}
@@ -1889,11 +2787,33 @@ export default function ReceptionistDashboard() {
                         {patientInfo.patient?.user?.fullName || 'N/A'}
                       </Text>
                     </div>
-                    <div>
-                      <Text type="secondary">Mobile:</Text>
-                      <Text strong style={{ marginLeft: 8 }}>
-                        {patientInfo.patient?.user?.mobileNumber || 'N/A'}
-                      </Text>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                      <div style={{ flex: 1 }}>
+                        <Text type="secondary">Mobile:</Text>
+                        <Text strong style={{ marginLeft: 8 }}>
+                          {patientInfo.patient?.user?.mobileNumber || 'N/A'}
+                        </Text>
+                      </div>
+                      {patientInfo.patient?.user?.mobileNumber && patientInfo.patient?.user?.mobileNumber !== 'N/A' && (
+                        <Space>
+                          <Button
+                            type="default"
+                            icon={<MessageOutlined />}
+                            size="small"
+                            onClick={() => handleMessage(patientInfo.patient.user.mobileNumber)}
+                          >
+                            Message
+                          </Button>
+                          <Button
+                            type="primary"
+                            icon={<PhoneOutlined />}
+                            size="small"
+                            onClick={() => handleCall(patientInfo.patient.user.mobileNumber)}
+                          >
+                            Call
+                          </Button>
+                        </Space>
+                      )}
                     </div>
                     <div>
                       <Text type="secondary">Email:</Text>
@@ -1995,7 +2915,24 @@ export default function ReceptionistDashboard() {
 
                 {/* Prescriptions */}
                 {patientInfo.prescriptions && patientInfo.prescriptions.length > 0 && (
-                  <Card title={`Prescriptions (${patientInfo.prescriptions.length})`} size="small">
+                  <Card 
+                    title={
+                      <div>
+                        <span>Prescriptions</span>
+                        {patientInfo.prescriptionsTotal && patientInfo.prescriptionsTotal > patientInfo.prescriptions.length && (
+                          <Text type="secondary" style={{ fontSize: 12, marginLeft: 8, fontWeight: 'normal' }}>
+                            (Showing {patientInfo.prescriptions.length} of {patientInfo.prescriptionsTotal})
+                          </Text>
+                        )}
+                        {(!patientInfo.prescriptionsTotal || patientInfo.prescriptionsTotal === patientInfo.prescriptions.length) && (
+                          <Text type="secondary" style={{ fontSize: 12, marginLeft: 8, fontWeight: 'normal' }}>
+                            ({patientInfo.prescriptions.length})
+                          </Text>
+                        )}
+                      </div>
+                    }
+                    size="small"
+                  >
                     <List
                       dataSource={patientInfo.prescriptions}
                       renderItem={(prescription: any) => (
@@ -2021,7 +2958,24 @@ export default function ReceptionistDashboard() {
 
                 {/* Appointment History */}
                 {patientInfo.appointments && patientInfo.appointments.length > 0 && (
-                  <Card title={`Appointment History (${patientInfo.appointments.length})`} size="small">
+                  <Card 
+                    title={
+                      <div>
+                        <span>Appointment History</span>
+                        {patientInfo.appointmentsTotal && patientInfo.appointmentsTotal > patientInfo.appointments.length && (
+                          <Text type="secondary" style={{ fontSize: 12, marginLeft: 8, fontWeight: 'normal' }}>
+                            (Showing {patientInfo.appointments.length} of {patientInfo.appointmentsTotal})
+                          </Text>
+                        )}
+                        {(!patientInfo.appointmentsTotal || patientInfo.appointmentsTotal === patientInfo.appointments.length) && (
+                          <Text type="secondary" style={{ fontSize: 12, marginLeft: 8, fontWeight: 'normal' }}>
+                            ({patientInfo.appointments.length})
+                          </Text>
+                        )}
+                      </div>
+                    }
+                    size="small"
+                  >
                     <List
                       dataSource={patientInfo.appointments}
                       renderItem={(apt: any) => (

@@ -280,6 +280,15 @@ export default function HospitalDashboard() {
 
   const appointmentColumns = [
     {
+      title: '#',
+      key: 'serial',
+      width: 60,
+      align: 'center' as const,
+      render: (_: any, __: any, index: number) => (
+        <Text type="secondary" style={{ fontWeight: 500 }}>{index + 1}</Text>
+      ),
+    },
+    {
       title: 'Patient',
       dataIndex: 'patient',
       key: 'patient',

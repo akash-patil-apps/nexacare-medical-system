@@ -51,6 +51,43 @@ router.get(
 );
 
 /**
+ * Lookup user/patient by mobile number for walk-in registration.
+ */
+router.get(
+  '/patients/lookup',
+  authenticateToken,
+  authorizeRoles('receptionist'),
+  async (req: AuthenticatedRequest, res) => {
+    try {
+      const mobileNumber = String(req.query.mobile || '').trim();
+      console.log(`📱 Lookup request for mobile: ${mobileNumber}`);
+      
+      if (!mobileNumber) {
+        return res.status(400).json({ message: 'Mobile number is required' });
+      }
+
+      // Validate mobile number format
+      if (mobileNumber.length < 10 || mobileNumber.length > 15) {
+        return res.status(400).json({ message: 'Invalid mobile number length' });
+      }
+
+      const result = await receptionService.lookupUserByMobile(mobileNumber);
+      console.log(`✅ Lookup result:`, result.user ? `User found: ${result.user.fullName}` : 'No user found');
+      res.json(result);
+    } catch (err: any) {
+      console.error('❌ Lookup user error:', err);
+      console.error('Error stack:', err.stack);
+      const errorMessage = err.message || 'Failed to lookup user';
+      res.status(500).json({ 
+        message: errorMessage,
+        detail: err?.message,
+        stack: process.env.NODE_ENV === 'development' ? err?.stack : undefined,
+      });
+    }
+  }
+);
+
+/**
  * Get receptionist profile (including hospitalId)
  */
 router.get(

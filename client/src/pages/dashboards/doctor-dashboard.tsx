@@ -14,8 +14,7 @@ import {
   Spin,
   Tabs,
   Drawer,
-  List,
-  Divider
+  List
 } from 'antd';
 import { 
   UserOutlined, 
@@ -27,7 +26,9 @@ import {
   ExperimentOutlined,
   BellOutlined,
   SettingOutlined,
-  MenuUnfoldOutlined
+  MenuUnfoldOutlined,
+  PhoneOutlined,
+  MessageOutlined
 } from '@ant-design/icons';
 import { useAuth } from '../../hooks/use-auth';
 import { useResponsive } from '../../hooks/use-responsive';
@@ -151,10 +152,9 @@ export default function DoctorDashboard() {
 
   const [selectedPrescription, setSelectedPrescription] = useState<any | undefined>(undefined);
   const [markingCheckedId, setMarkingCheckedId] = useState<number | null>(null);
-  const [historyLoading, setHistoryLoading] = useState(false);
-  const [historyDrawerOpen, setHistoryDrawerOpen] = useState(false);
-  const [historyAppointments, setHistoryAppointments] = useState<any[]>([]);
-  const [historyPrescriptions, setHistoryPrescriptions] = useState<any[]>([]);
+  const [patientInfoDrawerOpen, setPatientInfoDrawerOpen] = useState(false);
+  const [patientInfo, setPatientInfo] = useState<any>(null);
+  const [patientInfoLoading, setPatientInfoLoading] = useState(false);
 
   // Map prescriptions by appointment ID for quick lookup
   // This tracks whether a doctor has given a prescription to a patient for a specific appointment
@@ -176,49 +176,70 @@ export default function DoctorDashboard() {
     return map;
   }, [prescriptions]);
 
-  const fetchPatientHistory = async (patientId: number, appointmentId?: number) => {
-    const token = localStorage.getItem('auth-token');
-    if (!token) {
-      message.error('Authentication required');
+  // Handle call patient
+  const handleCall = (phone: string) => {
+    if (phone && phone !== 'N/A') {
+      window.location.href = `tel:${phone}`;
+    } else {
+      message.warning('Phone number not available');
+    }
+  };
+
+  // Handle message patient
+  const handleMessage = (phone: string) => {
+    if (phone && phone !== 'N/A') {
+      // Open SMS app with patient's phone number
+      window.location.href = `sms:${phone}`;
+    } else {
+      message.warning('Phone number not available');
+    }
+  };
+
+  // Handle view comprehensive patient info
+  const handleViewPatientInfo = async (patientId: number) => {
+    if (!patientId) {
+      message.warning('Patient ID not available');
       return;
     }
-    setHistoryLoading(true);
+    setPatientInfoLoading(true);
     try {
-      const [appointmentsRes, prescriptionsRes] = await Promise.all([
-        fetch(`/api/appointments/patient/${patientId}`, {
-          headers: { Authorization: `Bearer ${token}` }
-        }),
-        fetch(`/api/prescriptions/doctor`, {
-          headers: { Authorization: `Bearer ${token}` }
-        })
-      ]);
-
-      const appointmentsData = appointmentsRes.ok ? await appointmentsRes.json() : [];
-      const prescriptionsData = prescriptionsRes.ok ? await prescriptionsRes.json() : [];
-
-      // Only show history with this doctor
-      const doctorId = doctorProfile?.id;
-      const historyApts = Array.isArray(appointmentsData)
-        ? appointmentsData.filter((apt: any) => apt.doctorId === doctorId)
-        : [];
-      const historyPresc = Array.isArray(prescriptionsData)
-        ? prescriptionsData.filter((p: any) => {
-            const samePatient = (p.patientId ?? p.patient_id) === patientId;
-            const sameApt = appointmentId
-              ? (p.appointmentId ?? p.appointment_id ?? p.appointment?.id) === appointmentId
-              : true;
-            return samePatient && sameApt;
-          })
-        : [];
-
-      setHistoryAppointments(historyApts);
-      setHistoryPrescriptions(historyPresc);
-      setHistoryDrawerOpen(true);
-    } catch (error) {
-      console.error('❌ Error loading patient history:', error);
-      message.error('Failed to load patient history');
+      const token = localStorage.getItem('auth-token');
+      const response = await fetch(`/api/reception/patients/${patientId}/info`, {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+      
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        if (response.status === 404) {
+          message.error('Patient not found');
+          return;
+        }
+        if (response.status === 500 || response.status === 503) {
+          message.error('Database connection issue. Please try again in a moment.');
+          return;
+        }
+        throw new Error(errorData.message || 'Failed to fetch patient information');
+      }
+      
+      const data = await response.json();
+      if (!data || !data.patient) {
+        message.warning('Patient information not available');
+        return;
+      }
+      
+      setPatientInfo(data);
+      setPatientInfoDrawerOpen(true);
+    } catch (error: any) {
+      console.error('❌ Error loading patient info:', error);
+      if (error.message?.includes('timeout') || error.message?.includes('CONNECT_TIMEOUT')) {
+        message.error('Database connection timeout. Please check your connection and try again.');
+      } else {
+        message.error(error.message || 'Failed to load patient information. Please try again.');
+      }
     } finally {
-      setHistoryLoading(false);
+      setPatientInfoLoading(false);
     }
   };
 
@@ -378,7 +399,7 @@ export default function DoctorDashboard() {
       }
       return start;
     };
-
+    
   // Use IST-based same day check
   const isSameDay = (a: Date | null, b: Date | null) => {
     if (!a || !b) return false;
@@ -427,12 +448,12 @@ export default function DoctorDashboard() {
         const parts = timeStr.split('-');
         const endPart = parts[1]?.trim();
         const match = endPart?.match(/(\d{1,2}):(\d{2})(?:\s*(AM|PM|am|pm))?/);
-        if (match) {
-          let hours = parseInt(match[1], 10);
-          const minutes = parseInt(match[2], 10);
-          const period = match[3]?.toUpperCase();
-          if (period === 'PM' && hours !== 12) hours += 12;
-          if (period === 'AM' && hours === 12) hours = 0;
+            if (match) {
+              let hours = parseInt(match[1], 10);
+              const minutes = parseInt(match[2], 10);
+              const period = match[3]?.toUpperCase();
+              if (period === 'PM' && hours !== 12) hours += 12;
+              if (period === 'AM' && hours === 12) hours = 0;
           // Legacy convention: 2-5 without AM/PM is afternoon
           if (!period && hours >= 2 && hours <= 5) hours += 12;
           end.setHours(hours, minutes, 0, 0);
@@ -511,25 +532,43 @@ export default function DoctorDashboard() {
     });
   }, [allAppointments]);
 
+  // All appointments for today (regardless of status) - includes confirmed, checked-in, and completed
+  const allTodayAppointments = useMemo(() => {
+    const today = getISTStartOfDay();
+
+    return allAppointments
+      .filter((apt: any) => {
+        if (!apt.date && !apt.dateObj) return false;
+        const appointmentDate = toIST(apt.dateObj || apt.date);
+        if (!appointmentDate) return false;
+        return isSameDayIST(appointmentDate, today);
+      })
+      .sort((a: any, b: any) => {
+        const sa = parseStartDateTime(a) || new Date(0);
+        const sb = parseStartDateTime(b) || new Date(0);
+        return sa.getTime() - sb.getTime();
+    });
+  }, [allAppointments]);
+
   // Get appointments for active tab (today vs upcoming vs checked)
   const appointmentsToShow = useMemo(() => {
     if (activeAppointmentTab === 'checked') {
       return checkedTodayAppointments;
     }
     if (activeAppointmentTab === 'today') {
-      return confirmedTodayAppointments;
+      return allTodayAppointments;
     }
     return confirmedFutureAppointments;
-  }, [activeAppointmentTab, confirmedFutureAppointments, checkedTodayAppointments, confirmedTodayAppointments]);
+  }, [activeAppointmentTab, confirmedFutureAppointments, checkedTodayAppointments, allTodayAppointments]);
 
   // Generate tab items for appointments - Order: Upcoming, Checked, Today
   const appointmentTabs = useMemo(() => {
     return [
       { key: 'upcoming', label: `Upcoming (${confirmedFutureAppointments.length})`, count: confirmedFutureAppointments.length },
       { key: 'checked', label: `Checked (${checkedTodayAppointments.length})`, count: checkedTodayAppointments.length },
-      { key: 'today', label: `Today (${confirmedTodayAppointments.length})`, count: confirmedTodayAppointments.length },
+      { key: 'today', label: `Today (${allTodayAppointments.length})`, count: allTodayAppointments.length },
     ];
-  }, [confirmedFutureAppointments.length, checkedTodayAppointments.length, confirmedTodayAppointments.length]);
+  }, [confirmedFutureAppointments.length, checkedTodayAppointments.length, allTodayAppointments.length]);
 
   // Update active tab if current tab has no appointments - Default to 'upcoming' (first tab)
   useEffect(() => {
@@ -885,9 +924,20 @@ export default function DoctorDashboard() {
       >
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
           <div style={{ minWidth: 0, flex: 1 }}>
-            <Text strong style={{ fontSize: 14, display: 'block', lineHeight: 1.4 }}>
+            <Button
+              type="link"
+              style={{ 
+                padding: 0, 
+                height: 'auto', 
+                fontSize: 14, 
+                fontWeight: 600,
+                color: '#1890ff',
+              }}
+              className="patient-name-link"
+              onClick={() => record.patientId && handleViewPatientInfo(record.patientId)}
+            >
               {record.patient || record.patientName || 'Unknown Patient'}
-            </Text>
+            </Button>
             <Text type="secondary" style={{ fontSize: 12, display: 'block', lineHeight: 1.4 }}>
               {dateLabel} • <span style={{ fontFamily: 'monospace' }}>{record.time || 'N/A'}</span>
             </Text>
@@ -932,21 +982,20 @@ export default function DoctorDashboard() {
             >
               {hasPrescription ? 'View / Edit' : 'Add Rx'}
             </Button>
-            <Button
-              size="small"
-              onClick={handleChecked}
-              disabled={!hasPrescription || isChecked || isFinal}
-              loading={markingCheckedId === record.id}
-            >
-              Mark Complete
-            </Button>
-            <Button
-              size="small"
-              onClick={() => fetchPatientHistory(record.patientId, record.id)}
-              disabled={!record.patientId}
-            >
-              History
-            </Button>
+            {isChecked ? (
+              <Text style={{ color: '#52c41a', fontWeight: 500, fontSize: 14 }}>Checked</Text>
+            ) : (
+              <Button
+                size="small"
+                danger
+                onClick={handleChecked}
+                disabled={!hasPrescription || isFinal}
+                loading={markingCheckedId === record.id}
+                style={{ color: '#ff4d4f', borderColor: '#ff4d4f' }}
+              >
+                Checked
+              </Button>
+            )}
           </Space>
         </div>
       </Card>
@@ -957,11 +1006,36 @@ export default function DoctorDashboard() {
   // Column widths optimized to prevent horizontal scrolling and keep Action column visible
   const appointmentColumns = [
     {
+      title: '#',
+      key: 'serial',
+      width: 60,
+      align: 'center' as const,
+      fixed: 'left' as const,
+      render: (_: any, __: any, index: number) => (
+        <Text type="secondary" style={{ fontWeight: 500 }}>{index + 1}</Text>
+      ),
+    },
+    {
       title: 'Patient',
       dataIndex: 'patient',
       key: 'patient',
       width: 150,
       ellipsis: true,
+      render: (text: string, record: any) => (
+        <Button
+          type="link"
+          style={{ 
+            padding: 0, 
+            height: 'auto', 
+            fontWeight: 500,
+            color: '#1890ff',
+          }}
+          className="patient-name-link"
+          onClick={() => record.patientId && handleViewPatientInfo(record.patientId)}
+        >
+          {text}
+        </Button>
+      ),
     },
     {
       title: 'Date',
@@ -1087,30 +1161,32 @@ export default function DoctorDashboard() {
           }
         };
 
+        // Allow viewing prescription even after completion, but restrict adding new ones
+        const canViewPrescription = hasPrescription || canCreatePrescription(normalizedStatus);
+
         return (
           <Space>
         <Button
           type="link"
               onClick={() => handleOpenPrescriptionModal(record, existingPrescription)}
-              disabled={!record.patientId || isFinal || !canCreatePrescription(normalizedStatus)}
+              disabled={!record.patientId || !canViewPrescription}
             >
               {hasPrescription ? 'View / Edit Prescription' : 'Add Prescription'}
         </Button>
+            {isChecked ? (
+              <Text style={{ color: '#52c41a', fontWeight: 500 }}>Checked</Text>
+            ) : (
             <Button
               type="link"
+                danger
               onClick={handleChecked}
-              disabled={!hasPrescription || isChecked || isFinal}
+                disabled={!hasPrescription || isFinal}
               loading={markingCheckedId === record.id}
+                style={{ color: '#ff4d4f', padding: 0 }}
             >
-              Mark Complete
+              Checked
             </Button>
-            <Button
-              type="link"
-              onClick={() => fetchPatientHistory(record.patientId, record.id)}
-              disabled={!record.patientId}
-            >
-              History
-            </Button>
+            )}
           </Space>
         );
       },
@@ -1369,6 +1445,19 @@ export default function DoctorDashboard() {
         .doctor-dashboard-wrapper .appointment-row-past td {
           background: #F3F4F6 !important;
           color: #6B7280 !important;
+        }
+        
+        /* Patient name link hover effects */
+        .doctor-dashboard-wrapper .patient-name-link {
+          transition: all 0.2s ease !important;
+        }
+        .doctor-dashboard-wrapper .patient-name-link:hover {
+          color: #40a9ff !important;
+          text-decoration: underline !important;
+          transform: translateX(2px);
+        }
+        .doctor-dashboard-wrapper .patient-name-link:active {
+          color: #096dd9 !important;
         }
       `}</style>
       <Layout className="doctor-dashboard-wrapper" style={{ minHeight: '100vh', background: doctorTheme.background }}>
@@ -1662,47 +1751,6 @@ export default function DoctorDashboard() {
         appointmentIdMap={todaysAppointmentIdMap}
       />
 
-      <Drawer
-        title="Patient History"
-        placement="right"
-        width={isMobile ? '100%' : 420}
-        onClose={() => setHistoryDrawerOpen(false)}
-        open={historyDrawerOpen}
-      >
-        {historyLoading ? (
-          <Spin />
-        ) : (
-          <>
-            <Divider orientation="left">Previous Visits</Divider>
-            <List
-              dataSource={historyAppointments}
-              renderItem={(item: any) => (
-                <List.Item>
-                  <div style={{ display: 'flex', flexDirection: 'column' }}>
-                    <Text strong>{item.appointmentDate || item.date}</Text>
-                    <Text type="secondary">{item.status}</Text>
-                    <Text type="secondary">{item.reason || 'Consultation'}</Text>
-                  </div>
-                </List.Item>
-              )}
-              locale={{ emptyText: 'No previous appointments' }}
-            />
-            <Divider orientation="left">Prescriptions (by you)</Divider>
-            <List
-              dataSource={historyPrescriptions}
-              renderItem={(item: any) => (
-                <List.Item>
-                  <div style={{ display: 'flex', flexDirection: 'column' }}>
-                    <Text strong>Prescription #{item.id}</Text>
-                    <Text type="secondary">{item.createdAt}</Text>
-                  </div>
-                </List.Item>
-              )}
-              locale={{ emptyText: 'No prescriptions' }}
-            />
-          </>
-        )}
-      </Drawer>
 
       {/* Lab Request Modal */}
       <LabRequestModal
@@ -1715,6 +1763,306 @@ export default function DoctorDashboard() {
         appointmentId={selectedAppointmentId}
         patientsOverride={todaysPendingPatients}
       />
+
+      {/* Comprehensive Patient Info Drawer */}
+      <Drawer
+        title={patientInfo?.patient?.user?.fullName || 'Patient Information'}
+        placement="right"
+        width={isMobile ? '100%' : 600}
+        onClose={() => {
+          setPatientInfoDrawerOpen(false);
+          setPatientInfo(null);
+        }}
+        open={patientInfoDrawerOpen}
+      >
+        {patientInfoLoading ? (
+          <Spin />
+        ) : patientInfo ? (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
+            {/* Personal Information */}
+            <Card title="Personal Information" size="small">
+              <Space direction="vertical" style={{ width: '100%' }}>
+                <div>
+                  <Text type="secondary">Full Name:</Text>
+                  <Text strong style={{ marginLeft: 8 }}>
+                    {patientInfo.patient?.user?.fullName || 'N/A'}
+                  </Text>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <div style={{ flex: 1 }}>
+                    <Text type="secondary">Mobile:</Text>
+                    <Text strong style={{ marginLeft: 8 }}>
+                      {patientInfo.patient?.user?.mobileNumber || 'N/A'}
+                    </Text>
+                  </div>
+                  {patientInfo.patient?.user?.mobileNumber && patientInfo.patient?.user?.mobileNumber !== 'N/A' && (
+                    <Space>
+                      <Button
+                        type="default"
+                        icon={<MessageOutlined />}
+                        size="small"
+                        onClick={() => handleMessage(patientInfo.patient.user.mobileNumber)}
+                      >
+                        Message
+                      </Button>
+                      <Button
+                        type="primary"
+                        icon={<PhoneOutlined />}
+                        size="small"
+                        onClick={() => handleCall(patientInfo.patient.user.mobileNumber)}
+                      >
+                        Call
+                      </Button>
+                    </Space>
+                  )}
+                </div>
+                <div>
+                  <Text type="secondary">Email:</Text>
+                  <Text strong style={{ marginLeft: 8 }}>
+                    {patientInfo.patient?.user?.email || 'N/A'}
+                  </Text>
+                </div>
+                <div>
+                  <Text type="secondary">Date of Birth:</Text>
+                  <Text strong style={{ marginLeft: 8 }}>
+                    {patientInfo.patient?.dateOfBirth 
+                      ? dayjs(patientInfo.patient.dateOfBirth).format('DD MMM YYYY')
+                      : 'N/A'}
+                  </Text>
+                </div>
+                <div>
+                  <Text type="secondary">Gender:</Text>
+                  <Text strong style={{ marginLeft: 8 }}>
+                    {patientInfo.patient?.gender || 'N/A'}
+                  </Text>
+                </div>
+                <div>
+                  <Text type="secondary">Blood Group:</Text>
+                  <Text strong style={{ marginLeft: 8 }}>
+                    {patientInfo.patient?.bloodGroup || 'N/A'}
+                  </Text>
+                </div>
+                <div>
+                  <Text type="secondary">Height:</Text>
+                  <Text strong style={{ marginLeft: 8 }}>
+                    {patientInfo.patient?.height ? `${patientInfo.patient.height} cm` : 'N/A'}
+                  </Text>
+                </div>
+                <div>
+                  <Text type="secondary">Weight:</Text>
+                  <Text strong style={{ marginLeft: 8 }}>
+                    {patientInfo.patient?.weight ? `${patientInfo.patient.weight} kg` : 'N/A'}
+                  </Text>
+                </div>
+              </Space>
+            </Card>
+
+            {/* Medical History */}
+            {(patientInfo.patient?.medicalHistory || patientInfo.patient?.allergies || patientInfo.patient?.chronicConditions) && (
+              <Card title="Medical History" size="small">
+                <Space direction="vertical" style={{ width: '100%' }}>
+                  {patientInfo.patient.medicalHistory && (
+                    <div>
+                      <Text type="secondary">Medical History:</Text>
+                      <Text style={{ marginLeft: 8, display: 'block', marginTop: 4 }}>
+                        {patientInfo.patient.medicalHistory}
+                      </Text>
+                    </div>
+                  )}
+                  {patientInfo.patient.allergies && (
+                    <div>
+                      <Text type="secondary">Allergies:</Text>
+                      <Text style={{ marginLeft: 8, display: 'block', marginTop: 4 }}>
+                        {patientInfo.patient.allergies}
+                      </Text>
+                    </div>
+                  )}
+                  {patientInfo.patient.chronicConditions && (
+                    <div>
+                      <Text type="secondary">Chronic Conditions:</Text>
+                      <Text style={{ marginLeft: 8, display: 'block', marginTop: 4 }}>
+                        {patientInfo.patient.chronicConditions}
+                      </Text>
+                    </div>
+                  )}
+                </Space>
+              </Card>
+            )}
+
+            {/* Lab Reports */}
+            {patientInfo.labReports && patientInfo.labReports.length > 0 && (
+              <Card title={`Lab Reports (${patientInfo.labReports.length})`} size="small">
+            <List
+                  dataSource={patientInfo.labReports}
+                  renderItem={(report: any) => (
+                <List.Item>
+                      <div style={{ width: '100%' }}>
+                        <Text strong>{report.testName}</Text>
+                        <br />
+                        <Text type="secondary" style={{ fontSize: 12 }}>
+                          {dayjs(report.reportDate).format('DD MMM YYYY')} • {report.testType}
+                        </Text>
+                        {report.status && (
+                          <Tag color={report.status === 'completed' ? 'green' : 'orange'} style={{ marginLeft: 8 }}>
+                            {report.status}
+                          </Tag>
+                        )}
+                  </div>
+                </List.Item>
+              )}
+                />
+              </Card>
+            )}
+
+            {/* Prescriptions */}
+            {patientInfo.prescriptions && patientInfo.prescriptions.length > 0 && (
+              <Card 
+                title={
+                  <div>
+                    <span>Prescriptions</span>
+                    {patientInfo.prescriptionsTotal && patientInfo.prescriptionsTotal > patientInfo.prescriptions.length && (
+                      <Text type="secondary" style={{ fontSize: 12, marginLeft: 8, fontWeight: 'normal' }}>
+                        (Showing {patientInfo.prescriptions.length} of {patientInfo.prescriptionsTotal})
+                      </Text>
+                    )}
+                    {(!patientInfo.prescriptionsTotal || patientInfo.prescriptionsTotal === patientInfo.prescriptions.length) && (
+                      <Text type="secondary" style={{ fontSize: 12, marginLeft: 8, fontWeight: 'normal' }}>
+                        ({patientInfo.prescriptions.length})
+                      </Text>
+                    )}
+                  </div>
+                }
+                size="small"
+              >
+            <List
+                  dataSource={patientInfo.prescriptions}
+                  renderItem={(prescription: any) => {
+                    let medicationsData;
+                    try {
+                      medicationsData = typeof prescription.medications === 'string' 
+                        ? JSON.parse(prescription.medications) 
+                        : prescription.medications;
+                    } catch {
+                      medicationsData = null;
+                    }
+                    
+                    return (
+                      <List.Item
+                        style={{
+                          border: '1px solid #f0f0f0',
+                          borderRadius: 8,
+                          marginBottom: 12,
+                          padding: 12,
+                        }}
+                      >
+                        <div style={{ width: '100%' }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 }}>
+                            <div>
+                              <Text strong>Prescription #{prescription.id}</Text>
+                              <br />
+                              <Text type="secondary" style={{ fontSize: 12 }}>
+                                {dayjs(prescription.createdAt).format('DD MMM YYYY, hh:mm A')}
+                              </Text>
+                            </div>
+                            {prescription.isActive !== false && (
+                              <Tag color="green">Active</Tag>
+                            )}
+                          </div>
+                          
+                          {prescription.diagnosis && (
+                            <div style={{ marginBottom: 8 }}>
+                              <Text type="secondary" style={{ fontSize: 12 }}>Diagnosis: </Text>
+                              <Text strong>{prescription.diagnosis}</Text>
+                            </div>
+                          )}
+                          
+                          {medicationsData && Array.isArray(medicationsData) && medicationsData.length > 0 && (
+                            <div style={{ marginBottom: 8 }}>
+                              <Text type="secondary" style={{ fontSize: 12, display: 'block', marginBottom: 4 }}>Medications:</Text>
+                              <div style={{ paddingLeft: 12 }}>
+                                {medicationsData.map((med: any, idx: number) => (
+                                  <div key={idx} style={{ marginBottom: 4 }}>
+                                    <Text strong>{med.name || med.medication}</Text>
+                                    {med.dosage && (
+                                      <Text type="secondary" style={{ marginLeft: 8 }}>
+                                        • {med.dosage} {med.frequency || ''} {med.duration || ''}
+                                      </Text>
+                                    )}
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                          
+                          {prescription.instructions && (
+                            <div style={{ marginBottom: 8 }}>
+                              <Text type="secondary" style={{ fontSize: 12, display: 'block', marginBottom: 4 }}>Instructions:</Text>
+                              <Text style={{ fontSize: 13 }}>{prescription.instructions}</Text>
+                            </div>
+                          )}
+                          
+                          {prescription.followUpDate && (
+                            <div>
+                              <Text type="secondary" style={{ fontSize: 12 }}>Follow-up: </Text>
+                              <Text>{dayjs(prescription.followUpDate).format('DD MMM YYYY')}</Text>
+                            </div>
+                          )}
+                        </div>
+                      </List.Item>
+                    );
+                  }}
+                />
+              </Card>
+            )}
+
+            {/* Appointment History */}
+            {patientInfo.appointments && patientInfo.appointments.length > 0 && (
+              <Card 
+                title={
+                  <div>
+                    <span>Appointment History</span>
+                    {patientInfo.appointmentsTotal && patientInfo.appointmentsTotal > patientInfo.appointments.length && (
+                      <Text type="secondary" style={{ fontSize: 12, marginLeft: 8, fontWeight: 'normal' }}>
+                        (Showing {patientInfo.appointments.length} of {patientInfo.appointmentsTotal})
+                      </Text>
+                    )}
+                    {(!patientInfo.appointmentsTotal || patientInfo.appointmentsTotal === patientInfo.appointments.length) && (
+                      <Text type="secondary" style={{ fontSize: 12, marginLeft: 8, fontWeight: 'normal' }}>
+                        ({patientInfo.appointments.length})
+                      </Text>
+                    )}
+                  </div>
+                }
+                size="small"
+              >
+                <List
+                  dataSource={patientInfo.appointments}
+                  renderItem={(apt: any) => (
+                <List.Item>
+                      <div style={{ width: '100%' }}>
+                        <Text strong>
+                          {dayjs(apt.appointmentDate).format('DD MMM YYYY')} • {apt.timeSlot || apt.appointmentTime}
+                        </Text>
+                        <br />
+                        <Text type="secondary" style={{ fontSize: 12 }}>
+                          {apt.doctorName || 'Unknown Doctor'} • {apt.reason || 'Consultation'}
+                        </Text>
+                        {apt.status && (
+                          <Tag color={apt.status === 'completed' ? 'green' : apt.status === 'confirmed' ? 'blue' : 'orange'} style={{ marginLeft: 8 }}>
+                            {apt.status}
+                          </Tag>
+                        )}
+                  </div>
+                </List.Item>
+              )}
+                />
+              </Card>
+            )}
+          </div>
+        ) : (
+          <Text type="secondary">No patient information available</Text>
+        )}
+      </Drawer>
     </Layout>
     </>
   );

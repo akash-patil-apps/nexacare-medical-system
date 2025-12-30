@@ -688,6 +688,9 @@ export default function BookAppointment() {
         return;
       }
       
+      // Get form values including priority
+      const formValues = form.getFieldsValue();
+      
       const appointmentData = {
         // patientId will be set by backend based on authenticated user
         doctorId: selectedDoctor.id,
@@ -699,7 +702,7 @@ export default function BookAppointment() {
         symptoms: '',
         notes: '',
         type: 'online',
-        priority: 'normal'
+        priority: formValues.priority || 'normal'
       };
 
       console.log('📤 Sending appointment data:', appointmentData);
@@ -1459,6 +1462,25 @@ export default function BookAppointment() {
                     <Text type="secondary" style={{ fontSize: 12 }}>Consultation Fee</Text>
                     <div style={{ fontSize: 18, fontWeight: 600, marginTop: 6 }}>₹{selectedDoctor.consultationFee}</div>
                   </div>
+                </div>
+
+                {/* Priority Selection */}
+                <div style={{ marginTop: 16 }}>
+                  <Form.Item 
+                    label={<Text strong style={{ fontSize: 14 }}>Priority</Text>}
+                    name="priority"
+                    initialValue="normal"
+                    style={{ marginBottom: 0 }}
+                  >
+                    <Select
+                      style={{ width: '100%' }}
+                      options={[
+                        { value: 'normal', label: 'Normal' },
+                        { value: 'high', label: 'High' },
+                        { value: 'urgent', label: 'Urgent' },
+                      ]}
+                    />
+                  </Form.Item>
                 </div>
 
                 <div style={{ padding: '14px 18px', borderRadius: 12, background: '#ecfdf5', border: '1px solid #bbf7d0' }}>
