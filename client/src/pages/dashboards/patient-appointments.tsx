@@ -38,6 +38,7 @@ import { useResponsive } from '../../hooks/use-responsive';
 import { formatDate } from '../../lib/utils';
 import { formatTimeSlot12h } from '../../lib/time';
 import { subscribeToAppointmentEvents } from '../../lib/appointments-events';
+import { playNotificationSound } from '../../lib/notification-sounds';
 import dayjs from 'dayjs';
 
 const { Content, Sider } = Layout;
@@ -223,6 +224,98 @@ export default function PatientAppointments() {
     };
   }, []);
 
+  // Categorize appointments into upcoming and past
+  const categorizedAppointments = useMemo(() => {
+    const now = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    
+    const upcoming: Appointment[] = [];
+    const past: Appointment[] = [];
+    
+    appointments.forEach(appointment => {
+      const matchesFilter = filter === 'all' || appointment.status.toLowerCase() === filter.toLowerCase();
+      const matchesSearch = searchTerm === '' || 
+        appointment.doctorName.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        appointment.hospitalName.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        appointment.reason.toLowerCase().includes(searchTerm.toLowerCase());
+      
+      if (!matchesFilter || !matchesSearch) return;
+      
+      // Build appointment date/time
+      const appointmentDateRaw = appointment.appointmentDate || '';
+      const appointmentTimeRaw = appointment.appointmentTime || appointment.timeSlot || '';
+      let appointmentDateTime: Date | null = null;
+      
+      if (appointmentDateRaw) {
+        const datePart = new Date(appointmentDateRaw);
+        if (!Number.isNaN(datePart.getTime())) {
+          if (appointmentTimeRaw) {
+            const combined = new Date(`${appointmentDateRaw}T${appointmentTimeRaw}`);
+            appointmentDateTime = Number.isNaN(combined.getTime()) ? datePart : combined;
+          } else {
+            appointmentDateTime = datePart;
+          }
+        }
+      }
+      
+      // Categorize based on date/time and status
+      // Upcoming: future appointments OR today's appointments OR cancelled appointments (to show cancellation reason)
+      // Past: completed appointments OR past dates (not today) OR absent (but not cancelled)
+      const isCompleted = appointment.status.toLowerCase() === 'completed' || 
+                         appointment.status.toLowerCase() === 'checked-in';
+      const isCancelled = appointment.status.toLowerCase() === 'cancelled';
+      const isAbsent = appointment.status.toLowerCase() === 'absent';
+      const isPastStatus = isCompleted || isAbsent; // Don't include cancelled in past status
+      
+      if (appointmentDateTime) {
+        const appointmentDate = new Date(appointmentDateTime.getFullYear(), appointmentDateTime.getMonth(), appointmentDateTime.getDate());
+        const isToday = appointmentDate.getTime() === today.getTime();
+        const isFuture = appointmentDateTime > now;
+        
+        // Show cancelled appointments in upcoming so patients don't miss them
+        if (isCancelled) {
+          // Always show cancelled appointments in upcoming section
+          upcoming.push(appointment);
+        } else if (isToday && !isAbsent) {
+          // If it's today, show in upcoming (unless absent)
+          upcoming.push(appointment);
+        } else if (isPastStatus || (!isToday && !isFuture)) {
+          // Past: completed, absent, or past dates
+          past.push(appointment);
+        } else {
+          // Future appointments
+          upcoming.push(appointment);
+        }
+      } else {
+        // If no date info, use status to categorize
+        if (isCancelled) {
+          // Show cancelled in upcoming
+          upcoming.push(appointment);
+        } else if (isPastStatus) {
+          past.push(appointment);
+        } else {
+          upcoming.push(appointment);
+        }
+      }
+    });
+    
+    // Sort upcoming by date (earliest first)
+    upcoming.sort((a, b) => {
+      const dateA = a.appointmentDate ? new Date(a.appointmentDate) : new Date(0);
+      const dateB = b.appointmentDate ? new Date(b.appointmentDate) : new Date(0);
+      return dateA.getTime() - dateB.getTime();
+    });
+    
+    // Sort past by date (most recent first)
+    past.sort((a, b) => {
+      const dateA = a.appointmentDate ? new Date(a.appointmentDate) : new Date(0);
+      const dateB = b.appointmentDate ? new Date(b.appointmentDate) : new Date(0);
+      return dateB.getTime() - dateA.getTime();
+    });
+    
+    return { upcoming, past };
+  }, [appointments, filter, searchTerm]);
+
   const filteredAppointments = useMemo(() => {
     return appointments.filter(appointment => {
       const matchesFilter = filter === 'all' || appointment.status.toLowerCase() === filter.toLowerCase();
@@ -240,6 +333,13 @@ export default function PatientAppointments() {
     completed: appointments.filter(a => a.status === 'checked-in' || a.status === 'completed').length,
     cancelled: appointments.filter(a => a.status === 'cancelled').length,
   }), [appointments]);
+
+  // Extract cancellation reason from notes
+  const getCancellationReason = (notes: string): string | null => {
+    if (!notes) return null;
+    const match = notes.match(/Cancellation Reason:\s*(.+?)(?:\n|$)/i);
+    return match ? match[1].trim() : null;
+  };
 
   const getStatusColor = (status: string) => {
     switch (status.toLowerCase()) {
@@ -314,6 +414,7 @@ export default function PatientAppointments() {
       });
 
       if (response.ok) {
+        playNotificationSound('cancellation');
         message.success('Appointment cancelled successfully');
         loadAppointments();
         queryClient.invalidateQueries({ queryKey: ['/api/appointments/my'] });
@@ -385,11 +486,23 @@ export default function PatientAppointments() {
       title: 'Status',
       dataIndex: 'status',
       key: 'status',
-      render: (status: string) => (
-        <Tag color={getStatusColor(status)}>
-          {status.toUpperCase()}
-        </Tag>
-      ),
+      render: (status: string, record: Appointment) => {
+        const isCancelled = status.toLowerCase() === 'cancelled';
+        const cancellationReason = isCancelled ? getCancellationReason(record.notes) : null;
+        
+        return (
+          <Space direction="vertical" size={0}>
+            <Tag color={getStatusColor(status)}>
+              {status.toUpperCase()}
+            </Tag>
+            {isCancelled && cancellationReason && (
+              <Text type="secondary" style={{ fontSize: '11px', display: 'block', marginTop: '4px', fontStyle: 'italic' }}>
+                Reason: {cancellationReason}
+              </Text>
+            )}
+          </Space>
+        );
+      },
     },
     {
       title: 'Priority',
@@ -653,10 +766,9 @@ export default function PatientAppointments() {
                     <Select
                       value={filter}
                       onChange={setFilter}
-                      style={{ width: '100%' }}
+                      style={{ width: '100%', borderRadius: '8px' }}
                       suffixIcon={<ArrowRightOutlined style={{ transform: 'rotate(90deg)', color: '#9CA3AF' }} />}
                       size="large"
-                      style={{ borderRadius: '8px' }}
                     >
                       <Option value="all">All Appointments</Option>
                       <Option value="confirmed">Confirmed</Option>
@@ -679,33 +791,104 @@ export default function PatientAppointments() {
                 </Row>
               </Card>
 
-              {/* Appointments Table */}
+              {/* Upcoming Appointments Section */}
               <Card 
-                title={<Title level={4} style={{ margin: 0 }}>Appointments</Title>}
-                style={{ borderRadius: '12px' }}
+                title={
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <ClockCircleOutlined style={{ color: '#10B981', fontSize: '20px' }} />
+                    <Title level={4} style={{ margin: 0, color: '#10B981' }}>
+                      Upcoming Appointments
+                    </Title>
+                    <Tag color="green" style={{ marginLeft: '8px' }}>
+                      {categorizedAppointments.upcoming.length}
+                    </Tag>
+                  </div>
+                }
+                style={{ 
+                  borderRadius: '12px',
+                  marginBottom: '24px',
+                  border: '1px solid #D1FAE5'
+                }}
               >
                 <Spin spinning={loading}>
-                  <Table
-                    columns={columns}
-                    dataSource={filteredAppointments}
-                    rowKey="id"
-                    loading={loading}
-                    pagination={{
-                      pageSize: 10,
-                      showSizeChanger: true,
-                      showQuickJumper: true,
-                      showTotal: (total, range) => 
-                        `${range[0]}-${range[1]} of ${total} appointments`,
-                    }}
-                    locale={{
-                      emptyText: (
-                        <Empty
-                          image={Empty.PRESENTED_IMAGE_SIMPLE}
-                          description="No data"
-                        />
-                      )
-                    }}
-                  />
+                  {categorizedAppointments.upcoming.length > 0 ? (
+                    <Table
+                      columns={columns}
+                      dataSource={categorizedAppointments.upcoming}
+                      rowKey="id"
+                      loading={loading}
+                      pagination={{
+                        pageSize: 10,
+                        showSizeChanger: true,
+                        showQuickJumper: true,
+                        showTotal: (total, range) => 
+                          `${range[0]}-${range[1]} of ${total} upcoming appointments`,
+                      }}
+                      locale={{
+                        emptyText: (
+                          <Empty
+                            image={Empty.PRESENTED_IMAGE_SIMPLE}
+                            description="No upcoming appointments"
+                          />
+                        )
+                      }}
+                    />
+                  ) : (
+                    <Empty
+                      image={Empty.PRESENTED_IMAGE_SIMPLE}
+                      description="No upcoming appointments"
+                    />
+                  )}
+                </Spin>
+              </Card>
+
+              {/* Past Appointments Section */}
+              <Card 
+                title={
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <CheckCircleOutlined style={{ color: '#6B7280', fontSize: '20px' }} />
+                    <Title level={4} style={{ margin: 0, color: '#6B7280' }}>
+                      Past Appointments
+                    </Title>
+                    <Tag color="default" style={{ marginLeft: '8px' }}>
+                      {categorizedAppointments.past.length}
+                    </Tag>
+                  </div>
+                }
+                style={{ 
+                  borderRadius: '12px',
+                  border: '1px solid #E5E7EB'
+                }}
+              >
+                <Spin spinning={loading}>
+                  {categorizedAppointments.past.length > 0 ? (
+                    <Table
+                      columns={columns}
+                      dataSource={categorizedAppointments.past}
+                      rowKey="id"
+                      loading={loading}
+                      pagination={{
+                        pageSize: 10,
+                        showSizeChanger: true,
+                        showQuickJumper: true,
+                        showTotal: (total, range) => 
+                          `${range[0]}-${range[1]} of ${total} past appointments`,
+                      }}
+                      locale={{
+                        emptyText: (
+                          <Empty
+                            image={Empty.PRESENTED_IMAGE_SIMPLE}
+                            description="No past appointments"
+                          />
+                        )
+                      }}
+                    />
+                  ) : (
+                    <Empty
+                      image={Empty.PRESENTED_IMAGE_SIMPLE}
+                      description="No past appointments"
+                    />
+                  )}
                 </Spin>
               </Card>
             </div>
@@ -771,6 +954,14 @@ export default function PatientAppointments() {
               <div>
                 <Text strong>Notes: </Text>
                 <Text>{selectedAppointment.notes}</Text>
+              </div>
+            )}
+            {selectedAppointment.status.toLowerCase() === 'cancelled' && (
+              <div>
+                <Text strong style={{ color: '#ff4d4f' }}>Cancellation Reason: </Text>
+                <Text style={{ color: '#ff4d4f' }}>
+                  {getCancellationReason(selectedAppointment.notes) || 'Not specified'}
+                </Text>
               </div>
             )}
           </Space>

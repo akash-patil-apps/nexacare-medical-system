@@ -1,6 +1,6 @@
 // server/services/appointments.service.ts
 import { db } from '../db';
-import { appointments, patients, doctors, hospitals, users } from '../../drizzle/schema';
+import { appointments, patients, doctors, hospitals, users, receptionists } from '../../drizzle/schema';
 import { eq, and, desc } from 'drizzle-orm';
 import { sql } from 'drizzle-orm';
 import type { InsertAppointment } from '../../shared/schema-types';
@@ -16,6 +16,11 @@ export const bookAppointment = async (
   console.log(`📅 Creating appointment for patient ${data.patientId} with doctor ${data.doctorId}`);
   
   try {
+    // Walk-in appointments are automatically confirmed (receptionist is confirming at booking time)
+    const appointmentType = data.type || 'online';
+    const isWalkIn = appointmentType === 'walk-in';
+    const initialStatus = isWalkIn ? 'confirmed' : 'pending';
+    
     console.log('📅 Appointment data being inserted:', {
       patientId: data.patientId,
       doctorId: data.doctorId,
@@ -24,10 +29,12 @@ export const bookAppointment = async (
       appointmentTime: data.appointmentTime,
       timeSlot: data.timeSlot,
       reason: data.reason,
+      type: appointmentType,
+      status: initialStatus,
       createdBy: user.id
     });
 
-    const [appointment] = await db.insert(appointments).values({
+    const appointmentValues: any = {
       patientId: data.patientId,
       doctorId: data.doctorId,
       hospitalId: data.hospitalId,
@@ -35,17 +42,35 @@ export const bookAppointment = async (
       appointmentTime: data.appointmentTime,
       timeSlot: data.timeSlot,
       reason: data.reason,
-      status: 'pending',
-      type: data.type || 'online',
+      status: initialStatus,
+      type: appointmentType,
       priority: data.priority || 'normal',
       symptoms: data.symptoms || '',
       notes: data.notes || '',
       createdBy: user.id
-      // createdAt will be set by database default
-    }).returning();
+    };
 
-    console.log(`✅ Appointment created: ${appointment.id}`);
-    await emitAppointmentChanged(appointment.id, "created");
+    // If walk-in, set confirmedAt timestamp
+    if (isWalkIn) {
+      appointmentValues.confirmedAt = sql`NOW()`;
+      // If receptionist is booking, also set receptionistId
+      if (user.role === 'RECEPTIONIST') {
+        // Get receptionist ID from userId
+        const [receptionist] = await db
+          .select({ id: receptionists.id })
+          .from(receptionists)
+          .where(eq(receptionists.userId, user.id))
+          .limit(1);
+        if (receptionist) {
+          appointmentValues.receptionistId = receptionist.id;
+        }
+      }
+    }
+
+    const [appointment] = await db.insert(appointments).values(appointmentValues).returning();
+
+    console.log(`✅ Appointment created: ${appointment.id} with status: ${appointment.status}`);
+    await emitAppointmentChanged(appointment.id, isWalkIn ? "confirmed" : "created");
     return appointment;
   } catch (error) {
     console.error('Error creating appointment:', error);
@@ -151,15 +176,20 @@ export const getAppointmentsByDoctor = async (doctorId: number) => {
     // Now enrich with patient names, hospital names, and doctor names
     const enrichedAppointments = await Promise.all(
       appointmentsData.map(async (apt) => {
-        // Get patient name
+        // Get patient name and dateOfBirth
         const [patient] = await db
-          .select({ userId: patients.userId })
+          .select({ 
+            userId: patients.userId,
+            dateOfBirth: patients.dateOfBirth
+          })
           .from(patients)
           .where(eq(patients.id, apt.patientId))
           .limit(1);
         
         let patientName = 'Unknown Patient';
+        let patientDateOfBirth = null;
         if (patient) {
+          patientDateOfBirth = patient.dateOfBirth;
           const [patientUser] = await db
             .select({ fullName: users.fullName })
             .from(users)
@@ -201,6 +231,7 @@ export const getAppointmentsByDoctor = async (doctorId: number) => {
         return {
           ...apt,
           patientName,
+          patientDateOfBirth,
           hospitalName,
           doctorName,
         };
@@ -301,15 +332,20 @@ export const getAppointmentsByHospital = async (hospitalId: number) => {
     // Enrich with patient and doctor information
     const enrichedAppointments = await Promise.all(
       appointmentsData.map(async (apt) => {
-        // Get patient info
+        // Get patient info including dateOfBirth
         const [patient] = await db
-          .select({ userId: patients.userId })
+          .select({ 
+            userId: patients.userId,
+            dateOfBirth: patients.dateOfBirth
+          })
           .from(patients)
           .where(eq(patients.id, apt.patientId))
           .limit(1);
 
         let patientName = 'Unknown Patient';
+        let patientDateOfBirth = null;
         if (patient) {
+          patientDateOfBirth = patient.dateOfBirth;
           const [patientUser] = await db
             .select({ fullName: users.fullName })
             .from(users)
@@ -347,6 +383,7 @@ export const getAppointmentsByHospital = async (hospitalId: number) => {
         return {
           ...apt,
           patientName,
+          patientDateOfBirth,
           doctorName,
           doctorSpecialty,
           hospitalName: apt.hospitalName || null,
@@ -422,23 +459,43 @@ export const updateAppointmentStatus = async (
 /**
  * Cancel appointment.
  */
-export const cancelAppointment = async (appointmentId: number, userId: number) => {
-  console.log(`📅 Cancelling appointment ${appointmentId}`);
+export const cancelAppointment = async (appointmentId: number, userId: number, cancellationReason?: string) => {
+  console.log(`📅 Cancelling appointment ${appointmentId}${cancellationReason ? ` with reason: ${cancellationReason}` : ''}`);
   
   try {
+    // First get the existing appointment to preserve notes
+    const [existingAppointment] = await db
+      .select()
+      .from(appointments)
+      .where(eq(appointments.id, appointmentId))
+      .limit(1);
+    
+    if (!existingAppointment) {
+      throw new Error('Appointment not found');
+    }
+    
+    const updateData: any = {
+      status: 'cancelled'
+    };
+    
+    // Store cancellation reason in notes field
+    if (cancellationReason) {
+      const currentNotes = existingAppointment.notes || '';
+      const cancellationNote = `Cancellation Reason: ${cancellationReason}`;
+      updateData.notes = currentNotes ? `${currentNotes}\n${cancellationNote}` : cancellationNote;
+    }
+    
     const [result] = await db
       .update(appointments)
-      .set({
-        status: 'cancelled'
-      })
+      .set(updateData)
       .where(eq(appointments.id, appointmentId))
       .returning();
     
     if (!result) {
-      throw new Error('Appointment not found');
+      throw new Error('Failed to update appointment');
     }
     
-    console.log(`✅ Appointment ${appointmentId} cancelled`);
+    console.log(`✅ Appointment ${appointmentId} cancelled${cancellationReason ? ` with reason: ${cancellationReason}` : ''}`);
     await emitAppointmentChanged(result.id, "cancelled");
     return result;
   } catch (error) {

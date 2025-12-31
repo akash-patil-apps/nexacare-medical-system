@@ -47,6 +47,7 @@ import {
   canCreatePrescription 
 } from '../../lib/appointment-status';
 import { getISTNow, toIST, getISTStartOfDay, isSameDayIST } from '../../lib/timezone';
+import { playNotificationSound } from '../../lib/notification-sounds';
 
 const { Content, Sider } = Layout;
 const { Title, Text } = Typography;
@@ -321,6 +322,7 @@ export default function DoctorDashboard() {
           id: apt.id,
           patientId: apt.patientId,
           patient: apt.patientName || 'Unknown Patient',
+          patientDateOfBirth: apt.patientDateOfBirth || null,
           patientMobile: apt.patientMobile,
           time: (apt.appointmentTime || apt.timeSlot) ? formatTimeSlot12h(apt.appointmentTime || apt.timeSlot) : 'N/A',
           status: apt.status || 'pending',
@@ -340,6 +342,12 @@ export default function DoctorDashboard() {
     refetchOnMount: true, // Refetch when component mounts
   });
 
+  // Track previous appointment data for sound notifications
+  const [previousAppointmentData, setPreviousAppointmentData] = useState<{
+    count: number;
+    confirmedIds: Set<number>;
+  }>({ count: 0, confirmedIds: new Set() });
+
   // Real-time: server pushes appointment updates (no polling).
   useEffect(() => {
     const unsubscribe = subscribeToAppointmentEvents({
@@ -350,6 +358,40 @@ export default function DoctorDashboard() {
     });
     return unsubscribe;
   }, [queryClient, refetchAppointments]);
+
+  // Detect new confirmed appointments and play sounds
+  useEffect(() => {
+    if (!allAppointments || allAppointments.length === 0) return;
+
+    const currentConfirmedIds = new Set<number>(
+      allAppointments
+        .filter((apt: any) => {
+          const status = normalizeStatus(apt.status);
+          return status === APPOINTMENT_STATUS.CONFIRMED || apt.status?.toLowerCase() === 'confirmed';
+        })
+        .map((apt: any) => apt.id as number)
+        .filter((id: any): id is number => typeof id === 'number')
+    );
+
+    // Check for new confirmed appointments
+    if (previousAppointmentData.confirmedIds.size > 0) {
+      currentConfirmedIds.forEach((id) => {
+        if (!previousAppointmentData.confirmedIds.has(id)) {
+          // New confirmed appointment detected
+          playNotificationSound('new');
+        }
+      });
+    } else if (currentConfirmedIds.size > 0 && previousAppointmentData.count === 0) {
+      // First load with confirmed appointments
+      playNotificationSound('pending');
+    }
+
+    // Update previous data
+    setPreviousAppointmentData({
+      count: allAppointments.length,
+      confirmedIds: currentConfirmedIds,
+    });
+  }, [allAppointments]);
 
 
   // Active appointment statuses (using universal status constants)
@@ -1036,6 +1078,32 @@ export default function DoctorDashboard() {
           {text}
         </Button>
       ),
+    },
+    {
+      title: 'Age',
+      key: 'age',
+      width: 70,
+      align: 'center' as const,
+      render: (_: any, record: any) => {
+        // Calculate age from dateOfBirth if available, otherwise show N/A
+        if (record.patientDateOfBirth) {
+          try {
+            const dob = new Date(record.patientDateOfBirth);
+            if (!isNaN(dob.getTime())) {
+              const today = new Date();
+              let age = today.getFullYear() - dob.getFullYear();
+              const monthDiff = today.getMonth() - dob.getMonth();
+              if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < dob.getDate())) {
+                age--;
+              }
+              return <Text>{age}</Text>;
+            }
+          } catch (error) {
+            console.error('Error calculating age:', error);
+          }
+        }
+        return <Text type="secondary">N/A</Text>;
+      },
     },
     {
       title: 'Date',

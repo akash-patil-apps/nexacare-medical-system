@@ -242,9 +242,11 @@ router.patch('/:appointmentId/status', async (req: AuthenticatedRequest, res) =>
 // Cancel appointment
 router.patch('/:appointmentId/cancel', async (req: AuthenticatedRequest, res) => {
   try {
+    const { cancellationReason } = req.body;
     const appointment = await appointmentService.cancelAppointment(
       +req.params.appointmentId, 
-      req.user?.id || 1
+      req.user?.id || 1,
+      cancellationReason
     );
     res.json(appointment);
   } catch (err) {

@@ -10,6 +10,7 @@ import {
   users,
   labReports,
   prescriptions,
+  hospitals,
 } from '../../shared/schema';
 import type { InsertReceptionist } from '../../shared/schema-types';
 import { hashPassword } from './auth.service';
@@ -126,23 +127,17 @@ export const confirmAppointment = async (appointmentId: number, receptionistId: 
 
 /**
  * Get doctors available to a receptionist (same hospital).
+ * Returns all doctor fields matching the patient booking flow.
  */
 export const getHospitalDoctorsForReceptionist = async (receptionistUserId: number) => {
   const context = await getReceptionistContext(receptionistUserId);
   if (!context) return [];
 
+  // Use the same function as patient booking flow to get all doctor details
   const doctorsInHospital = await getDoctorsByHospital(context.hospitalId);
 
-  return doctorsInHospital
-    .filter((doc) => doc.userId)
-    .map((doc) => ({
-      id: doc.id,
-      hospitalId: doc.hospitalId,
-      userId: doc.userId!,
-      specialty: doc.specialty,
-      isAvailable: doc.isAvailable,
-      fullName: doc.fullName || 'Doctor',
-    }));
+  // Return all fields (same as patient booking flow) - no need to filter fields
+  return doctorsInHospital.filter((doc) => doc.userId);
 };
 
 export interface WalkInRegistrationInput {
@@ -402,6 +397,56 @@ export async function getReceptionistContext(receptionistUserId: number) {
   if (!rec) return null;
 
   return rec;
+}
+
+/**
+ * Get receptionist profile by user ID (including hospital name)
+ * Similar to getDoctorByUserId - fetches receptionist data and hospital name
+ */
+export async function getReceptionistByUserId(userId: number) {
+  console.log(`👤 Fetching receptionist by user ID ${userId}`);
+  try {
+    // First, get the receptionist data
+    const [receptionistData] = await db
+      .select()
+      .from(receptionists)
+      .where(eq(receptionists.userId, userId))
+      .limit(1);
+    
+    if (!receptionistData) {
+      console.log(`⚠️ No receptionist found for user ID ${userId}`);
+      return null;
+    }
+    
+    // Then, get the hospital name if hospitalId exists
+    let hospitalName: string | null = null;
+    if (receptionistData.hospitalId) {
+      const [hospital] = await db
+        .select({ name: hospitals.name })
+        .from(hospitals)
+        .where(eq(hospitals.id, receptionistData.hospitalId))
+        .limit(1);
+      
+      hospitalName = hospital?.name || null;
+    }
+    
+    // Combine the results
+    const receptionist = {
+      ...receptionistData,
+      hospitalName,
+    };
+    
+    console.log(`✅ Receptionist profile fetched:`, { 
+      id: receptionist.id, 
+      hospitalId: receptionist.hospitalId, 
+      hospitalName: receptionist.hospitalName 
+    });
+    
+    return receptionist;
+  } catch (error: any) {
+    console.error(`❌ Error fetching receptionist by user ID ${userId}:`, error);
+    throw error;
+  }
 }
 
 /**

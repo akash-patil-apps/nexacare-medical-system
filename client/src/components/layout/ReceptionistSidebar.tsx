@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useEffect } from 'react';
 import { Menu, Button, Typography, message } from 'antd';
 import { SettingOutlined, StarOutlined, TeamOutlined, CalendarOutlined, UserAddOutlined, PhoneOutlined } from '@ant-design/icons';
 import { useAuth } from '../../hooks/use-auth';
@@ -19,6 +19,11 @@ export const ReceptionistSidebar: React.FC<ReceptionistSidebarProps> = ({
 }) => {
   const { user, logout } = useAuth();
   const [, setLocation] = useLocation();
+  
+  // Debug: Log hospital name prop
+  useEffect(() => {
+    console.log('🏥 ReceptionistSidebar received hospitalName prop:', hospitalName);
+  }, [hospitalName]);
 
   // Generate receptionist ID (REC-YYYY-XXX format)
   const receptionistId = useMemo(() => {

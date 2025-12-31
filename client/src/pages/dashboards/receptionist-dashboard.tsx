@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Redirect } from "wouter";
 import { 
@@ -30,6 +30,7 @@ import {
 import { 
   CalendarOutlined, 
   CheckCircleOutlined,
+  CloseCircleOutlined,
   TeamOutlined,
   ClockCircleOutlined,
   MenuUnfoldOutlined,
@@ -51,6 +52,7 @@ import type { Dayjs } from 'dayjs';
 import { formatTimeSlot12h, parseTimeTo24h } from '../../lib/time';
 import { getISTStartOfDay, isSameDayIST } from '../../lib/timezone';
 import { normalizeStatus, APPOINTMENT_STATUS } from '../../lib/appointment-status';
+import { playNotificationSound } from '../../lib/notification-sounds';
 
 const { Content, Sider } = Layout;
 const { Title, Text } = Typography;
@@ -73,6 +75,9 @@ export default function ReceptionistDashboard() {
   const [isWalkInModalOpen, setIsWalkInModalOpen] = useState(false);
   const [isWalkInSubmitting, setIsWalkInSubmitting] = useState(false);
   const [walkInForm] = Form.useForm();
+  const [isRejectModalOpen, setIsRejectModalOpen] = useState(false);
+  const [selectedAppointmentForRejection, setSelectedAppointmentForRejection] = useState<number | null>(null);
+  const [rejectionForm] = Form.useForm();
   const [walkInStep, setWalkInStep] = useState(0); // 0: Mobile lookup, 1: User found/New user, 2: OTP (if new), 3: Registration (if new), 4: Appointment booking
   const [foundUser, setFoundUser] = useState<any>(null); // Existing user data
   const [foundPatient, setFoundPatient] = useState<any>(null); // Existing patient data
@@ -94,7 +99,7 @@ export default function ReceptionistDashboard() {
   const [selectedSlot, setSelectedSlot] = useState<string>('');
   const [availableSlots, setAvailableSlots] = useState<string[]>([]);
   const [slotBookings, setSlotBookings] = useState<Record<string, number>>({});
-
+  const [appointmentBookingStep, setAppointmentBookingStep] = useState(0); // 0: Doctor selection, 1: Date/Time selection
 
   // ALL HOOKS MUST BE CALLED BEFORE ANY CONDITIONAL RETURNS
   // Get appointments with auto-refresh
@@ -132,6 +137,7 @@ export default function ReceptionistDashboard() {
           id: apt.id,
           patientId: apt.patientId || apt.patient_id,
           patient: apt.patientName || 'Unknown Patient',
+          patientDateOfBirth: apt.patientDateOfBirth || null,
           doctor: apt.doctorName || 'Unknown Doctor',
           time: apt.timeSlot || apt.appointmentTime || 'N/A',
           status: apt.status || 'pending',
@@ -154,7 +160,13 @@ export default function ReceptionistDashboard() {
     refetchOnMount: true, // Refetch when component mounts
   });
 
-  // Listen for appointment updates
+  // Track previous appointment count and statuses for sound notifications
+  const [previousAppointmentData, setPreviousAppointmentData] = useState<{
+    count: number;
+    pendingIds: Set<number>;
+  }>({ count: 0, pendingIds: new Set() });
+
+  // Listen for appointment updates and play sounds
   useEffect(() => {
     const handleStorageChange = () => {
       refetchAppointments();
@@ -162,6 +174,37 @@ export default function ReceptionistDashboard() {
     window.addEventListener('storage', handleStorageChange);
     return () => window.removeEventListener('storage', handleStorageChange);
   }, [refetchAppointments]);
+
+  // Detect new appointments and play sounds
+  useEffect(() => {
+    if (!appointments || appointments.length === 0) return;
+
+    const currentPendingIds = new Set<number>(
+      appointments
+        .filter((apt: any) => apt.status === 'pending')
+        .map((apt: any) => apt.id as number)
+        .filter((id: any): id is number => typeof id === 'number')
+    );
+
+    // Check for new pending appointments
+    if (previousAppointmentData.pendingIds.size > 0) {
+      currentPendingIds.forEach((id) => {
+        if (!previousAppointmentData.pendingIds.has(id)) {
+          // New pending appointment detected
+          playNotificationSound('new');
+        }
+      });
+    } else if (currentPendingIds.size > 0 && previousAppointmentData.count === 0) {
+      // First load with pending appointments
+      playNotificationSound('pending');
+    }
+
+    // Update previous data
+    setPreviousAppointmentData({
+      count: appointments.length,
+      pendingIds: currentPendingIds,
+    });
+  }, [appointments]);
 
   const { data: walkInPatients = [], refetch: refetchWalkIns } = useQuery({
     queryKey: ['/api/reception/walkins'],
@@ -223,6 +266,55 @@ export default function ReceptionistDashboard() {
     enabled: !!user,
   });
 
+  // Get receptionist profile to access hospital name
+  const { data: receptionistProfile, isLoading: profileLoading } = useQuery({
+    queryKey: ['/api/reception/profile'],
+    queryFn: async () => {
+      const token = localStorage.getItem('auth-token');
+      console.log('🔍 Fetching receptionist profile from /api/reception/profile');
+      const response = await fetch('/api/reception/profile', {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('❌ Failed to fetch receptionist profile:', response.status, errorText);
+        throw new Error('Failed to fetch receptionist profile');
+      }
+      const data = await response.json();
+      console.log('✅ Receptionist profile fetched:', { 
+        hospitalId: data.hospitalId, 
+        hospitalName: data.hospitalName,
+        fullData: data 
+      });
+      return data;
+    },
+    enabled: !!user && user.role?.toUpperCase() === 'RECEPTIONIST',
+    refetchOnWindowFocus: true,
+    refetchOnMount: true,
+  });
+
+  // Get hospital name from receptionist profile
+  const hospitalName = useMemo(() => {
+    console.log('🔍 Computing hospitalName from receptionistProfile:', {
+      hasProfile: !!receptionistProfile,
+      hospitalName: receptionistProfile?.hospitalName,
+      hospitalId: receptionistProfile?.hospitalId,
+      profileLoading,
+    });
+    if (receptionistProfile?.hospitalName) {
+      console.log('✅ Hospital name from receptionist profile:', receptionistProfile.hospitalName);
+      return receptionistProfile.hospitalName;
+    }
+    if (receptionistProfile && !receptionistProfile.hospitalName) {
+      console.log('⚠️ Receptionist profile exists but no hospitalName. Profile:', receptionistProfile);
+    } else if (!receptionistProfile) {
+      console.log('⚠️ No receptionist profile yet. Loading:', profileLoading);
+    }
+    return null;
+  }, [receptionistProfile?.hospitalName, receptionistProfile, profileLoading]);
+
   // Filter appointments that are today or in the future (by date and time)
   // Receptionists need to see pending (to confirm), confirmed (to check-in), and cancelled appointments
   // Pending appointments should ALWAYS be visible (even if the slot time has already passed) so they can be confirmed.
@@ -255,6 +347,11 @@ export default function ReceptionistDashboard() {
           
           // If appointment day is before today and still pending, hide from Upcoming table
           if (apt.status === 'pending' && appointmentDay < todayStart) {
+          return false;
+        }
+          
+          // For cancelled appointments, only show if they're today or in the future
+          if (apt.status === 'cancelled' && appointmentDay < todayStart) {
           return false;
         }
         
@@ -296,7 +393,14 @@ export default function ReceptionistDashboard() {
             appointmentTime.setHours(0, 0, 0, 0);
           }
           
-          // Only include appointments that are today or in the future (by date and time)
+          // For pending appointments: show if they're today or in the future (even if time has passed today)
+          // This allows receptionists to confirm pending appointments even if the scheduled time has passed
+          if (apt.status === 'pending') {
+            // Show if appointment is today or in the future (by date only, not time)
+            return appointmentDay >= todayStart;
+          }
+          
+          // For confirmed and cancelled appointments: show if they're today or in the future (by date and time)
           return appointmentTime >= now;
         } catch (error) {
           console.error(`❌ Error checking date/time for appointment ${apt.id}:`, error);
@@ -638,6 +742,7 @@ export default function ReceptionistDashboard() {
       console.log('📥 Check-in response:', responseData);
 
       if (response.ok) {
+        playNotificationSound('confirmation');
         message.success('Appointment confirmed successfully! It will now appear in doctor and patient dashboards.');
         // Trigger storage event to notify other tabs/windows
         window.localStorage.setItem('appointment-updated', Date.now().toString());
@@ -775,6 +880,70 @@ export default function ReceptionistDashboard() {
       window.location.href = `sms:${phone}`;
     } else {
       message.warning('Phone number not available');
+    }
+  };
+
+  // Handle reject appointment
+  const handleRejectAppointment = (appointmentId: number) => {
+    setSelectedAppointmentForRejection(appointmentId);
+    setIsRejectModalOpen(true);
+    rejectionForm.resetFields();
+  };
+
+  // Handle rejection submission
+  const handleRejectSubmit = async (values: { cancellationReason: string }) => {
+    if (!selectedAppointmentForRejection) return;
+    
+    try {
+      const token = localStorage.getItem('auth-token');
+      if (!token) {
+        message.error('Authentication required');
+        return;
+      }
+
+      const response = await fetch(`/api/appointments/${selectedAppointmentForRejection}/cancel`, {
+        method: 'PATCH',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          cancellationReason: values.cancellationReason
+        })
+      });
+
+      const responseData = await response.json();
+
+      if (response.ok) {
+        message.success('Appointment rejected successfully. Patient will be notified of the cancellation reason.');
+        setIsRejectModalOpen(false);
+        setSelectedAppointmentForRejection(null);
+        rejectionForm.resetFields();
+        
+        // Trigger storage event to notify other tabs/windows
+        window.localStorage.setItem('appointment-updated', Date.now().toString());
+        window.dispatchEvent(new CustomEvent('appointment-updated'));
+        
+        // Invalidate and refetch appointments
+        queryClient.invalidateQueries({ 
+          predicate: (query) => {
+            const key = query.queryKey[0];
+            return typeof key === 'string' && (
+              key.includes('/api/appointments') || 
+              key.includes('patient-appointments') ||
+              key.includes('doctor-appointments')
+            );
+          }
+        });
+        
+        await refetchAppointments();
+      } else {
+        console.error('❌ Reject appointment failed:', responseData);
+        message.error(responseData.message || 'Failed to reject appointment');
+      }
+    } catch (error) {
+      console.error('❌ Error rejecting appointment:', error);
+      message.error('Failed to reject appointment. Please try again.');
     }
   };
 
@@ -980,11 +1149,6 @@ export default function ReceptionistDashboard() {
           </div>
 
           <Space size={6} wrap style={{ justifyContent: 'flex-end' }}>
-            {overdue && (
-              <Tag color="red" style={{ margin: 0, fontSize: 12, fontWeight: 600 }}>
-                OVERDUE
-              </Tag>
-            )}
             <Tag color={config.color} style={{ margin: 0, fontSize: 12, fontWeight: 500 }}>
               {config.label}
             </Tag>
@@ -1003,13 +1167,25 @@ export default function ReceptionistDashboard() {
         <div style={{ marginTop: 12 }}>
           <Space size={6} wrap>
             {record.status === 'pending' && (
+              <>
               <Button
                 size="small"
-                type="primary"
+                  type="default"
+                  icon={<CheckCircleOutlined style={{ color: '#52c41a' }} />}
                 onClick={() => handleConfirmAppointment(record.id)}
-              >
-                Confirm
-              </Button>
+                  title="Confirm appointment"
+                  style={{ background: 'transparent', border: '1px solid #d9d9d9' }}
+                />
+                <Button
+                  size="small"
+                  type="default"
+                  danger
+                  icon={<CloseCircleOutlined style={{ color: '#ff4d4f' }} />}
+                  onClick={() => handleRejectAppointment(record.id)}
+                  title="Reject appointment"
+                  style={{ background: 'transparent', border: '1px solid #ffccc7' }}
+                />
+              </>
             )}
             {record.status === 'confirmed' && (
               <Button
@@ -1025,9 +1201,15 @@ export default function ReceptionistDashboard() {
               type="link"
               icon={<PhoneOutlined />}
               onClick={() => handleCall(record.phone)}
-            >
-              Call
-            </Button>
+              title="Call patient"
+            />
+            <Button
+              size="small"
+              type="link"
+              icon={<MessageOutlined />}
+              onClick={() => handleMessage(record.phone)}
+              title="Message patient"
+            />
           </Space>
         </div>
       </Card>
@@ -1048,8 +1230,9 @@ export default function ReceptionistDashboard() {
       title: 'Patient',
       dataIndex: 'patient',
       key: 'patient',
+      width: 140,
+      ellipsis: true,
       render: (text: string, record: any) => (
-        <Space>
           <Button
             type="link"
             style={{ 
@@ -1060,17 +1243,40 @@ export default function ReceptionistDashboard() {
             className="patient-name-link"
             onClick={() => record.patientId && handleViewPatientInfo(record.patientId)}
           >
-            <Text strong={isAppointmentOverdue(record)}>{text}</Text>
+          <Text strong>{text}</Text>
           </Button>
-          {isAppointmentOverdue(record) && (
-            <Tag color="red" style={{ margin: 0 }}>OVERDUE</Tag>
-          )}
-        </Space>
       ),
+    },
+    {
+      title: 'Age',
+      key: 'age',
+      width: 70,
+      align: 'center' as const,
+      render: (_: any, record: any) => {
+        // Calculate age from dateOfBirth if available, otherwise show N/A
+        if (record.patientDateOfBirth) {
+          try {
+            const dob = new Date(record.patientDateOfBirth);
+            if (!isNaN(dob.getTime())) {
+              const today = new Date();
+              let age = today.getFullYear() - dob.getFullYear();
+              const monthDiff = today.getMonth() - dob.getMonth();
+              if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < dob.getDate())) {
+                age--;
+              }
+              return <Text>{age}</Text>;
+            }
+          } catch (error) {
+            console.error('Error calculating age:', error);
+          }
+        }
+        return <Text type="secondary">N/A</Text>;
+      },
     },
     {
       title: 'Date',
       key: 'date',
+      width: 100,
       render: (_: any, record: any) => {
         if (!record.dateObj && !record.date) return 'N/A';
         const date = record.dateObj || new Date(record.date);
@@ -1094,22 +1300,28 @@ export default function ReceptionistDashboard() {
       title: 'Doctor',
       dataIndex: 'doctor',
       key: 'doctor',
+      width: 150,
+      ellipsis: true,
     },
     {
       title: 'Time',
       dataIndex: 'time',
       key: 'time',
+      width: 120,
       render: (time: string) => (time ? formatTimeSlot12h(time) : 'N/A'),
     },
     {
       title: 'Department',
       dataIndex: 'department',
       key: 'department',
+      width: 120,
+      ellipsis: true,
     },
     {
       title: 'Source',
       dataIndex: 'type',
       key: 'type',
+      width: 90,
       render: (_: any, record: any) => {
         const config = getSourceConfig(record.type);
         return <Tag color={config.color}>{config.label}</Tag>;
@@ -1119,6 +1331,7 @@ export default function ReceptionistDashboard() {
       title: 'Payment',
       dataIndex: 'paymentStatus',
       key: 'paymentStatus',
+      width: 90,
       render: (_: any, record: any) => {
         const config = getPaymentConfig(record.paymentStatus);
         return <Tag color={config.color}>{config.label}</Tag>;
@@ -1128,6 +1341,7 @@ export default function ReceptionistDashboard() {
       title: 'Status',
       dataIndex: 'status',
       key: 'status',
+      width: 100,
       render: (status: string) => {
         const config = getStatusConfig(status);
         return <Tag color={config.color}>{config.label}</Tag>;
@@ -1136,6 +1350,8 @@ export default function ReceptionistDashboard() {
     {
       title: 'Actions',
       key: 'actions',
+      width: 180,
+      fixed: 'right' as const,
       render: (record: any) => {
         // Check if appointment is in the past
         const now = new Date();
@@ -1165,13 +1381,25 @@ export default function ReceptionistDashboard() {
           <Space>
             {/* Confirm button - for pending appointments */}
             {record.status === 'pending' && (
+              <>
             <Button
               size="small"
-              type="primary"
+                  type="default"
+                  icon={<CheckCircleOutlined style={{ color: '#52c41a' }} />}
               onClick={() => handleConfirmAppointment(record.id)}
-            >
-              Confirm
-            </Button>
+                  title="Confirm appointment"
+                  style={{ background: 'transparent', border: '1px solid #d9d9d9' }}
+                />
+                <Button
+                  size="small"
+                  type="default"
+                  danger
+                  icon={<CloseCircleOutlined style={{ color: '#ff4d4f' }} />}
+                  onClick={() => handleRejectAppointment(record.id)}
+                  title="Reject appointment"
+                  style={{ background: 'transparent', border: '1px solid #ffccc7' }}
+                />
+              </>
             )}
             
             {/* Check-in button - for confirmed appointments (when patient arrives) */}
@@ -1191,9 +1419,17 @@ export default function ReceptionistDashboard() {
               type="link"
               icon={<PhoneOutlined />}
               onClick={() => handleCall(record.phone)}
-            >
-              Call
-              </Button>
+              title="Call patient"
+            />
+            
+            {/* Message button - available for all statuses */}
+            <Button 
+              size="small"
+              type="link"
+              icon={<MessageOutlined />}
+              onClick={() => handleMessage(record.phone)}
+              title="Message patient"
+            />
             </Space>
           );
       },
@@ -1207,8 +1443,6 @@ export default function ReceptionistDashboard() {
     try {
       setIsWalkInSubmitting(true);
       const token = localStorage.getItem('auth-token');
-      const appointmentDateValue = values.appointmentDate as Dayjs | undefined;
-      const appointmentStartTime = values.appointmentStartTime as Dayjs | undefined;
 
       // Get patient ID - use foundPatient if available, or foundUser to create patient profile
       let patientId: number;
@@ -1251,19 +1485,60 @@ export default function ReceptionistDashboard() {
       const trimmedReason = values.reason?.trim() || 'Walk-in consultation';
       const trimmedNotes = values.notes?.trim();
 
-      // Format date and time
-      const appointmentDate = appointmentDateValue ? appointmentDateValue.format('YYYY-MM-DD') : dayjs().format('YYYY-MM-DD');
-      const appointmentTime = appointmentStartTime ? appointmentStartTime.format('HH:mm') : '09:00';
-      
-      // Calculate time slot
-      const startDateTime = appointmentStartTime || dayjs().hour(9).minute(0);
-      const duration = Number(values.durationMinutes) || 30;
-      const endDateTime = startDateTime.add(duration, 'minute');
-      const timeSlot = `${startDateTime.format('HH:mm')}-${endDateTime.format('HH:mm')}`;
+      // Format date - use selectedDate state or values.appointmentDate (which may be a string or dayjs object)
+      let appointmentDate: string;
+      if (selectedDate) {
+        appointmentDate = selectedDate.format('YYYY-MM-DD');
+      } else if (values.appointmentDate) {
+        // Check if it's already a string or a dayjs object
+        if (typeof values.appointmentDate === 'string') {
+          appointmentDate = values.appointmentDate;
+        } else if (values.appointmentDate && typeof values.appointmentDate.format === 'function') {
+          appointmentDate = values.appointmentDate.format('YYYY-MM-DD');
+        } else {
+          appointmentDate = dayjs().format('YYYY-MM-DD');
+        }
+      } else {
+        appointmentDate = dayjs().format('YYYY-MM-DD');
+      }
+
+      // Format time - use selectedSlot or default
+      let appointmentTime: string;
+      let timeSlot: string;
+      if (selectedSlot && values.timeSlot) {
+        // Extract start time from slot (format: "HH:mm-HH:mm" or "HH:mm")
+        const [startTime] = selectedSlot.split('-');
+        appointmentTime = startTime.trim();
+        timeSlot = values.timeSlot || selectedSlot;
+      } else if (values.appointmentTime) {
+        appointmentTime = values.appointmentTime;
+        timeSlot = values.timeSlot || `${appointmentTime}-${dayjs().hour(parseInt(appointmentTime.split(':')[0])).minute(parseInt(appointmentTime.split(':')[1])).add(30, 'minute').format('HH:mm')}`;
+      } else {
+        appointmentTime = '09:00';
+        timeSlot = '09:00-09:30';
+      }
+
+      // Ensure we have all required fields
+      if (!selectedDoctor?.id && !values.doctorId) {
+        message.error('Please select a doctor');
+        return;
+      }
+      if (!selectedDate && !appointmentDate) {
+        message.error('Please select a date');
+        return;
+      }
+      if (!selectedSlot && !timeSlot) {
+        message.error('Please select a time slot');
+        return;
+      }
+      if (!trimmedReason) {
+        message.error('Please enter a reason for the appointment');
+        return;
+      }
 
       const payload = {
         patientId,
-        doctorId: values.doctorId,
+        doctorId: selectedDoctor?.id || values.doctorId,
         hospitalId: context.hospitalId,
         appointmentDate,
         appointmentTime,
@@ -1273,6 +1548,8 @@ export default function ReceptionistDashboard() {
         priority: values.priority || 'normal',
         notes: trimmedNotes || undefined,
       };
+
+      console.log('📤 Sending appointment payload:', payload);
 
       const response = await fetch('/api/appointments', {
         method: 'POST',
@@ -1553,6 +1830,7 @@ export default function ReceptionistDashboard() {
   const openWalkInModal = () => {
     setIsWalkInModalOpen(true);
     setWalkInStep(0);
+    setAppointmentBookingStep(0);
     setFoundUser(null);
     setFoundPatient(null);
     setOtpVerified(false);
@@ -1653,21 +1931,40 @@ export default function ReceptionistDashboard() {
     }
   };
 
-  const handleDoctorSelect = (doctorId: number) => {
+  const handleDoctorSelect = async (doctorId: number) => {
     const doctor = doctors.find((d: any) => d.id === doctorId);
     setSelectedDoctor(doctor || null);
-    setAvailableSlots([]);
     setSelectedSlot('');
     setSlotBookings({});
     walkInForm.setFieldsValue({ timeSlot: undefined, doctorId });
+    
     if (doctor) {
-      const slots = getDoctorSlots(doctor);
-      if (selectedDate) {
-        const filteredSlots = slots.filter(slot => !isSlotInPast(slot, selectedDate));
+      // Auto-advance to date/time selection step and initialize date
+      setTimeout(() => {
+        console.log('🚀 Auto-advancing to date & time selection step');
+        setAppointmentBookingStep(1);
+        // Always initialize date to today when auto-advancing from doctor selection
+        const today = dayjs();
+        setSelectedDate(today);
+        walkInForm.setFieldsValue({ appointmentDate: today });
+        // Fetch slots for today - use the doctor from closure
+        const allSlots = getDoctorSlots(doctor);
+        const filteredSlots = allSlots.filter(slot => !isSlotInPast(slot, today));
         setAvailableSlots(filteredSlots);
-      } else {
-        setAvailableSlots(slots);
-      }
+        console.log(`📅 Filtered slots for date ${today.format('YYYY-MM-DD')}: ${filteredSlots.length} available`);
+        
+        // Fetch booked appointments for this doctor and date
+        const dateStr = today.format('YYYY-MM-DD');
+        fetchBookedAppointments(doctor.id, dateStr)
+          .then(bookings => {
+            setSlotBookings(bookings);
+            console.log('📅 Booked appointments for', dateStr, ':', bookings);
+          })
+          .catch(error => {
+            console.error('Error fetching booked appointments:', error);
+            setSlotBookings({});
+          });
+      }, 500);
     }
   };
 
@@ -1676,13 +1973,26 @@ export default function ReceptionistDashboard() {
     setSelectedSlot('');
     setSlotBookings({});
     walkInForm.setFieldsValue({ timeSlot: undefined, appointmentDate: date });
+    
     if (date && selectedDoctor) {
       const allSlots = getDoctorSlots(selectedDoctor);
       const filteredSlots = allSlots.filter(slot => !isSlotInPast(slot, date));
       setAvailableSlots(filteredSlots);
+      console.log(`📅 Filtered slots for date ${date.format('YYYY-MM-DD')}: ${filteredSlots.length} available`);
+      
+      // Fetch booked appointments for this doctor and date
       const dateStr = date.format('YYYY-MM-DD');
+      try {
       const bookings = await fetchBookedAppointments(selectedDoctor.id, dateStr);
       setSlotBookings(bookings);
+        console.log('📅 Booked appointments for', dateStr, ':', bookings);
+      } catch (error) {
+        console.error('Error fetching booked appointments:', error);
+        setSlotBookings({});
+      }
+    } else if (date && !selectedDoctor) {
+      // If date is selected but no doctor, clear slots
+      setAvailableSlots([]);
     }
   };
 
@@ -1795,7 +2105,7 @@ export default function ReceptionistDashboard() {
             borderBottom: '1px solid #E3F2FF',
           }}
         >
-          <ReceptionistSidebar selectedMenuKey={selectedMenuKey} />
+          <ReceptionistSidebar selectedMenuKey={selectedMenuKey} hospitalName={hospitalName} />
         </Sider>
       )}
 
@@ -1809,7 +2119,7 @@ export default function ReceptionistDashboard() {
           styles={{ body: { padding: 0 } }}
           width={260}
         >
-          <ReceptionistSidebar selectedMenuKey={selectedMenuKey} onMenuClick={() => setMobileDrawerOpen(false)} />
+          <ReceptionistSidebar selectedMenuKey={selectedMenuKey} hospitalName={hospitalName} onMenuClick={() => setMobileDrawerOpen(false)} />
         </Drawer>
       )}
 
@@ -2007,7 +2317,7 @@ export default function ReceptionistDashboard() {
                   display: 'flex', 
                   flexDirection: 'column',
                 overflow: 'hidden',
-                padding: isMobile ? 16 : 20,
+                padding: isMobile ? 12 : 16,
                 }}
               >
                 {appointmentTabs.length === 0 ? (
@@ -2051,7 +2361,7 @@ export default function ReceptionistDashboard() {
                             </Space>
                           ) : (
                           <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column', minHeight: 0, maxHeight: isMobile ? '60vh' : 'calc(100vh - 600px)' }}>
-                            <div style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden', minHeight: 0 }}>
+                            <div style={{ flex: 1, overflowY: 'auto', overflowX: 'auto', minHeight: 0 }}>
                           <Table
                             columns={appointmentColumns}
                             dataSource={appointmentsToShow}
@@ -2060,7 +2370,8 @@ export default function ReceptionistDashboard() {
                             loading={appointmentsLoading}
                             size={isMobile ? "small" : "middle"}
                                 scroll={{ 
-                                  x: isMobile ? 'max-content' : 'max-content',
+                                  x: 'max-content',
+                                  y: 'calc(100vh - 650px)',
                                 }}
                                 rowClassName={(record: any) =>
                                   record.status === 'pending' ? 'appointment-row-pending' : ''
@@ -2136,8 +2447,8 @@ export default function ReceptionistDashboard() {
             open={isWalkInModalOpen}
             onCancel={closeWalkInModal}
             footer={null}
-            width={760}
-            styles={{ body: { padding: '24px 32px' } }}
+            width={1000}
+            styles={{ body: { padding: '24px 32px', maxHeight: '85vh', overflowY: 'auto' } }}
           >
             {/* Step 0: Mobile Number Lookup */}
             {walkInStep === 0 && (
@@ -2420,7 +2731,7 @@ export default function ReceptionistDashboard() {
 
             {/* Step 2 (existing) or Step 4 (new): Appointment Booking - Redesigned to match patient dashboard */}
             {((walkInStep === 2 && foundUser) || (walkInStep === 4 && foundPatient)) ? (
-              <div style={{ maxHeight: '70vh', overflowY: 'auto', paddingRight: 8 }}>
+              <div style={{ maxHeight: '75vh', overflowY: 'auto', paddingRight: 8 }}>
                 <Form
                   layout="vertical"
                   form={walkInForm}
@@ -2451,11 +2762,54 @@ export default function ReceptionistDashboard() {
                     type="info"
                     showIcon
                     style={{ marginBottom: 24 }}
+                    action={
+                      <Space>
+                        <Button 
+                          size="small" 
+                          onClick={() => {
+                            // Go back to patient selection
+                            if (foundUser) {
+                              setWalkInStep(1);
+                            } else if (foundPatient) {
+                              setWalkInStep(3);
+                            }
+                            setSelectedDoctor(null);
+                            setSelectedDate(null);
+                            setSelectedSlot('');
+                            setAvailableSlots([]);
+                            setSlotBookings({});
+                            setAppointmentBookingStep(0);
+                          }}
+                        >
+                          Change Patient
+                        </Button>
+                      </Space>
+                    }
                   />
 
-                  {/* Step 1: Doctor Selection */}
+                  {/* Step 0: Doctor Selection */}
+                  {appointmentBookingStep === 0 && (
                   <div style={{ marginBottom: 32 }}>
-                    <Title level={5} style={{ marginBottom: 16 }}>Select Doctor</Title>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+                      <Title level={5} style={{ margin: 0 }}>Select Doctor</Title>
+                      {selectedDoctor && (
+                        <Button 
+                          size="small" 
+                          type="link"
+                          onClick={() => {
+                            setSelectedDoctor(null);
+                            setSelectedDate(null);
+                            setSelectedSlot('');
+                            setAvailableSlots([]);
+                            setSlotBookings({});
+                            setAppointmentBookingStep(0);
+                            walkInForm.setFieldsValue({ doctorId: undefined, appointmentDate: undefined, timeSlot: undefined });
+                          }}
+                        >
+                          Change Doctor
+                        </Button>
+                      )}
+                    </div>
                     {doctorsLoading ? (
                       <Spin />
                     ) : doctors.length === 0 ? (
@@ -2564,12 +2918,54 @@ export default function ReceptionistDashboard() {
                     <Form.Item name="doctorId" rules={[{ required: true, message: 'Please select a doctor' }]} style={{ display: 'none' }}>
                       <Input value={selectedDoctor?.id} />
                     </Form.Item>
-                  </div>
 
-                  {/* Step 2: Date Selection */}
+                    {/* Next Button for Doctor Selection Step */}
                   {selectedDoctor && (
+                      <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 24 }}>
+                        <Button
+                          type="primary"
+                          size="large"
+                          onClick={() => {
+                            setAppointmentBookingStep(1);
+                            // Initialize date to today if not set
+                            if (!selectedDate) {
+                              const today = dayjs();
+                              setSelectedDate(today);
+                              walkInForm.setFieldsValue({ appointmentDate: today });
+                              handleDateChange(today);
+                            }
+                          }}
+                        >
+                          Next: Select Date & Time
+                        </Button>
+                      </div>
+                    )}
+                  </div>
+                  )}
+
+                  {/* Step 1: Date and Time Selection */}
+                  {appointmentBookingStep === 1 && selectedDoctor && (
                     <div style={{ marginBottom: 32 }}>
-                      <Title level={5} style={{ marginBottom: 16 }}>Select Date</Title>
+                      {/* Date Selection */}
+                      <div style={{ marginBottom: 32 }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+                        <Title level={5} style={{ margin: 0 }}>Select Date</Title>
+                        {selectedDate && (
+                          <Button 
+                            size="small" 
+                            type="link"
+                            onClick={() => {
+                              setSelectedDate(null);
+                              setSelectedSlot('');
+                              setAvailableSlots([]);
+                              setSlotBookings({});
+                              walkInForm.setFieldsValue({ appointmentDate: undefined, timeSlot: undefined });
+                            }}
+                          >
+                            Change Date
+                          </Button>
+                        )}
+                      </div>
                       <Card variant="borderless" style={{ borderRadius: '12px', border: '1px solid #e2e8f0', marginBottom: 24 }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', justifyContent: 'space-between', flexWrap: 'wrap' }}>
                           {[0, 1, 2, 3, 4, 5, 6].map(offset => {
@@ -2611,12 +3007,25 @@ export default function ReceptionistDashboard() {
                         <Input value={selectedDate?.format('YYYY-MM-DD')} />
                       </Form.Item>
                     </div>
-                  )}
 
-                  {/* Step 3: Time Slot Selection */}
-                  {selectedDoctor && selectedDate && (
+                      {/* Time Slot Selection */}
+                      {selectedDate && (
                     <div style={{ marginBottom: 32 }}>
-                      <Title level={5} style={{ marginBottom: 16 }}>Select Time Slot</Title>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+                        <Title level={5} style={{ margin: 0 }}>Select Time Slot</Title>
+                        {selectedSlot && (
+                          <Button 
+                            size="small" 
+                            type="link"
+                            onClick={() => {
+                              setSelectedSlot('');
+                              walkInForm.setFieldsValue({ timeSlot: undefined });
+                            }}
+                          >
+                            Change Time
+                          </Button>
+                        )}
+                      </div>
                       <Card variant="borderless" style={{ borderRadius: '12px', border: '1px solid #e2e8f0', marginBottom: 24 }}>
                         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(120px, 1fr))', gap: 12, padding: '20px' }}>
                           {availableSlots.length > 0 ? (
@@ -2706,8 +3115,8 @@ export default function ReceptionistDashboard() {
                     </div>
                   )}
 
-                  {/* Step 4: Appointment Details */}
-                  {selectedDoctor && selectedDate && selectedSlot && (
+                      {/* Appointment Details - Show when slot is selected */}
+                      {selectedSlot && (
                     <div style={{ marginBottom: 32 }}>
                       <Title level={5} style={{ marginBottom: 16 }}>Appointment Details</Title>
                       <Row gutter={16}>
@@ -2738,14 +3147,18 @@ export default function ReceptionistDashboard() {
                     </div>
                   )}
 
+                      {/* Navigation Buttons */}
                   <Space style={{ width: '100%', justifyContent: 'space-between', marginTop: 24 }}>
-                    <Button onClick={() => {
-                      if (foundUser && walkInStep === 2) {
-                        setWalkInStep(1);
-                      } else if (walkInStep === 4) {
-                        setWalkInStep(3);
-                      }
-                    }}>
+                        <Button 
+                          onClick={() => {
+                            setAppointmentBookingStep(0);
+                            setSelectedDate(null);
+                            setSelectedSlot('');
+                            setAvailableSlots([]);
+                            setSlotBookings({});
+                            walkInForm.setFieldsValue({ appointmentDate: undefined, timeSlot: undefined });
+                          }}
+                        >
                       Back
                     </Button>
                     <Button
@@ -2758,6 +3171,8 @@ export default function ReceptionistDashboard() {
                       Book Appointment
                     </Button>
                   </Space>
+                    </div>
+                  )}
                 </Form>
               </div>
             ) : null}
@@ -3004,6 +3419,67 @@ export default function ReceptionistDashboard() {
               <Text type="secondary">No patient information available</Text>
             )}
           </Drawer>
+
+          {/* Rejection Modal */}
+          <Modal
+            title="Reject Appointment"
+            open={isRejectModalOpen}
+            onCancel={() => {
+              setIsRejectModalOpen(false);
+              setSelectedAppointmentForRejection(null);
+              rejectionForm.resetFields();
+            }}
+            footer={null}
+            width={500}
+          >
+            <Form
+              form={rejectionForm}
+              layout="vertical"
+              onFinish={handleRejectSubmit}
+            >
+              <Alert
+                message="Reject Appointment"
+                description="Please select a reason for rejecting this appointment. The patient will be notified of this cancellation reason."
+                type="warning"
+                showIcon
+                style={{ marginBottom: 24 }}
+              />
+              
+              <Form.Item
+                name="cancellationReason"
+                label="Cancellation Reason"
+                rules={[{ required: true, message: 'Please select a cancellation reason' }]}
+              >
+                <Select
+                  placeholder="Select a reason for rejection"
+                  size="large"
+                >
+                  <Select.Option value="Doctor is not available">Doctor is not available</Select.Option>
+                  <Select.Option value="Time slot is already booked">Time slot is already booked</Select.Option>
+                  <Select.Option value="Hospital is closed on this date">Hospital is closed on this date</Select.Option>
+                  <Select.Option value="Emergency situation">Emergency situation</Select.Option>
+                  <Select.Option value="Patient requested cancellation">Patient requested cancellation</Select.Option>
+                  <Select.Option value="Duplicate appointment">Duplicate appointment</Select.Option>
+                  <Select.Option value="Other">Other</Select.Option>
+                </Select>
+              </Form.Item>
+
+              <Form.Item>
+                <Space style={{ width: '100%', justifyContent: 'flex-end' }}>
+                  <Button onClick={() => {
+                    setIsRejectModalOpen(false);
+                    setSelectedAppointmentForRejection(null);
+                    rejectionForm.resetFields();
+                  }}>
+                    Cancel
+                  </Button>
+                  <Button type="primary" danger htmlType="submit">
+                    Reject Appointment
+                  </Button>
+                </Space>
+              </Form.Item>
+            </Form>
+          </Modal>
           </div>
         </Content>
       </Layout>

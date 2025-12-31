@@ -4,7 +4,7 @@ import { z } from 'zod';
 import { authenticateToken, authorizeRoles } from '../middleware/auth';
 import type { AuthenticatedRequest } from '../types';
 import * as receptionService from '../services/reception.service';
-import { getReceptionistContext } from '../services/reception.service';
+import { getReceptionistContext, getReceptionistByUserId } from '../services/reception.service';
 
 const router = Router();
 
@@ -88,23 +88,41 @@ router.get(
 );
 
 /**
- * Get receptionist profile (including hospitalId)
+ * Get receptionist profile (including hospitalId and hospitalName)
+ * Similar to /api/doctors/profile - returns full receptionist profile with hospital name
  */
 router.get(
   '/profile',
   authenticateToken,
   authorizeRoles('receptionist'),
   async (req: AuthenticatedRequest, res) => {
+    console.log('🔍 /api/reception/profile route hit');
     try {
-      const receptionistId = req.user!.id;
-      const context = await getReceptionistContext(receptionistId);
-      if (!context) {
-        return res.status(404).json({ message: 'Receptionist not found' });
+      const user = req.user;
+      if (!user) {
+        console.log('❌ No user in request');
+        return res.status(401).json({ message: 'Unauthorized' });
       }
-      res.json({ hospitalId: context.hospitalId });
-    } catch (err) {
-      console.error('Get receptionist profile error:', err);
-      res.status(500).json({ message: 'Failed to fetch receptionist profile' });
+      
+      console.log(`📋 Fetching receptionist profile for user ID: ${user.id}`);
+      
+      const receptionistProfile = await getReceptionistByUserId(user.id);
+      
+      console.log(`📋 Receptionist profile result:`, receptionistProfile ? { 
+        id: receptionistProfile.id, 
+        hospitalId: receptionistProfile.hospitalId, 
+        hospitalName: receptionistProfile.hospitalName 
+      } : 'null');
+      
+      if (!receptionistProfile) {
+        console.log(`⚠️ No receptionist profile found for user ID: ${user.id}`);
+        return res.status(404).json({ message: 'Receptionist profile not found' });
+      }
+      
+      res.json(receptionistProfile);
+    } catch (err: any) {
+      console.error('❌ Receptionist profile error:', err);
+      res.status(500).json({ message: err.message || 'Failed to fetch receptionist profile' });
     }
   }
 );

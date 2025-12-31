@@ -48,6 +48,7 @@ import dayjs from 'dayjs';
 import { PatientSidebar } from '../components/layout/PatientSidebar';
 import { useResponsive } from '../hooks/use-responsive';
 import { formatTimeSlot12h, parseTimeTo24h } from '../lib/time';
+import { playNotificationSound } from '../lib/notification-sounds';
 
 const { Option } = Select;
 const { TextArea } = Input;
@@ -725,6 +726,9 @@ export default function BookAppointment() {
       if (response.ok) {
         const result = await response.json();
         console.log('✅ Appointment booked successfully:', result);
+        
+        // Play booking success sound
+        playNotificationSound('booking');
         
         // Invalidate all appointment queries to refresh dashboards
         queryClient.invalidateQueries({ queryKey: ['/api/appointments/my'] });
