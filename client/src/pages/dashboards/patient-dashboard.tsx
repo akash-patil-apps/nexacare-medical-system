@@ -38,6 +38,7 @@ import { formatDate, formatDateTime } from '../../lib/utils';
 import { formatTimeSlot12h } from '../../lib/time';
 import { subscribeToAppointmentEvents } from '../../lib/appointments-events';
 import { PatientSidebar } from '../../components/layout/PatientSidebar';
+import { NotificationBell } from '../../components/notifications/NotificationBell';
 
 const { Content, Sider } = Layout;
 const { Title, Text } = Typography;
@@ -489,6 +490,12 @@ export default function PatientDashboard() {
           }}
         >
           <div style={{ paddingBottom: 24 }}>
+            {/* Notifications Bell (top-right) */}
+            {!isMobile && (
+              <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 8 }}>
+                <NotificationBell />
+              </div>
+            )}
 
             {/* Mobile Menu Button */}
             {isMobile && (
@@ -500,7 +507,7 @@ export default function PatientDashboard() {
                   style={{ fontSize: '18px' }}
                 />
                 <Title level={4} style={{ margin: 0 }}>Dashboard</Title>
-                <div style={{ width: 32 }} /> {/* Spacer for centering */}
+                <NotificationBell />
               </div>
             )}
 

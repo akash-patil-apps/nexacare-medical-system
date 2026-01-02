@@ -238,8 +238,15 @@ export const appointments = pgTable("appointments", {
 	priority: text().default('normal'),
 	symptoms: text(),
 	notes: text(),
+	tokenNumber: integer("token_number"),
+	checkedInAt: timestamp("checked_in_at", { mode: 'string' }),
 	confirmedAt: timestamp("confirmed_at", { mode: 'string' }),
 	completedAt: timestamp("completed_at", { mode: 'string' }),
+	rescheduledAt: timestamp("rescheduled_at", { mode: 'string' }),
+	rescheduledFromDate: timestamp("rescheduled_from_date", { mode: 'string' }),
+	rescheduledFromTimeSlot: text("rescheduled_from_time_slot"),
+	rescheduleReason: text("reschedule_reason"),
+	rescheduledBy: integer("rescheduled_by"),
 	createdBy: integer("created_by"),
 	createdAt: timestamp("created_at", { mode: 'string' }).defaultNow(),
 }, (table) => [
@@ -267,6 +274,11 @@ export const appointments = pgTable("appointments", {
 			columns: [table.createdBy],
 			foreignColumns: [users.id],
 			name: "appointments_created_by_users_id_fk"
+		}),
+	foreignKey({
+			columns: [table.rescheduledBy],
+			foreignColumns: [users.id],
+			name: "appointments_rescheduled_by_users_id_fk"
 		}),
 ]);
 

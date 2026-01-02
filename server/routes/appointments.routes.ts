@@ -339,6 +339,39 @@ router.patch('/:appointmentId/check-in', authorizeRoles('RECEPTIONIST'), async (
   }
 });
 
+// Reschedule appointment (for receptionist)
+router.patch('/:appointmentId/reschedule', authorizeRoles('RECEPTIONIST'), async (req: AuthenticatedRequest, res) => {
+  try {
+    const { appointmentDate, appointmentTime, timeSlot, rescheduleReason } = req.body || {};
+    if (!appointmentDate || !appointmentTime || !timeSlot || !rescheduleReason) {
+      return res.status(400).json({ message: 'Missing required fields for reschedule' });
+    }
+
+    // Get receptionist ID from user
+    const receptionist = await db
+      .select()
+      .from(receptionists)
+      .where(eq(receptionists.userId, req.user?.id || 0))
+      .limit(1);
+    if (receptionist.length === 0) {
+      return res.status(403).json({ message: 'Receptionist not found' });
+    }
+
+    const appointment = await appointmentService.rescheduleAppointment(
+      +req.params.appointmentId,
+      { appointmentDate, appointmentTime, timeSlot, rescheduleReason },
+      { userId: req.user?.id || 0, receptionistId: receptionist[0].id },
+    );
+    res.json(appointment);
+  } catch (err: any) {
+    console.error('❌ Reschedule appointment error:', err);
+    res.status(400).json({
+      message: err.message || 'Failed to reschedule appointment',
+      error: err.toString(),
+    });
+  }
+});
+
 // Get appointments by status
 router.get('/status/:status', async (req, res) => {
   try {

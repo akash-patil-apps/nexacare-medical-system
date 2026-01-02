@@ -1,0 +1,110 @@
+{
+  "project": {
+    "name": "nexacare-medical-system",
+    "type": "full-stack web app",
+    "domain": "hospital / clinic management (OPD-focused today, IPD largely not implemented yet)",
+    "monorepo_structure": {
+      "client": "React + Vite app in client/",
+      "server": "Express API in server/",
+      "db_schema": "Drizzle schema in shared/schema.ts and drizzle/schema.ts"
+    }
+  },
+  "tech_stack": {
+    "frontend": {
+      "framework": "React 18",
+      "language": "TypeScript",
+      "ui": "Ant Design 5",
+      "routing": "wouter",
+      "data_fetching": "@tanstack/react-query",
+      "date_time": "dayjs"
+    },
+    "backend": {
+      "runtime": "Node.js",
+      "framework": "Express",
+      "language": "TypeScript (tsx for dev)",
+      "validation": "zod + drizzle-zod",
+      "realtime": "ws + server-sent/events style endpoints (events routes present)"
+    },
+    "database": {
+      "engine": "PostgreSQL (Neon supported via @neondatabase/serverless)",
+      "orm": "drizzle-orm",
+      "migrations": "drizzle-kit"
+    }
+  },
+  "actors_and_roles": [
+    "PATIENT",
+    "DOCTOR",
+    "RECEPTIONIST",
+    "HOSPITAL_ADMIN (hospital role in codebase)",
+    "LAB_TECHNICIAN",
+    "SYSTEM_ADMIN (limited / implied)"
+  ],
+  "implemented_modules_high_level": [
+    "Authentication (OTP-based flows + role-based access)",
+    "Hospital onboarding/registration",
+    "Patient onboarding/registration",
+    "Doctor registration",
+    "Appointment booking (patient) + walk-in booking (receptionist)",
+    "Appointment lifecycle (pending/confirmed/completed/cancelled) with filtering on dashboards",
+    "Receptionist operational actions (confirm, reject with reason, check-in)",
+    "Doctor dashboards: schedule + prescriptions workflow",
+    "Prescription creation + listing",
+    "Lab reports: routes/services exist; UI partially present",
+    "Notifications: API routes/services exist; UI presence varies",
+    "Cross-dashboard update plumbing via events/subscribe patterns"
+  ],
+  "key_frontend_pages": {
+    "booking": [
+      "client/src/pages/book-appointment.tsx"
+    ],
+    "dashboards": [
+      "client/src/pages/dashboards/patient-dashboard.tsx",
+      "client/src/pages/dashboards/patient-appointments.tsx",
+      "client/src/pages/dashboards/doctor-dashboard.tsx",
+      "client/src/pages/dashboards/receptionist-dashboard.tsx",
+      "client/src/pages/dashboards/hospital-dashboard.tsx",
+      "client/src/pages/dashboards/lab-dashboard.tsx"
+    ],
+    "auth": [
+      "client/src/pages/auth/login.tsx",
+      "client/src/pages/auth/register.tsx",
+      "client/src/pages/auth/otp-verification.tsx"
+    ]
+  },
+  "key_backend_routes": [
+    "server/routes/auth.routes.ts",
+    "server/routes/appointments.routes.ts",
+    "server/routes/reception.routes.ts",
+    "server/routes/doctors.routes.ts",
+    "server/routes/hospitals.routes.ts",
+    "server/routes/patients.routes.ts",
+    "server/routes/prescriptions.routes.ts",
+    "server/routes/labs.routes.ts",
+    "server/routes/notifications.routes.ts",
+    "server/routes/events.routes.ts"
+  ],
+  "appointment_flow": {
+    "patient_booking": "Patient selects hospital -> selects doctor -> selects date & time -> submits appointment (typically pending).",
+    "receptionist_flow": "Receptionist sees pending -> confirm (confirmed) or reject/cancel with reason; receptionist can also book walk-in appointments (auto-confirmed).",
+    "doctor_flow": "Doctor sees confirmed schedule -> completes appointment and can generate prescription.",
+    "patient_view": "Patient sees upcoming/past, including cancelled appointments shown in upcoming with cancellation reason."
+  },
+  "notable_recent_work": [
+    "Notification sounds utility added (client/src/lib/notification-sounds.ts) and integrated into dashboards and booking flow",
+    "Cancelled appointments shown as upcoming for patient with displayed cancellation reason",
+    "Receptionist dashboard action buttons switched to icon-based actions; rejection modal with predefined reasons",
+    "Walk-in booking improved with step-based UI and slot availability fixes",
+    "Age column added to receptionist + doctor appointment tables (requires patient DOB in appointment queries)"
+  ],
+  "current_limitations_vs_full_hms": [
+    "No IPD/ADT (admission/transfer/discharge) workflows yet",
+    "No bed/ward management, nursing charting, medication administration record, diet, OT scheduling, ICU flows",
+    "No billing/claims engine (packages, payer, TPA, invoices, ledger, refunds) beyond basic revenue KPIs",
+    "No pharmacy inventory and dispensing workflow (stock, purchase, batch/expiry, controlled drugs)",
+    "No LIS/RIS/PACS integrations (HL7/FHIR/DICOM) and limited lab order lifecycle UI",
+    "No full EMR clinical documentation suite (problem list, allergies, vitals charting, CPOE, clinical notes templates)",
+    "No audit/compliance-grade reporting and access logs"
+  ]
+}
+
+

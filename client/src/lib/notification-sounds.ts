@@ -93,3 +93,4 @@ export const areNotificationSoundsEnabled = (): boolean => {
   return localStorage.getItem('notification-sounds-enabled') !== 'false';
 };
 
+

@@ -171,8 +171,17 @@ export const appointments = pgTable("appointments", {
   priority: text("priority").default("normal"),
   symptoms: text("symptoms"),
   notes: text("notes"),
+  // OPD token/queue basics (v1)
+  tokenNumber: integer("token_number"),
+  checkedInAt: timestamp("checked_in_at"),
   confirmedAt: timestamp("confirmed_at"),
   completedAt: timestamp("completed_at"),
+  // Appointment rescheduling (v1)
+  rescheduledAt: timestamp("rescheduled_at"),
+  rescheduledFromDate: timestamp("rescheduled_from_date"),
+  rescheduledFromTimeSlot: text("rescheduled_from_time_slot"),
+  rescheduleReason: text("reschedule_reason"),
+  rescheduledBy: integer("rescheduled_by").references(() => users.id),
   createdBy: integer("created_by").references(() => users.id),
   createdAt: timestamp("created_at").defaultNow(),
 });

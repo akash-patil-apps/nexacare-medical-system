@@ -53,6 +53,7 @@ import { formatTimeSlot12h, parseTimeTo24h } from '../../lib/time';
 import { getISTStartOfDay, isSameDayIST } from '../../lib/timezone';
 import { normalizeStatus, APPOINTMENT_STATUS } from '../../lib/appointment-status';
 import { playNotificationSound } from '../../lib/notification-sounds';
+import { NotificationBell } from '../../components/notifications/NotificationBell';
 
 const { Content, Sider } = Layout;
 const { Title, Text } = Typography;
@@ -78,6 +79,13 @@ export default function ReceptionistDashboard() {
   const [isRejectModalOpen, setIsRejectModalOpen] = useState(false);
   const [selectedAppointmentForRejection, setSelectedAppointmentForRejection] = useState<number | null>(null);
   const [rejectionForm] = Form.useForm();
+  const [isRescheduleModalOpen, setIsRescheduleModalOpen] = useState(false);
+  const [appointmentForReschedule, setAppointmentForReschedule] = useState<any>(null);
+  const [rescheduleForm] = Form.useForm();
+  const [rescheduleSelectedDate, setRescheduleSelectedDate] = useState<Dayjs | null>(null);
+  const [rescheduleAvailableSlots, setRescheduleAvailableSlots] = useState<string[]>([]);
+  const [rescheduleSlotBookings, setRescheduleSlotBookings] = useState<Record<string, number>>({});
+  const [isRescheduling, setIsRescheduling] = useState(false);
   const [walkInStep, setWalkInStep] = useState(0); // 0: Mobile lookup, 1: User found/New user, 2: OTP (if new), 3: Registration (if new), 4: Appointment booking
   const [foundUser, setFoundUser] = useState<any>(null); // Existing user data
   const [foundPatient, setFoundPatient] = useState<any>(null); // Existing patient data
@@ -86,7 +94,7 @@ export default function ReceptionistDashboard() {
   const [sendingOtp, setSendingOtp] = useState(false);
   const [verifyingOtp, setVerifyingOtp] = useState(false);
   const [dateMode, setDateMode] = useState<'today' | 'tomorrow' | 'custom'>('today');
-  const [activeAppointmentTab, setActiveAppointmentTab] = useState<string>('today');
+  const [activeAppointmentTab, setActiveAppointmentTab] = useState<string>('today_all');
   const [patientInfoDrawerOpen, setPatientInfoDrawerOpen] = useState(false);
   const [patientInfo, setPatientInfo] = useState<any>(null);
   const [patientInfoLoading, setPatientInfoLoading] = useState(false);
@@ -133,18 +141,28 @@ export default function ReceptionistDashboard() {
           appointmentDate = new Date(appointmentDate);
         }
         
+        const tokenFromNotes = (() => {
+          const notes = (apt.notes || '').toString();
+          const m = notes.match(/Token:\s*(\d+)/i);
+          return m ? Number(m[1]) : null;
+        })();
+
         return {
           id: apt.id,
           patientId: apt.patientId || apt.patient_id,
+          doctorId: apt.doctorId || apt.doctor_id,
           patient: apt.patientName || 'Unknown Patient',
           patientDateOfBirth: apt.patientDateOfBirth || null,
+          patientBloodGroup: apt.patientBloodGroup || null,
           doctor: apt.doctorName || 'Unknown Doctor',
           time: apt.timeSlot || apt.appointmentTime || 'N/A',
           status: apt.status || 'pending',
           department: apt.doctorSpecialty || 'General',
-          phone: apt.patientPhone || 'N/A',
+          phone: apt.patientPhone || apt.patientMobile || apt.patientPhoneNumber || 'N/A',
           type: apt.type || 'online',
           paymentStatus: apt.paymentStatus || null,
+          tokenNumber: (apt.tokenNumber ?? tokenFromNotes) ?? null,
+          checkedInAt: apt.checkedInAt ?? null,
           date: apt.appointmentDate,
           dateObj: appointmentDate,
         };
@@ -226,27 +244,23 @@ export default function ReceptionistDashboard() {
     refetchInterval: 5000,
   });
 
-  // Get notifications for receptionist
+  // Get notifications for receptionist (for KPI badge only)
   const { data: notifications = [] } = useQuery({
     queryKey: ['/api/notifications/me'],
     queryFn: async () => {
       const token = localStorage.getItem('auth-token');
       const response = await fetch('/api/notifications/me', {
         headers: {
-          'Authorization': `Bearer ${token}`
-        }
+          'Authorization': `Bearer ${token}`,
+        },
       });
-      if (!response.ok) {
-        console.log('⚠️ Notifications API not ready yet');
-        return [];
-      }
+      if (!response.ok) return [];
       return response.json();
     },
     enabled: !!user,
     refetchInterval: 15000,
+    refetchOnWindowFocus: true,
   });
-
-
   const { data: doctors = [], isLoading: doctorsLoading } = useQuery({
     queryKey: ['/api/reception/doctors'],
     queryFn: async () => {
@@ -315,18 +329,25 @@ export default function ReceptionistDashboard() {
     return null;
   }, [receptionistProfile?.hospitalName, receptionistProfile, profileLoading]);
 
-  // Filter appointments that are today or in the future (by date and time)
-  // Receptionists need to see pending (to confirm), confirmed (to check-in), and cancelled appointments
-  // Pending appointments should ALWAYS be visible (even if the slot time has already passed) so they can be confirmed.
+  // Filter appointments that are today or in the future (IST day-based)
+  // Receptionists need to see pending (to confirm), confirmed (to check-in), and cancelled appointments.
+  // IMPORTANT: For reception operations, "Today" appointments must remain visible even if the scheduled slot time has passed.
   const futureAppointments = useMemo(() => {
-    const now = new Date();
-    const todayStart = new Date(now);
-    todayStart.setHours(0, 0, 0, 0);
+    const todayStartIST = getISTStartOfDay();
     
     return appointments
       .filter((apt: any) => {
-        // Show pending, confirmed, and cancelled appointments
-        if (apt.status !== 'confirmed' && apt.status !== 'pending' && apt.status !== 'cancelled') {
+        const normalizedStatus = normalizeStatus(apt.status);
+
+        // Show pending, confirmed, cancelled, and (edge-case) checked-in/attended for future-day appointments.
+        // (If someone mistakenly creates a future appointment as checked-in, we still want it visible.)
+        if (
+          normalizedStatus !== APPOINTMENT_STATUS.CONFIRMED &&
+          normalizedStatus !== APPOINTMENT_STATUS.PENDING &&
+          normalizedStatus !== APPOINTMENT_STATUS.CANCELLED &&
+          normalizedStatus !== APPOINTMENT_STATUS.CHECKED_IN &&
+          normalizedStatus !== APPOINTMENT_STATUS.ATTENDED
+        ) {
           return false;
         }
         
@@ -341,67 +362,14 @@ export default function ReceptionistDashboard() {
             return false;
           }
           
-          // Compute day-only for past-day logic
-          const appointmentDay = new Date(appointmentDateTime);
-          appointmentDay.setHours(0, 0, 0, 0);
+          // Compute day-only in IST
+          const appointmentDayIST = getISTStartOfDay(appointmentDateTime);
           
-          // If appointment day is before today and still pending, hide from Upcoming table
-          if (apt.status === 'pending' && appointmentDay < todayStart) {
-          return false;
-        }
+          // Hide anything strictly before today (IST)
+          if (appointmentDayIST.getTime() < todayStartIST.getTime()) return false;
           
-          // For cancelled appointments, only show if they're today or in the future
-          if (apt.status === 'cancelled' && appointmentDay < todayStart) {
-          return false;
-        }
-        
-          // Parse time from appointmentTime or timeSlot
-          let appointmentTime = new Date(appointmentDateTime);
-          
-          if (apt.time) {
-            // Parse time string (e.g., "09:00", "09:00 AM", "14:30")
-            const timeStr = apt.time.trim();
-            const timeMatch = timeStr.match(/(\d{1,2}):(\d{2})\s*(AM|PM|am|pm)?/i);
-            
-            if (timeMatch) {
-              let hours = parseInt(timeMatch[1]);
-              const minutes = parseInt(timeMatch[2]);
-              const period = timeMatch[3]?.toUpperCase();
-              
-              // Handle 12-hour format
-              if (period === 'PM' && hours !== 12) {
-                hours += 12;
-              } else if (period === 'AM' && hours === 12) {
-                hours = 0;
-              }
-              
-              appointmentTime.setHours(hours, minutes, 0, 0);
-            } else {
-              // Try 24-hour format
-              const parts = timeStr.split(':');
-              if (parts.length >= 2) {
-                const hours = parseInt(parts[0]) || 9;
-                const minutes = parseInt(parts[1]) || 0;
-                appointmentTime.setHours(hours, minutes, 0, 0);
-              } else {
-                // Default to 9 AM if can't parse
-                appointmentTime.setHours(9, 0, 0, 0);
-              }
-            }
-          } else {
-            // No time info, default to start of day (midnight)
-            appointmentTime.setHours(0, 0, 0, 0);
-          }
-          
-          // For pending appointments: show if they're today or in the future (even if time has passed today)
-          // This allows receptionists to confirm pending appointments even if the scheduled time has passed
-          if (apt.status === 'pending') {
-            // Show if appointment is today or in the future (by date only, not time)
-            return appointmentDay >= todayStart;
-          }
-          
-          // For confirmed and cancelled appointments: show if they're today or in the future (by date and time)
-          return appointmentTime >= now;
+          // For v1: keep all Today+Future for pending/confirmed/cancelled (day-based, IST)
+          return true;
         } catch (error) {
           console.error(`❌ Error checking date/time for appointment ${apt.id}:`, error);
           return false;
@@ -418,10 +386,7 @@ export default function ReceptionistDashboard() {
 
   // Group appointments by date for tabs
   const appointmentsByDate = useMemo(() => {
-    const now = new Date();
-    const today = new Date(now);
-    today.setHours(0, 0, 0, 0);
-
+    const today = getISTStartOfDay();
     const tomorrow = new Date(today);
     tomorrow.setDate(tomorrow.getDate() + 1);
     
@@ -433,8 +398,9 @@ export default function ReceptionistDashboard() {
     futureAppointments.forEach((apt: any) => {
       if (!apt.dateObj && !apt.date) return;
 
-      const appointmentDate = apt.dateObj || new Date(apt.date);
-      appointmentDate.setHours(0, 0, 0, 0);
+      // Don't mutate `apt.dateObj` (it is used elsewhere for time comparisons)
+      const rawDate = apt.dateObj || new Date(apt.date);
+      const appointmentDate = getISTStartOfDay(rawDate);
       
       const dateKey = appointmentDate.getTime();
       const todayKey = today.getTime();
@@ -472,41 +438,95 @@ export default function ReceptionistDashboard() {
     });
   }, [appointments]);
 
+  // All appointments for today (for "Today (All)" tab) - Using IST
+  const todayAllAppointments = useMemo(() => {
+    const todayIST = getISTStartOfDay();
+    return appointments.filter((apt: any) => {
+      if (!apt.date && !apt.dateObj) return false;
+      const d = apt.dateObj || new Date(apt.date);
+      if (isNaN(d.getTime())) return false;
+      return isSameDayIST(d, todayIST);
+    });
+  }, [appointments]);
+
+  // Pending appointments (Today + Future) - receptionist needs to see all that require action
+  const pendingAppointments = useMemo(() => {
+    return futureAppointments.filter((apt: any) => normalizeStatus(apt.status) === APPOINTMENT_STATUS.PENDING);
+  }, [futureAppointments]);
+
+  // Confirmed appointments (Today + Future)
+  const confirmedAppointments = useMemo(() => {
+    return futureAppointments.filter((apt: any) => normalizeStatus(apt.status) === APPOINTMENT_STATUS.CONFIRMED);
+  }, [futureAppointments]);
+
+  // Checked-in appointments for today (checked-in / attended) - Using IST
+  const checkedInTodayAppointments = useMemo(() => {
+    const todayIST = getISTStartOfDay();
+    return appointments.filter((apt: any) => {
+      const normalizedStatus = normalizeStatus(apt.status);
+      if (
+        normalizedStatus !== APPOINTMENT_STATUS.CHECKED_IN &&
+        normalizedStatus !== APPOINTMENT_STATUS.ATTENDED
+      ) {
+        return false;
+      }
+      if (!apt.date && !apt.dateObj) return false;
+      const d = apt.dateObj || new Date(apt.date);
+      if (isNaN(d.getTime())) return false;
+      return isSameDayIST(d, todayIST);
+    });
+  }, [appointments]);
+
+  // In consultation appointments for today - Using IST
+  const inConsultationTodayAppointments = useMemo(() => {
+    return todayAllAppointments.filter((apt: any) => normalizeStatus(apt.status) === APPOINTMENT_STATUS.IN_CONSULTATION);
+  }, [todayAllAppointments]);
+
   // Get appointments for active tab (only future appointments)
   const appointmentsToShow = useMemo(() => {
-    if (activeAppointmentTab === 'completed') {
-      return completedTodayAppointments;
+    switch (activeAppointmentTab) {
+      case 'today_all':
+        return todayAllAppointments;
+      case 'pending':
+        return pendingAppointments;
+      case 'confirmed':
+        return confirmedAppointments;
+      case 'checkedin':
+        return checkedInTodayAppointments;
+      case 'inconsultation':
+        return inConsultationTodayAppointments;
+      case 'completed':
+        return completedTodayAppointments;
+      case 'tomorrow':
+        return appointmentsByDate.tomorrow || [];
+      default:
+        // Date-key tabs (future dates)
+        return appointmentsByDate[activeAppointmentTab] || [];
     }
-    if (activeAppointmentTab === 'today') {
-      return appointmentsByDate.today || [];
-    } else if (activeAppointmentTab === 'tomorrow') {
-      return appointmentsByDate.tomorrow || [];
-    } else {
-      return appointmentsByDate[activeAppointmentTab] || [];
-    }
-  }, [activeAppointmentTab, appointmentsByDate, completedTodayAppointments]);
+  }, [
+    activeAppointmentTab,
+    appointmentsByDate,
+    todayAllAppointments,
+    pendingAppointments,
+    confirmedAppointments,
+    checkedInTodayAppointments,
+    inConsultationTodayAppointments,
+    completedTodayAppointments,
+  ]);
 
-  // Generate tab items for appointments (only future appointments) + completed today
+  // Generate tab items for appointments:
+  // - Always show receptionist operational tabs in a fixed order (even if count is 0)
+  // - Then show Tomorrow + future date tabs
   const appointmentTabs = useMemo(() => {
     const tabs: Array<{ key: string; label: string; count: number }> = [];
     
-    // Today tab (first)
-    if (appointmentsByDate.today && appointmentsByDate.today.length > 0) {
-      tabs.push({
-        key: 'today',
-        label: `Today (${appointmentsByDate.today.length})`,
-        count: appointmentsByDate.today.length,
-      });
-    }
-
-    // Completed Today tab (after Today)
-    if (completedTodayAppointments.length > 0) {
-      tabs.push({
-        key: 'completed',
-        label: `Completed Today (${completedTodayAppointments.length})`,
-        count: completedTodayAppointments.length,
-      });
-    }
+    // Fixed OPD ops tabs (Today)
+    tabs.push({ key: 'today_all', label: `Today (${todayAllAppointments.length})`, count: todayAllAppointments.length });
+    tabs.push({ key: 'pending', label: `Pending (${pendingAppointments.length})`, count: pendingAppointments.length });
+    tabs.push({ key: 'confirmed', label: `Confirmed (${confirmedAppointments.length})`, count: confirmedAppointments.length });
+    tabs.push({ key: 'checkedin', label: `Checked In (${checkedInTodayAppointments.length})`, count: checkedInTodayAppointments.length });
+    tabs.push({ key: 'inconsultation', label: `In Consultation (${inConsultationTodayAppointments.length})`, count: inConsultationTodayAppointments.length });
+    tabs.push({ key: 'completed', label: `Completed (${completedTodayAppointments.length})`, count: completedTodayAppointments.length });
     
     // Tomorrow tab
     if (appointmentsByDate.tomorrow && appointmentsByDate.tomorrow.length > 0) {
@@ -534,14 +554,22 @@ export default function ReceptionistDashboard() {
       });
     
     return tabs;
-  }, [appointmentsByDate, completedTodayAppointments.length]);
+  }, [
+    appointmentsByDate,
+    todayAllAppointments.length,
+    pendingAppointments.length,
+    confirmedAppointments.length,
+    checkedInTodayAppointments.length,
+    inConsultationTodayAppointments.length,
+    completedTodayAppointments.length,
+  ]);
 
   // Update active tab if current tab has no appointments
   useEffect(() => {
     if (appointmentTabs.length > 0 && !appointmentTabs.find(tab => tab.key === activeAppointmentTab)) {
       setActiveAppointmentTab(appointmentTabs[0].key);
     } else if (appointmentTabs.length === 0) {
-      setActiveAppointmentTab('today');
+      setActiveAppointmentTab('today_all');
     }
   }, [appointmentTabs, activeAppointmentTab]);
 
@@ -838,7 +866,12 @@ export default function ReceptionistDashboard() {
       console.log('📥 Check-in response:', responseData);
 
       if (response.ok) {
-        message.success('Patient checked in successfully! They can now proceed to doctor\'s cabin.');
+        const tokenNumber = (responseData as any)?.tokenNumber ?? (responseData as any)?.token_number;
+        message.success(
+          tokenNumber
+            ? `Patient checked in successfully! Token #${tokenNumber}`
+            : 'Patient checked in successfully! They can now proceed to doctor\'s cabin.'
+        );
         // Trigger storage event to notify other tabs/windows
         window.localStorage.setItem('appointment-updated', Date.now().toString());
         window.dispatchEvent(new CustomEvent('appointment-updated'));
@@ -1000,7 +1033,7 @@ export default function ReceptionistDashboard() {
     const statusConfig: Record<string, { color: string; label: string }> = {
       pending: { color: 'orange', label: 'WAITING' },
       confirmed: { color: 'blue', label: 'CONFIRMED' },
-      'checked-in': { color: 'cyan', label: 'IN CONSULTATION' },
+      'checked-in': { color: 'cyan', label: 'CHECKED IN' },
       attended: { color: 'cyan', label: 'IN CONSULTATION' },
       completed: { color: 'green', label: 'COMPLETED' },
       cancelled: { color: 'red', label: 'CANCELLED' },
@@ -1230,71 +1263,80 @@ export default function ReceptionistDashboard() {
       title: 'Patient',
       dataIndex: 'patient',
       key: 'patient',
-      width: 140,
-      ellipsis: true,
-      render: (text: string, record: any) => (
-          <Button
-            type="link"
-            style={{ 
-              padding: 0, 
-              height: 'auto',
-              color: '#1890ff',
-            }}
-            className="patient-name-link"
-            onClick={() => record.patientId && handleViewPatientInfo(record.patientId)}
-          >
-          <Text strong>{text}</Text>
-          </Button>
-      ),
+      width: 200,
+      render: (text: string, record: any) => {
+        const age = (() => {
+          if (!record.patientDateOfBirth) return null;
+          const dob = new Date(record.patientDateOfBirth);
+          if (isNaN(dob.getTime())) return null;
+          const today = new Date();
+          let a = today.getFullYear() - dob.getFullYear();
+          const monthDiff = today.getMonth() - dob.getMonth();
+          if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < dob.getDate())) a--;
+          return a;
+        })();
+
+        const bg = record.patientBloodGroup ? String(record.patientBloodGroup) : null;
+
+        return (
+          <Space direction="vertical" size={0} style={{ lineHeight: 1.2 }}>
+            <Button
+              type="link"
+              style={{
+                padding: 0,
+                height: 'auto',
+                color: '#1890ff',
+              }}
+              className="patient-name-link"
+              onClick={() => record.patientId && handleViewPatientInfo(record.patientId)}
+            >
+              <Text strong>{text}</Text>
+            </Button>
+            <Text type="secondary" style={{ fontSize: 12 }}>
+              {age !== null ? `${age} years` : 'Age N/A'}
+              {bg ? ` • ${bg}` : ''}
+            </Text>
+          </Space>
+        );
+      },
     },
     {
-      title: 'Age',
-      key: 'age',
+      title: 'Date & Time',
+      key: 'dateTime',
+      width: 150,
+      render: (_: any, record: any) => {
+        const dateLabel = (() => {
+          if (!record.dateObj && !record.date) return 'N/A';
+          const date = record.dateObj || new Date(record.date);
+          const today = new Date();
+          today.setHours(0, 0, 0, 0);
+          const appointmentDate = new Date(date);
+          appointmentDate.setHours(0, 0, 0, 0);
+          if (appointmentDate.getTime() === today.getTime()) return 'Today';
+          const tomorrow = new Date(today);
+          tomorrow.setDate(tomorrow.getDate() + 1);
+          if (appointmentDate.getTime() === tomorrow.getTime()) return 'Tomorrow';
+          return dayjs(date).format('DD MMM YYYY');
+        })();
+
+        const timeLabel = record.time ? formatTimeSlot12h(record.time) : 'N/A';
+
+        return (
+          <Space direction="vertical" size={0} style={{ lineHeight: 1.2 }}>
+            <Text>{dateLabel}</Text>
+            <Text type="secondary" style={{ fontSize: 12 }}>{timeLabel}</Text>
+          </Space>
+        );
+      },
+    },
+    {
+      title: 'Token',
+      dataIndex: 'tokenNumber',
+      key: 'tokenNumber',
       width: 70,
       align: 'center' as const,
-      render: (_: any, record: any) => {
-        // Calculate age from dateOfBirth if available, otherwise show N/A
-        if (record.patientDateOfBirth) {
-          try {
-            const dob = new Date(record.patientDateOfBirth);
-            if (!isNaN(dob.getTime())) {
-              const today = new Date();
-              let age = today.getFullYear() - dob.getFullYear();
-              const monthDiff = today.getMonth() - dob.getMonth();
-              if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < dob.getDate())) {
-                age--;
-              }
-              return <Text>{age}</Text>;
-            }
-          } catch (error) {
-            console.error('Error calculating age:', error);
-          }
-        }
-        return <Text type="secondary">N/A</Text>;
-      },
-    },
-    {
-      title: 'Date',
-      key: 'date',
-      width: 100,
-      render: (_: any, record: any) => {
-        if (!record.dateObj && !record.date) return 'N/A';
-        const date = record.dateObj || new Date(record.date);
-        const today = new Date();
-        today.setHours(0, 0, 0, 0);
-        const appointmentDate = new Date(date);
-        appointmentDate.setHours(0, 0, 0, 0);
-        
-        if (appointmentDate.getTime() === today.getTime()) {
-          return <Text strong>Today</Text>;
-        }
-        const tomorrow = new Date(today);
-        tomorrow.setDate(tomorrow.getDate() + 1);
-        if (appointmentDate.getTime() === tomorrow.getTime()) {
-          return <Text>Tomorrow</Text>;
-        }
-        return dayjs(date).format('DD MMM YYYY');
-      },
+      render: (tokenNumber: number | null | undefined) =>
+        tokenNumber ? <Text strong>{tokenNumber}</Text> : <Text type="secondary">-</Text>,
     },
     {
       title: 'Doctor',
@@ -1304,44 +1346,30 @@ export default function ReceptionistDashboard() {
       ellipsis: true,
     },
     {
-      title: 'Time',
-      dataIndex: 'time',
-      key: 'time',
-      width: 120,
-      render: (time: string) => (time ? formatTimeSlot12h(time) : 'N/A'),
-    },
-    {
-      title: 'Department',
-      dataIndex: 'department',
-      key: 'department',
-      width: 120,
-      ellipsis: true,
-    },
-    {
-      title: 'Source',
-      dataIndex: 'type',
-      key: 'type',
-      width: 90,
-      render: (_: any, record: any) => {
-        const config = getSourceConfig(record.type);
-        return <Tag color={config.color}>{config.label}</Tag>;
-      },
-    },
-    {
-      title: 'Payment',
-      dataIndex: 'paymentStatus',
-      key: 'paymentStatus',
-      width: 90,
-      render: (_: any, record: any) => {
-        const config = getPaymentConfig(record.paymentStatus);
-        return <Tag color={config.color}>{config.label}</Tag>;
-      },
+      title: 'Details',
+      key: 'details',
+      width: 150,
+      render: (_: any, record: any) => (
+        <Space direction="vertical" size={0}>
+          <Text type="secondary" style={{ fontSize: 12 }}>{record.department || 'General'}</Text>
+          <Space size={6} wrap>
+            {(() => {
+              const src = getSourceConfig(record.type);
+              return <Tag color={src.color} style={{ margin: 0 }}>{src.label}</Tag>;
+            })()}
+            {(() => {
+              const pay = getPaymentConfig(record.paymentStatus);
+              return <Tag color={pay.color} style={{ margin: 0 }}>{pay.label}</Tag>;
+            })()}
+          </Space>
+        </Space>
+      ),
     },
     {
       title: 'Status',
       dataIndex: 'status',
       key: 'status',
-      width: 100,
+      width: 110,
       render: (status: string) => {
         const config = getStatusConfig(status);
         return <Tag color={config.color}>{config.label}</Tag>;
@@ -1350,7 +1378,7 @@ export default function ReceptionistDashboard() {
     {
       title: 'Actions',
       key: 'actions',
-      width: 180,
+      width: 160,
       fixed: 'right' as const,
       render: (record: any) => {
         // Check if appointment is in the past
@@ -1411,6 +1439,17 @@ export default function ReceptionistDashboard() {
               >
                 Check-in
               </Button>
+            )}
+
+            {/* Reschedule - for pending/confirmed/checked-in/attended (not in consultation / not completed / not cancelled) */}
+            {['pending', 'confirmed', 'checked-in', 'attended'].includes(String(record.status || '').toLowerCase()) && (
+              <Button
+                size="small"
+                type="default"
+                icon={<CalendarOutlined />}
+                onClick={() => openRescheduleModal(record)}
+                title="Reschedule appointment"
+              />
             )}
         
             {/* Call button - available for all statuses */}
@@ -1888,6 +1927,94 @@ export default function ReceptionistDashboard() {
     }
   };
 
+  const openRescheduleModal = async (record: any) => {
+    setAppointmentForReschedule(record);
+    setIsRescheduleModalOpen(true);
+    rescheduleForm.resetFields();
+
+    const currentDate = record?.dateObj ? dayjs(record.dateObj) : record?.date ? dayjs(record.date) : dayjs();
+    setRescheduleSelectedDate(currentDate);
+
+    const doctor = doctors.find((d: any) => d.id === record?.doctorId);
+    const slots = getDoctorSlots(doctor);
+    setRescheduleAvailableSlots(slots);
+
+    try {
+      if (doctor?.id) {
+        const bookings = await fetchBookedAppointments(doctor.id, currentDate.format('YYYY-MM-DD'));
+        setRescheduleSlotBookings(bookings);
+      } else {
+        setRescheduleSlotBookings({});
+      }
+    } catch {
+      setRescheduleSlotBookings({});
+    }
+
+    rescheduleForm.setFieldsValue({
+      appointmentDate: currentDate,
+      timeSlot: record?.time || undefined,
+      rescheduleReason: '',
+    });
+  };
+
+  const handleRescheduleDateChange = async (date: Dayjs | null) => {
+    setRescheduleSelectedDate(date);
+    rescheduleForm.setFieldsValue({ timeSlot: undefined });
+    if (!date || !appointmentForReschedule?.doctorId) return;
+    const doctor = doctors.find((d: any) => d.id === appointmentForReschedule.doctorId);
+    const slots = getDoctorSlots(doctor);
+    setRescheduleAvailableSlots(slots);
+    try {
+      const bookings = await fetchBookedAppointments(appointmentForReschedule.doctorId, date.format('YYYY-MM-DD'));
+      setRescheduleSlotBookings(bookings);
+    } catch {
+      setRescheduleSlotBookings({});
+    }
+  };
+
+  const handleRescheduleSubmit = async (values: any) => {
+    if (!appointmentForReschedule?.id) return;
+    try {
+      setIsRescheduling(true);
+      const token = localStorage.getItem('auth-token');
+      const dateStr = values.appointmentDate?.format ? values.appointmentDate.format('YYYY-MM-DD') : dayjs(values.appointmentDate).format('YYYY-MM-DD');
+      const timeSlot = values.timeSlot;
+      const [startTime] = String(timeSlot || '').split('-');
+      const appointmentTime = startTime?.trim() || '09:00';
+      const rescheduleReason = (values.rescheduleReason || '').trim();
+
+      const response = await fetch(`/api/appointments/${appointmentForReschedule.id}/reschedule`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          appointmentDate: dateStr,
+          appointmentTime,
+          timeSlot,
+          rescheduleReason,
+        }),
+      });
+
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(body?.message || 'Failed to reschedule appointment');
+      }
+
+      message.success('Appointment rescheduled successfully');
+      playNotificationSound('confirmation');
+      setIsRescheduleModalOpen(false);
+      setAppointmentForReschedule(null);
+      rescheduleForm.resetFields();
+      await refetchAppointments();
+    } catch (e: any) {
+      message.error(e?.message || 'Failed to reschedule appointment');
+    } finally {
+      setIsRescheduling(false);
+    }
+  };
+
   const isSlotInPast = (slot: string, selectedDate: dayjs.Dayjs | null): boolean => {
     if (!selectedDate) return false;
     const now = dayjs();
@@ -2012,6 +2139,32 @@ export default function ReceptionistDashboard() {
           justify-content: unset !important;
           background: transparent !important;
           min-height: 100vh !important;
+        }
+
+        /* Make AntD Tabs fill available height so the appointments table region can scroll */
+        .receptionist-dashboard-wrapper .ant-tabs {
+          display: flex !important;
+          flex-direction: column !important;
+          flex: 1 1 auto !important;
+          min-height: 0 !important;
+        }
+        .receptionist-dashboard-wrapper .ant-tabs-content-holder {
+          flex: 1 1 auto !important;
+          min-height: 0 !important;
+          overflow: hidden !important;
+        }
+        .receptionist-dashboard-wrapper .ant-tabs-content {
+          height: 100% !important;
+          display: flex !important;
+          flex: 1 1 auto !important;
+          min-height: 0 !important;
+        }
+        .receptionist-dashboard-wrapper .ant-tabs-tabpane {
+          height: 100% !important;
+          display: flex !important;
+          flex-direction: column !important;
+          flex: 1 1 auto !important;
+          min-height: 0 !important;
         }
         
         .receptionist-dashboard-menu .ant-menu-item {
@@ -2147,6 +2300,12 @@ export default function ReceptionistDashboard() {
             height: '100%',
             overflow: 'hidden',
           }}>
+            {/* Notifications Bell (top-right) */}
+            {!isMobile && (
+              <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 8 }}>
+                <NotificationBell />
+              </div>
+            )}
             {/* Mobile Menu Button */}
             {isMobile && (
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
@@ -2157,7 +2316,7 @@ export default function ReceptionistDashboard() {
                   style={{ fontSize: '18px' }}
                 />
                 <Title level={4} style={{ margin: 0 }}>Dashboard</Title>
-                <div style={{ width: 32 }} /> {/* Spacer for centering */}
+                <NotificationBell />
               </div>
             )}
             
@@ -2236,18 +2395,7 @@ export default function ReceptionistDashboard() {
               </div>
             )}
 
-            {/* Create Appointment Button - For Walk-in Patients */}
-            <div style={{ marginBottom: 24, display: 'flex', justifyContent: 'flex-end' }}>
-              <Button
-                type="primary"
-                size="large"
-                  icon={<CalendarOutlined />}
-                  onClick={openWalkInModal}
-                style={{ borderRadius: 8 }}
-              >
-                Create Appointment (Walk-in)
-              </Button>
-              </div>
+            {/* Create Appointment Button moved into Upcoming Appointments card header */}
 
             {/* Queue Status - Single line above Upcoming Appointments */}
             <Card 
@@ -2309,7 +2457,20 @@ export default function ReceptionistDashboard() {
                   flex: 1,
                   minHeight: 0,
                 }}
-                title="Upcoming Appointments" 
+                title={
+                  <Space align="center" size={12} wrap>
+                    <Text strong>Upcoming Appointments</Text>
+                    <Button
+                      type="primary"
+                      size={isMobile ? "middle" : "small"}
+                      icon={<CalendarOutlined />}
+                      onClick={openWalkInModal}
+                      style={{ borderRadius: 8 }}
+                    >
+                      Create Appointment (Walk-in)
+                    </Button>
+                  </Space>
+                }
                 extra={<Button type="link" onClick={() => message.info('View all appointments feature coming soon')}>View All</Button>}
                 bodyStyle={{ 
                 flex: 1, 
@@ -2344,6 +2505,7 @@ export default function ReceptionistDashboard() {
                         <div style={{ 
                           flex: 1,
                           minHeight: 0,
+                          height: '100%',
                           overflow: 'hidden',
                           display: 'flex',
                           flexDirection: 'column',
@@ -2360,31 +2522,34 @@ export default function ReceptionistDashboard() {
                               )}
                             </Space>
                           ) : (
-                          <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column', minHeight: 0, maxHeight: isMobile ? '60vh' : 'calc(100vh - 600px)' }}>
-                            <div style={{ flex: 1, overflowY: 'auto', overflowX: 'auto', minHeight: 0 }}>
-                          <Table
-                            columns={appointmentColumns}
-                            dataSource={appointmentsToShow}
-                            pagination={false}
-                            rowKey="id"
-                            loading={appointmentsLoading}
-                            size={isMobile ? "small" : "middle"}
-                                scroll={{ 
-                                  x: 'max-content',
-                                  y: 'calc(100vh - 650px)',
-                                }}
-                                rowClassName={(record: any) =>
-                                  record.status === 'pending' ? 'appointment-row-pending' : ''
-                                }
-                              />
+                            // Desktop/tablet: let the parent flex container control available height and scroll.
+                            // Avoid hard-coded `scroll.y` heights which create large empty (dark) space when rows are few.
+                            <div style={{ flex: 1, height: '100%', overflow: 'hidden', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+                              <div style={{ flex: 1, height: '100%', overflowY: 'auto', overflowX: 'auto', minHeight: 0 }}>
+                                <Table
+                                  columns={appointmentColumns}
+                                  dataSource={appointmentsToShow}
+                                  pagination={false}
+                                  rowKey="id"
+                                  loading={appointmentsLoading}
+                                  size={isMobile ? "small" : "middle"}
+                                  // Enable vertical scroll only when needed to avoid large empty space for short lists.
+                                  scroll={{
+                                    x: 'max-content',
+                                    ...(appointmentsToShow.length > 3 ? { y: 'calc(100vh - 520px)' } : {}),
+                                  }}
+                                  rowClassName={(record: any) =>
+                                    record.status === 'pending' ? 'appointment-row-pending' : ''
+                                  }
+                                />
+                              </div>
                             </div>
-                          </div>
                           )}
                         </div>
                       ),
                     }))}
                     style={{ 
-                      marginTop: 8,
+                      marginTop: 0,
                       display: 'flex',
                       flexDirection: 'column',
                       flex: 1,
@@ -3475,6 +3640,90 @@ export default function ReceptionistDashboard() {
                   </Button>
                   <Button type="primary" danger htmlType="submit">
                     Reject Appointment
+                  </Button>
+                </Space>
+              </Form.Item>
+            </Form>
+          </Modal>
+
+          {/* Reschedule Modal */}
+          <Modal
+            title="Reschedule Appointment"
+            open={isRescheduleModalOpen}
+            onCancel={() => {
+              setIsRescheduleModalOpen(false);
+              setAppointmentForReschedule(null);
+              rescheduleForm.resetFields();
+              setRescheduleSelectedDate(null);
+              setRescheduleAvailableSlots([]);
+              setRescheduleSlotBookings({});
+            }}
+            footer={null}
+            width={520}
+            destroyOnClose
+          >
+            <Form form={rescheduleForm} layout="vertical" onFinish={handleRescheduleSubmit}>
+              <Alert
+                message="Reschedule Appointment"
+                description="Choose a new date and available slot. If you move it to a different day, the token/check-in is reset automatically (new queue day)."
+                type="info"
+                showIcon
+                style={{ marginBottom: 16 }}
+              />
+
+              <Form.Item
+                name="appointmentDate"
+                label="New Date"
+                rules={[{ required: true, message: 'Please select a date' }]}
+              >
+                <DatePicker
+                  style={{ width: '100%' }}
+                  onChange={(d) => handleRescheduleDateChange(d as any)}
+                  disabledDate={(d) => !!d && d.startOf('day').isBefore(dayjs().startOf('day'))}
+                />
+              </Form.Item>
+
+              <Form.Item
+                name="timeSlot"
+                label="New Time Slot"
+                rules={[{ required: true, message: 'Please select a time slot' }]}
+              >
+                <Select placeholder="Select a slot">
+                  {rescheduleAvailableSlots.map((slot) => {
+                    const booked = rescheduleSlotBookings[slot] || 0;
+                    return (
+                      <Select.Option key={slot} value={slot}>
+                        {formatTimeSlot12h(slot)} {booked > 0 ? `• booked: ${booked}` : ''}
+                      </Select.Option>
+                    );
+                  })}
+                </Select>
+              </Form.Item>
+
+              <Form.Item
+                name="rescheduleReason"
+                label="Reason"
+                rules={[{ required: true, message: 'Please enter a reason' }]}
+              >
+                <Input.TextArea rows={3} placeholder="e.g., Doctor is not available / patient requested different time" />
+              </Form.Item>
+
+              <Form.Item style={{ marginBottom: 0 }}>
+                <Space style={{ width: '100%', justifyContent: 'flex-end' }}>
+                  <Button
+                    onClick={() => {
+                      setIsRescheduleModalOpen(false);
+                      setAppointmentForReschedule(null);
+                      rescheduleForm.resetFields();
+                      setRescheduleSelectedDate(null);
+                      setRescheduleAvailableSlots([]);
+                      setRescheduleSlotBookings({});
+                    }}
+                  >
+                    Cancel
+                  </Button>
+                  <Button type="primary" htmlType="submit" loading={isRescheduling}>
+                    Reschedule
                   </Button>
                 </Space>
               </Form.Item>

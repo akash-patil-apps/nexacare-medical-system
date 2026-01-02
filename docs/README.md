@@ -12,6 +12,27 @@ This documentation system ensures that when you start a new chat session with th
 4. **`QUICK_REFERENCE.md`** - Demo credentials, test URLs, current priorities
 5. **`CHANGELOG.md`** - Recent changes, fixes, and improvements
 
+### **HMS Documentation Job (Start Here for full HMS + project gap)**
+1. **`HMS_DOCS_INDEX.md`** - Start/finish index for HMS documentation work
+2. **`HMS_MASTER_REPORT.md`** - Full HMS workflows (OPD→IPD→Discharge) + scenarios
+3. **`PROJECT_STATUS_SNAPSHOT.md`** - Current NexaCare status snapshot (factual)
+4. **`FEATURE_GAP_MATRIX.md`** - Full HMS vs current + roadmap phases
+5. **`QA_GAP_REPORT.md`** - Tester view: workflow gaps + button audit (OK/Placeholder/Missing)
+
+### **PRDs (Implementation Specs)**
+1. **`PRD_OPD_QUEUE_TOKEN.md`** - OPD queue/token system spec (Receptionist + Doctor)
+2. **`PRD_APPOINTMENT_RESCHEDULING.md`** - Appointment rescheduling spec (patient + receptionist + bulk)
+3. **`PRD_OPD_BILLING_PAYMENTS_V1.md`** - OPD billing/payments spec (invoices, receipts, payment status)
+4. **`PRD_DOCTOR_AVAILABILITY_LEAVE.md`** - Doctor weekly availability + leave + schedule overrides
+5. **`PRD_MESSAGING_NOTIFICATIONS.md`** - In-app messaging + notifications + SMS/WhatsApp triggers
+6. **`PRD_LAB_ORDERS_LIFECYCLE.md`** - Lab orders lifecycle (LIS-lite)
+7. **`PRD_IPD_ADT_BED_MANAGEMENT_V1.md`** - IPD ADT + ward/room/bed management
+8. **`PRD_NURSING_STATION_EMAR_V1.md`** - Nurse station + vitals + eMAR
+9. **`PRD_PHARMACY_INVENTORY_DISPENSING_V1.md`** - Pharmacy inventory + dispensing
+10. **`PRD_RADIOLOGY_RIS_PACS_OUTLINE.md`** - Radiology RIS + reporting + PACS outline
+11. **`PRD_AUDIT_LOGS_RBAC_COMPLIANCE.md`** - Audit logs + RBAC hardening
+12. **`PRD_REPORTING_ANALYTICS.md`** - Reporting/analytics (OPD/Lab/Finance/IPD)
+
 ### **Additional Documentation**
 6. **`DAILY_PROGRESS_TEMPLATE.md`** - Template for daily progress tracking
 7. **`DEMO_README.md`** - Demo and testing information

@@ -9,6 +9,7 @@ export type AppointmentEventAction =
   | "checked-in"
   | "completed"
   | "cancelled"
+  | "rescheduled"
   | "status-updated";
 
 export type AppointmentEvent = {
@@ -102,6 +103,7 @@ export async function emitAppointmentChanged(
     console.error("❌ Failed to emit appointment event:", e);
   }
 }
+
 
 
 

@@ -1,10 +1,11 @@
 // server/services/appointments.service.ts
 import { db } from '../db';
 import { appointments, patients, doctors, hospitals, users, receptionists } from '../../drizzle/schema';
-import { eq, and, desc } from 'drizzle-orm';
+import { eq, and, desc, ne } from 'drizzle-orm';
 import { sql } from 'drizzle-orm';
 import type { InsertAppointment } from '../../shared/schema-types';
 import { emitAppointmentChanged } from '../events/appointments.events';
+import { createNotification } from './notifications.service';
 
 /**
  * Book a new appointment.
@@ -19,7 +20,26 @@ export const bookAppointment = async (
     // Walk-in appointments are automatically confirmed (receptionist is confirming at booking time)
     const appointmentType = data.type || 'online';
     const isWalkIn = appointmentType === 'walk-in';
-    const initialStatus = isWalkIn ? 'confirmed' : 'pending';
+
+    const appointmentDayStr = (() => {
+      const d = data.appointmentDate as any;
+      if (typeof d === 'string') return d.slice(0, 10);
+      if (d instanceof Date) return d.toISOString().slice(0, 10);
+      return String(d).slice(0, 10);
+    })();
+
+    const todayISTStr = (() => {
+      const now = new Date();
+      const utcTime = now.getTime() + now.getTimezoneOffset() * 60000;
+      const ist = new Date(utcTime + 5.5 * 3600000);
+      return ist.toISOString().slice(0, 10);
+    })();
+
+    // Best real-life logic:
+    // - Walk-in for TODAY => patient is present => checked-in + token now
+    // - Walk-in for FUTURE DATE => patient not present => confirmed (no token, no check-in)
+    const isWalkInToday = isWalkIn && appointmentDayStr === todayISTStr;
+    const initialStatus = isWalkIn ? (isWalkInToday ? 'checked-in' : 'confirmed') : 'pending';
     
     console.log('📅 Appointment data being inserted:', {
       patientId: data.patientId,
@@ -34,7 +54,8 @@ export const bookAppointment = async (
       createdBy: user.id
     });
 
-    const appointmentValues: any = {
+    const appointment = await db.transaction(async (tx) => {
+      const appointmentValues: any = {
       patientId: data.patientId,
       doctorId: data.doctorId,
       hospitalId: data.hospitalId,
@@ -42,21 +63,17 @@ export const bookAppointment = async (
       appointmentTime: data.appointmentTime,
       timeSlot: data.timeSlot,
       reason: data.reason,
-      status: initialStatus,
-      type: appointmentType,
+        status: initialStatus,
+        type: appointmentType,
       priority: data.priority || 'normal',
       symptoms: data.symptoms || '',
       notes: data.notes || '',
-      createdBy: user.id
-    };
+        createdBy: user.id,
+      };
 
-    // If walk-in, set confirmedAt timestamp
-    if (isWalkIn) {
-      appointmentValues.confirmedAt = sql`NOW()`;
       // If receptionist is booking, also set receptionistId
       if (user.role === 'RECEPTIONIST') {
-        // Get receptionist ID from userId
-        const [receptionist] = await db
+        const [receptionist] = await tx
           .select({ id: receptionists.id })
           .from(receptionists)
           .where(eq(receptionists.userId, user.id))
@@ -65,12 +82,68 @@ export const bookAppointment = async (
           appointmentValues.receptionistId = receptionist.id;
         }
       }
-    }
 
-    const [appointment] = await db.insert(appointments).values(appointmentValues).returning();
+      // Walk-in: always set confirmedAt; only set checkedInAt + token when it is a walk-in for TODAY.
+      if (isWalkIn) {
+        appointmentValues.confirmedAt = sql`NOW()`;
+        if (!isWalkInToday) {
+          // Future walk-in booking: treat as confirmed schedule (no token, no check-in)
+          const [created] = await tx.insert(appointments).values(appointmentValues).returning();
+          return created;
+        }
+
+        appointmentValues.checkedInAt = sql`NOW()`;
+        const dateStr = appointmentDayStr;
+
+        // Concurrency-safe token assignment via unique index + retry
+        for (let attempt = 0; attempt < 5; attempt++) {
+          const maxTokenRow = await tx
+            .select({
+              maxToken: sql<number>`COALESCE(MAX(${appointments.tokenNumber}), 0)`,
+            })
+            .from(appointments)
+            .where(
+              and(
+                eq(appointments.doctorId, data.doctorId),
+                sql`DATE(${appointments.appointmentDate}) = DATE(${sql.raw(`'${dateStr}'`)})`,
+              ),
+            );
+
+          const maxToken = maxTokenRow?.[0]?.maxToken ?? 0;
+          const nextToken = maxToken + 1;
+          appointmentValues.tokenNumber = nextToken;
+
+          // Keep any existing notes; also add token marker so clients can parse as fallback
+          const baseNotes = (appointmentValues.notes || '').toString();
+          if (!/Token:\s*\d+/i.test(baseNotes)) {
+            appointmentValues.notes = baseNotes ? `${baseNotes}\nToken: ${nextToken}` : `Token: ${nextToken}`;
+          }
+
+          try {
+            const [created] = await tx.insert(appointments).values(appointmentValues).returning();
+            return created;
+          } catch (e: any) {
+            const msg = String(e?.message || e);
+            if (msg.includes('appointments_doctor_date_token_uq') || msg.toLowerCase().includes('duplicate')) {
+              continue;
+            }
+            throw e;
+          }
+        }
+
+        throw new Error('Failed to allocate token for walk-in. Please retry.');
+      }
+
+      // Non-walk-in: simple insert
+      const [created] = await tx.insert(appointments).values(appointmentValues).returning();
+      return created;
+    });
 
     console.log(`✅ Appointment created: ${appointment.id} with status: ${appointment.status}`);
-    await emitAppointmentChanged(appointment.id, isWalkIn ? "confirmed" : "created");
+    await emitAppointmentChanged(
+      appointment.id,
+      isWalkIn ? (isWalkInToday ? "checked-in" : "confirmed") : "created"
+    );
     return appointment;
   } catch (error) {
     console.error('Error creating appointment:', error);
@@ -132,6 +205,7 @@ export const getAppointmentsByDoctor = async (doctorId: number) => {
         status: appointments.status,
         doctorId: appointments.doctorId,
         appointmentDate: appointments.appointmentDate,
+        tokenNumber: appointments.tokenNumber,
       })
       .from(appointments)
       .where(eq(appointments.doctorId, doctorId));
@@ -157,6 +231,13 @@ export const getAppointmentsByDoctor = async (doctorId: number) => {
         priority: appointments.priority,
         symptoms: appointments.symptoms,
         notes: appointments.notes,
+        tokenNumber: appointments.tokenNumber,
+        checkedInAt: appointments.checkedInAt,
+        rescheduledAt: appointments.rescheduledAt,
+        rescheduledFromDate: appointments.rescheduledFromDate,
+        rescheduledFromTimeSlot: appointments.rescheduledFromTimeSlot,
+        rescheduleReason: appointments.rescheduleReason,
+        rescheduledBy: appointments.rescheduledBy,
         createdAt: appointments.createdAt,
         confirmedAt: appointments.confirmedAt,
         completedAt: appointments.completedAt,
@@ -166,7 +247,7 @@ export const getAppointmentsByDoctor = async (doctorId: number) => {
         and(
           eq(appointments.doctorId, doctorId),
           // Doctor should see active/checked/completed states
-          sql`${appointments.status} IN ('confirmed', 'checked-in', 'attended', 'checked', 'completed', 'cancelled')`
+          sql`${appointments.status} IN ('confirmed', 'checked-in', 'in_consultation', 'attended', 'checked', 'completed', 'cancelled')`
         )
       )
       .orderBy(desc(appointments.appointmentDate));
@@ -176,11 +257,12 @@ export const getAppointmentsByDoctor = async (doctorId: number) => {
     // Now enrich with patient names, hospital names, and doctor names
     const enrichedAppointments = await Promise.all(
       appointmentsData.map(async (apt) => {
-        // Get patient name and dateOfBirth
+        // Get patient name, phone, DOB, blood group
         const [patient] = await db
           .select({ 
             userId: patients.userId,
-            dateOfBirth: patients.dateOfBirth
+            dateOfBirth: patients.dateOfBirth,
+            bloodGroup: patients.bloodGroup,
           })
           .from(patients)
           .where(eq(patients.id, apt.patientId))
@@ -188,15 +270,19 @@ export const getAppointmentsByDoctor = async (doctorId: number) => {
         
         let patientName = 'Unknown Patient';
         let patientDateOfBirth = null;
+        let patientBloodGroup: string | null = null;
+        let patientPhone: string | null = null;
         if (patient) {
           patientDateOfBirth = patient.dateOfBirth;
+          patientBloodGroup = patient.bloodGroup ?? null;
           const [patientUser] = await db
-            .select({ fullName: users.fullName })
+            .select({ fullName: users.fullName, mobileNumber: users.mobileNumber })
             .from(users)
             .where(eq(users.id, patient.userId))
             .limit(1);
           if (patientUser) {
             patientName = patientUser.fullName;
+            patientPhone = patientUser.mobileNumber;
           }
         }
 
@@ -232,6 +318,8 @@ export const getAppointmentsByDoctor = async (doctorId: number) => {
           ...apt,
           patientName,
           patientDateOfBirth,
+          patientBloodGroup,
+          patientPhone,
           hospitalName,
           doctorName,
         };
@@ -260,34 +348,64 @@ export const getAppointmentsByDoctor = async (doctorId: number) => {
 export const getAppointmentsByPatient = async (patientId: number) => {
   console.log(`📅 Fetching appointments for patient ${patientId}`);
   try {
-    const result = await db
-      .select({
-        id: appointments.id,
-        patientId: appointments.patientId,
-        doctorId: appointments.doctorId,
-        hospitalId: appointments.hospitalId,
-        appointmentDate: appointments.appointmentDate,
-        appointmentTime: appointments.appointmentTime,
-        timeSlot: appointments.timeSlot,
-        reason: appointments.reason,
-        status: appointments.status,
-        type: appointments.type,
-        priority: appointments.priority,
-        symptoms: appointments.symptoms,
-        notes: appointments.notes,
-        createdAt: appointments.createdAt,
-        confirmedAt: appointments.confirmedAt,
-        completedAt: appointments.completedAt,
-        doctorName: users.fullName,
-        hospitalName: hospitals.name,
-        doctorSpecialty: doctors.specialty
-      })
-      .from(appointments)
-      .leftJoin(doctors, eq(appointments.doctorId, doctors.id))
-      .leftJoin(users, eq(doctors.userId, users.id))
-      .leftJoin(hospitals, eq(appointments.hospitalId, hospitals.id))
-      .where(eq(appointments.patientId, patientId))
-      .orderBy(desc(appointments.appointmentDate));
+    const baseSelect = {
+      id: appointments.id,
+      patientId: appointments.patientId,
+      doctorId: appointments.doctorId,
+      hospitalId: appointments.hospitalId,
+      appointmentDate: appointments.appointmentDate,
+      appointmentTime: appointments.appointmentTime,
+      timeSlot: appointments.timeSlot,
+      reason: appointments.reason,
+      status: appointments.status,
+      type: appointments.type,
+      priority: appointments.priority,
+      symptoms: appointments.symptoms,
+      notes: appointments.notes,
+      tokenNumber: appointments.tokenNumber,
+      checkedInAt: appointments.checkedInAt,
+      createdAt: appointments.createdAt,
+      confirmedAt: appointments.confirmedAt,
+      completedAt: appointments.completedAt,
+      doctorName: users.fullName,
+      hospitalName: hospitals.name,
+      doctorSpecialty: doctors.specialty,
+    } as const;
+
+    // Try selecting reschedule fields; if DB doesn't have them, fall back to baseSelect.
+    let result: any[] = [];
+    try {
+      result = await db
+        .select({
+          ...baseSelect,
+          rescheduledAt: appointments.rescheduledAt,
+          rescheduledFromDate: appointments.rescheduledFromDate,
+          rescheduledFromTimeSlot: appointments.rescheduledFromTimeSlot,
+          rescheduleReason: appointments.rescheduleReason,
+          rescheduledBy: appointments.rescheduledBy,
+        })
+        .from(appointments)
+        .leftJoin(doctors, eq(appointments.doctorId, doctors.id))
+        .leftJoin(users, eq(doctors.userId, users.id))
+        .leftJoin(hospitals, eq(appointments.hospitalId, hospitals.id))
+        .where(eq(appointments.patientId, patientId))
+        .orderBy(desc(appointments.appointmentDate));
+    } catch (e: any) {
+      const msg = String(e?.cause?.message || e?.message || e);
+      if (msg.includes('rescheduled_at') || msg.includes('42703')) {
+        console.warn('⚠️ Reschedule columns missing in DB; falling back to base appointments select for patient.');
+        result = await db
+          .select(baseSelect)
+          .from(appointments)
+          .leftJoin(doctors, eq(appointments.doctorId, doctors.id))
+          .leftJoin(users, eq(doctors.userId, users.id))
+          .leftJoin(hospitals, eq(appointments.hospitalId, hospitals.id))
+          .where(eq(appointments.patientId, patientId))
+          .orderBy(desc(appointments.appointmentDate));
+      } else {
+        throw e;
+      }
+    }
 
     console.log(`📋 Found ${result.length} appointments for patient (including pending)`);
     return result;
@@ -304,39 +422,67 @@ export const getAppointmentsByHospital = async (hospitalId: number) => {
   console.log(`📅 Fetching appointments for hospital ${hospitalId}`);
   try {
     // Get all appointments for the hospital with hospital name
-    const appointmentsData = await db
-      .select({
-        id: appointments.id,
-        patientId: appointments.patientId,
-        doctorId: appointments.doctorId,
-        hospitalId: appointments.hospitalId,
-        appointmentDate: appointments.appointmentDate,
-        appointmentTime: appointments.appointmentTime,
-        timeSlot: appointments.timeSlot,
-        reason: appointments.reason,
-        status: appointments.status,
-        type: appointments.type,
-        priority: appointments.priority,
-        symptoms: appointments.symptoms,
-        notes: appointments.notes,
-        createdAt: appointments.createdAt,
-        hospitalName: hospitals.name,
-      })
-      .from(appointments)
-      .leftJoin(hospitals, eq(appointments.hospitalId, hospitals.id))
-      .where(eq(appointments.hospitalId, hospitalId))
-      .orderBy(desc(appointments.appointmentDate));
+    const baseSelect = {
+      id: appointments.id,
+      patientId: appointments.patientId,
+      doctorId: appointments.doctorId,
+      hospitalId: appointments.hospitalId,
+      appointmentDate: appointments.appointmentDate,
+      appointmentTime: appointments.appointmentTime,
+      timeSlot: appointments.timeSlot,
+      reason: appointments.reason,
+      status: appointments.status,
+      type: appointments.type,
+      priority: appointments.priority,
+      symptoms: appointments.symptoms,
+      notes: appointments.notes,
+      tokenNumber: appointments.tokenNumber,
+      checkedInAt: appointments.checkedInAt,
+      createdAt: appointments.createdAt,
+      hospitalName: hospitals.name,
+    } as const;
+
+    let appointmentsData: any[] = [];
+    try {
+      appointmentsData = await db
+        .select({
+          ...baseSelect,
+          rescheduledAt: appointments.rescheduledAt,
+          rescheduledFromDate: appointments.rescheduledFromDate,
+          rescheduledFromTimeSlot: appointments.rescheduledFromTimeSlot,
+          rescheduleReason: appointments.rescheduleReason,
+          rescheduledBy: appointments.rescheduledBy,
+        })
+        .from(appointments)
+        .leftJoin(hospitals, eq(appointments.hospitalId, hospitals.id))
+        .where(eq(appointments.hospitalId, hospitalId))
+        .orderBy(desc(appointments.appointmentDate));
+    } catch (e: any) {
+      const msg = String(e?.cause?.message || e?.message || e);
+      if (msg.includes('rescheduled_at') || msg.includes('42703')) {
+        console.warn('⚠️ Reschedule columns missing in DB; falling back to base appointments select for hospital.');
+        appointmentsData = await db
+          .select(baseSelect)
+          .from(appointments)
+          .leftJoin(hospitals, eq(appointments.hospitalId, hospitals.id))
+          .where(eq(appointments.hospitalId, hospitalId))
+          .orderBy(desc(appointments.appointmentDate));
+      } else {
+        throw e;
+      }
+    }
 
     console.log(`📋 Found ${appointmentsData.length} appointments for hospital`);
 
     // Enrich with patient and doctor information
     const enrichedAppointments = await Promise.all(
       appointmentsData.map(async (apt) => {
-        // Get patient info including dateOfBirth
+        // Get patient info including dateOfBirth, bloodGroup
         const [patient] = await db
           .select({ 
             userId: patients.userId,
-            dateOfBirth: patients.dateOfBirth
+            dateOfBirth: patients.dateOfBirth,
+            bloodGroup: patients.bloodGroup,
           })
           .from(patients)
           .where(eq(patients.id, apt.patientId))
@@ -344,15 +490,19 @@ export const getAppointmentsByHospital = async (hospitalId: number) => {
 
         let patientName = 'Unknown Patient';
         let patientDateOfBirth = null;
+        let patientBloodGroup: string | null = null;
+        let patientPhone: string | null = null;
         if (patient) {
           patientDateOfBirth = patient.dateOfBirth;
+          patientBloodGroup = patient.bloodGroup ?? null;
           const [patientUser] = await db
-            .select({ fullName: users.fullName })
+            .select({ fullName: users.fullName, mobileNumber: users.mobileNumber })
             .from(users)
             .where(eq(users.id, patient.userId))
             .limit(1);
           if (patientUser) {
             patientName = patientUser.fullName;
+            patientPhone = patientUser.mobileNumber;
           }
         }
 
@@ -384,6 +534,8 @@ export const getAppointmentsByHospital = async (hospitalId: number) => {
           ...apt,
           patientName,
           patientDateOfBirth,
+          patientBloodGroup,
+          patientPhone,
           doctorName,
           doctorSpecialty,
           hospitalName: apt.hospitalName || null,
@@ -428,6 +580,10 @@ export const updateAppointmentStatus = async (
   console.log(`📅 Updating appointment ${appointmentId} status to ${status}`);
   
   try {
+    const result = await db.transaction(async (tx) => {
+      const [existing] = await tx.select().from(appointments).where(eq(appointments.id, appointmentId)).limit(1);
+      if (!existing) throw new Error('Appointment not found');
+
     const updateData: any = { status };
     
     // Set timestamp based on status using SQL NOW()
@@ -437,15 +593,39 @@ export const updateAppointmentStatus = async (
       updateData.completedAt = sql`NOW()`;
     }
     
-    const [result] = await db
-      .update(appointments)
-      .set(updateData)
-      .where(eq(appointments.id, appointmentId))
-      .returning();
+      // If doctor starts consultation (or someone sets checked-in) and token is missing, allocate token.
+      const shouldAllocateToken = (status === 'in_consultation' || status === 'checked-in') && !(existing as any).tokenNumber;
+      if (shouldAllocateToken) {
+        const maxTokenRow = await tx
+          .select({
+            maxToken: sql<number>`COALESCE(MAX(${appointments.tokenNumber}), 0)`,
+          })
+          .from(appointments)
+          .where(
+            and(
+              eq(appointments.doctorId, existing.doctorId),
+              sql`DATE(${appointments.appointmentDate}) = DATE(${existing.appointmentDate})`,
+            ),
+          );
+
+        const maxToken = maxTokenRow?.[0]?.maxToken ?? 0;
+        const nextToken = maxToken + 1;
+        updateData.tokenNumber = nextToken;
+        updateData.checkedInAt = (existing as any).checkedInAt ? (existing as any).checkedInAt : sql`NOW()`;
+
+        const existingNotes = (existing as any).notes || '';
+        if (!/Token:\s*\d+/i.test(existingNotes)) {
+          const note = `Token: ${nextToken}`;
+          updateData.notes = existingNotes ? `${existingNotes}\n${note}` : note;
+        }
+      }
+
+      const [updated] = await tx.update(appointments).set(updateData).where(eq(appointments.id, appointmentId)).returning();
+      if (!updated) throw new Error('Appointment not found');
+      return updated;
+    });
     
-    if (!result) {
-      throw new Error('Appointment not found');
-    }
+    if (!result) throw new Error('Appointment not found');
     
     console.log(`✅ Appointment ${appointmentId} status updated to ${status}`);
     await emitAppointmentChanged(result.id, "status-updated");
@@ -627,8 +807,9 @@ export const checkInAppointment = async (appointmentId: number, receptionistId: 
   console.log(`📅 Receptionist ${receptionistId} checking in patient for appointment ${appointmentId}`);
   
   try {
-    // First verify appointment exists and is confirmed
-    const [existingAppointment] = await db
+    const result = await db.transaction(async (tx) => {
+      // First verify appointment exists and is eligible for token assignment
+      const [existingAppointment] = await tx
       .select()
       .from(appointments)
       .where(eq(appointments.id, appointmentId))
@@ -638,26 +819,74 @@ export const checkInAppointment = async (appointmentId: number, receptionistId: 
       throw new Error('Appointment not found');
     }
     
-    if (existingAppointment.status !== 'confirmed') {
-      throw new Error(`Cannot check in appointment. Current status: ${existingAppointment.status}. Only confirmed appointments can be checked in.`);
-    }
-    
-    console.log(`📋 Current appointment status: ${existingAppointment.status}`);
-    
-    // Update appointment - change status to checked-in and add check-in timestamp in notes
-    const checkInNote = `Patient checked in at ${new Date().toLocaleString()}`;
-    const existingNotes = existingAppointment.notes || '';
-    const updatedNotes = existingNotes ? `${existingNotes}\n${checkInNote}` : checkInNote;
-    
-    const [result] = await db
+      const eligibleStatuses = new Set(['confirmed', 'checked-in', 'attended', 'in_consultation']);
+      if (!eligibleStatuses.has((existingAppointment.status || '').toString())) {
+        throw new Error(
+          `Cannot check in appointment. Current status: ${existingAppointment.status}. Only confirmed/checked-in appointments can be checked in.`,
+        );
+      }
+
+      // If already tokened (shouldn't happen if status is confirmed, but safe), keep idempotent.
+      if ((existingAppointment as any).tokenNumber) {
+        return existingAppointment as any;
+      }
+
+      // Allocate next token for the same doctor on the same appointment date.
+      // Concurrency-safe via unique index + retries.
+      const existingStatus = (existingAppointment.status || '').toString();
+      const existingNotes = (existingAppointment as any).notes || '';
+
+      for (let attempt = 0; attempt < 5; attempt++) {
+        const maxTokenRow = await tx
+          .select({
+            maxToken: sql<number>`COALESCE(MAX(${appointments.tokenNumber}), 0)`,
+          })
+          .from(appointments)
+          .where(
+            and(
+              eq(appointments.doctorId, existingAppointment.doctorId),
+              sql`DATE(${appointments.appointmentDate}) = DATE(${existingAppointment.appointmentDate})`,
+            ),
+          );
+
+        const maxToken = maxTokenRow?.[0]?.maxToken ?? 0;
+        const nextToken = maxToken + 1;
+
+        const checkInNote = `Patient checked in at ${new Date().toLocaleString()} (Token: ${nextToken})`;
+        const updatedNotes =
+          existingNotes && /Token:\s*\d+/i.test(existingNotes) ? existingNotes : (existingNotes ? `${existingNotes}\n${checkInNote}` : checkInNote);
+
+        try {
+          const [updated] = await tx
       .update(appointments)
       .set({
-        status: 'checked-in',
+              // If we're coming from confirmed, set checked-in; otherwise keep current status (backfill token).
+              status: existingStatus === 'confirmed' ? 'checked-in' : existingStatus,
         notes: updatedNotes,
-        receptionistId
+              receptionistId,
+              tokenNumber: nextToken,
+              checkedInAt: (existingAppointment as any).checkedInAt ? (existingAppointment as any).checkedInAt : sql`NOW()`,
       })
       .where(eq(appointments.id, appointmentId))
       .returning();
+
+          if (!updated) {
+            throw new Error('Failed to update appointment');
+          }
+
+          return updated as any;
+        } catch (e: any) {
+          const msg = String(e?.message || e);
+          // If token unique index collides due to concurrent check-in, retry.
+          if (msg.includes('appointments_doctor_date_token_uq') || msg.toLowerCase().includes('duplicate')) {
+            continue;
+          }
+          throw e;
+        }
+      }
+
+      throw new Error('Failed to allocate token. Please try again.');
+    });
     
     if (!result) {
       throw new Error('Failed to update appointment');
@@ -677,6 +906,152 @@ export const checkInAppointment = async (appointmentId: number, receptionistId: 
     console.error('❌ Error checking in appointment:', error);
     throw error;
   }
+};
+
+/**
+ * Reschedule appointment (v1) - receptionist-driven.
+ *
+ * Real-life model:
+ * - Receptionist changes date/time when doctor is unavailable or patient requests changes.
+ * - If moved to a different day, token/check-in are reset (new queue day).
+ * - If moved within the same day and the patient is already checked-in, we keep token.
+ */
+export const rescheduleAppointment = async (
+  appointmentId: number,
+  input: {
+    appointmentDate: string; // YYYY-MM-DD (preferred) or ISO string; stored in timestamp column
+    appointmentTime: string; // HH:mm
+    timeSlot: string; // HH:mm-HH:mm
+    rescheduleReason: string;
+  },
+  actor: { userId: number; receptionistId?: number }
+) => {
+  const { appointmentDate, appointmentTime, timeSlot, rescheduleReason } = input;
+  if (!appointmentDate || !appointmentTime || !timeSlot) {
+    throw new Error('Missing required fields for reschedule');
+  }
+
+  const reason = (rescheduleReason || '').trim();
+  if (!reason) throw new Error('Reschedule reason is required');
+
+  const updated = await db.transaction(async (tx) => {
+    const [existing] = await tx.select().from(appointments).where(eq(appointments.id, appointmentId)).limit(1);
+    if (!existing) throw new Error('Appointment not found');
+
+    const currentStatus = (existing.status || '').toString();
+    if (currentStatus === 'cancelled' || currentStatus === 'completed') {
+      throw new Error(`Cannot reschedule an appointment with status: ${currentStatus}`);
+    }
+    if (currentStatus === 'in_consultation') {
+      throw new Error('Cannot reschedule while consultation is in progress');
+    }
+
+    // Conflict check: same doctor + same date + same timeSlot, excluding this appointment and cancelled.
+    const conflicts = await tx
+      .select({ id: appointments.id })
+      .from(appointments)
+      .where(
+        and(
+          eq(appointments.doctorId, existing.doctorId),
+          sql`DATE(${appointments.appointmentDate}) = DATE(${sql.raw(`'${appointmentDate.slice(0, 10)}'`)})`,
+          eq(appointments.timeSlot, timeSlot),
+          ne(appointments.id, appointmentId),
+          sql`${appointments.status} != 'cancelled'`,
+        ),
+      )
+      .limit(1);
+
+    if (conflicts.length > 0) {
+      throw new Error('Selected slot is already booked for this doctor');
+    }
+
+    const oldDateStr = String((existing as any).appointmentDate || '').slice(0, 10);
+    const newDateStr = String(appointmentDate).slice(0, 10);
+    const sameDay = oldDateStr && newDateStr && oldDateStr === newDateStr;
+
+    const updateData: any = {
+      appointmentDate,
+      appointmentTime,
+      timeSlot,
+      rescheduledAt: sql`NOW()`,
+      rescheduledFromDate: (existing as any).appointmentDate,
+      rescheduledFromTimeSlot: (existing as any).timeSlot,
+      rescheduleReason: reason,
+      rescheduledBy: actor.userId,
+    };
+
+    // Attach receptionistId if provided (audit)
+    if (actor.receptionistId) {
+      updateData.receptionistId = actor.receptionistId;
+    }
+
+    // Token handling: if changing day, reset queue-related fields and status
+    if (!sameDay) {
+      updateData.tokenNumber = null;
+      updateData.checkedInAt = null;
+      // If patient was already checked-in/attended, move back to confirmed for the new day.
+      if (currentStatus === 'checked-in' || currentStatus === 'attended') {
+        updateData.status = 'confirmed';
+        updateData.confirmedAt = sql`NOW()`;
+      }
+    }
+
+    const oldSlot = (existing as any).timeSlot || '';
+    const baseNotes = ((existing as any).notes || '').toString();
+    const rescheduleNote = `Rescheduled: ${oldDateStr} ${oldSlot} -> ${newDateStr} ${timeSlot}. Reason: ${reason}`;
+    updateData.notes = baseNotes ? `${baseNotes}\n${rescheduleNote}` : rescheduleNote;
+
+    const [updated] = await tx.update(appointments).set(updateData).where(eq(appointments.id, appointmentId)).returning();
+    if (!updated) throw new Error('Failed to reschedule appointment');
+
+    await emitAppointmentChanged((updated as any).id, 'rescheduled');
+    return updated;
+  });
+
+  // Notify patient + doctor (in-app notifications stored in DB)
+  // Best-effort: reschedule should succeed even if notification write fails.
+  try {
+    const [patientRow] = await db
+      .select({ userId: patients.userId })
+      .from(patients)
+      .where(eq(patients.id, (updated as any).patientId))
+      .limit(1);
+    const [doctorRow] = await db
+      .select({ userId: doctors.userId })
+      .from(doctors)
+      .where(eq(doctors.id, (updated as any).doctorId))
+      .limit(1);
+
+    const newDay = String(input.appointmentDate).slice(0, 10);
+    const title = 'Appointment Rescheduled';
+    const msg = `Your appointment has been rescheduled to ${newDay} (${input.timeSlot}). Reason: ${reason}`;
+
+    if (patientRow?.userId) {
+      await createNotification({
+        userId: patientRow.userId,
+        type: 'appointment_rescheduled',
+        title,
+        message: msg,
+        relatedId: (updated as any).id,
+        relatedType: 'appointment',
+      });
+    }
+
+    if (doctorRow?.userId) {
+      await createNotification({
+        userId: doctorRow.userId,
+        type: 'appointment_rescheduled',
+        title: 'Appointment Rescheduled (Patient)',
+        message: `An appointment has been rescheduled to ${newDay} (${input.timeSlot}).`,
+        relatedId: (updated as any).id,
+        relatedType: 'appointment',
+      });
+    }
+  } catch (e) {
+    console.warn('⚠️ Failed to create reschedule notifications:', e);
+  }
+
+  return updated;
 };
 
 /**

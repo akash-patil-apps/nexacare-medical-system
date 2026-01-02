@@ -1,14 +1,14 @@
 {
-  "extends": "./tsconfig.json",
+  "extends": "../tsconfig.json",
   "compilerOptions": {
-    "outDir": "dist/server",
-    "rootDir": ".",
+    "outDir": "../dist/server",
+    "rootDir": "..",
     "noEmit": false
   },
   "include": [
-    "server/**/*",
-    "shared/**/*",
-    "drizzle/**/*"
+    "./**/*",
+    "../shared/**/*",
+    "../drizzle/**/*"
   ],
   "exclude": [
     "node_modules",

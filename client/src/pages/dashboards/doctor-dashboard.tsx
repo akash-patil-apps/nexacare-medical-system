@@ -48,6 +48,7 @@ import {
 } from '../../lib/appointment-status';
 import { getISTNow, toIST, getISTStartOfDay, isSameDayIST } from '../../lib/timezone';
 import { playNotificationSound } from '../../lib/notification-sounds';
+import { NotificationBell } from '../../components/notifications/NotificationBell';
 
 const { Content, Sider } = Layout;
 const { Title, Text } = Typography;
@@ -318,16 +319,25 @@ export default function DoctorDashboard() {
           appointmentDate = new Date(appointmentDate);
         }
         
+        const tokenFromNotes = (() => {
+          const notes = (apt.notes || '').toString();
+          const m = notes.match(/Token:\s*(\d+)/i);
+          return m ? Number(m[1]) : null;
+        })();
+
         return {
           id: apt.id,
           patientId: apt.patientId,
           patient: apt.patientName || 'Unknown Patient',
           patientDateOfBirth: apt.patientDateOfBirth || null,
-          patientMobile: apt.patientMobile,
+          patientBloodGroup: apt.patientBloodGroup || null,
+          patientMobile: apt.patientPhone || apt.patientMobile || null,
           time: (apt.appointmentTime || apt.timeSlot) ? formatTimeSlot12h(apt.appointmentTime || apt.timeSlot) : 'N/A',
           status: apt.status || 'pending',
           type: apt.type || 'Consultation',
           priority: apt.priority || 'Normal',
+          tokenNumber: (apt.tokenNumber ?? tokenFromNotes) ?? null,
+          checkedInAt: apt.checkedInAt ?? null,
           date: apt.appointmentDate,
           dateObj: appointmentDate,
           hospitalName: apt.hospitalName || null, // Include hospital name from API
@@ -1061,88 +1071,80 @@ export default function DoctorDashboard() {
       title: 'Patient',
       dataIndex: 'patient',
       key: 'patient',
-      width: 150,
-      ellipsis: true,
-      render: (text: string, record: any) => (
-        <Button
-          type="link"
-          style={{ 
-            padding: 0, 
-            height: 'auto', 
-            fontWeight: 500,
-            color: '#1890ff',
-          }}
-          className="patient-name-link"
-          onClick={() => record.patientId && handleViewPatientInfo(record.patientId)}
-        >
-          {text}
-        </Button>
-      ),
+      width: 200,
+      render: (text: string, record: any) => {
+        const age = (() => {
+          if (!record.patientDateOfBirth) return null;
+          const dob = new Date(record.patientDateOfBirth);
+          if (isNaN(dob.getTime())) return null;
+          const today = new Date();
+          let a = today.getFullYear() - dob.getFullYear();
+          const monthDiff = today.getMonth() - dob.getMonth();
+          if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < dob.getDate())) a--;
+          return a;
+        })();
+
+        const bg = record.patientBloodGroup ? String(record.patientBloodGroup) : null;
+
+        return (
+          <Space direction="vertical" size={0} style={{ lineHeight: 1.2 }}>
+            <Button
+              type="link"
+              style={{ padding: 0, height: 'auto', fontWeight: 500, color: '#1890ff' }}
+              className="patient-name-link"
+              onClick={() => record.patientId && handleViewPatientInfo(record.patientId)}
+            >
+              {text}
+            </Button>
+            <Text type="secondary" style={{ fontSize: 12 }}>
+              {age !== null ? `Age ${age}` : 'Age N/A'}
+              {bg ? ` • BG ${bg}` : ''}
+            </Text>
+          </Space>
+        );
+      },
     },
     {
-      title: 'Age',
-      key: 'age',
+      title: 'Date & Time',
+      key: 'dateTime',
+      width: 150,
+      render: (_: any, record: any) => {
+        const dateLabel = (() => {
+          if (!record.dateObj && !record.date) return 'N/A';
+          const appointmentDate = toIST(record.dateObj || record.date);
+          if (!appointmentDate) return 'N/A';
+          const today = getISTStartOfDay();
+          if (isSameDayIST(appointmentDate, today)) return 'Today';
+          const tomorrow = new Date(today);
+          tomorrow.setDate(tomorrow.getDate() + 1);
+          if (isSameDayIST(appointmentDate, tomorrow)) return 'Tomorrow';
+          return dayjs(appointmentDate).format('DD MMM YYYY');
+        })();
+
+        const timeLabel = record.time || 'N/A';
+
+        return (
+          <Space direction="vertical" size={0} style={{ lineHeight: 1.2 }}>
+            <Text>{dateLabel}</Text>
+            <Text type="secondary" style={{ fontSize: 12 }}>{timeLabel}</Text>
+          </Space>
+        );
+      },
+    },
+    {
+      title: 'Token',
+      dataIndex: 'tokenNumber',
+      key: 'tokenNumber',
       width: 70,
       align: 'center' as const,
-      render: (_: any, record: any) => {
-        // Calculate age from dateOfBirth if available, otherwise show N/A
-        if (record.patientDateOfBirth) {
-          try {
-            const dob = new Date(record.patientDateOfBirth);
-            if (!isNaN(dob.getTime())) {
-              const today = new Date();
-              let age = today.getFullYear() - dob.getFullYear();
-              const monthDiff = today.getMonth() - dob.getMonth();
-              if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < dob.getDate())) {
-                age--;
-              }
-              return <Text>{age}</Text>;
-            }
-          } catch (error) {
-            console.error('Error calculating age:', error);
-          }
-        }
-        return <Text type="secondary">N/A</Text>;
-      },
-    },
-    {
-      title: 'Date',
-      key: 'date',
-      width: 100,
-      render: (_: any, record: any) => {
-        if (!record.dateObj && !record.date) return 'N/A';
-        const appointmentDate = toIST(record.dateObj || record.date);
-        if (!appointmentDate) return 'N/A';
-        const today = getISTStartOfDay();
-        
-        if (isSameDayIST(appointmentDate, today)) {
-          return <Text strong>Today</Text>;
-        }
-        const tomorrow = new Date(today);
-        tomorrow.setDate(tomorrow.getDate() + 1);
-        if (isSameDayIST(appointmentDate, tomorrow)) {
-          return <Text>Tomorrow</Text>;
-        }
-        return dayjs(appointmentDate).format('DD MMM YYYY');
-      },
-    },
-    {
-      title: 'Time',
-      dataIndex: 'time',
-      key: 'time',
-      width: 110,
-    },
-    {
-      title: 'Type',
-      dataIndex: 'type',
-      key: 'type',
-      width: 90,
+      render: (tokenNumber: number | null | undefined) =>
+        tokenNumber ? <Text strong>{tokenNumber}</Text> : <Text type="secondary">-</Text>,
     },
     {
       title: 'Priority',
       dataIndex: 'priority',
       key: 'priority',
-      width: 100,
+      width: 90,
       render: (priority: string) => (
         <Tag color={priority === 'High' || priority === 'high' ? 'red' : priority === 'urgent' ? 'orange' : 'blue'}>
           {priority}
@@ -1153,7 +1155,7 @@ export default function DoctorDashboard() {
       title: 'Status',
       dataIndex: 'status',
       key: 'status',
-      width: 120,
+      width: 110,
       render: (status: string) => {
         const normalizedStatus = normalizeStatus(status);
         const statusConfig = getStatusConfig(normalizedStatus);
@@ -1167,7 +1169,7 @@ export default function DoctorDashboard() {
     {
       title: 'Action',
       key: 'action',
-      width: 280,
+      width: 240,
       fixed: 'right' as const,
       render: (_: any, record: any) => {
         const normalizedStatus = normalizeStatus(record.status);
@@ -1195,6 +1197,35 @@ export default function DoctorDashboard() {
         
         const isFinal = isFinalStatus(normalizedStatus);
         const isChecked = normalizedStatus === APPOINTMENT_STATUS.COMPLETED;
+
+        const handleStartConsultation = async () => {
+          if (!record.id) return;
+          try {
+            const token = localStorage.getItem('auth-token');
+            if (!token) {
+              message.error('Authentication required');
+              return;
+            }
+            const res = await fetch(`/api/appointments/${record.id}/status`, {
+              method: 'PATCH',
+              headers: {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({ status: APPOINTMENT_STATUS.IN_CONSULTATION }),
+            });
+            const data = await res.json();
+            if (!res.ok) {
+              message.error(data.message || 'Failed to start consultation');
+              return;
+            }
+            message.success('Consultation started');
+            queryClient.invalidateQueries({ queryKey: ['/api/appointments/my'] });
+          } catch (error) {
+            console.error('❌ Error starting consultation:', error);
+            message.error('Failed to start consultation');
+          }
+        };
 
         const handleChecked = async () => {
           if (!record.id || !hasPrescription) return;
@@ -1241,6 +1272,11 @@ export default function DoctorDashboard() {
             >
               {hasPrescription ? 'View / Edit Prescription' : 'Add Prescription'}
         </Button>
+            {normalizedStatus === APPOINTMENT_STATUS.CHECKED_IN && (
+              <Button type="link" onClick={handleStartConsultation}>
+                Start
+              </Button>
+            )}
             {isChecked ? (
               <Text style={{ color: '#52c41a', fontWeight: 500 }}>Checked</Text>
             ) : (
@@ -1590,6 +1626,12 @@ export default function DoctorDashboard() {
             height: '100%',
             overflow: 'hidden',
           }}>
+            {/* Notifications Bell (top-right) */}
+            {!isMobile && (
+              <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 8 }}>
+                <NotificationBell />
+              </div>
+            )}
             {/* Mobile Menu Button */}
             {isMobile && (
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
@@ -1600,7 +1642,7 @@ export default function DoctorDashboard() {
                   style={{ fontSize: '18px' }}
                 />
                 <Title level={4} style={{ margin: 0 }}>Dashboard</Title>
-                <div style={{ width: 32 }} /> {/* Spacer for centering */}
+                <NotificationBell />
               </div>
             )}
 

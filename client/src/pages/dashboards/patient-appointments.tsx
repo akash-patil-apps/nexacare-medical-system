@@ -40,6 +40,7 @@ import { formatTimeSlot12h } from '../../lib/time';
 import { subscribeToAppointmentEvents } from '../../lib/appointments-events';
 import { playNotificationSound } from '../../lib/notification-sounds';
 import dayjs from 'dayjs';
+import { getISTNow, getISTStartOfDay, isSameDayIST, toIST } from '../../lib/timezone';
 
 const { Content, Sider } = Layout;
 const { Title, Text } = Typography;
@@ -55,10 +56,17 @@ interface Appointment {
   timeSlot: string;
   reason: string;
   status: string;
+  displayStatus?: string;
+  rescheduledAt?: string | null;
+  rescheduledFromDate?: string | null;
+  rescheduledFromTimeSlot?: string | null;
+  rescheduleReason?: string | null;
   type: string;
   priority: string;
   symptoms: string;
   notes: string;
+  tokenNumber?: number | null;
+  checkedInAt?: string | null;
   createdAt: string;
   confirmedAt?: string;
   completedAt?: string;
@@ -80,6 +88,41 @@ export default function PatientAppointments() {
   const [selectedPrescription, setSelectedPrescription] = useState<any | null>(null);
   const [isViewModalOpen, setIsViewModalOpen] = useState(false);
   const [isPrescriptionModalOpen, setIsPrescriptionModalOpen] = useState(false);
+
+  const parseLocalDateTime = (dateStr?: string, timeStr?: string): Date | null => {
+    if (!dateStr) return null;
+    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateStr.trim());
+    if (!m) {
+      const d = new Date(dateStr);
+      return Number.isNaN(d.getTime()) ? null : d;
+    }
+    const y = Number(m[1]);
+    const mo = Number(m[2]);
+    const da = Number(m[3]);
+    if (!timeStr) return new Date(y, mo - 1, da);
+
+    const t = String(timeStr).trim();
+    // Accept "HH:mm", "HH:mm:ss", "hh:mm AM/PM"
+    const ampm = /^(\d{1,2}):(\d{2})(?::(\d{2}))?\s*([AaPp][Mm])$/.exec(t);
+    if (ampm) {
+      let hh = Number(ampm[1]);
+      const mm = Number(ampm[2]);
+      const ap = ampm[4].toUpperCase();
+      if (ap === 'PM' && hh < 12) hh += 12;
+      if (ap === 'AM' && hh === 12) hh = 0;
+      return new Date(y, mo - 1, da, hh, mm, 0, 0);
+    }
+    const hm = /^(\d{1,2}):(\d{2})(?::(\d{2}))?$/.exec(t);
+    if (hm) {
+      const hh = Number(hm[1]);
+      const mm = Number(hm[2]);
+      const ss = hm[3] ? Number(hm[3]) : 0;
+      return new Date(y, mo - 1, da, hh, mm, ss, 0);
+    }
+
+    // Fallback: date only
+    return new Date(y, mo - 1, da);
+  };
 
   // Load appointments from API
   const loadAppointments = async () => {
@@ -114,44 +157,33 @@ export default function PatientAppointments() {
         setPrescriptionsByAppointment(rxMap);
 
         // Transform API data to match our interface and derive status
-        const now = new Date();
+        const nowIST = getISTNow();
         const transformedData = data.map((apt: any) => {
           const appointmentDateRaw = apt.appointmentDate || apt.date || '';
           const appointmentTimeRaw = apt.appointmentTime || apt.time || apt.timeSlot || '';
-          // Try to build a Date from date + time; fall back to date only
-          let start: Date | null = null;
-          if (appointmentDateRaw) {
-            const datePart = new Date(appointmentDateRaw);
-            if (!Number.isNaN(datePart.getTime())) {
-              if (appointmentTimeRaw) {
-                // Construct combined string; fallback to date if parsing fails
-                const combined = new Date(`${appointmentDateRaw}T${appointmentTimeRaw}`);
-                start = Number.isNaN(combined.getTime()) ? datePart : combined;
-              } else {
-                start = datePart;
-              }
-            }
-          }
+          const startLocal = parseLocalDateTime(appointmentDateRaw, appointmentTimeRaw);
+          const startIST = toIST(startLocal);
 
           const hasPrescription = !!(rxByAppointment[apt.id]);
           const baseStatus = (apt.status || 'pending').toLowerCase();
-          let derivedStatus = baseStatus;
+          const hasTokenOrCheckin = !!(apt.tokenNumber ?? null) || !!apt.checkedInAt;
 
+          // Status shown to patient (never override backend status with "upcoming")
+          // - Keep backend status as truth (pending/confirmed/checked-in/in_consultation/completed/cancelled)
+          // - Compute "absent" only if time has passed AND appointment was never checked-in/consulted/completed/cancelled
+          let displayStatus = baseStatus;
           if (baseStatus === 'cancelled') {
-            derivedStatus = 'cancelled';
-          } else if (hasPrescription) {
-            derivedStatus = 'completed';
-          } else if (baseStatus === 'completed') {
-            derivedStatus = 'completed';
-          } else if (start) {
-            if (start < now) {
-              derivedStatus = 'absent';
-            } else {
-              derivedStatus = 'upcoming';
-            }
+            displayStatus = 'cancelled';
+          } else if (hasPrescription || baseStatus === 'completed') {
+            displayStatus = 'completed';
+          } else if (baseStatus === 'in_consultation') {
+            displayStatus = 'in_consultation';
+          } else if (baseStatus === 'checked-in' || baseStatus === 'attended' || hasTokenOrCheckin) {
+            displayStatus = 'checked-in';
+          } else if ((baseStatus === 'pending' || baseStatus === 'confirmed') && startIST && startIST < nowIST) {
+            displayStatus = 'absent';
           } else {
-            // If no date info, fall back to base status
-            derivedStatus = baseStatus;
+            displayStatus = baseStatus;
           }
 
           return {
@@ -163,11 +195,18 @@ export default function PatientAppointments() {
             appointmentTime: appointmentTimeRaw,
             timeSlot: apt.timeSlot || apt.appointmentTime || '',
             reason: apt.reason || 'Consultation',
-            status: derivedStatus,
+            status: baseStatus,
+            displayStatus,
+            rescheduledAt: apt.rescheduledAt ?? null,
+            rescheduledFromDate: apt.rescheduledFromDate ?? null,
+            rescheduledFromTimeSlot: apt.rescheduledFromTimeSlot ?? null,
+            rescheduleReason: apt.rescheduleReason ?? null,
             type: apt.type || 'online',
             priority: apt.priority || 'normal',
             symptoms: apt.symptoms || '',
             notes: apt.notes || '',
+            tokenNumber: apt.tokenNumber ?? null,
+            checkedInAt: apt.checkedInAt ?? null,
             createdAt: apt.createdAt || '',
             confirmedAt: apt.confirmedAt,
             completedAt: apt.completedAt,
@@ -226,8 +265,8 @@ export default function PatientAppointments() {
 
   // Categorize appointments into upcoming and past
   const categorizedAppointments = useMemo(() => {
-    const now = new Date();
-    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const nowIST = getISTNow();
+    const todayIST = getISTStartOfDay(nowIST);
     
     const upcoming: Appointment[] = [];
     const past: Appointment[] = [];
@@ -244,73 +283,41 @@ export default function PatientAppointments() {
       // Build appointment date/time
       const appointmentDateRaw = appointment.appointmentDate || '';
       const appointmentTimeRaw = appointment.appointmentTime || appointment.timeSlot || '';
-      let appointmentDateTime: Date | null = null;
-      
-      if (appointmentDateRaw) {
-        const datePart = new Date(appointmentDateRaw);
-        if (!Number.isNaN(datePart.getTime())) {
-          if (appointmentTimeRaw) {
-            const combined = new Date(`${appointmentDateRaw}T${appointmentTimeRaw}`);
-            appointmentDateTime = Number.isNaN(combined.getTime()) ? datePart : combined;
-          } else {
-            appointmentDateTime = datePart;
-          }
-        }
-      }
-      
-      // Categorize based on date/time and status
-      // Upcoming: future appointments OR today's appointments OR cancelled appointments (to show cancellation reason)
-      // Past: completed appointments OR past dates (not today) OR absent (but not cancelled)
-      const isCompleted = appointment.status.toLowerCase() === 'completed' || 
-                         appointment.status.toLowerCase() === 'checked-in';
-      const isCancelled = appointment.status.toLowerCase() === 'cancelled';
-      const isAbsent = appointment.status.toLowerCase() === 'absent';
-      const isPastStatus = isCompleted || isAbsent; // Don't include cancelled in past status
-      
-      if (appointmentDateTime) {
-        const appointmentDate = new Date(appointmentDateTime.getFullYear(), appointmentDateTime.getMonth(), appointmentDateTime.getDate());
-        const isToday = appointmentDate.getTime() === today.getTime();
-        const isFuture = appointmentDateTime > now;
-        
-        // Show cancelled appointments in upcoming so patients don't miss them
-        if (isCancelled) {
-          // Always show cancelled appointments in upcoming section
-          upcoming.push(appointment);
-        } else if (isToday && !isAbsent) {
-          // If it's today, show in upcoming (unless absent)
-          upcoming.push(appointment);
-        } else if (isPastStatus || (!isToday && !isFuture)) {
-          // Past: completed, absent, or past dates
+      const appointmentDateTimeLocal = parseLocalDateTime(appointmentDateRaw, appointmentTimeRaw);
+      const appointmentDateTimeIST = toIST(appointmentDateTimeLocal);
+
+      const displayStatus = (appointment.displayStatus || appointment.status || '').toLowerCase();
+
+      // Past if it is explicitly finished/cancelled/absent OR the appointment day is before today (IST).
+      const isFinishedStatus = displayStatus === 'completed' || displayStatus === 'cancelled' || displayStatus === 'absent';
+
+      if (appointmentDateTimeIST) {
+        const aptDayIST = getISTStartOfDay(appointmentDateTimeIST);
+        const isPastDay = aptDayIST.getTime() < todayIST.getTime();
+        if (isFinishedStatus || isPastDay) {
           past.push(appointment);
         } else {
-          // Future appointments
           upcoming.push(appointment);
         }
       } else {
-        // If no date info, use status to categorize
-        if (isCancelled) {
-          // Show cancelled in upcoming
-          upcoming.push(appointment);
-        } else if (isPastStatus) {
-          past.push(appointment);
-        } else {
-          upcoming.push(appointment);
-        }
+        // No date: fall back to status only
+        if (isFinishedStatus) past.push(appointment);
+        else upcoming.push(appointment);
       }
     });
     
     // Sort upcoming by date (earliest first)
     upcoming.sort((a, b) => {
-      const dateA = a.appointmentDate ? new Date(a.appointmentDate) : new Date(0);
-      const dateB = b.appointmentDate ? new Date(b.appointmentDate) : new Date(0);
-      return dateA.getTime() - dateB.getTime();
+      const aStart = toIST(parseLocalDateTime(a.appointmentDate, a.appointmentTime || a.timeSlot));
+      const bStart = toIST(parseLocalDateTime(b.appointmentDate, b.appointmentTime || b.timeSlot));
+      return (aStart?.getTime() ?? 0) - (bStart?.getTime() ?? 0);
     });
     
     // Sort past by date (most recent first)
     past.sort((a, b) => {
-      const dateA = a.appointmentDate ? new Date(a.appointmentDate) : new Date(0);
-      const dateB = b.appointmentDate ? new Date(b.appointmentDate) : new Date(0);
-      return dateB.getTime() - dateA.getTime();
+      const aStart = toIST(parseLocalDateTime(a.appointmentDate, a.appointmentTime || a.timeSlot));
+      const bStart = toIST(parseLocalDateTime(b.appointmentDate, b.appointmentTime || b.timeSlot));
+      return (bStart?.getTime() ?? 0) - (aStart?.getTime() ?? 0);
     });
     
     return { upcoming, past };
@@ -329,10 +336,10 @@ export default function PatientAppointments() {
 
   const stats = useMemo(() => ({
     total: appointments.length,
-    upcoming: appointments.filter(a => a.status === 'upcoming').length,
-    completed: appointments.filter(a => a.status === 'checked-in' || a.status === 'completed').length,
-    cancelled: appointments.filter(a => a.status === 'cancelled').length,
-  }), [appointments]);
+    upcoming: categorizedAppointments.upcoming.length,
+    completed: appointments.filter(a => (a.displayStatus || a.status || '').toLowerCase() === 'completed').length,
+    cancelled: appointments.filter(a => (a.displayStatus || a.status || '').toLowerCase() === 'cancelled').length,
+  }), [appointments, categorizedAppointments.upcoming.length]);
 
   // Extract cancellation reason from notes
   const getCancellationReason = (notes: string): string | null => {
@@ -345,7 +352,6 @@ export default function PatientAppointments() {
     switch (status.toLowerCase()) {
       case 'confirmed': return 'green';
       case 'pending': return 'orange';
-      case 'upcoming': return 'green';
       case 'checked-in': return 'blue';
       case 'completed': return 'blue';
       case 'absent': return 'red';
@@ -478,6 +484,16 @@ export default function PatientAppointments() {
       },
     },
     {
+      title: 'Token',
+      dataIndex: 'tokenNumber',
+      key: 'tokenNumber',
+      width: 80,
+      align: 'center' as const,
+      render: (tokenNumber: number | null | undefined) => (
+        tokenNumber ? <Text strong>{tokenNumber}</Text> : <Text type="secondary">-</Text>
+      ),
+    },
+    {
       title: 'Reason',
       dataIndex: 'reason',
       key: 'reason',
@@ -487,13 +503,14 @@ export default function PatientAppointments() {
       dataIndex: 'status',
       key: 'status',
       render: (status: string, record: Appointment) => {
-        const isCancelled = status.toLowerCase() === 'cancelled';
+        const effectiveStatus = (record.displayStatus || status || '').toLowerCase();
+        const isCancelled = effectiveStatus === 'cancelled';
         const cancellationReason = isCancelled ? getCancellationReason(record.notes) : null;
         
         return (
           <Space direction="vertical" size={0}>
-            <Tag color={getStatusColor(status)}>
-              {status.toUpperCase()}
+            <Tag color={getStatusColor(effectiveStatus)}>
+              {effectiveStatus.toUpperCase()}
             </Tag>
             {isCancelled && cancellationReason && (
               <Text type="secondary" style={{ fontSize: '11px', display: 'block', marginTop: '4px', fontStyle: 'italic' }}>
@@ -934,14 +951,27 @@ export default function PatientAppointments() {
               <Text strong>Time: </Text>
               <Text>{selectedAppointment.appointmentTime || selectedAppointment.timeSlot}</Text>
             </div>
+            {(selectedAppointment.rescheduledAt || selectedAppointment.rescheduledFromDate || (selectedAppointment.notes || '').toLowerCase().includes('rescheduled:')) && (
+              <div>
+                <Text strong>Rescheduled: </Text>
+                {selectedAppointment.rescheduledFromDate ? (
+                  <Text type="secondary">
+                    From {String(selectedAppointment.rescheduledFromDate).slice(0, 10)} {selectedAppointment.rescheduledFromTimeSlot || ''}
+                    {selectedAppointment.rescheduleReason ? ` • Reason: ${selectedAppointment.rescheduleReason}` : ''}
+                  </Text>
+                ) : (
+                  <Text type="secondary">See notes for details</Text>
+                )}
+              </div>
+            )}
             <div>
               <Text strong>Reason: </Text>
               <Text>{selectedAppointment.reason}</Text>
             </div>
             <div>
               <Text strong>Status: </Text>
-              <Tag color={getStatusColor(selectedAppointment.status)}>
-                {selectedAppointment.status.toUpperCase()}
+              <Tag color={getStatusColor((selectedAppointment.displayStatus || selectedAppointment.status).toLowerCase())}>
+                {(selectedAppointment.displayStatus || selectedAppointment.status).toUpperCase()}
               </Tag>
             </div>
             {selectedAppointment.symptoms && (
