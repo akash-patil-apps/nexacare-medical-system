@@ -5,6 +5,7 @@ import { authenticateToken, authorizeRoles } from '../middleware/auth';
 import type { AuthenticatedRequest } from '../types';
 import * as receptionService from '../services/reception.service';
 import { getReceptionistContext, getReceptionistByUserId } from '../services/reception.service';
+import { getRecommendedLabTestsForPatient, confirmLabRecommendation } from '../services/lab.service';
 
 const router = Router();
 
@@ -221,6 +222,44 @@ router.get(
     } catch (err) {
       console.error('Get patient info error:', err);
       res.status(500).json({ message: 'Failed to fetch patient information' });
+    }
+  }
+);
+
+/**
+ * Get recommended lab tests for a patient (doctor recommendations awaiting confirmation)
+ */
+router.get(
+  '/patients/:patientId/lab-recommendations',
+  authenticateToken,
+  authorizeRoles('receptionist'),
+  async (req: AuthenticatedRequest, res) => {
+    try {
+      const patientId = Number(req.params.patientId);
+      const recommendations = await getRecommendedLabTestsForPatient(patientId);
+      res.json(recommendations);
+    } catch (err) {
+      console.error('Get lab recommendations error:', err);
+      res.status(500).json({ message: 'Failed to fetch lab recommendations' });
+    }
+  }
+);
+
+/**
+ * Confirm recommended lab test - receptionist confirms with patient and sends to lab
+ */
+router.post(
+  '/lab-recommendations/:reportId/confirm',
+  authenticateToken,
+  authorizeRoles('receptionist'),
+  async (req: AuthenticatedRequest, res) => {
+    try {
+      const reportId = Number(req.params.reportId);
+      const confirmed = await confirmLabRecommendation(reportId);
+      res.json({ success: true, report: confirmed[0] });
+    } catch (err: any) {
+      console.error('Confirm lab recommendation error:', err);
+      res.status(500).json({ message: err.message || 'Failed to confirm lab recommendation' });
     }
   }
 );

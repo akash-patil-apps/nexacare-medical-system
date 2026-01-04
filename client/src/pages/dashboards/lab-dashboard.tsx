@@ -11,14 +11,12 @@ import {
   Space, 
   Typography,
   Menu,
-  Progress,
-  List,
   message,
   Drawer,
-  Badge,
-  Empty,
   Spin,
-  Select
+  Select,
+  Alert,
+  Divider
 } from 'antd';
 
 const { Option } = Select;
@@ -35,16 +33,15 @@ import {
   AlertOutlined,
   MenuFoldOutlined,
   MenuUnfoldOutlined,
-  BellOutlined
+  SettingOutlined,
 } from '@ant-design/icons';
 import { useAuth } from '../../hooks/use-auth';
 import { useResponsive } from '../../hooks/use-responsive';
-import { SidebarProfile } from '../../components/dashboard/SidebarProfile';
 import { KpiCard } from '../../components/dashboard/KpiCard';
-import { QuickActionTile } from '../../components/dashboard/QuickActionTile';
-import { NotificationItem } from '../../components/dashboard/NotificationItem';
 import LabReportUploadModal from '../../components/modals/lab-report-upload-modal';
-import { formatDateTime } from '../../lib/utils';
+import { NotificationBell } from '../../components/notifications/NotificationBell';
+import { subscribeToAppointmentEvents } from '../../lib/appointments-events';
+import { getISTStartOfDay, isSameDayIST } from '../../lib/timezone';
 
 const { Content, Sider } = Layout;
 const { Title, Text } = Typography;
@@ -142,28 +139,19 @@ export default function LabDashboard() {
     },
     enabled: !!user,
     refetchInterval: 15000,
+    refetchOnWindowFocus: true,
   });
 
-  // Mark notification as read
-  const markNotificationMutation = useMutation({
-    mutationFn: async (notificationId: number) => {
-      const token = localStorage.getItem('auth-token');
-      const response = await fetch(`/api/notifications/read/${notificationId}`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
-      });
-      if (!response.ok) throw new Error('Failed to mark notification as read');
-      return response.json();
-    },
-    onSuccess: () => {
-      message.success('Notification marked as read.');
-    },
-    onError: () => {
-      message.error('Failed to mark notification as read.');
+  // Real-time: subscribe to appointment events for notifications
+  useEffect(() => {
+    const unsubscribe = subscribeToAppointmentEvents({
+      onEvent: () => {
+        queryClient.invalidateQueries({ queryKey: ['/api/notifications/me'] });
     },
   });
+    return unsubscribe;
+  }, [queryClient]);
+
 
   // Update lab report status
   const updateStatusMutation = useMutation({
@@ -193,24 +181,38 @@ export default function LabDashboard() {
     },
   });
 
-  // Calculate real stats from lab reports data
-  const stats = labReportsData ? {
-    totalTests: labReportsData.length,
-    completedTests: labReportsData.filter((report: any) => report.status === 'completed').length,
-    pendingTests: labReportsData.filter((report: any) => report.status === 'pending').length,
-    todayTests: labReportsData.filter((report: any) => {
-      if (!report.reportDate && !report.date) return false;
-      const reportDate = new Date(report.reportDate || report.date);
-      const today = new Date();
-      return reportDate.toDateString() === today.toDateString();
-    }).length,
-    criticalResults: labReportsData.filter((report: any) => 
-      report.priority === 'Critical' || report.result === 'Abnormal'
-    ).length,
-    normalResults: labReportsData.filter((report: any) => 
-      report.result === 'Normal'
-    ).length
-  } : {
+  // Get current week range (Sunday to Saturday) in IST
+  const currentWeekRange = useMemo(() => {
+    const now = getISTStartOfDay();
+    const dayOfWeek = now.getDay(); // 0 = Sunday, 6 = Saturday
+    const sunday = new Date(now);
+    sunday.setDate(now.getDate() - dayOfWeek); // Go back to Sunday
+    sunday.setHours(0, 0, 0, 0);
+    
+    const saturday = new Date(sunday);
+    saturday.setDate(sunday.getDate() + 6); // Add 6 days to get Saturday
+    saturday.setHours(23, 59, 59, 999);
+    
+    return { start: sunday, end: saturday };
+  }, []);
+
+  // Check if a report date is within current week (Sunday to Saturday)
+  const isInCurrentWeek = (reportDate: Date | string | null | undefined): boolean => {
+    if (!reportDate) return false;
+    try {
+      const date = reportDate instanceof Date ? reportDate : new Date(reportDate);
+      if (isNaN(date.getTime())) return false;
+      const reportDateIST = getISTStartOfDay(date);
+      return reportDateIST >= currentWeekRange.start && reportDateIST <= currentWeekRange.end;
+    } catch {
+      return false;
+    }
+  };
+
+  // Calculate real stats from current week only (Sunday to Saturday) using IST
+  const stats = useMemo(() => {
+    if (!labReportsData || labReportsData.length === 0) {
+      return {
     totalTests: 0,
     completedTests: 0,
     pendingTests: 0,
@@ -218,13 +220,96 @@ export default function LabDashboard() {
     criticalResults: 0,
     normalResults: 0
   };
+    }
+    
+    // Filter reports to current week only (Sunday to Saturday)
+    const weekReports = labReportsData.filter((report: any) => {
+      // Always include pending/processing reports (they need action regardless of date)
+      const status = (report.status || '').toLowerCase();
+      if (status === 'pending' || status === 'processing') {
+        return true;
+      }
+      // For other statuses, check if within current week
+      return isInCurrentWeek(report.reportDate || report.date);
+    });
+    
+    return {
+      totalTests: weekReports.length,
+      completedTests: weekReports.filter((report: any) => report.status === 'completed' || report.status === 'ready').length,
+      pendingTests: weekReports.filter((report: any) => report.status === 'pending' || report.status === 'processing').length,
+      todayTests: weekReports.filter((report: any) => {
+        if (!report.reportDate && !report.date) return false;
+        return isSameDayIST(report.reportDate || report.date, new Date());
+      }).length,
+      criticalResults: weekReports.filter((report: any) => 
+        report.priority === 'Critical' || report.result === 'Abnormal'
+      ).length,
+      normalResults: weekReports.filter((report: any) => 
+        report.result === 'Normal'
+      ).length
+    };
+  }, [labReportsData, currentWeekRange]);
 
-  // Filter lab reports by status
+  // Filter lab reports: Show only relevant reports (similar to receptionist dashboard logic)
+  // - Show all pending/processing reports (regardless of date - these need action)
+  // - Show today's reports
+  // - Show recent reports (last 30 days)
+  // - Exclude very old completed reports (older than 30 days) to keep dashboard clean
+  const relevantLabReports = useMemo(() => {
+    if (!labReportsData || labReportsData.length === 0) return [];
+    
+    const todayStartIST = getISTStartOfDay();
+    const thirtyDaysAgo = new Date(todayStartIST);
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+    
+    return labReportsData.filter((report: any) => {
+      // Always show pending/processing reports (they need action)
+      const status = (report.status || '').toLowerCase();
+      if (status === 'pending' || status === 'processing') {
+        return true;
+      }
+      
+      // For other statuses, check the report date
+      if (!report.reportDate && !report.date) {
+        // If no date, show it (might be a recent entry)
+        return true;
+      }
+      
+      try {
+        const reportDate = report.reportDate ? new Date(report.reportDate) : new Date(report.date);
+        if (isNaN(reportDate.getTime())) {
+          return true; // Invalid date, show it
+        }
+        
+        const reportDateIST = getISTStartOfDay(reportDate);
+        
+        // Show if report is from today or within last 30 days
+        if (reportDateIST >= thirtyDaysAgo) {
+          return true;
+        }
+        
+        // For reports older than 30 days:
+        // - Exclude completed/ready reports (they're done, no action needed)
+        // - Show other statuses (might need attention)
+        if (status === 'completed' || status === 'ready') {
+          return false;
+        }
+        
+        // For other statuses older than 30 days, still show them (might need attention)
+        return true;
+      } catch (error) {
+        console.error(`❌ Error checking date for report ${report.id}:`, error);
+        return true; // On error, show it
+      }
+    });
+  }, [labReportsData]);
+
+  // Filter lab reports by status (after applying date filter)
   const filteredLabReports = useMemo(() => {
-    if (!labReportsData) return [];
-    if (statusFilter === 'all') return labReportsData;
-    return labReportsData.filter((report: any) => report.status === statusFilter);
-  }, [labReportsData, statusFilter]);
+    if (!relevantLabReports) return [];
+    if (statusFilter === 'all') return relevantLabReports;
+    return relevantLabReports.filter((report: any) => report.status === statusFilter);
+  }, [relevantLabReports, statusFilter]);
 
   // Separate doctor requests (pending with placeholder results) from regular reports
   const doctorRequests = useMemo(() => {
@@ -251,24 +336,43 @@ export default function LabDashboard() {
 
   const reportColumns = [
     {
+      title: '#',
+      key: 'serial',
+      width: 60,
+      align: 'center' as const,
+      render: (_: any, __: any, index: number) => (
+        <Text type="secondary" style={{ fontWeight: 500 }}>{index + 1}</Text>
+      ),
+    },
+    {
       title: 'Patient',
       dataIndex: 'patient',
       key: 'patient',
+      width: 150,
+      render: (patient: string) => (
+        <Text strong>{patient}</Text>
+      ),
     },
     {
       title: 'Test Name',
       dataIndex: 'testName',
       key: 'testName',
+      width: 180,
     },
     {
       title: 'Date',
       dataIndex: 'date',
       key: 'date',
+      width: 120,
+      render: (date: string) => (
+        <Text>{date || 'N/A'}</Text>
+      ),
     },
     {
       title: 'Result',
       dataIndex: 'result',
       key: 'result',
+      width: 120,
       render: (result: string) => (
         <Tag color={result === 'Normal' ? 'green' : result === 'Abnormal' ? 'red' : 'orange'}>
           {result}
@@ -279,6 +383,7 @@ export default function LabDashboard() {
       title: 'Priority',
       dataIndex: 'priority',
       key: 'priority',
+      width: 100,
       render: (priority: string) => (
         <Tag color={priority === 'Critical' ? 'red' : priority === 'High' ? 'orange' : 'blue'}>
           {priority}
@@ -289,6 +394,7 @@ export default function LabDashboard() {
       title: 'Status',
       dataIndex: 'status',
       key: 'status',
+      width: 150,
       render: (status: string, record: any) => (
         <Space>
           <Tag color={
@@ -298,12 +404,12 @@ export default function LabDashboard() {
           }>
             {status?.toUpperCase() || 'PENDING'}
         </Tag>
-          {status !== 'completed' && (
+          {status !== 'completed' && status !== 'ready' && (
             <Select
               size="small"
               value={status}
               onChange={(newStatus) => updateStatusMutation.mutate({ reportId: record.id, status: newStatus })}
-              style={{ width: 100 }}
+              style={{ width: 120 }}
             >
               <Option value="pending">Pending</Option>
               <Option value="processing">Processing</Option>
@@ -317,8 +423,9 @@ export default function LabDashboard() {
     {
       title: 'Actions',
       key: 'actions',
+      width: 100,
+      fixed: 'right' as const,
       render: (_: any, record: any) => (
-        <Space>
           <Button
             type="link"
             size="small"
@@ -329,7 +436,6 @@ export default function LabDashboard() {
           >
             Edit
           </Button>
-        </Space>
       ),
     },
   ];
@@ -428,70 +534,207 @@ export default function LabDashboard() {
     );
   };
 
-  const sidebarMenu = [
+  const [selectedMenuKey] = useState<string>('dashboard');
+
+  const sidebarMenu = useMemo(() => [
     {
       key: 'dashboard',
-      icon: <ExperimentOutlined />,
-      label: 'Dashboard',
+      icon: <ExperimentOutlined style={{ fontSize: 18, color: selectedMenuKey === 'dashboard' ? labTheme.primary : '#8C8C8C' }} />, 
+      label: 'Dashboard' 
     },
     {
       key: 'reports',
-      icon: <FileTextOutlined />,
-      label: 'Test Reports',
+      icon: <FileTextOutlined style={{ fontSize: 18, color: selectedMenuKey === 'reports' ? labTheme.primary : '#8C8C8C' }} />, 
+      label: 'Test Reports' 
     },
     {
       key: 'patients',
-      icon: <UserOutlined />,
-      label: 'Patients',
+      icon: <UserOutlined style={{ fontSize: 18, color: selectedMenuKey === 'patients' ? labTheme.primary : '#8C8C8C' }} />, 
+      label: 'Patients' 
     },
     {
       key: 'upload',
-      icon: <UploadOutlined />,
-      label: 'Upload Results',
+      icon: <UploadOutlined style={{ fontSize: 18, color: selectedMenuKey === 'upload' ? labTheme.primary : '#8C8C8C' }} />, 
+      label: 'Upload Results' 
     },
     {
       key: 'analytics',
-      icon: <BarChartOutlined />,
-      label: 'Analytics',
+      icon: <BarChartOutlined style={{ fontSize: 18, color: selectedMenuKey === 'analytics' ? labTheme.primary : '#8C8C8C' }} />, 
+      label: 'Analytics' 
     },
-  ];
+  ], [selectedMenuKey]);
 
   const siderWidth = isMobile ? 0 : (collapsed ? 80 : 260);
 
+  // Generate lab technician ID (LAB-YYYY-XXX format)
+  const labTechnicianId = useMemo(() => {
+    if (user?.id) {
+      const year = new Date().getFullYear();
+      const idNum = String(user.id).padStart(3, '0');
+      return `LAB-${year}-${idNum}`;
+    }
+    return 'LAB-2024-001';
+  }, [user?.id]);
+
+  // Get initials for avatar
+  const userInitials = useMemo(() => {
+    if (user?.fullName) {
+      const names = user.fullName.split(' ');
+      if (names.length >= 2) {
+        return `${names[0][0]}${names[1][0]}`.toUpperCase();
+      }
+      return user.fullName.substring(0, 2).toUpperCase();
+    }
+    return 'LT';
+  }, [user?.fullName]);
+
   // Sidebar content component (reusable for drawer and sider)
   const SidebarContent = ({ onMenuClick }: { onMenuClick?: () => void }) => (
-    <>
       <div style={{ 
-        padding: '16px', 
-        textAlign: 'center',
-        borderBottom: '1px solid #f0f0f0'
+      display: 'flex', 
+      flexDirection: 'column', 
+      height: '100%',
+      background: '#fff',
+    }}>
+      {/* NexaCare Lab Logo/Name Section */}
+      <div style={{
+        padding: '20px 16px',
+        borderBottom: '1px solid #E5E7EB',
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        gap: '8px',
       }}>
-        <ExperimentOutlined style={{ fontSize: '24px', color: labTheme.primary }} />
-        {(!collapsed || isMobile) && (
-          <Title level={4} style={{ margin: '8px 0 0 0', color: labTheme.primary }}>
+        <div style={{
+          width: '48px',
+          height: '48px',
+          borderRadius: '12px',
+          background: labTheme.primary,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          color: '#fff',
+          fontSize: '24px',
+        }}>
+          <ExperimentOutlined />
+        </div>
+        <div style={{ textAlign: 'center' }}>
+          <Text strong style={{ display: 'block', fontSize: '14px', fontWeight: 600, color: '#111827', lineHeight: 1.4 }}>
             NexaCare Lab
-          </Title>
-        )}
+          </Text>
       </div>
+      </div>
+
+      {/* Navigation Menu */}
       <Menu
         className="lab-dashboard-menu"
         mode="inline"
-        defaultSelectedKeys={['dashboard']}
+        selectedKeys={[selectedMenuKey]}
         items={sidebarMenu}
-        style={{ border: 'none', flex: 1 }}
-        onClick={onMenuClick}
+        style={{ 
+          border: 'none', 
+          flex: 1,
+          background: 'transparent',
+          padding: '8px',
+          overflowY: 'auto',
+        }}
+        onClick={(e) => {
+          if (onMenuClick) onMenuClick();
+          message.info(`${e.key} page coming soon.`);
+        }}
+        theme="light"
       />
-      <SidebarProfile
-        collapsed={collapsed && !isMobile}
-        name={user?.fullName || 'Lab Technician'}
-        roleLabel="LAB TECHNICIAN"
-        roleColor="#0EA5E9"
-        avatarIcon={<ExperimentOutlined />}
-        onSettingsClick={() => message.info('Profile settings coming soon.')}
-        onLogoutClick={logout}
-        labName={labProfile?.name || null}
-      />
-    </>
+
+      {/* User Profile Footer - Light Grey Rounded Card */}
+      <div style={{
+        marginTop: 'auto',
+        padding: '16px',
+        background: '#fff',
+        flexShrink: 0,
+      }}>
+        <div style={{
+          background: '#F3F4F6',
+          borderRadius: '12px',
+          padding: '16px',
+        }}>
+          {/* Layer 1: Profile Photo + (Name + ID) */}
+          <div style={{
+            display: 'flex',
+            alignItems: 'flex-start',
+            gap: '12px',
+            marginBottom: '12px',
+          }}>
+            {/* Avatar */}
+            <div style={{
+              width: '40px',
+              height: '40px',
+              borderRadius: '50%',
+              background: labTheme.primary,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              color: '#fff',
+              fontWeight: 600,
+              fontSize: '14px',
+              flexShrink: 0,
+            }}>
+              {userInitials}
+            </div>
+            
+            {/* Name (top) and ID (below) - stacked vertically */}
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <Text strong style={{ display: 'block', fontSize: '14px', fontWeight: 600, color: '#262626', lineHeight: 1.5, marginBottom: '4px' }}>
+                {user?.fullName || 'Lab Technician'}
+              </Text>
+              <Text style={{ display: 'block', fontSize: '12px', color: '#8C8C8C' }}>
+                ID: {labTechnicianId}
+              </Text>
+            </div>
+          </div>
+          
+          {/* Layer 2: Lab Name */}
+          {labProfile?.name && (
+            <div style={{
+              marginBottom: '12px',
+              paddingBottom: '12px',
+              borderBottom: '1px solid #E5E7EB',
+            }}>
+              <Text style={{ display: 'block', fontSize: '12px', color: '#8C8C8C', lineHeight: 1.4 }}>
+                {labProfile.name}
+              </Text>
+            </div>
+          )}
+          
+          {/* Layer 3: Active Lab Technician Text + Settings Icon */}
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+          }}>
+            {/* Active Lab Technician on left */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <div style={{
+                width: '8px',
+                height: '8px',
+                borderRadius: '50%',
+                background: '#10B981',
+              }} />
+              <Text style={{ fontSize: '12px', color: '#10B981', fontWeight: 500 }}>
+                Active Lab Technician
+              </Text>
+            </div>
+            
+            {/* Settings Icon on right */}
+            <Button 
+              type="text" 
+              icon={<SettingOutlined style={{ color: '#8C8C8C', fontSize: '18px' }} />} 
+              onClick={() => message.info('Settings coming soon.')}
+              style={{ flexShrink: 0, padding: 0, width: '32px', height: '32px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+            />
+          </div>
+        </div>
+      </div>
+    </div>
   );
 
   return (
@@ -505,6 +748,42 @@ export default function LabDashboard() {
           justify-content: unset !important;
           background: transparent !important;
           min-height: 100vh !important;
+        }
+
+        /* Ensure table body has padding for last row visibility */
+        .lab-dashboard-wrapper .ant-table-body {
+          padding-bottom: 40px !important;
+        }
+        .lab-dashboard-wrapper .ant-table-body-inner {
+          padding-bottom: 40px !important;
+        }
+        .lab-dashboard-wrapper td.ant-table-cell {
+          padding: 8px !important;
+        }
+        /* Remove gap between table header and first row */
+        .lab-dashboard-wrapper .ant-table-thead > tr > th {
+          padding: 12px 8px !important;
+          border-bottom: 1px solid #f0f0f0 !important;
+        }
+        .lab-dashboard-wrapper .ant-table-tbody > tr:first-child > td {
+          border-top: none !important;
+          padding-top: 8px !important;
+        }
+        .lab-dashboard-wrapper .ant-table-thead + .ant-table-tbody {
+          margin-top: 0 !important;
+        }
+        .lab-dashboard-wrapper .ant-table-container {
+          border-top: none !important;
+        }
+        .lab-dashboard-wrapper .ant-table-tbody > tr:first-child > td {
+          border-top: none !important;
+        }
+        .lab-dashboard-wrapper .ant-table-thead + .ant-table-tbody {
+          margin-top: 0 !important;
+        }
+        .lab-dashboard-wrapper .ant-table-fixed-right {
+          background: #fff;
+          box-shadow: -2px 0 8px rgba(0, 0, 0, 0.08);
         }
 
         .lab-dashboard-menu .ant-menu-item {
@@ -610,11 +889,24 @@ export default function LabDashboard() {
           style={{
             background: labTheme.background,
             height: '100vh',
-            overflowY: 'auto',
-            padding: isMobile ? '24px 16px 16px' : isTablet ? '24px 20px 20px' : '24px 24px 24px',
+            overflow: 'hidden',
+            padding: isMobile ? '24px 16px 16px' : isTablet ? '24px 20px 20px' : '24px 32px 24px',
+            display: 'flex',
+            flexDirection: 'column',
           }}
         >
-          <div style={{ paddingBottom: 24, maxWidth: '1320px', margin: '0 auto' }}>
+          <div style={{ 
+            display: 'flex', 
+            flexDirection: 'column', 
+            height: '100%',
+            overflow: 'hidden',
+          }}>
+            {/* Notifications Bell (top-right) */}
+            {!isMobile && (
+              <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 8, paddingRight: 8, overflow: 'visible' }}>
+                <NotificationBell />
+              </div>
+            )}
             {/* Mobile Menu Button */}
             {isMobile && (
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
@@ -625,179 +917,228 @@ export default function LabDashboard() {
                   style={{ fontSize: '18px' }}
                 />
                 <Title level={4} style={{ margin: 0 }}>Dashboard</Title>
-                <div style={{ width: 32 }} /> {/* Spacer for centering */}
+                <div style={{ paddingRight: 8, overflow: 'visible' }}>
+                  <NotificationBell />
+                </div>
               </div>
             )}
             
-            {/* Desktop/Tablet Menu Toggle */}
-            {!isMobile && (
-              <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 16 }}>
-                <Button
-                  type="text"
-                  icon={collapsed ? <MenuFoldOutlined /> : <MenuUnfoldOutlined />}
-                  onClick={() => setCollapsed(!collapsed)}
-                />
+            {/* Alert/Banner Notifications - Show important unread notifications */}
+            {notifications.filter((n: any) => !n.isRead).length > 0 && (
+              <div style={{ marginBottom: 16 }}>
+                {notifications
+                  .filter((n: any) => !n.isRead)
+                  .slice(0, 3) // Show max 3 alerts
+                  .map((notif: any) => {
+                    const type = (notif.type || '').toLowerCase();
+                    let alertType: 'info' | 'success' | 'warning' | 'error' = 'info';
+                    if (type.includes('cancel') || type.includes('reject') || type.includes('critical')) alertType = 'error';
+                    else if (type.includes('confirm') || type.includes('complete') || type.includes('ready')) alertType = 'success';
+                    else if (type.includes('pending') || type.includes('resched') || type.includes('processing')) alertType = 'warning';
+                    
+                    return (
+                      <Alert
+                        key={notif.id}
+                        message={notif.title || 'Notification'}
+                        description={notif.message}
+                        type={alertType}
+                        showIcon
+                        closable
+                        style={{ marginBottom: 8 }}
+                        onClose={() => {
+                          // Mark as read when closed
+                          const token = localStorage.getItem('auth-token');
+                          fetch(`/api/notifications/read/${notif.id}`, {
+                            method: 'POST',
+                            headers: { Authorization: `Bearer ${token}` },
+                          }).then(() => {
+                            queryClient.invalidateQueries({ queryKey: ['/api/notifications/me'] });
+                          });
+                        }}
+                      />
+                    );
+                  })}
               </div>
             )}
 
-            {/* KPI Cards - Responsive Grid */}
+            {/* KPI Cards - Matching Receptionist Dashboard Design */}
             {isMobile ? (
               <div style={{ 
                 display: 'flex', 
                 overflowX: 'auto', 
-                gap: 12, 
+                gap: 16, 
                 marginBottom: 24,
                 paddingBottom: 8,
                 scrollSnapType: 'x mandatory',
                 WebkitOverflowScrolling: 'touch',
               }}>
                 {[
-                  { label: "Samples Pending", value: stats?.pendingTests || 0, icon: <FileSearchOutlined style={{ fontSize: '24px', color: labTheme.primary }} />, trendLabel: "Awaiting Analysis", trendType: "neutral" as const, onView: () => message.info('View pending tests') },
-                  { label: "Reports Ready", value: stats?.completedTests || 0, icon: <CheckCircleOutlined style={{ fontSize: '24px', color: labTheme.secondary }} />, trendLabel: "Completed Today", trendType: "positive" as const, onView: () => message.info('View completed tests') },
-                  { label: "Critical Alerts", value: stats?.criticalResults || 0, icon: <AlertOutlined style={{ fontSize: '24px', color: labTheme.accent }} />, trendLabel: "Requires Attention", trendType: (stats?.criticalResults > 0 ? "negative" : "positive") as const, onView: () => message.info('View critical alerts') },
-                  { label: "Total Tests", value: stats?.totalTests || 0, icon: <ExperimentOutlined style={{ fontSize: '24px', color: labTheme.primary }} />, trendLabel: "All Time", trendType: "neutral" as const, onView: () => message.info('View all tests') },
+                  { label: "Samples Pending", value: stats?.pendingTests || 0, icon: <FileSearchOutlined style={{ fontSize: '24px', color: labTheme.primary }} />, trendLabel: "Awaiting Analysis", trendColor: labTheme.primary, trendBg: labTheme.highlight, onView: () => message.info('View pending tests') },
+                  { label: "Reports Ready", value: stats?.completedTests || 0, icon: <CheckCircleOutlined style={{ fontSize: '24px', color: labTheme.secondary }} />, trendLabel: "Completed Today", trendColor: labTheme.secondary, trendBg: "#D1FAE5", onView: () => message.info('View completed tests') },
+                  { label: "Critical Alerts", value: stats?.criticalResults || 0, icon: <AlertOutlined style={{ fontSize: '24px', color: labTheme.accent }} />, trendLabel: "Requires Attention", trendColor: stats?.criticalResults > 0 ? labTheme.accent : "#6B7280", trendBg: stats?.criticalResults > 0 ? "#FEE2E2" : "#F3F4F6", onView: () => message.info('View critical alerts') },
+                  { label: "Total Tests", value: stats?.totalTests || 0, icon: <ExperimentOutlined style={{ fontSize: '24px', color: labTheme.primary }} />, trendLabel: "All Time", trendColor: "#6B7280", trendBg: "#F3F4F6", onView: () => message.info('View all tests') },
                 ].map((kpi, idx) => (
-                  <div key={idx} style={{ minWidth: 200, scrollSnapAlign: 'start' }}>
+                  <div key={idx} style={{ minWidth: 220, scrollSnapAlign: 'start' }}>
                     <KpiCard {...kpi} />
                   </div>
                 ))}
               </div>
             ) : (
-          <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
-                <Col xs={24} sm={12} md={6} style={{ display: 'flex' }}>
+              <div style={{ display: 'flex', gap: 16, marginBottom: 24, width: '100%' }}>
+                <div style={{ flex: 1, minWidth: 0 }}>
               <KpiCard
                 label="Samples Pending"
                 value={stats?.pendingTests || 0}
                 icon={<FileSearchOutlined style={{ fontSize: '24px', color: labTheme.primary }} />}
                 trendLabel="Awaiting Analysis"
                 trendType="neutral"
+                    trendColor={labTheme.primary}
+                    trendBg={labTheme.highlight}
+                    onView={() => message.info('View pending tests')}
               />
-            </Col>
-                <Col xs={24} sm={12} md={6} style={{ display: 'flex' }}>
+                </div>
+                <div style={{ flex: 1, minWidth: 0 }}>
               <KpiCard
                 label="Reports Ready"
                 value={stats?.completedTests || 0}
                 icon={<CheckCircleOutlined style={{ fontSize: '24px', color: labTheme.secondary }} />}
                 trendLabel="Completed Today"
                 trendType="positive"
+                    trendColor={labTheme.secondary}
+                    trendBg="#D1FAE5"
+                    onView={() => message.info('View completed tests')}
               />
-            </Col>
-                <Col xs={24} sm={12} md={6} style={{ display: 'flex' }}>
+                </div>
+                <div style={{ flex: 1, minWidth: 0 }}>
               <KpiCard
                 label="Critical Alerts"
                 value={stats?.criticalResults || 0}
                 icon={<AlertOutlined style={{ fontSize: '24px', color: labTheme.accent }} />}
                 trendLabel="Requires Attention"
                 trendType={stats?.criticalResults > 0 ? 'negative' : 'positive'}
+                    trendColor={stats?.criticalResults > 0 ? labTheme.accent : "#6B7280"}
+                    trendBg={stats?.criticalResults > 0 ? "#FEE2E2" : "#F3F4F6"}
+                    onView={() => message.info('View critical alerts')}
               />
-            </Col>
-                <Col xs={24} sm={12} md={6} style={{ display: 'flex' }}>
+                </div>
+                <div style={{ flex: 1, minWidth: 0 }}>
               <KpiCard
                 label="Total Tests"
                 value={stats?.totalTests || 0}
                 icon={<ExperimentOutlined style={{ fontSize: '24px', color: labTheme.primary }} />}
                 trendLabel="All Time"
                 trendType="neutral"
+                    trendColor="#6B7280"
+                    trendBg="#F3F4F6"
+                    onView={() => message.info('View all tests')}
               />
-            </Col>
-          </Row>
+                </div>
+              </div>
             )}
 
-          {/* Quick Actions */}
+          {/* Lab Status Summary - Similar to Receptionist Queue Status */}
           <Card 
-            title="Quick Actions" 
+            variant="borderless"
             style={{ 
-              marginBottom: '24px',
               borderRadius: 16,
-              background: labTheme.background
+              boxShadow: '0 2px 8px rgba(0, 0, 0, 0.08)',
+              border: '1px solid #E5E7EB',
+              background: '#fff',
+              marginBottom: 24,
             }}
-            bodyStyle={{ padding: isMobile ? 16 : 20 }}
           >
-            {isMobile ? (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                <QuickActionTile
-                  label="Log Sample"
-                  icon={<ExperimentOutlined />}
-                  onClick={() => {
-                    setSelectedReport(null);
-                    setIsUploadModalOpen(true);
-                  }}
-                />
-                <QuickActionTile
-                  label="Upload Report"
-                  icon={<UploadOutlined />}
-                  onClick={() => {
-                    setSelectedReport(null);
-                    setIsUploadModalOpen(true);
-                  }}
-                />
-                <QuickActionTile
-                  label="Assign Technician"
-                  icon={<UserOutlined />}
-                  onClick={() => message.info('Assign technician feature coming soon')}
-                />
-                <QuickActionTile
-                  label="Request Re-test"
-                  icon={<FileSearchOutlined />}
-                  onClick={() => message.info('Request re-test feature coming soon')}
-                />
+            <div style={{ 
+              display: 'flex', 
+              justifyContent: 'space-between', 
+              alignItems: 'center',
+              flexWrap: isMobile ? 'wrap' : 'nowrap',
+              gap: isMobile ? 16 : 24,
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flex: 1 }}>
+                <Text type="secondary" style={{ fontSize: 14, minWidth: 80 }}>Pending:</Text>
+                <Text strong style={{ fontSize: 16, color: '#F97316' }}>{relevantLabReports?.filter((r: any) => r.status === 'pending').length || 0}</Text>
               </div>
-            ) : (
-              <Row gutter={[16, 16]}>
-                <Col xs={24} sm={12} md={6}>
-                  <QuickActionTile
-                    label="Log Sample"
-                    icon={<ExperimentOutlined />}
-                    onClick={() => {
-                      setSelectedReport(null);
-                      setIsUploadModalOpen(true);
-                    }}
-                  />
-                </Col>
-                <Col xs={24} sm={12} md={6}>
-                  <QuickActionTile
-                    label="Upload Report"
-                    icon={<UploadOutlined />}
-                    onClick={() => {
-                      setSelectedReport(null);
-                      setIsUploadModalOpen(true);
-                    }}
-                  />
-                </Col>
-                <Col xs={24} sm={12} md={6}>
-                  <QuickActionTile
-                    label="Assign Technician"
-                    icon={<UserOutlined />}
-                    onClick={() => message.info('Assign technician feature coming soon')}
-                  />
-                </Col>
-                <Col xs={24} sm={12} md={6}>
-                <QuickActionTile
-                  label="Request Re-test"
-                  icon={<FileSearchOutlined />}
-                  onClick={() => message.info('Request re-test feature coming soon')}
-                />
-              </Col>
-            </Row>
-            )}
+              <Divider type="vertical" style={{ height: 24, margin: 0 }} />
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flex: 1 }}>
+                <Text type="secondary" style={{ fontSize: 14, minWidth: 100 }}>Processing:</Text>
+                <Text strong style={{ fontSize: 16, color: '#0EA5E9' }}>{relevantLabReports?.filter((r: any) => r.status === 'processing').length || 0}</Text>
+              </div>
+              <Divider type="vertical" style={{ height: 24, margin: 0 }} />
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flex: 1 }}>
+                <Text type="secondary" style={{ fontSize: 14, minWidth: 120 }}>Ready:</Text>
+                <Text strong style={{ fontSize: 16, color: '#22C55E' }}>{relevantLabReports?.filter((r: any) => r.status === 'ready' || r.status === 'completed').length || 0}</Text>
+              </div>
+              <Divider type="vertical" style={{ height: 24, margin: 0 }} />
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flex: 1 }}>
+                <Text type="secondary" style={{ fontSize: 14, minWidth: 100 }}>Total:</Text>
+                <Text strong style={{ fontSize: 16, color: labTheme.primary }}>{relevantLabReports?.length || 0}</Text>
+              </div>
+              <div style={{ marginLeft: 'auto', textAlign: 'right' }}>
+                <Text type="secondary" style={{ fontSize: 12 }}>
+                  {relevantLabReports?.filter((r: any) => r.status === 'completed' || r.status === 'ready').length || 0} of {relevantLabReports?.length || 0} completed
+                </Text>
+              </div>
+            </div>
           </Card>
 
-          <Row gutter={[16, 16]}>
-            {/* Lab Reports Queue */}
-            <Col xs={24} lg={16}>
-              <Space direction="vertical" size={16} style={{ width: '100%' }}>
-                {/* Doctor Requests Section */}
-                {doctorRequests.length > 0 && (
+          {/* Lab Reports Queue - Full width, fills remaining height */}
+          <Row gutter={[16, 16]} style={{ flex: 1, minHeight: 0, display: 'flex' }}>
+            <Col xs={24} lg={24} style={{ display: 'flex', flexDirection: 'column', minHeight: 0 }}>
                   <Card 
-                    title={
+                variant="borderless"
+                style={{ 
+                  borderRadius: 16,
+                  boxShadow: '0 2px 8px rgba(0, 0, 0, 0.08)',
+                  border: '1px solid #E5E7EB',
+                  background: '#fff',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  flex: 1,
+                  minHeight: 0,
+                }}
+                title="Lab Reports Queue"
+                extra={
                       <Space>
-                        <ExperimentOutlined style={{ color: labTheme.accent }} />
-                        <span>Doctor Requests ({doctorRequests.length})</span>
-                        <Tag color="orange">New</Tag>
+                    <Select
+                      value={statusFilter}
+                      onChange={setStatusFilter}
+                      style={{ width: 120 }}
+                      size="small"
+                    >
+                      <Option value="all">All Status</Option>
+                      <Option value="pending">Pending</Option>
+                      <Option value="processing">Processing</Option>
+                      <Option value="ready">Ready</Option>
+                      <Option value="completed">Completed</Option>
+                    </Select>
+                    <Button type="link" onClick={() => message.info('View all reports feature coming soon')}>View All</Button>
                       </Space>
                     }
-                    style={{ borderRadius: 16, border: `2px solid ${labTheme.accent}` }}
-                  >
+                bodyStyle={{ 
+                  flex: 1, 
+                  minHeight: 0, 
+                  display: 'flex', 
+                  flexDirection: 'column',
+                  overflow: 'hidden',
+                  padding: 0,
+                }}
+              >
+                <div style={{ 
+                  flex: 1, 
+                  minHeight: 0, 
+                  display: 'flex', 
+                  flexDirection: 'column',
+                  overflow: 'hidden',
+                  padding: isMobile ? 12 : 16,
+                }}>
+                  {/* Doctor Requests Section */}
+                  {doctorRequests.length > 0 && (
+                    <div style={{ marginBottom: 16 }}>
+                      <Space style={{ marginBottom: 12 }}>
+                        <ExperimentOutlined style={{ color: labTheme.accent }} />
+                        <Text strong>Doctor Requests ({doctorRequests.length})</Text>
+                        <Tag color="orange">New</Tag>
+                      </Space>
                     {isMobile ? (
                       <Space direction="vertical" size={12} style={{ width: '100%' }}>
                         {doctorRequests.map((report: any) => {
@@ -815,7 +1156,7 @@ export default function LabDashboard() {
                         })}
                       </Space>
                     ) : (
-                      <div style={{ overflowX: 'auto' }}>
+                        <div style={{ overflowX: 'auto', marginBottom: 16 }}>
                         <Table
                           columns={reportColumns}
                           dataSource={doctorRequests.map((report: any) => ({
@@ -830,7 +1171,6 @@ export default function LabDashboard() {
                           }))}
                           pagination={false}
                           rowKey="id"
-                          variant="borderless"
                           size={isMobile ? "small" : "middle"}
                           scroll={isMobile ? { x: 'max-content' } : undefined}
                           style={{
@@ -839,155 +1179,48 @@ export default function LabDashboard() {
                         />
                       </div>
                     )}
-                  </Card>
+                    </div>
                 )}
 
                 {/* Regular Lab Reports */}
-              <Card 
-                  title="Lab Reports Queue" 
-                  extra={
-                    <Space>
-                      <Select
-                        value={statusFilter}
-                        onChange={setStatusFilter}
-                        style={{ width: 120 }}
-                        size="small"
-                      >
-                        <Option value="all">All Status</Option>
-                        <Option value="pending">Pending</Option>
-                        <Option value="processing">Processing</Option>
-                        <Option value="ready">Ready</Option>
-                        <Option value="completed">Completed</Option>
-                      </Select>
-                      <Button type="link" onClick={() => message.info('View all reports feature coming soon')}>View All</Button>
-                    </Space>
-                  }
-                style={{ borderRadius: 16 }}
-              >
                   {isMobile ? (
-                    <Space direction="vertical" size={12} style={{ width: '100%' }}>
+                    <Space direction="vertical" size={12} style={{ width: '100%', flex: 1, overflowY: 'auto', paddingRight: 8, paddingBottom: 40 }}>
                       {labReportsLoading ? (
                         <>
                           <Card size="small" style={{ borderRadius: 16 }}><Spin /></Card>
                           <Card size="small" style={{ borderRadius: 16 }}><Spin /></Card>
                         </>
                       ) : (
-                        labReports
-                          .filter((r: any) => !doctorRequests.find((dr: any) => dr.id === r.id))
-                          .map((r: any) => renderMobileReportCard(r))
+                        labReports.filter((r: any) => !doctorRequests.find((dr: any) => dr.id === r.id)).map((report: any) => renderMobileReportCard(report))
                       )}
                     </Space>
                   ) : (
-                    <div style={{ overflowX: 'auto' }}>
+                    <div style={{ flex: 1, height: '100%', overflow: 'hidden', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+                      <div style={{ flex: 1, height: '100%', overflowY: 'auto', overflowX: 'auto', minHeight: 0 }}>
+                        <div style={{ paddingBottom: 40 }}>
                       <Table
                         columns={reportColumns}
                         dataSource={labReports.filter((r: any) => !doctorRequests.find((dr: any) => dr.id === r.id))}
                         pagination={false}
                         rowKey="id"
-                        variant="borderless"
                         size={isMobile ? "small" : "middle"}
-                        scroll={isMobile ? { x: 'max-content' } : undefined}
+                            scroll={{ 
+                              x: 'max-content',
+                              ...(labReports.length > 3 ? { y: 'calc(100vh - 520px)' } : {}),
+                            }}
                         loading={labReportsLoading}
                         style={{
                           backgroundColor: labTheme.background
                         }}
                       />
+                        </div>
+                      </div>
                     </div>
                   )}
-              </Card>
-              </Space>
-            </Col>
-
-            {/* Lab Performance & Critical Results */}
-            <Col xs={24} lg={8}>
-              <Card 
-                title="Lab Performance"
-                style={{ borderRadius: 16 }}
-              >
-                <Progress 
-                  percent={stats?.totalTests ? Math.round((stats.completedTests / stats.totalTests) * 100) : 0} 
-                  status="active" 
-                  strokeColor={labTheme.primary}
-                  style={{ marginBottom: '16px' }}
-                />
-                <Text type="secondary">
-                  {stats?.completedTests || 0} of {stats?.totalTests || 0} tests completed
-                </Text>
-              </Card>
-
-              <Card 
-                title={
-                  <Space>
-                    <BellOutlined />
-                    <span>Notifications</span>
-                    {notifications.filter((notif: any) => !notif.read).length > 0 && (
-                      <Badge count={notifications.filter((notif: any) => !notif.read).length} />
-                    )}
-                  </Space>
-                }
-                style={{ 
-                  marginTop: '16px',
-                  borderRadius: 16
-                }}
-              >
-                {notificationsLoading ? (
-                  <Spin size="small" />
-                ) : notifications.length > 0 ? (
-                  <Space direction="vertical" size={12} style={{ width: '100%' }}>
-                    {notifications.slice(0, 5).map((notif: any) => (
-                      <NotificationItem
-                        key={notif.id}
-                        title={notif.title || 'Notification'}
-                        message={notif.message || ''}
-                        timestamp={formatDateTime(notif.createdAt)}
-                        severity={notif.type === 'urgent' ? 'urgent' : 'info'}
-                        read={Boolean(notif.read)}
-                        onMarkRead={() => !notif.read && markNotificationMutation.mutate(notif.id)}
-                      />
-                    ))}
-                  </Space>
-                ) : (
-                  <Empty
-                    image={Empty.PRESENTED_IMAGE_SIMPLE}
-                    description="All caught up"
-                    style={{ padding: '20px 0' }}
-                  />
-                )}
-              </Card>
-
-              <Card 
-                title="Critical Results" 
-                style={{ 
-                  marginTop: '16px',
-                  borderRadius: 16,
-                  borderColor: labTheme.accent
-                }}
-              >
-                <List
-                  dataSource={labReports?.filter((report: any) => report.priority === 'Critical')}
-                  renderItem={(report: any) => (
-                    <List.Item style={{ 
-                      padding: '12px 0',
-                      borderBottom: '1px solid #f0f0f0'
-                    }}>
-                      <List.Item.Meta
-                        title={<Text strong>{report.patient}</Text>}
-                        description={
-                          <Space direction="vertical" size={0}>
-                            <Text type="secondary">{report.testName}</Text>
-                            <Tag color={labTheme.accent}>CRITICAL</Tag>
-                          </Space>
-                        }
-                      />
-                    </List.Item>
-                  )}
-                />
+                </div>
               </Card>
             </Col>
           </Row>
-          </div>
-        </Content>
-      </Layout>
 
       {/* Lab Report Upload Modal */}
       <LabReportUploadModal
@@ -1002,6 +1235,9 @@ export default function LabDashboard() {
         }}
         report={selectedReport}
       />
+          </div>
+        </Content>
+      </Layout>
       </Layout>
     </>
   );

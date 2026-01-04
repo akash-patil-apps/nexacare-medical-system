@@ -27,6 +27,7 @@ import { apiRequest } from "../lib/queryClient";
 import { getAuthToken } from "../lib/auth";
 import type { Medication } from "../../../shared/schema";
 import dayjs from "dayjs";
+import prescriptionIcon from '../assets/images/prescription.png';
 
 const { Title, Text } = Typography;
 const { Option } = Select;
@@ -555,15 +556,17 @@ export default function PrescriptionForm({
                 <MedicineBoxOutlined style={{ marginRight: '8px' }} />
                 Medications ({medications.length})
               </Title>
-              <Button
-                type="primary"
-                icon={<PlusOutlined />}
-                onClick={() => {
-                  setIsMedicationModalOpen(true);
-                }}
-              >
-                Add Medication
-              </Button>
+              <Space>
+                <Button
+                  type="primary"
+                  icon={<img src={prescriptionIcon} alt="Prescription" style={{ width: 16, height: 16 }} />}
+                  onClick={() => {
+                    setIsMedicationModalOpen(true);
+                  }}
+                >
+                  Add Medication
+                </Button>
+              </Space>
             </div>
 
             {medications.length > 0 ? (
@@ -785,6 +788,7 @@ export default function PrescriptionForm({
           </Form.Item>
         </Form>
       </Modal>
+
     </>
   );
 }

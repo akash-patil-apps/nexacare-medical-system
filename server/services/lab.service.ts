@@ -1,6 +1,6 @@
 import { db } from '../db';
 import { labs, labReports, patients, doctors, users } from '../../shared/schema';
-import { eq, desc } from 'drizzle-orm';
+import { eq, desc, and } from 'drizzle-orm';
 import { InsertLabReport } from '../../shared/schema-types';
 import { getDoctorByUserId } from './doctors.service';
 
@@ -17,12 +17,47 @@ export const createLabReport = async (data: Omit<InsertLabReport, 'id' | 'create
 };
 
 // Create lab request from doctor (pending report without results)
+// Helper function to auto-derive test type from test name
+const deriveTestType = (testName: string): string => {
+  const name = testName.toLowerCase();
+  
+  if (name.includes('x-ray') || name.includes('xray') || name.includes('radiography')) {
+    return 'X-Ray';
+  }
+  if (name.includes('ct scan') || name.includes('ctscan') || name.includes('computed tomography')) {
+    return 'CT Scan';
+  }
+  if (name.includes('mri') || name.includes('magnetic resonance')) {
+    return 'MRI';
+  }
+  if (name.includes('ultrasound') || name.includes('sonography')) {
+    return 'Ultrasound';
+  }
+  if (name.includes('ecg') || name.includes('ekg') || name.includes('electrocardiogram')) {
+    return 'ECG';
+  }
+  if (name.includes('urine') || name.includes('urinalysis')) {
+    return 'Urine Test';
+  }
+  if (name.includes('biopsy')) {
+    return 'Biopsy';
+  }
+  if (name.includes('culture')) {
+    return 'Culture';
+  }
+  if (name.includes('blood') || name.includes('cbc') || name.includes('glucose') || name.includes('lipid') || name.includes('lft') || name.includes('kft') || name.includes('tft')) {
+    return 'Blood Test';
+  }
+  
+  return 'Other';
+};
+
 export const createLabRequest = async (data: {
   patientId: number;
   doctorUserId: number; // User ID of the doctor
   labId?: number;
   testName: string;
-  testType: string;
+  testType?: string; // Now optional
   reportDate: Date | string;
   priority?: string;
   notes?: string;
@@ -34,40 +69,55 @@ export const createLabRequest = async (data: {
     throw new Error('Doctor not found');
   }
 
-  // For requests, we create a lab report with status "pending" and placeholder results
-  // Lab technician will update with actual results later
+  // Doctor recommends lab test - status is "recommended" until receptionist confirms with patient
+  // Receptionist will confirm and change status to "pending" to send to lab
   // If labId not specified, we'll need to assign it later or use a default
   // For now, we'll require labId or get from doctor's hospital
   const labId = data.labId || 1; // TODO: Get from doctor's hospital or allow assignment later
+
+  // Auto-derive test type from test name if not provided
+  const testType = data.testType || deriveTestType(data.testName);
+
+  // Store priority in notes if provided (since priority column doesn't exist in schema yet)
+  const notesWithPriority = data.priority 
+    ? `${data.priority} priority${data.notes || data.instructions ? ` - ${data.notes || data.instructions}` : ''}`
+    : (data.notes || data.instructions);
 
   return db.insert(labReports).values({
     patientId: data.patientId,
     doctorId: doctor.id,
     labId: labId,
     testName: data.testName,
-    testType: data.testType,
-    results: 'Pending - Awaiting lab processing',
-    status: 'pending',
+    testType: testType,
+    results: 'Recommended - Awaiting patient confirmation',
+    status: 'recommended', // Changed from 'pending' - now requires receptionist confirmation
     reportDate: typeof data.reportDate === 'string' ? new Date(data.reportDate) : data.reportDate,
-    notes: data.notes || data.instructions,
+    notes: notesWithPriority,
   }).returning();
 };
 
 export const getLabReportsForLab = async (labId: number) => {
   console.log(`🔬 Fetching lab reports for lab ID: ${labId}`);
   
-  // Get all lab reports for this lab
+  // Get all lab reports for this lab (excluding "recommended" status - those are not sent to lab yet)
   const reports = await db
     .select()
     .from(labReports)
-    .where(eq(labReports.labId, labId))
+    .where(and(
+      eq(labReports.labId, labId),
+      // Exclude "recommended" status - these are doctor recommendations not yet confirmed by receptionist
+      // Only show reports that have been confirmed and sent to lab
+    ))
     .orderBy(desc(labReports.reportDate));
   
-  console.log(`📋 Found ${reports.length} lab reports for lab ${labId}`);
+  // Filter out "recommended" status reports (they shouldn't appear in lab dashboard)
+  const filteredReports = reports.filter((report) => report.status !== 'recommended');
+  
+  console.log(`📋 Found ${reports.length} lab reports for lab ${labId} (${filteredReports.length} after filtering out recommended)`);
   
   // Enrich reports with patient and doctor names
   const enrichedReports = await Promise.all(
-    reports.map(async (report) => {
+    filteredReports.map(async (report) => {
       let patientName = 'Unknown';
       let doctorName = null;
       
@@ -175,4 +225,94 @@ export const updateLabReport = async (reportId: number, data: Partial<Omit<Inser
     .set(data)
     .where(eq(labReports.id, reportId))
     .returning();
+};
+
+// Confirm recommended lab test - receptionist confirms with patient and sends to lab
+export const confirmLabRecommendation = async (reportId: number) => {
+  const [report] = await db
+    .select()
+    .from(labReports)
+    .where(eq(labReports.id, reportId))
+    .limit(1);
+  
+  if (!report) {
+    throw new Error('Lab report not found');
+  }
+  
+  if (report.status !== 'recommended') {
+    throw new Error(`Cannot confirm lab test with status: ${report.status}. Only 'recommended' tests can be confirmed.`);
+  }
+  
+  // Change status from "recommended" to "pending" to send to lab
+  return db
+    .update(labReports)
+    .set({ 
+      status: 'pending',
+      results: 'Pending - Awaiting lab processing'
+    })
+    .where(eq(labReports.id, reportId))
+    .returning();
+};
+
+// Get recommended lab tests for a patient (for receptionist to see)
+export const getRecommendedLabTestsForPatient = async (patientId: number) => {
+  console.log(`🔬 Fetching recommended lab reports for patient ID: ${patientId}`);
+  
+  // Select all fields from labReports (priority might not exist in schema, so we'll handle it safely)
+  const reports = await db
+    .select()
+    .from(labReports)
+    .where(and(
+      eq(labReports.patientId, patientId),
+      eq(labReports.status, 'recommended')
+    ))
+    .orderBy(desc(labReports.createdAt));
+
+  console.log(`✅ Found ${reports.length} recommended lab reports for patient ${patientId}`);
+
+  // Enrich with doctor names
+  const enrichedReports = await Promise.all(
+    reports.map(async (report) => {
+      let doctorName = null;
+      if (report.doctorId) {
+        try {
+          const [doctor] = await db
+            .select({ userId: doctors.userId })
+            .from(doctors)
+            .where(eq(doctors.id, report.doctorId))
+            .limit(1);
+          if (doctor) {
+            const [doctorUser] = await db
+              .select({ fullName: users.fullName })
+              .from(users)
+              .where(eq(users.id, doctor.userId))
+              .limit(1);
+            if (doctorUser) {
+              doctorName = doctorUser.fullName;
+            }
+          }
+        } catch (error) {
+          console.error(`❌ Error fetching doctor name for doctor ID ${report.doctorId}:`, error);
+        }
+      }
+      
+      // Extract priority from notes if it was stored there, or default to 'normal'
+      let priority = 'normal';
+      if (report.notes) {
+        const priorityMatch = report.notes.match(/^(urgent|high|normal)\s+priority/i);
+        if (priorityMatch) {
+          priority = priorityMatch[1].toLowerCase();
+        }
+      }
+      
+      return { 
+        ...report, 
+        doctorName,
+        priority, // Add priority field for frontend compatibility
+      };
+    })
+  );
+
+  console.log(`✅ Enriched ${enrichedReports.length} reports with doctor names`);
+  return enrichedReports;
 };

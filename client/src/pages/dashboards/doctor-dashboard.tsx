@@ -14,7 +14,8 @@ import {
   Spin,
   Tabs,
   Drawer,
-  List
+  List,
+  Alert,
 } from 'antd';
 import { 
   UserOutlined, 
@@ -36,6 +37,9 @@ import PrescriptionForm from '../../components/prescription-form';
 import { KpiCard } from '../../components/dashboard/KpiCard';
 import { QuickActionTile } from '../../components/dashboard/QuickActionTile';
 import LabRequestModal from '../../components/modals/lab-request-modal';
+import LabReportViewerModal from '../../components/modals/lab-report-viewer-modal';
+import prescriptionIcon from '../../assets/images/prescription.png';
+import tubeIcon from '../../assets/images/tube.png';
 import dayjs from 'dayjs';
 import { formatTimeSlot12h } from '../../lib/time';
 import { subscribeToAppointmentEvents } from '../../lib/appointments-events';
@@ -157,6 +161,8 @@ export default function DoctorDashboard() {
   const [patientInfoDrawerOpen, setPatientInfoDrawerOpen] = useState(false);
   const [patientInfo, setPatientInfo] = useState<any>(null);
   const [patientInfoLoading, setPatientInfoLoading] = useState(false);
+  const [selectedLabReport, setSelectedLabReport] = useState<any>(null);
+  const [isLabReportModalOpen, setIsLabReportModalOpen] = useState(false);
 
   // Map prescriptions by appointment ID for quick lookup
   // This tracks whether a doctor has given a prescription to a patient for a specific appointment
@@ -845,7 +851,31 @@ export default function DoctorDashboard() {
   
   console.log('✅ User has DOCTOR role, rendering dashboard');
 
-  const handleOpenPrescriptionModal = (appointment?: any, prescription?: any) => {
+  const handleOpenPrescriptionModal = async (appointment?: any, prescription?: any) => {
+    // If appointment status is "checked-in", automatically start consultation
+    if (appointment?.id && normalizeStatus(appointment.status) === APPOINTMENT_STATUS.CHECKED_IN) {
+      try {
+        const token = localStorage.getItem('auth-token');
+        if (token) {
+          const res = await fetch(`/api/appointments/${appointment.id}/status`, {
+            method: 'PATCH',
+            headers: {
+              'Authorization': `Bearer ${token}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ status: APPOINTMENT_STATUS.IN_CONSULTATION }),
+          });
+          if (res.ok) {
+            message.success('Consultation started');
+            queryClient.invalidateQueries({ queryKey: ['/api/appointments/my'] });
+          }
+        }
+      } catch (error) {
+        console.error('❌ Error starting consultation:', error);
+        // Continue to open prescription modal even if start consultation fails
+      }
+    }
+
     if (appointment?.patientId) {
       setSelectedPatientId(appointment.patientId);
       setSelectedAppointmentId(appointment.id);
@@ -1029,11 +1059,24 @@ export default function DoctorDashboard() {
             <Button
               size="small"
               type="primary"
+              icon={<img src={prescriptionIcon} alt="Prescription" style={{ width: 14, height: 14 }} />}
               onClick={() => handleOpenPrescriptionModal(record, existingPrescription)}
               disabled={!record.patientId || isFinal || !canCreatePrescription(normalizedStatus)}
-            >
-              {hasPrescription ? 'View / Edit' : 'Add Rx'}
-            </Button>
+              title={hasPrescription ? 'View / Edit Prescription' : 'Add Prescription'}
+            />
+            <Button
+              size="small"
+              type="link"
+              icon={<img src={tubeIcon} alt="Request Lab Test" style={{ width: 14, height: 14 }} />}
+              onClick={() => {
+                setSelectedPatientId(record.patientId);
+                setSelectedAppointmentId(record.id);
+                setSelectedPatientName(record.patient || record.patientName);
+                setIsLabRequestModalOpen(true);
+              }}
+              disabled={!record.patientId}
+              title="Request Lab Test"
+            />
             {isChecked ? (
               <Text style={{ color: '#52c41a', fontWeight: 500, fontSize: 14 }}>Checked</Text>
             ) : (
@@ -1198,35 +1241,6 @@ export default function DoctorDashboard() {
         const isFinal = isFinalStatus(normalizedStatus);
         const isChecked = normalizedStatus === APPOINTMENT_STATUS.COMPLETED;
 
-        const handleStartConsultation = async () => {
-          if (!record.id) return;
-          try {
-            const token = localStorage.getItem('auth-token');
-            if (!token) {
-              message.error('Authentication required');
-              return;
-            }
-            const res = await fetch(`/api/appointments/${record.id}/status`, {
-              method: 'PATCH',
-              headers: {
-                'Authorization': `Bearer ${token}`,
-                'Content-Type': 'application/json',
-              },
-              body: JSON.stringify({ status: APPOINTMENT_STATUS.IN_CONSULTATION }),
-            });
-            const data = await res.json();
-            if (!res.ok) {
-              message.error(data.message || 'Failed to start consultation');
-              return;
-            }
-            message.success('Consultation started');
-            queryClient.invalidateQueries({ queryKey: ['/api/appointments/my'] });
-          } catch (error) {
-            console.error('❌ Error starting consultation:', error);
-            message.error('Failed to start consultation');
-          }
-        };
-
         const handleChecked = async () => {
           if (!record.id || !hasPrescription) return;
           try {
@@ -1267,16 +1281,23 @@ export default function DoctorDashboard() {
           <Space>
         <Button
           type="link"
+              icon={<img src={prescriptionIcon} alt="Prescription" style={{ width: 16, height: 16 }} />}
               onClick={() => handleOpenPrescriptionModal(record, existingPrescription)}
               disabled={!record.patientId || !canViewPrescription}
-            >
-              {hasPrescription ? 'View / Edit Prescription' : 'Add Prescription'}
-        </Button>
-            {normalizedStatus === APPOINTMENT_STATUS.CHECKED_IN && (
-              <Button type="link" onClick={handleStartConsultation}>
-                Start
-              </Button>
-            )}
+              title={hasPrescription ? 'View / Edit Prescription' : 'Add Prescription'}
+            />
+            <Button
+              type="link"
+              icon={<img src={tubeIcon} alt="Request Lab Test" style={{ width: 16, height: 16 }} />}
+              onClick={() => {
+                setSelectedPatientId(record.patientId);
+                setSelectedAppointmentId(record.id);
+                setSelectedPatientName(record.patient || record.patientName);
+                setIsLabRequestModalOpen(true);
+              }}
+              disabled={!record.patientId}
+              title="Request Lab Test"
+            />
             {isChecked ? (
               <Text style={{ color: '#52c41a', fontWeight: 500 }}>Checked</Text>
             ) : (
@@ -1563,6 +1584,23 @@ export default function DoctorDashboard() {
         .doctor-dashboard-wrapper .patient-name-link:active {
           color: #096dd9 !important;
         }
+        /* Fix table scrolling - ensure last row is fully visible */
+        .doctor-dashboard-wrapper .ant-table-body {
+          padding-bottom: 40px !important;
+        }
+        .doctor-dashboard-wrapper .ant-table-body-inner {
+          padding-bottom: 40px !important;
+        }
+        /* Reduce table cell padding */
+        .doctor-dashboard-wrapper .ant-table-thead > tr > th,
+        .doctor-dashboard-wrapper .ant-table-tbody > tr > td {
+          padding: 8px 8px !important;
+        }
+        /* Ensure Actions column is always visible */
+        .doctor-dashboard-wrapper .ant-table-cell-fix-right {
+          background: var(--ant-table-bg) !important;
+          box-shadow: -2px 0 8px rgba(0, 0, 0, 0.1) !important;
+        }
       `}</style>
       <Layout className="doctor-dashboard-wrapper" style={{ minHeight: '100vh', background: doctorTheme.background }}>
       {/* Desktop/Tablet Sidebar */}
@@ -1602,6 +1640,17 @@ export default function DoctorDashboard() {
         </Drawer>
       )}
 
+      {/* Lab Report Viewer Modal */}
+      <LabReportViewerModal
+        open={isLabReportModalOpen}
+        onCancel={() => {
+          setIsLabReportModalOpen(false);
+          setSelectedLabReport(null);
+        }}
+        report={selectedLabReport}
+        loading={false}
+      />
+
       <Layout
         style={{
           marginLeft: siderWidth,
@@ -1628,7 +1677,7 @@ export default function DoctorDashboard() {
           }}>
             {/* Notifications Bell (top-right) */}
             {!isMobile && (
-              <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 8 }}>
+              <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 8, paddingRight: 8, overflow: 'visible' }}>
                 <NotificationBell />
               </div>
             )}
@@ -1643,6 +1692,43 @@ export default function DoctorDashboard() {
                 />
                 <Title level={4} style={{ margin: 0 }}>Dashboard</Title>
                 <NotificationBell />
+              </div>
+            )}
+
+            {/* Alert/Banner Notifications - Show important unread notifications */}
+            {notifications.filter((n: any) => !n.isRead).length > 0 && (
+              <div style={{ marginBottom: 16 }}>
+                {notifications
+                  .filter((n: any) => !n.isRead)
+                  .slice(0, 3)
+                  .map((notif: any) => {
+                    const type = (notif.type || '').toLowerCase();
+                    let alertType: 'info' | 'success' | 'warning' | 'error' = 'info';
+                    if (type.includes('cancel') || type.includes('reject')) alertType = 'error';
+                    else if (type.includes('confirm') || type.includes('complete')) alertType = 'success';
+                    else if (type.includes('pending') || type.includes('resched')) alertType = 'warning';
+                    
+                    return (
+                      <Alert
+                        key={notif.id}
+                        message={notif.title || 'Notification'}
+                        description={notif.message}
+                        type={alertType}
+                        showIcon
+                        closable
+                        style={{ marginBottom: 8 }}
+                        onClose={() => {
+                          const token = localStorage.getItem('auth-token');
+                          fetch(`/api/notifications/read/${notif.id}`, {
+                            method: 'POST',
+                            headers: { Authorization: `Bearer ${token}` },
+                          }).then(() => {
+                            queryClient.invalidateQueries({ queryKey: ['/api/notifications/me'] });
+                          });
+                        }}
+                      />
+                    );
+                  })}
               </div>
             )}
 
@@ -1801,33 +1887,40 @@ export default function DoctorDashboard() {
                           children: (
                             <div style={{ 
                               flex: 1, 
-                              overflow: 'auto',
+                              minHeight: 0,
+                              overflow: 'hidden',
+                              display: 'flex',
+                              flexDirection: 'column',
                               marginTop: 8,
                             }}>
                               {isMobile ? (
-                                <Space direction="vertical" size={12} style={{ width: '100%' }}>
-                                  {appointmentsLoading ? (
-                                    <>
-                                      <Card size="small" style={{ borderRadius: 16 }}><Spin /></Card>
-                                      <Card size="small" style={{ borderRadius: 16 }}><Spin /></Card>
-                                    </>
-                                  ) : (
-                                    appointmentsToShow.map(renderMobileAppointmentCard)
-                                  )}
-                                </Space>
+                                <div style={{ flex: 1, overflowY: 'auto', paddingBottom: 20 }}>
+                                  <Space direction="vertical" size={12} style={{ width: '100%' }}>
+                                    {appointmentsLoading ? (
+                                      <>
+                                        <Card size="small" style={{ borderRadius: 16 }}><Spin /></Card>
+                                        <Card size="small" style={{ borderRadius: 16 }}><Spin /></Card>
+                                      </>
+                                    ) : (
+                                      appointmentsToShow.map(renderMobileAppointmentCard)
+                                    )}
+                                  </Space>
+                                </div>
                               ) : (
-                              <Table
-                                columns={appointmentColumns}
-                                dataSource={appointmentsToShow}
-                                pagination={false}
-                                rowKey="id"
-                                loading={appointmentsLoading}
-                                size={isMobile ? "small" : "middle"}
-                                scroll={isMobile ? { x: 'max-content' } : { x: 'max-content', y: 'calc(100vh - 500px)' }}
+                              <div style={{ flex: 1, minHeight: 0, overflow: 'hidden' }}>
+                                <Table
+                                  columns={appointmentColumns}
+                                  dataSource={appointmentsToShow}
+                                  pagination={false}
+                                  rowKey="id"
+                                  loading={appointmentsLoading}
+                                  size={isMobile ? "small" : "middle"}
+                                  scroll={{ x: 'max-content', y: 'calc(100vh - 550px)' }}
                                   rowClassName={(record: any) =>
                                     activeAppointmentTab === 'today' && isPastToday(record) ? 'appointment-row-past' : ''
                                   }
-                              />
+                                />
+                              </div>
                               )}
                             </div>
                           ),
@@ -1865,9 +1958,19 @@ export default function DoctorDashboard() {
       {/* Lab Request Modal */}
       <LabRequestModal
         open={isLabRequestModalOpen}
-        onCancel={() => setIsLabRequestModalOpen(false)}
+        onCancel={() => {
+          setIsLabRequestModalOpen(false);
+          setSelectedPatientId(undefined);
+          setSelectedAppointmentId(undefined);
+          setSelectedPatientName(undefined);
+        }}
         onSuccess={() => {
           queryClient.invalidateQueries({ queryKey: ['/api/labs/doctor/reports'] });
+          message.success('Lab test recommended successfully');
+          setIsLabRequestModalOpen(false);
+          setSelectedPatientId(undefined);
+          setSelectedAppointmentId(undefined);
+          setSelectedPatientName(undefined);
         }}
         patientId={selectedPatientId}
         appointmentId={selectedAppointmentId}
@@ -2005,18 +2108,29 @@ export default function DoctorDashboard() {
             <List
                   dataSource={patientInfo.labReports}
                   renderItem={(report: any) => (
-                <List.Item>
+                <List.Item
+                      style={{ cursor: 'pointer' }}
+                      onClick={() => {
+                        setSelectedLabReport(report);
+                        setIsLabReportModalOpen(true);
+                      }}
+                    >
                       <div style={{ width: '100%' }}>
-                        <Text strong>{report.testName}</Text>
+                        <Space>
+                          <Text strong>{report.testName}</Text>
+                          {report.status && (
+                            <Tag color={report.status === 'completed' ? 'green' : report.status === 'ready' ? 'blue' : 'orange'}>
+                              {report.status}
+                            </Tag>
+                          )}
+                        </Space>
                         <br />
                         <Text type="secondary" style={{ fontSize: 12 }}>
-                          {dayjs(report.reportDate).format('DD MMM YYYY')} • {report.testType}
+                          {dayjs(report.reportDate).format('DD MMM YYYY')} • {report.testType || 'N/A'}
                         </Text>
-                        {report.status && (
-                          <Tag color={report.status === 'completed' ? 'green' : 'orange'} style={{ marginLeft: 8 }}>
-                            {report.status}
-                          </Tag>
-                        )}
+                        <Text type="secondary" style={{ fontSize: 11, display: 'block', marginTop: 4, fontStyle: 'italic' }}>
+                          Click to view detailed report
+                        </Text>
                   </div>
                 </List.Item>
               )}

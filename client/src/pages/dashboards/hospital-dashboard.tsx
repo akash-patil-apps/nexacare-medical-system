@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect } from "react";
-import { useQuery, useMutation } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { formatTimeSlot12h } from "../../lib/time";
 import { 
   Layout, 
@@ -12,14 +12,12 @@ import {
   Space, 
   Typography,
   Menu,
-  Progress,
-  List,
   message,
-  Avatar,
   Drawer,
-  Badge,
-  Empty,
-  Spin
+  Spin,
+  Alert,
+  Divider,
+  Tabs,
 } from 'antd';
 import { 
   UserOutlined, 
@@ -27,20 +25,18 @@ import {
   FileTextOutlined,
   TeamOutlined,
   BankOutlined,
-  UserAddOutlined,
   BarChartOutlined,
-  CheckCircleOutlined,
-  MenuFoldOutlined,
   MenuUnfoldOutlined,
-  BellOutlined
+  SettingOutlined,
 } from '@ant-design/icons';
 import { useAuth } from '../../hooks/use-auth';
 import { useResponsive } from '../../hooks/use-responsive';
-import { SidebarProfile } from '../../components/dashboard/SidebarProfile';
 import { KpiCard } from '../../components/dashboard/KpiCard';
-import { QuickActionTile } from '../../components/dashboard/QuickActionTile';
-import { NotificationItem } from '../../components/dashboard/NotificationItem';
-import { formatDateTime } from '../../lib/utils';
+import { NotificationBell } from '../../components/notifications/NotificationBell';
+import { subscribeToAppointmentEvents } from '../../lib/appointments-events';
+import { getISTStartOfDay, isSameDayIST } from '../../lib/timezone';
+import dayjs from 'dayjs';
+import { normalizeStatus, APPOINTMENT_STATUS } from '../../lib/appointment-status';
 
 const { Content, Sider } = Layout;
 const { Title, Text } = Typography;
@@ -54,10 +50,12 @@ const hospitalTheme = {
 };
 
 export default function HospitalDashboard() {
-  const { user, logout } = useAuth();
+  const { user } = useAuth();
   const { isMobile, isTablet } = useResponsive();
+  const queryClient = useQueryClient();
   const [collapsed, setCollapsed] = useState(false);
   const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false);
+  const [activeAppointmentTab, setActiveAppointmentTab] = useState<string>('today_all');
 
   // Auto-collapse sidebar on mobile/tablet
   useEffect(() => {
@@ -96,7 +94,7 @@ export default function HospitalDashboard() {
   });
 
   // Get notifications for hospital admin
-  const { data: notifications = [], isLoading: notificationsLoading } = useQuery({
+  const { data: notifications = [] } = useQuery({
     queryKey: ['/api/notifications/me'],
     queryFn: async () => {
       const token = localStorage.getItem('auth-token');
@@ -113,28 +111,19 @@ export default function HospitalDashboard() {
     },
     enabled: !!user,
     refetchInterval: 15000,
+    refetchOnWindowFocus: true,
   });
 
-  // Mark notification as read
-  const markNotificationMutation = useMutation({
-    mutationFn: async (notificationId: number) => {
-      const token = localStorage.getItem('auth-token');
-      const response = await fetch(`/api/notifications/read/${notificationId}`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
-      });
-      if (!response.ok) throw new Error('Failed to mark notification as read');
-      return response.json();
-    },
-    onSuccess: () => {
-      message.success('Notification marked as read.');
-    },
-    onError: () => {
-      message.error('Failed to mark notification as read.');
+  // Real-time: subscribe to appointment events for notifications
+  useEffect(() => {
+    const unsubscribe = subscribeToAppointmentEvents({
+      onEvent: () => {
+        queryClient.invalidateQueries({ queryKey: ['/api/notifications/me'] });
     },
   });
+    return unsubscribe;
+  }, [queryClient]);
+
 
   // Get hospital appointments with auto-refresh
   const { data: allAppointments = [], isLoading: appointmentsLoading } = useQuery({
@@ -171,6 +160,7 @@ export default function HospitalDashboard() {
         department: apt.doctorSpecialty || 'General',
           date: apt.appointmentDate,
           dateObj: appointmentDate,
+          tokenNumber: apt.tokenNumber || null,
         };
       });
     },
@@ -179,10 +169,10 @@ export default function HospitalDashboard() {
     refetchOnMount: true, // Refetch when component mounts
   });
 
-  // Filter appointments that are today or in the future (by date and time)
+  // Filter appointments that are today or in the future (by date and time) using IST
   // Hospital admin needs to see pending, confirmed, completed, and cancelled appointments
   const futureAppointments = useMemo(() => {
-    const now = new Date();
+    const todayStart = getISTStartOfDay();
     
     return allAppointments
       .filter((apt: any) => {
@@ -195,60 +185,18 @@ export default function HospitalDashboard() {
         }
         
         try {
-          const appointmentDateTime = apt.dateObj || new Date(apt.date);
-          if (isNaN(appointmentDateTime.getTime())) {
+          const appointmentDate = apt.dateObj || new Date(apt.date);
+          if (isNaN(appointmentDate.getTime())) {
             return false;
           }
           
-          // Parse time from appointmentTime or timeSlot
-          let appointmentTime = new Date(appointmentDateTime);
+          // Get appointment date in IST
+          const aptDateIST = getISTStartOfDay(appointmentDate);
           
-          if (apt.time) {
-            // Parse time string (e.g., "09:00", "09:00 AM", "14:30")
-            const timeStr = apt.time.trim();
-            const timeMatch = timeStr.match(/(\d{1,2}):(\d{2})\s*(AM|PM|am|pm)?/i);
-            
-            if (timeMatch) {
-              let hours = parseInt(timeMatch[1]);
-              const minutes = parseInt(timeMatch[2]);
-              const period = timeMatch[3]?.toUpperCase();
-              
-              // Handle 12-hour format
-              if (period === 'PM' && hours !== 12) {
-                hours += 12;
-              } else if (period === 'AM' && hours === 12) {
-                hours = 0;
-              }
-              // Legacy convention: "02:00-05:00" slots represent AFTERNOON (2 PM - 5 PM) when AM/PM is missing
-              if (!period && hours >= 2 && hours <= 5) {
-                hours += 12;
-              }
-              
-              appointmentTime.setHours(hours, minutes, 0, 0);
-            } else {
-              // Try 24-hour format
-              const parts = timeStr.split(':');
-              if (parts.length >= 2) {
-                let hours = parseInt(parts[0]) || 9;
-                const minutes = parseInt(parts[1]) || 0;
-                if (hours >= 2 && hours <= 5) {
-                  hours += 12;
-                }
-                appointmentTime.setHours(hours, minutes, 0, 0);
-              } else {
-                // Default to 9 AM if can't parse
-                appointmentTime.setHours(9, 0, 0, 0);
-              }
-            }
-          } else {
-            // No time info, default to start of day (midnight)
-            appointmentTime.setHours(0, 0, 0, 0);
-          }
-          
-          // Only include appointments that are today or in the future (by date and time)
-          return appointmentTime >= now;
+          // Include appointments from today onwards
+          return aptDateIST >= todayStart;
         } catch (error) {
-          console.error(`❌ Error checking date/time for appointment ${apt.id}:`, error);
+          console.error(`❌ Error checking date for appointment ${apt.id}:`, error);
           return false;
         }
       })
@@ -260,23 +208,175 @@ export default function HospitalDashboard() {
       });
   }, [allAppointments]);
 
-  // Use filtered appointments
-  const appointments = futureAppointments;
+  // Group appointments by date for tabs
+  const appointmentsByDate = useMemo(() => {
+    const today = getISTStartOfDay();
+    const tomorrow = new Date(today);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    
+    const groups: Record<string, any[]> = {
+      today: [],
+      tomorrow: [],
+    };
+    
+    futureAppointments.forEach((apt: any) => {
+      if (!apt.dateObj && !apt.date) return;
 
-  // Get recent doctors from hospital appointments
-  const doctors = appointments ? Array.from(
-    new Map(
-      appointments
-        .filter((apt: any) => apt.doctor && apt.doctor !== 'Unknown Doctor')
-        .map((apt: any) => [apt.doctor, {
-          id: apt.doctor,
-          name: apt.doctor,
-          specialty: apt.department || 'General',
-          patients: appointments.filter((a: any) => a.doctor === apt.doctor).length,
-          status: 'active'
-        }])
-    ).values()
-  ).slice(0, 5) : [];
+      const rawDate = apt.dateObj || new Date(apt.date);
+      const appointmentDate = getISTStartOfDay(rawDate);
+      
+      const dateKey = appointmentDate.getTime();
+      const todayKey = today.getTime();
+      const tomorrowKey = tomorrow.getTime();
+      
+      if (dateKey === todayKey) {
+        groups.today.push(apt);
+      } else if (dateKey === tomorrowKey) {
+        groups.tomorrow.push(apt);
+      } else {
+        const dateStr = dayjs(appointmentDate).format('YYYY-MM-DD');
+        if (!groups[dateStr]) {
+          groups[dateStr] = [];
+        }
+        groups[dateStr].push(apt);
+      }
+    });
+    
+    return groups;
+  }, [futureAppointments]);
+
+  // All appointments for today
+  const todayAllAppointments = useMemo(() => {
+    const todayIST = getISTStartOfDay();
+    return futureAppointments.filter((apt: any) => {
+      if (!apt.date && !apt.dateObj) return false;
+      const d = apt.dateObj || new Date(apt.date);
+      if (isNaN(d.getTime())) return false;
+      return isSameDayIST(d, todayIST);
+    });
+  }, [futureAppointments]);
+
+  // Pending appointments (Today + Future)
+  const pendingAppointments = useMemo(() => {
+    return futureAppointments.filter((apt: any) => normalizeStatus(apt.status) === APPOINTMENT_STATUS.PENDING);
+  }, [futureAppointments]);
+
+  // Confirmed appointments (Today + Future)
+  const confirmedAppointments = useMemo(() => {
+    return futureAppointments.filter((apt: any) => normalizeStatus(apt.status) === APPOINTMENT_STATUS.CONFIRMED);
+  }, [futureAppointments]);
+
+  // Checked-in appointments for today
+  const checkedInTodayAppointments = useMemo(() => {
+    const todayIST = getISTStartOfDay();
+    return futureAppointments.filter((apt: any) => {
+      const normalizedStatus = normalizeStatus(apt.status);
+      if (
+        normalizedStatus !== APPOINTMENT_STATUS.CHECKED_IN &&
+        normalizedStatus !== APPOINTMENT_STATUS.ATTENDED
+      ) {
+        return false;
+      }
+      if (!apt.date && !apt.dateObj) return false;
+      const d = apt.dateObj || new Date(apt.date);
+      if (isNaN(d.getTime())) return false;
+      return isSameDayIST(d, todayIST);
+    });
+  }, [futureAppointments]);
+
+  // In consultation appointments for today
+  const inConsultationTodayAppointments = useMemo(() => {
+    return todayAllAppointments.filter((apt: any) => normalizeStatus(apt.status) === APPOINTMENT_STATUS.IN_CONSULTATION);
+  }, [todayAllAppointments]);
+
+  // Completed appointments for today
+  const completedTodayAppointments = useMemo(() => {
+    const todayIST = getISTStartOfDay();
+    return futureAppointments.filter((apt: any) => {
+      const normalizedStatus = normalizeStatus(apt.status);
+      if (normalizedStatus !== APPOINTMENT_STATUS.COMPLETED) return false;
+      if (!apt.date && !apt.dateObj) return false;
+      const d = apt.dateObj || new Date(apt.date);
+      if (isNaN(d.getTime())) return false;
+      return isSameDayIST(d, todayIST);
+    });
+  }, [futureAppointments]);
+
+  // Get appointments for active tab
+  const appointmentsToShow = useMemo(() => {
+    switch (activeAppointmentTab) {
+      case 'today_all':
+        return todayAllAppointments;
+      case 'pending':
+        return pendingAppointments;
+      case 'confirmed':
+        return confirmedAppointments;
+      case 'checkedin':
+        return checkedInTodayAppointments;
+      case 'inconsultation':
+        return inConsultationTodayAppointments;
+      case 'completed':
+        return completedTodayAppointments;
+      case 'tomorrow':
+        return appointmentsByDate.tomorrow || [];
+      default:
+        return appointmentsByDate[activeAppointmentTab] || [];
+    }
+  }, [
+    activeAppointmentTab,
+    appointmentsByDate,
+    todayAllAppointments,
+    pendingAppointments,
+    confirmedAppointments,
+    checkedInTodayAppointments,
+    inConsultationTodayAppointments,
+    completedTodayAppointments,
+  ]);
+
+  // Generate tab items for appointments
+  const appointmentTabs = useMemo(() => {
+    const tabs: Array<{ key: string; label: string; count: number }> = [];
+    
+    tabs.push({ key: 'today_all', label: `Today (${todayAllAppointments.length})`, count: todayAllAppointments.length });
+    tabs.push({ key: 'pending', label: `Pending (${pendingAppointments.length})`, count: pendingAppointments.length });
+    tabs.push({ key: 'confirmed', label: `Confirmed (${confirmedAppointments.length})`, count: confirmedAppointments.length });
+    tabs.push({ key: 'checkedin', label: `Checked In (${checkedInTodayAppointments.length})`, count: checkedInTodayAppointments.length });
+    tabs.push({ key: 'inconsultation', label: `In Consultation (${inConsultationTodayAppointments.length})`, count: inConsultationTodayAppointments.length });
+    tabs.push({ key: 'completed', label: `Completed (${completedTodayAppointments.length})`, count: completedTodayAppointments.length });
+    
+    if (appointmentsByDate.tomorrow && appointmentsByDate.tomorrow.length > 0) {
+      tabs.push({ key: 'tomorrow', label: `Tomorrow (${appointmentsByDate.tomorrow.length})`, count: appointmentsByDate.tomorrow.length });
+    }
+    
+    Object.keys(appointmentsByDate)
+      .filter(key => key !== 'today' && key !== 'tomorrow')
+      .sort()
+      .forEach(dateKey => {
+        const count = appointmentsByDate[dateKey]?.length || 0;
+        if (count > 0) {
+          const date = dayjs(dateKey);
+          tabs.push({ 
+            key: dateKey, 
+            label: `${date.format('DD MMM')} (${count})`, 
+            count 
+          });
+        }
+      });
+    
+    return tabs;
+  }, [
+    todayAllAppointments,
+    pendingAppointments,
+    confirmedAppointments,
+    checkedInTodayAppointments,
+    inConsultationTodayAppointments,
+    completedTodayAppointments,
+    appointmentsByDate,
+  ]);
+
+  // Use filtered appointments
+  const appointments = appointmentsToShow;
+
 
   const appointmentColumns = [
     {
@@ -292,37 +392,94 @@ export default function HospitalDashboard() {
       title: 'Patient',
       dataIndex: 'patient',
       key: 'patient',
+      width: 150,
+      render: (patient: string) => (
+        <Text strong>{patient}</Text>
+      ),
+    },
+    {
+      title: 'Date & Time',
+      key: 'datetime',
+      width: 180,
+      render: (_: any, record: any) => {
+        const dateStr = record.dateObj 
+          ? record.dateObj.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
+          : record.date 
+          ? new Date(record.date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
+          : 'N/A';
+        const timeStr = record.time ? formatTimeSlot12h(record.time) : 'N/A';
+        return (
+          <div>
+            <div style={{ fontSize: 13, fontWeight: 500 }}>{dateStr}</div>
+            <div style={{ fontSize: 12, color: '#8C8C8C' }}>{timeStr}</div>
+          </div>
+        );
+      },
+    },
+    {
+      title: 'Token',
+      key: 'token',
+      width: 80,
+      align: 'center' as const,
+      render: (_: any, record: any) => {
+        const token = record.tokenNumber;
+        return token ? (
+          <Tag color="blue" style={{ margin: 0, fontWeight: 600 }}>#{token}</Tag>
+        ) : (
+          <Text type="secondary" style={{ fontSize: 12 }}>-</Text>
+        );
+      },
     },
     {
       title: 'Doctor',
       dataIndex: 'doctor',
       key: 'doctor',
-    },
-    {
-      title: 'Time',
-      dataIndex: 'time',
-      key: 'time',
-      render: (time: string) => (time ? formatTimeSlot12h(time) : 'N/A'),
+      width: 150,
     },
     {
       title: 'Department',
       dataIndex: 'department',
       key: 'department',
+      width: 120,
     },
     {
       title: 'Status',
       dataIndex: 'status',
       key: 'status',
-      render: (status: string) => (
-        <Tag color={status === 'confirmed' ? 'green' : 'orange'}>
-          {status.toUpperCase()}
+      width: 120,
+      render: (status: string) => {
+        const statusColors: Record<string, string> = {
+          'pending': 'orange',
+          'confirmed': 'blue',
+          'checked-in': 'cyan',
+          'in_consultation': 'purple',
+          'completed': 'green',
+          'cancelled': 'red',
+        };
+        return (
+          <Tag color={statusColors[status] || 'default'}>
+            {status?.toUpperCase().replace('_', ' ') || 'PENDING'}
         </Tag>
-      ),
+        );
+      },
     },
   ];
 
   const renderMobileAppointmentCard = (record: any) => {
     const status = (record.status || '').toLowerCase();
+    const dateStr = record.dateObj 
+      ? record.dateObj.toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })
+      : record.date 
+      ? new Date(record.date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })
+      : 'N/A';
+    const statusColors: Record<string, string> = {
+      'pending': 'orange',
+      'confirmed': 'blue',
+      'checked-in': 'cyan',
+      'in_consultation': 'purple',
+      'completed': 'green',
+      'cancelled': 'red',
+    };
     return (
       <Card
         key={record.id}
@@ -341,96 +498,225 @@ export default function HospitalDashboard() {
             <Text strong style={{ fontSize: 14, display: 'block', lineHeight: 1.4 }}>
               {record.patient || 'Unknown Patient'}
             </Text>
-            <Text type="secondary" style={{ fontSize: 12, display: 'block', lineHeight: 1.4 }}>
-              {record.doctor || 'Unknown Doctor'}
+            <Text type="secondary" style={{ fontSize: 12, display: 'block', lineHeight: 1.4, marginTop: 4 }}>
+              {record.doctor || 'Unknown Doctor'} • {record.department || 'General'}
             </Text>
           </div>
-          <Tag color={status === 'confirmed' ? 'green' : 'orange'} style={{ margin: 0, fontSize: 12 }}>
-            {(record.status || 'N/A').toUpperCase()}
+          <Space direction="vertical" align="end" size={4}>
+            {record.tokenNumber && (
+              <Tag color="blue" style={{ margin: 0, fontSize: 12, fontWeight: 600 }}>#{record.tokenNumber}</Tag>
+            )}
+            <Tag color={statusColors[status] || 'default'} style={{ margin: 0, fontSize: 12 }}>
+              {(record.status || 'N/A').toUpperCase().replace('_', ' ')}
           </Tag>
+          </Space>
         </div>
 
         <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 10, gap: 12 }}>
           <Text type="secondary" style={{ fontSize: 12 }}>
-            <span style={{ fontFamily: 'monospace' }}>{record.time ? formatTimeSlot12h(record.time) : 'N/A'}</span>
+            {dateStr}
           </Text>
           <Text type="secondary" style={{ fontSize: 12 }}>
-            {record.department || 'General'}
+            <span style={{ fontFamily: 'monospace' }}>{record.time ? formatTimeSlot12h(record.time) : 'N/A'}</span>
           </Text>
         </div>
       </Card>
     );
   };
 
-  const sidebarMenu = [
+  const [selectedMenuKey] = useState<string>('dashboard');
+
+  const sidebarMenu = useMemo(() => [
     {
       key: 'dashboard',
-      icon: <BankOutlined />,
-      label: 'Dashboard',
+      icon: <BankOutlined style={{ fontSize: 18, color: selectedMenuKey === 'dashboard' ? hospitalTheme.primary : '#8C8C8C' }} />, 
+      label: 'Dashboard' 
     },
     {
       key: 'doctors',
-      icon: <TeamOutlined />,
-      label: 'Doctors',
+      icon: <TeamOutlined style={{ fontSize: 18, color: selectedMenuKey === 'doctors' ? hospitalTheme.primary : '#8C8C8C' }} />, 
+      label: 'Doctors' 
     },
     {
       key: 'patients',
-      icon: <UserOutlined />,
-      label: 'Patients',
+      icon: <UserOutlined style={{ fontSize: 18, color: selectedMenuKey === 'patients' ? hospitalTheme.primary : '#8C8C8C' }} />, 
+      label: 'Patients' 
     },
     {
       key: 'appointments',
-      icon: <CalendarOutlined />,
-      label: 'Appointments',
+      icon: <CalendarOutlined style={{ fontSize: 18, color: selectedMenuKey === 'appointments' ? hospitalTheme.primary : '#8C8C8C' }} />, 
+      label: 'Appointments' 
     },
     {
       key: 'reports',
-      icon: <FileTextOutlined />,
-      label: 'Lab Reports',
+      icon: <FileTextOutlined style={{ fontSize: 18, color: selectedMenuKey === 'reports' ? hospitalTheme.primary : '#8C8C8C' }} />, 
+      label: 'Lab Reports' 
     },
     {
       key: 'analytics',
-      icon: <BarChartOutlined />,
-      label: 'Analytics',
+      icon: <BarChartOutlined style={{ fontSize: 18, color: selectedMenuKey === 'analytics' ? hospitalTheme.primary : '#8C8C8C' }} />, 
+      label: 'Analytics' 
     },
-  ];
+  ], [selectedMenuKey]);
 
   const siderWidth = isMobile ? 0 : (collapsed ? 80 : 260);
 
+  // Generate hospital admin ID (HOS-YYYY-XXX format)
+  const hospitalAdminId = useMemo(() => {
+    if (user?.id) {
+      const year = new Date().getFullYear();
+      const idNum = String(user.id).padStart(3, '0');
+      return `HOS-${year}-${idNum}`;
+    }
+    return 'HOS-2024-001';
+  }, [user?.id]);
+
+  // Get initials for avatar
+  const userInitials = useMemo(() => {
+    if (user?.fullName) {
+      const names = user.fullName.split(' ');
+      if (names.length >= 2) {
+        return `${names[0][0]}${names[1][0]}`.toUpperCase();
+      }
+      return user.fullName.substring(0, 2).toUpperCase();
+    }
+    return 'HA';
+  }, [user?.fullName]);
+
   // Sidebar content component (reusable for drawer and sider)
   const SidebarContent = ({ onMenuClick }: { onMenuClick?: () => void }) => (
-    <>
       <div style={{ 
-        padding: '16px', 
-        textAlign: 'center',
-        borderBottom: '1px solid #f0f0f0'
+      display: 'flex', 
+      flexDirection: 'column', 
+      height: '100%',
+      background: '#fff',
+    }}>
+      {/* NexaCare Hospital Logo/Name Section */}
+      <div style={{
+        padding: '20px 16px',
+        borderBottom: '1px solid #E5E7EB',
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        gap: '8px',
       }}>
-        <BankOutlined style={{ fontSize: '24px', color: hospitalTheme.primary }} />
-        {(!collapsed || isMobile) && (
-          <Title level={4} style={{ margin: '8px 0 0 0', color: hospitalTheme.primary }}>
+        <div style={{
+          width: '48px',
+          height: '48px',
+          borderRadius: '12px',
+          background: hospitalTheme.primary,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          color: '#fff',
+          fontSize: '24px',
+        }}>
+          <BankOutlined />
+        </div>
+        <div style={{ textAlign: 'center' }}>
+          <Text strong style={{ display: 'block', fontSize: '14px', fontWeight: 600, color: '#111827', lineHeight: 1.4 }}>
             NexaCare Hospital
-          </Title>
-        )}
+          </Text>
       </div>
+      </div>
+
+      {/* Navigation Menu */}
       <Menu
         className="hospital-dashboard-menu"
         mode="inline"
-        defaultSelectedKeys={['dashboard']}
+        selectedKeys={[selectedMenuKey]}
         items={sidebarMenu}
-        style={{ border: 'none', flex: 1 }}
-        onClick={onMenuClick}
+        style={{ 
+          border: 'none', 
+          flex: 1,
+          background: 'transparent',
+          padding: '8px',
+          overflowY: 'auto',
+        }}
+        onClick={(e) => {
+          if (onMenuClick) onMenuClick();
+          message.info(`${e.key} page coming soon.`);
+        }}
+        theme="light"
       />
-      <SidebarProfile
-        collapsed={collapsed && !isMobile}
-        name={user?.fullName || 'Hospital Admin'}
-        roleLabel="HOSPITAL ADMIN"
-        roleColor="#7C3AED"
-        avatarIcon={<BankOutlined />}
-        onSettingsClick={() => message.info('Profile settings coming soon.')}
-        onLogoutClick={logout}
-        hospitalName={user?.hospitalName || null}
-      />
-    </>
+
+      {/* User Profile Footer - Light Grey Rounded Card */}
+      <div style={{
+        marginTop: 'auto',
+        padding: '16px',
+        background: '#fff',
+        flexShrink: 0,
+      }}>
+        <div style={{
+          background: '#F3F4F6',
+          borderRadius: '12px',
+          padding: '16px',
+        }}>
+          {/* Layer 1: Profile Photo + (Name + ID) */}
+          <div style={{
+            display: 'flex',
+            alignItems: 'flex-start',
+            gap: '12px',
+            marginBottom: '12px',
+          }}>
+            {/* Avatar */}
+            <div style={{
+              width: '40px',
+              height: '40px',
+              borderRadius: '50%',
+              background: hospitalTheme.primary,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              color: '#fff',
+              fontWeight: 600,
+              fontSize: '14px',
+              flexShrink: 0,
+            }}>
+              {userInitials}
+            </div>
+            
+            {/* Name (top) and ID (below) - stacked vertically */}
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <Text strong style={{ display: 'block', fontSize: '14px', fontWeight: 600, color: '#262626', lineHeight: 1.5, marginBottom: '4px' }}>
+                {user?.fullName || 'Hospital Admin'}
+              </Text>
+              <Text style={{ display: 'block', fontSize: '12px', color: '#8C8C8C' }}>
+                ID: {hospitalAdminId}
+              </Text>
+            </div>
+          </div>
+          
+          {/* Layer 3: Active Hospital Admin Text + Settings Icon */}
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+          }}>
+            {/* Active Hospital Admin on left */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <div style={{
+                width: '8px',
+                height: '8px',
+                borderRadius: '50%',
+                background: '#10B981',
+              }} />
+              <Text style={{ fontSize: '12px', color: '#10B981', fontWeight: 500 }}>
+                Active Hospital Admin
+              </Text>
+            </div>
+            
+            {/* Settings Icon on right */}
+            <Button 
+              type="text" 
+              icon={<SettingOutlined style={{ color: '#8C8C8C', fontSize: '18px' }} />} 
+              onClick={() => message.info('Settings coming soon.')}
+              style={{ flexShrink: 0, padding: 0, width: '32px', height: '32px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+            />
+          </div>
+        </div>
+      </div>
+    </div>
   );
 
   return (
@@ -493,6 +779,21 @@ export default function HospitalDashboard() {
           width: 18px !important;
           height: 18px !important;
         }
+
+        /* Ensure table body has padding for last row visibility */
+        .hospital-dashboard-wrapper .ant-table-body {
+          padding-bottom: 40px !important;
+        }
+        .hospital-dashboard-wrapper .ant-table-body-inner {
+          padding-bottom: 40px !important;
+        }
+        .hospital-dashboard-wrapper td.ant-table-cell {
+          padding: 8px !important;
+        }
+        .hospital-dashboard-wrapper .ant-table-fixed-right {
+          background: #fff;
+          box-shadow: -2px 0 8px rgba(0, 0, 0, 0.08);
+        }
       `}</style>
       <Layout className="hospital-dashboard-wrapper" style={{ minHeight: '100vh', background: hospitalTheme.background }}>
       {/* Desktop/Tablet Sidebar */}
@@ -549,11 +850,24 @@ export default function HospitalDashboard() {
           style={{
             background: hospitalTheme.background,
             height: '100vh',
-            overflowY: 'auto',
-            padding: isMobile ? '24px 16px 16px' : isTablet ? '24px 20px 20px' : '24px 24px 24px',
+            overflow: 'hidden',
+            padding: isMobile ? '24px 16px 16px' : isTablet ? '24px 20px 20px' : '24px 32px 24px',
+            display: 'flex',
+            flexDirection: 'column',
           }}
         >
-          <div style={{ paddingBottom: 24, maxWidth: '1320px', margin: '0 auto' }}>
+          <div style={{ 
+            display: 'flex', 
+            flexDirection: 'column', 
+            height: '100%',
+            overflow: 'hidden',
+          }}>
+            {/* Notifications Bell (top-right) */}
+            {!isMobile && (
+              <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 8, paddingRight: 8, overflow: 'visible' }}>
+                <NotificationBell />
+              </div>
+            )}
             {/* Mobile Menu Button */}
             {isMobile && (
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
@@ -564,161 +878,228 @@ export default function HospitalDashboard() {
                   style={{ fontSize: '18px' }}
                 />
                 <Title level={4} style={{ margin: 0 }}>Dashboard</Title>
-                <div style={{ width: 32 }} /> {/* Spacer for centering */}
+                <div style={{ paddingRight: 8, overflow: 'visible' }}>
+                  <NotificationBell />
+                </div>
               </div>
             )}
             
-            {/* Desktop/Tablet Menu Toggle */}
-            {!isMobile && (
-              <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 16 }}>
-                <Button
-                  type="text"
-                  icon={collapsed ? <MenuFoldOutlined /> : <MenuUnfoldOutlined />}
-                  onClick={() => setCollapsed(!collapsed)}
-                />
+            {/* Alert/Banner Notifications - Show important unread notifications */}
+            {notifications.filter((n: any) => !n.isRead).length > 0 && (
+              <div style={{ marginBottom: 16 }}>
+                {notifications
+                  .filter((n: any) => !n.isRead)
+                  .slice(0, 3) // Show max 3 alerts
+                  .map((notif: any) => {
+                    const type = (notif.type || '').toLowerCase();
+                    let alertType: 'info' | 'success' | 'warning' | 'error' = 'info';
+                    if (type.includes('cancel') || type.includes('reject') || type.includes('critical')) alertType = 'error';
+                    else if (type.includes('confirm') || type.includes('complete') || type.includes('ready')) alertType = 'success';
+                    else if (type.includes('pending') || type.includes('resched') || type.includes('processing')) alertType = 'warning';
+                    
+                    return (
+                      <Alert
+                        key={notif.id}
+                        message={notif.title || 'Notification'}
+                        description={notif.message}
+                        type={alertType}
+                        showIcon
+                        closable
+                        style={{ marginBottom: 8 }}
+                        onClose={() => {
+                          // Mark as read when closed
+                          const token = localStorage.getItem('auth-token');
+                          fetch(`/api/notifications/read/${notif.id}`, {
+                            method: 'POST',
+                            headers: { Authorization: `Bearer ${token}` },
+                          }).then(() => {
+                            queryClient.invalidateQueries({ queryKey: ['/api/notifications/me'] });
+                          });
+                        }}
+                      />
+                    );
+                  })}
               </div>
             )}
 
-            {/* KPI Cards - Responsive Grid */}
+            {/* KPI Cards - Matching Receptionist Dashboard Design */}
             {isMobile ? (
               <div style={{ 
                 display: 'flex', 
                 overflowX: 'auto', 
-                gap: 12, 
+                gap: 16, 
                 marginBottom: 24,
                 paddingBottom: 8,
                 scrollSnapType: 'x mandatory',
                 WebkitOverflowScrolling: 'touch',
               }}>
                 {[
-                  { label: "Total Doctors", value: statsLoading ? '...' : (stats?.totalDoctors || 0), icon: <TeamOutlined style={{ fontSize: '24px', color: hospitalTheme.primary }} />, trendLabel: "Active", trendType: "positive" as const, onView: () => message.info('View doctors') },
-                  { label: "Total Patients", value: statsLoading ? '...' : (stats?.totalPatients || 0), icon: <UserOutlined style={{ fontSize: '24px', color: hospitalTheme.secondary }} />, trendLabel: "Registered", trendType: "positive" as const, onView: () => message.info('View patients') },
-                  { label: "Upcoming Appointments", value: statsLoading ? '...' : (stats?.upcomingAppointments || stats?.todayAppointments || 0), icon: <CalendarOutlined style={{ fontSize: '24px', color: hospitalTheme.accent }} />, trendLabel: "Scheduled", trendType: "neutral" as const, onView: () => message.info('View appointments') },
-                  { label: "Monthly Revenue", value: statsLoading ? '...' : `₹${(stats?.totalRevenue || 0).toLocaleString()}`, icon: <BarChartOutlined style={{ fontSize: '24px', color: hospitalTheme.primary }} />, trendLabel: "This Month", trendType: "positive" as const, onView: () => message.info('View revenue') },
+                  { label: "Total Doctors", value: statsLoading ? '...' : (stats?.totalDoctors || 0), icon: <TeamOutlined style={{ fontSize: '24px', color: hospitalTheme.primary }} />, trendLabel: "Active", trendColor: hospitalTheme.primary, trendBg: hospitalTheme.highlight, onView: () => message.info('View doctors') },
+                  { label: "Total Patients", value: statsLoading ? '...' : (stats?.totalPatients || 0), icon: <UserOutlined style={{ fontSize: '24px', color: hospitalTheme.secondary }} />, trendLabel: "Registered", trendColor: hospitalTheme.secondary, trendBg: "#E0F2FE", onView: () => message.info('View patients') },
+                  { label: "Upcoming Appointments", value: statsLoading ? '...' : (stats?.upcomingAppointments || stats?.todayAppointments || 0), icon: <CalendarOutlined style={{ fontSize: '24px', color: hospitalTheme.accent }} />, trendLabel: "Scheduled", trendColor: hospitalTheme.accent, trendBg: "#FEF3C7", onView: () => message.info('View appointments') },
+                  { label: "Monthly Revenue", value: statsLoading ? '...' : `₹${(stats?.totalRevenue || 0).toLocaleString()}`, icon: <BarChartOutlined style={{ fontSize: '24px', color: hospitalTheme.primary }} />, trendLabel: "This Month", trendColor: hospitalTheme.primary, trendBg: hospitalTheme.highlight, onView: () => message.info('View revenue') },
                 ].map((kpi, idx) => (
-                  <div key={idx} style={{ minWidth: 200, scrollSnapAlign: 'start' }}>
+                  <div key={idx} style={{ minWidth: 220, scrollSnapAlign: 'start' }}>
                     <KpiCard {...kpi} />
                   </div>
                 ))}
               </div>
             ) : (
-          <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
-                <Col xs={24} sm={12} md={6} style={{ display: 'flex' }}>
+              <div style={{ display: 'flex', gap: 16, marginBottom: 24, width: '100%' }}>
+                <div style={{ flex: 1, minWidth: 0 }}>
               <KpiCard
                 label="Total Doctors"
                     value={statsLoading ? '...' : (stats?.totalDoctors || 0)}
                 icon={<TeamOutlined style={{ fontSize: '24px', color: hospitalTheme.primary }} />}
                 trendLabel="Active"
                 trendType="positive"
+                    trendColor={hospitalTheme.primary}
+                    trendBg={hospitalTheme.highlight}
+                    onView={() => message.info('View doctors')}
               />
-            </Col>
-                <Col xs={24} sm={12} md={6} style={{ display: 'flex' }}>
+                </div>
+                <div style={{ flex: 1, minWidth: 0 }}>
               <KpiCard
                 label="Total Patients"
                     value={statsLoading ? '...' : (stats?.totalPatients || 0)}
                 icon={<UserOutlined style={{ fontSize: '24px', color: hospitalTheme.secondary }} />}
                 trendLabel="Registered"
                 trendType="positive"
+                    trendColor={hospitalTheme.secondary}
+                    trendBg="#E0F2FE"
+                    onView={() => message.info('View patients')}
               />
-            </Col>
-                <Col xs={24} sm={12} md={6} style={{ display: 'flex' }}>
+                </div>
+                <div style={{ flex: 1, minWidth: 0 }}>
               <KpiCard
                     label="Upcoming Appointments"
                     value={statsLoading ? '...' : (stats?.upcomingAppointments || stats?.todayAppointments || 0)}
                 icon={<CalendarOutlined style={{ fontSize: '24px', color: hospitalTheme.accent }} />}
                 trendLabel="Scheduled"
                 trendType="neutral"
+                    trendColor={hospitalTheme.accent}
+                    trendBg="#FEF3C7"
+                    onView={() => message.info('View appointments')}
               />
-            </Col>
-                <Col xs={24} sm={12} md={6} style={{ display: 'flex' }}>
+                </div>
+                <div style={{ flex: 1, minWidth: 0 }}>
               <KpiCard
                 label="Monthly Revenue"
                     value={statsLoading ? '...' : `₹${(stats?.totalRevenue || 0).toLocaleString()}`}
                 icon={<BarChartOutlined style={{ fontSize: '24px', color: hospitalTheme.primary }} />}
                 trendLabel="This Month"
                 trendType="positive"
+                    trendColor={hospitalTheme.primary}
+                    trendBg={hospitalTheme.highlight}
+                    onView={() => message.info('View revenue')}
               />
-            </Col>
-          </Row>
+                </div>
+              </div>
             )}
 
-        {/* Quick Actions */}
+          {/* Appointment Status Summary - Similar to Receptionist Queue Status */}
           <Card 
-            title="Quick Actions" 
+            variant="borderless"
             style={{ 
-              marginBottom: '24px',
               borderRadius: 16,
-              background: hospitalTheme.background
+              boxShadow: '0 2px 8px rgba(0, 0, 0, 0.08)',
+              border: '1px solid #E5E7EB',
+              background: '#fff',
+              marginBottom: 24,
             }}
-            bodyStyle={{ padding: isMobile ? 16 : 20 }}
           >
-            {isMobile ? (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                <QuickActionTile
-                  label="Invite Staff"
-                  icon={<UserAddOutlined />}
-                  onClick={() => message.info('Invite staff feature coming soon')}
-                />
-                <QuickActionTile
-                  label="Assign Shift"
-                  icon={<CalendarOutlined />}
-                  onClick={() => message.info('Assign shift feature coming soon')}
-                />
-                <QuickActionTile
-                  label="Approve Requests"
-                  icon={<CheckCircleOutlined />}
-                  onClick={() => message.info('Approve requests feature coming soon')}
-                />
-                <QuickActionTile
-                  label="View Reports"
-                  icon={<BarChartOutlined />}
-                  onClick={() => message.info('View reports feature coming soon')}
-                />
+            <div style={{ 
+              display: 'flex', 
+              justifyContent: 'space-between', 
+              alignItems: 'center',
+              flexWrap: isMobile ? 'wrap' : 'nowrap',
+              gap: isMobile ? 16 : 24,
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flex: 1 }}>
+                <Text type="secondary" style={{ fontSize: 14, minWidth: 80 }}>Pending:</Text>
+                <Text strong style={{ fontSize: 16, color: '#F97316' }}>{stats?.pendingAppointments || 0}</Text>
               </div>
-            ) : (
-              <Row gutter={[16, 16]}>
-                <Col xs={24} sm={12} md={6}>
-                <QuickActionTile
-                  label="Invite Staff"
-                  icon={<UserAddOutlined />}
-                  onClick={() => message.info('Invite staff feature coming soon')}
-                />
-              </Col>
-              <Col xs={24} sm={12} md={6}>
-                <QuickActionTile
-                  label="Assign Shift"
-                  icon={<CalendarOutlined />}
-                  onClick={() => message.info('Assign shift feature coming soon')}
-                />
-              </Col>
-              <Col xs={24} sm={12} md={6}>
-                <QuickActionTile
-                  label="Approve Requests"
-                  icon={<CheckCircleOutlined />}
-                  onClick={() => message.info('Approve requests feature coming soon')}
-                />
-              </Col>
-              <Col xs={24} sm={12} md={6}>
-                <QuickActionTile
-                  label="View Reports"
-                  icon={<BarChartOutlined />}
-                  onClick={() => message.info('View reports feature coming soon')}
-                />
-              </Col>
-            </Row>
-            )}
+              <Divider type="vertical" style={{ height: 24, margin: 0 }} />
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flex: 1 }}>
+                <Text type="secondary" style={{ fontSize: 14, minWidth: 100 }}>Confirmed:</Text>
+                <Text strong style={{ fontSize: 16, color: '#6366F1' }}>{stats?.confirmedAppointments || 0}</Text>
+              </div>
+              <Divider type="vertical" style={{ height: 24, margin: 0 }} />
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flex: 1 }}>
+                <Text type="secondary" style={{ fontSize: 14, minWidth: 120 }}>Completed:</Text>
+                <Text strong style={{ fontSize: 16, color: '#22C55E' }}>{stats?.completedAppointments || 0}</Text>
+              </div>
+              <Divider type="vertical" style={{ height: 24, margin: 0 }} />
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flex: 1 }}>
+                <Text type="secondary" style={{ fontSize: 14, minWidth: 100 }}>Total:</Text>
+                <Text strong style={{ fontSize: 16, color: hospitalTheme.primary }}>{stats?.totalAppointments || 0}</Text>
+              </div>
+              <div style={{ marginLeft: 'auto', textAlign: 'right' }}>
+                <Text type="secondary" style={{ fontSize: 12 }}>
+                  {stats?.completedAppointments || 0} of {stats?.todayAppointments || 0} completed today
+                </Text>
+              </div>
+            </div>
           </Card>
 
-          <Row gutter={[16, 16]}>
-            {/* Upcoming Appointments */}
-            <Col xs={24} lg={16}>
+          {/* Upcoming Appointments - Full width, fills remaining height */}
+          <Row gutter={[16, 16]} style={{ flex: 1, minHeight: 0, display: 'flex' }}>
+            <Col xs={24} lg={24} style={{ display: 'flex', flexDirection: 'column', minHeight: 0 }}>
               <Card 
+                variant="borderless"
+                style={{ 
+                  borderRadius: 16,
+                  boxShadow: '0 2px 8px rgba(0, 0, 0, 0.08)',
+                  border: '1px solid #E5E7EB',
+                  background: '#fff',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  flex: 1,
+                  minHeight: 0,
+                }}
                 title="Upcoming Appointments" 
                 extra={<Button type="link" onClick={() => message.info('View all appointments feature coming soon')}>View All</Button>}
-                style={{ borderRadius: 16 }}
+                bodyStyle={{ 
+                  flex: 1, 
+                  minHeight: 0, 
+                  display: 'flex', 
+                  flexDirection: 'column',
+                  overflow: 'hidden',
+                  padding: 0,
+                }}
               >
+                <div style={{ 
+                  flex: 1, 
+                  minHeight: 0, 
+                  display: 'flex', 
+                  flexDirection: 'column',
+                  overflow: 'hidden',
+                  padding: isMobile ? 12 : 16,
+                }}>
+                {appointmentTabs.length === 0 ? (
+                  <div style={{ textAlign: 'center', padding: '40px 0' }}>
+                    <Text type="secondary">
+                      No appointments found.
+                    </Text>
+                  </div>
+                ) : (
+                  <Tabs
+                    activeKey={activeAppointmentTab}
+                    onChange={setActiveAppointmentTab}
+                    items={appointmentTabs.map(tab => ({
+                      key: tab.key,
+                      label: tab.label,
+                      children: (
+                        <div style={{ 
+                          flex: 1,
+                          minHeight: 0,
+                          height: '100%',
+                          overflow: 'hidden',
+                          display: 'flex',
+                          flexDirection: 'column',
+                        }}>
                 {isMobile ? (
-                  <Space direction="vertical" size={12} style={{ width: '100%' }}>
+                            <Space direction="vertical" size={12} style={{ width: '100%', flex: 1, overflowY: 'auto', paddingRight: 8, paddingBottom: 40 }}>
                     {appointmentsLoading ? (
                       <>
                         <Card size="small" style={{ borderRadius: 16 }}><Spin /></Card>
@@ -729,112 +1110,31 @@ export default function HospitalDashboard() {
                     )}
                   </Space>
                 ) : (
-                  <div style={{ overflowX: 'auto' }}>
+                            <div style={{ flex: 1, height: '100%', overflow: 'hidden', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+                              <div style={{ flex: 1, height: '100%', overflowY: 'auto', overflowX: 'auto', minHeight: 0 }}>
+                                <div style={{ paddingBottom: 40 }}>
                     <Table
                       columns={appointmentColumns}
                       dataSource={appointments}
                       pagination={false}
                       rowKey="id"
-                      variant="borderless"
                       loading={appointmentsLoading}
                       size={isMobile ? "small" : "middle"}
-                      scroll={isMobile ? { x: 'max-content' } : undefined}
-                      style={{
-                        backgroundColor: hospitalTheme.background
-                      }}
-                    />
+                                    scroll={{ 
+                                      x: 'max-content',
+                                      ...(appointments.length > 3 ? { y: 'calc(100vh - 520px)' } : {}),
+                                    }}
+                                  />
+                                </div>
+                              </div>
                   </div>
                 )}
-              </Card>
-            </Col>
-
-            {/* Hospital Stats & Recent Doctors */}
-            <Col xs={24} lg={8}>
-              <Card 
-                title="Hospital Performance"
-                style={{ borderRadius: 16 }}
-              >
-                <Progress 
-                  percent={stats?.todayAppointments ? Math.round((stats.completedAppointments / stats.todayAppointments) * 100) : 0} 
-                  status="active" 
-                  strokeColor={hospitalTheme.primary}
-                  style={{ marginBottom: '16px' }}
-                />
-                <Text type="secondary">
-                  {stats?.completedAppointments || 0} of {stats?.todayAppointments || 0} appointments completed today
-                </Text>
-              </Card>
-
-              <Card 
-                title="Recent Doctors" 
-                style={{ 
-                  marginTop: '16px',
-                  borderRadius: 16
-                }}
-              >
-                <List
-                  dataSource={doctors}
-                  renderItem={(doctor: any) => (
-                    <List.Item style={{ 
-                      padding: '12px 0',
-                      borderBottom: '1px solid #f0f0f0'
-                    }}>
-                      <List.Item.Meta
-                        avatar={<Avatar 
-                          icon={<UserOutlined />} 
-                          style={{ backgroundColor: hospitalTheme.highlight }}
-                        />}
-                        title={<Text strong>{doctor.name}</Text>}
-                        description={
-                          <Space direction="vertical" size={0}>
-                            <Text type="secondary">{doctor.specialty}</Text>
-                            <Text type="secondary">{doctor.patients} patients</Text>
-                          </Space>
-                        }
-                      />
-                    </List.Item>
-                  )}
-                />
-              </Card>
-
-              <Card 
-                title={
-                  <Space>
-                    <BellOutlined />
-                    <span>Notifications</span>
-                    {notifications.filter((notif: any) => !notif.read).length > 0 && (
-                      <Badge count={notifications.filter((notif: any) => !notif.read).length} />
-                    )}
-                  </Space>
-                }
-                style={{ 
-                  marginTop: '16px',
-                  borderRadius: 16
-                }}
-              >
-                {notificationsLoading ? (
-                  <Spin size="small" />
-                ) : notifications.length > 0 ? (
-                  <Space direction="vertical" size={12} style={{ width: '100%' }}>
-                    {notifications.slice(0, 5).map((notif: any) => (
-                      <NotificationItem
-                        key={notif.id}
-                        title={notif.title || 'Notification'}
-                        message={notif.message || ''}
-                        timestamp={formatDateTime(notif.createdAt)}
-                        severity={notif.type === 'urgent' ? 'urgent' : 'info'}
-                        read={Boolean(notif.read)}
-                        onMarkRead={() => !notif.read && markNotificationMutation.mutate(notif.id)}
-                      />
-                    ))}
-                  </Space>
-                ) : (
-                  <Empty
-                    image={Empty.PRESENTED_IMAGE_SIMPLE}
-                    description="All caught up"
-                    style={{ padding: '20px 0' }}
+                        </div>
+                      ),
+                    }))}
                   />
                 )}
+                </div>
               </Card>
             </Col>
           </Row>

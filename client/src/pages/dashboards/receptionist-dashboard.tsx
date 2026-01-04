@@ -26,6 +26,7 @@ import {
   Steps,
   Alert,
   Avatar,
+  notification as antdNotification,
 } from 'antd';
 import { 
   CalendarOutlined, 
@@ -40,6 +41,8 @@ import {
   UserOutlined,
   DollarOutlined,
   StarOutlined,
+  LoginOutlined,
+  ExperimentOutlined,
 } from '@ant-design/icons';
 import { useAuth } from '../../hooks/use-auth';
 import { useResponsive } from '../../hooks/use-responsive';
@@ -48,12 +51,18 @@ import { message } from 'antd';
 import { KpiCard } from '../../components/dashboard/KpiCard';
 import { ReceptionistSidebar } from '../../components/layout/ReceptionistSidebar';
 import dayjs from 'dayjs';
+import relativeTime from 'dayjs/plugin/relativeTime';
 import type { Dayjs } from 'dayjs';
+
+dayjs.extend(relativeTime);
 import { formatTimeSlot12h, parseTimeTo24h } from '../../lib/time';
 import { getISTStartOfDay, isSameDayIST } from '../../lib/timezone';
 import { normalizeStatus, APPOINTMENT_STATUS } from '../../lib/appointment-status';
 import { playNotificationSound } from '../../lib/notification-sounds';
 import { NotificationBell } from '../../components/notifications/NotificationBell';
+import LabReportViewerModal from '../../components/modals/lab-report-viewer-modal';
+import tubeIcon from '../../assets/images/tube.png';
+import checkInIcon from '../../assets/images/check-in.png';
 
 const { Content, Sider } = Layout;
 const { Title, Text } = Typography;
@@ -98,6 +107,14 @@ export default function ReceptionistDashboard() {
   const [patientInfoDrawerOpen, setPatientInfoDrawerOpen] = useState(false);
   const [patientInfo, setPatientInfo] = useState<any>(null);
   const [patientInfoLoading, setPatientInfoLoading] = useState(false);
+  const [recommendedLabTests, setRecommendedLabTests] = useState<any[]>([]);
+  const [confirmingLabTest, setConfirmingLabTest] = useState<number | null>(null);
+  const [selectedLabReport, setSelectedLabReport] = useState<any>(null);
+  const [isLabReportModalOpen, setIsLabReportModalOpen] = useState(false);
+  const [patientsWithLabTests, setPatientsWithLabTests] = useState<Set<number>>(new Set());
+  const [labTestsByPatient, setLabTestsByPatient] = useState<Record<number, any[]>>({});
+  const [isLabTestsModalOpen, setIsLabTestsModalOpen] = useState(false);
+  const [selectedPatientForLabTests, setSelectedPatientForLabTests] = useState<number | null>(null);
   const appointmentStartTimeValue = Form.useWatch('appointmentStartTime', walkInForm);
   const durationMinutesValue = Form.useWatch('durationMinutes', walkInForm);
   
@@ -129,6 +146,10 @@ export default function ReceptionistDashboard() {
       console.log('📋 Received appointments data:', data.length, 'appointments');
       // Transform API data to match table format with date object
       const transformed = data.map((apt: any) => {
+        // Log patient IDs for debugging
+        if (apt.patientId) {
+          console.log(`  Appointment ${apt.id}: patientId = ${apt.patientId} (type: ${typeof apt.patientId})`);
+        }
         // Handle different date formats
         let appointmentDate = apt.appointmentDate;
         if (typeof appointmentDate === 'string') {
@@ -146,10 +167,10 @@ export default function ReceptionistDashboard() {
           const m = notes.match(/Token:\s*(\d+)/i);
           return m ? Number(m[1]) : null;
         })();
-
+        
         return {
           id: apt.id,
-          patientId: apt.patientId || apt.patient_id,
+          patientId: apt.patientId ? Number(apt.patientId) : (apt.patient_id ? Number(apt.patient_id) : null),
           doctorId: apt.doctorId || apt.doctor_id,
           patient: apt.patientName || 'Unknown Patient',
           patientDateOfBirth: apt.patientDateOfBirth || null,
@@ -222,6 +243,206 @@ export default function ReceptionistDashboard() {
       count: appointments.length,
       pendingIds: currentPendingIds,
     });
+  }, [appointments]);
+
+  // Fetch recommended lab tests for all patients in appointments
+  useEffect(() => {
+    const fetchLabTestsForPatients = async () => {
+      if (!appointments || appointments.length === 0) {
+        console.log('📋 No appointments, clearing lab tests');
+        setPatientsWithLabTests(new Set());
+        setLabTestsByPatient({});
+        return;
+      }
+      
+      // Get unique patient IDs from appointments - ensure they're numbers
+      const uniquePatientIds = new Set<number>();
+      appointments.forEach((apt: any) => {
+        const pid = apt.patientId ? Number(apt.patientId) : null;
+        if (pid && !isNaN(pid)) {
+          uniquePatientIds.add(pid);
+        }
+      });
+
+      console.log('📋 Fetching lab tests for patient IDs:', Array.from(uniquePatientIds));
+
+      if (uniquePatientIds.size === 0) {
+        console.log('📋 No valid patient IDs found in appointments');
+        setPatientsWithLabTests(new Set());
+        setLabTestsByPatient({});
+        return;
+      }
+
+      const token = localStorage.getItem('auth-token');
+      if (!token) {
+        console.warn('⚠️ No auth token available for fetching lab tests');
+        return;
+      }
+
+      const labTestsMap: Record<number, any[]> = {};
+      const patientsWithTests = new Set<number>();
+
+      // Fetch lab tests for each patient
+      await Promise.all(
+        Array.from(uniquePatientIds).map(async (patientId) => {
+          try {
+            console.log(`🔬 Fetching lab tests for patient ${patientId}...`);
+            const response = await fetch(`/api/reception/patients/${patientId}/lab-recommendations`, {
+              headers: {
+                'Authorization': `Bearer ${token}`
+              }
+            });
+            if (response.ok) {
+              const labData = await response.json();
+              const tests = Array.isArray(labData) ? labData : [];
+              console.log(`✅ Fetched ${tests.length} recommended lab tests for patient ${patientId}:`, tests);
+              if (tests.length > 0) {
+                labTestsMap[patientId] = tests;
+                patientsWithTests.add(patientId);
+                console.log(`  ✅ Patient ${patientId} added to set with ${tests.length} tests`);
+              } else {
+                console.log(`  ⚠️ Patient ${patientId} has no recommended lab tests`);
+              }
+            } else {
+              const errorText = await response.text().catch(() => 'Unknown error');
+              console.error(`❌ Failed to fetch lab tests for patient ${patientId}:`, response.status, errorText);
+            }
+          } catch (error) {
+            console.error(`❌ Error fetching lab tests for patient ${patientId}:`, error);
+          }
+        })
+      );
+
+      console.log('📋 Final lab tests map:', labTestsMap);
+      console.log('📋 Final patients with tests set:', Array.from(patientsWithTests));
+      console.log('📋 Set size:', patientsWithTests.size);
+      console.log('📋 Map keys:', Object.keys(labTestsMap));
+      
+      // Log each patient's lab tests for debugging
+      Object.keys(labTestsMap).forEach(patientId => {
+        const pid = Number(patientId);
+        console.log(`  📋 Patient ${pid}: ${labTestsMap[pid].length} tests - ${patientsWithTests.has(pid) ? 'IN SET' : 'NOT IN SET'}`);
+      });
+      
+      setLabTestsByPatient(labTestsMap);
+      setPatientsWithLabTests(patientsWithTests);
+    };
+
+    // Add a small delay to ensure appointments are fully loaded
+    const timer = setTimeout(() => {
+      fetchLabTestsForPatients();
+    }, 500);
+
+    return () => clearTimeout(timer);
+  }, [appointments]);
+
+  // Periodic refetch of lab tests every 10 seconds to catch new recommendations
+  useEffect(() => {
+    if (!appointments || appointments.length === 0) return;
+
+    const interval = setInterval(() => {
+      const uniquePatientIds = new Set<number>();
+      appointments.forEach((apt: any) => {
+        if (apt.patientId) {
+          uniquePatientIds.add(Number(apt.patientId));
+        }
+      });
+
+      if (uniquePatientIds.size === 0) return;
+
+      const token = localStorage.getItem('auth-token');
+      if (!token) return;
+
+      // Silently refetch lab tests
+      Promise.all(
+        Array.from(uniquePatientIds).map(async (patientId) => {
+          try {
+            const response = await fetch(`/api/reception/patients/${patientId}/lab-recommendations`, {
+              headers: { 'Authorization': `Bearer ${token}` }
+            });
+            if (response.ok) {
+              const labData = await response.json();
+              const tests = Array.isArray(labData) ? labData : [];
+              if (tests.length > 0) {
+                setLabTestsByPatient(prev => ({ ...prev, [patientId]: tests }));
+                setPatientsWithLabTests(prev => new Set([...prev, patientId]));
+              } else {
+                // If no tests, remove from set if it was there
+                setPatientsWithLabTests(prev => {
+                  const newSet = new Set(prev);
+                  if (newSet.has(patientId) && !labTestsByPatient[patientId]) {
+                    newSet.delete(patientId);
+                  }
+                  return newSet;
+                });
+              }
+            }
+          } catch (error) {
+            // Silent fail for background refresh
+          }
+        })
+      );
+    }, 10000); // Refetch every 10 seconds
+
+    return () => clearInterval(interval);
+  }, [appointments, labTestsByPatient]);
+
+  // Listen for lab test creation events to refetch immediately
+  useEffect(() => {
+    const handleLabTestCreated = (event: CustomEvent) => {
+      console.log('🔔 Lab test created event received:', event.detail);
+      // Refetch lab tests for all patients
+      const fetchLabTestsForPatients = async () => {
+        if (!appointments || appointments.length === 0) return;
+        
+        const uniquePatientIds = new Set<number>();
+        appointments.forEach((apt: any) => {
+          if (apt.patientId) {
+            uniquePatientIds.add(Number(apt.patientId));
+          }
+        });
+
+        if (uniquePatientIds.size === 0) return;
+
+        const token = localStorage.getItem('auth-token');
+        if (!token) return;
+
+        const labTestsMap: Record<number, any[]> = {};
+        const patientsWithTests = new Set<number>();
+
+        await Promise.all(
+          Array.from(uniquePatientIds).map(async (patientId) => {
+            try {
+              const response = await fetch(`/api/reception/patients/${patientId}/lab-recommendations`, {
+                headers: {
+                  'Authorization': `Bearer ${token}`
+                }
+              });
+              if (response.ok) {
+                const labData = await response.json();
+                const tests = Array.isArray(labData) ? labData : [];
+                if (tests.length > 0) {
+                  labTestsMap[patientId] = tests;
+                  patientsWithTests.add(patientId);
+                }
+              }
+            } catch (error) {
+              console.error(`Error fetching lab tests for patient ${patientId}:`, error);
+            }
+          })
+        );
+
+        setLabTestsByPatient(labTestsMap);
+        setPatientsWithLabTests(patientsWithTests);
+      };
+
+      fetchLabTestsForPatients();
+    };
+
+    window.addEventListener('labTestCreated' as any, handleLabTestCreated);
+    return () => {
+      window.removeEventListener('labTestCreated' as any, handleLabTestCreated);
+    };
   }, [appointments]);
 
   const { data: walkInPatients = [], refetch: refetchWalkIns } = useQuery({
@@ -496,12 +717,12 @@ export default function ReceptionistDashboard() {
       case 'inconsultation':
         return inConsultationTodayAppointments;
       case 'completed':
-        return completedTodayAppointments;
+      return completedTodayAppointments;
       case 'tomorrow':
-        return appointmentsByDate.tomorrow || [];
+      return appointmentsByDate.tomorrow || [];
       default:
         // Date-key tabs (future dates)
-        return appointmentsByDate[activeAppointmentTab] || [];
+      return appointmentsByDate[activeAppointmentTab] || [];
     }
   }, [
     activeAppointmentTab,
@@ -1016,6 +1237,24 @@ export default function ReceptionistDashboard() {
       
       setPatientInfo(data);
       setPatientInfoDrawerOpen(true);
+      
+      // Fetch recommended lab tests for this patient
+      try {
+        const labResponse = await fetch(`/api/reception/patients/${patientId}/lab-recommendations`, {
+          headers: {
+            'Authorization': `Bearer ${token}`
+          }
+        });
+        
+        if (labResponse.ok) {
+          const labData = await labResponse.json();
+          setRecommendedLabTests(Array.isArray(labData) ? labData : []);
+        }
+      } catch (labError) {
+        console.error('Error fetching lab recommendations:', labError);
+        // Don't show error - just set empty array
+        setRecommendedLabTests([]);
+      }
     } catch (error: any) {
       console.error('❌ Error loading patient info:', error);
       if (error.message?.includes('timeout') || error.message?.includes('CONNECT_TIMEOUT')) {
@@ -1025,6 +1264,61 @@ export default function ReceptionistDashboard() {
       }
     } finally {
       setPatientInfoLoading(false);
+    }
+  };
+
+  // Handle confirm lab recommendation - send to lab
+  const handleConfirmLabRecommendation = async (reportId: number) => {
+    if (!selectedPatientForLabTests) return;
+    setConfirmingLabTest(reportId);
+    try {
+      const token = localStorage.getItem('auth-token');
+      const response = await fetch(`/api/reception/lab-recommendations/${reportId}/confirm`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      });
+
+      if (response.ok) {
+        message.success('Lab test confirmed and sent to lab technician');
+        // Remove from recommended list
+        setRecommendedLabTests(prev => prev.filter(r => r.id !== reportId));
+        // Update labTestsByPatient - remove the confirmed test
+        if (selectedPatientForLabTests) {
+          setLabTestsByPatient(prev => {
+            const updated = { ...prev };
+            if (updated[selectedPatientForLabTests]) {
+              updated[selectedPatientForLabTests] = updated[selectedPatientForLabTests].filter(
+                (t: any) => t.id !== reportId
+              );
+              // If no more tests, remove patient from set
+              if (updated[selectedPatientForLabTests].length === 0) {
+                setPatientsWithLabTests(prevSet => {
+                  const newSet = new Set(prevSet);
+                  newSet.delete(selectedPatientForLabTests);
+                  return newSet;
+                });
+                delete updated[selectedPatientForLabTests];
+              }
+            }
+            return updated;
+          });
+        }
+        // Refresh patient info to update lab reports
+        if (patientInfo?.patient?.id) {
+          handleViewPatientInfo(patientInfo.patient.id);
+        }
+      } else {
+        const error = await response.json();
+        message.error(error.message || 'Failed to confirm lab test');
+      }
+    } catch (error: any) {
+      console.error('Error confirming lab recommendation:', error);
+      message.error('Failed to confirm lab test. Please try again.');
+    } finally {
+      setConfirmingLabTest(null);
     }
   };
 
@@ -1225,10 +1519,20 @@ export default function ReceptionistDashboard() {
                 size="small"
                 type="default"
                 onClick={() => handleCheckIn(record.id)}
-              >
-                Check-in
-              </Button>
+                title="Check-in patient"
+                icon={<img src={checkInIcon} alt="Check-in" style={{ width: 16, height: 16 }} />}
+              />
             )}
+            <Button
+              size="small"
+              type="link"
+              icon={<ExperimentOutlined />}
+              onClick={() => {
+                setPatientInfo({ ...record, patientId: record.patientId });
+                setPatientInfoDrawerOpen(true);
+              }}
+              title="View lab reports"
+            />
             <Button
               size="small"
               type="link"
@@ -1253,7 +1557,7 @@ export default function ReceptionistDashboard() {
     {
       title: '#',
       key: 'serial',
-      width: 60,
+      width: 50,
       align: 'center' as const,
       render: (_: any, __: any, index: number) => (
         <Text type="secondary" style={{ fontWeight: 500 }}>{index + 1}</Text>
@@ -1263,7 +1567,7 @@ export default function ReceptionistDashboard() {
       title: 'Patient',
       dataIndex: 'patient',
       key: 'patient',
-      width: 200,
+      width: 170,
       render: (text: string, record: any) => {
         const age = (() => {
           if (!record.patientDateOfBirth) return null;
@@ -1278,45 +1582,83 @@ export default function ReceptionistDashboard() {
 
         const bg = record.patientBloodGroup ? String(record.patientBloodGroup) : null;
 
+        // Ensure patientId is a number for comparison
+        const patientIdNum = record.patientId ? Number(record.patientId) : null;
+        const hasLabTests = patientIdNum !== null && patientsWithLabTests.has(patientIdNum);
+        const labTestsCount = patientIdNum !== null && labTestsByPatient[patientIdNum] 
+          ? labTestsByPatient[patientIdNum].length 
+          : 0;
+        
+        // Debug logging for all patients to see what's happening
+        if (patientIdNum) {
+          const inSet = patientsWithLabTests.has(patientIdNum);
+          const inMap = !!labTestsByPatient[patientIdNum];
+          if (inSet || inMap || hasLabTests) {
+            console.log(`🔬 Patient ${patientIdNum} (${text}) lab tests:`, {
+              hasLabTests,
+              labTestsCount,
+              inSet,
+              inMap,
+              setSize: patientsWithLabTests.size,
+              mapKeys: Object.keys(labTestsByPatient),
+              tests: labTestsByPatient[patientIdNum]
+            });
+          }
+        }
+
         return (
           <Space direction="vertical" size={0} style={{ lineHeight: 1.2 }}>
-            <Button
-              type="link"
-              style={{
-                padding: 0,
-                height: 'auto',
-                color: '#1890ff',
-              }}
-              className="patient-name-link"
-              onClick={() => record.patientId && handleViewPatientInfo(record.patientId)}
-            >
-              <Text strong>{text}</Text>
-            </Button>
+          <Space size={8} align="center">
+          <Button
+            type="link"
+            style={{ 
+              padding: 0, 
+              height: 'auto',
+              color: '#1890ff',
+            }}
+            className="patient-name-link"
+            onClick={() => record.patientId && handleViewPatientInfo(record.patientId)}
+          >
+                <Text strong>{text}</Text>
+          </Button>
+            {hasLabTests && (
+              <Button
+                type="link"
+                icon={<img src={tubeIcon} alt="Lab Tests" style={{ width: 16, height: 16 }} />}
+                onClick={() => {
+                  setSelectedPatientForLabTests(patientIdNum);
+                  setIsLabTestsModalOpen(true);
+                }}
+                title={`${labTestsCount} recommended lab test${labTestsCount > 1 ? 's' : ''} - Click to view`}
+                style={{ padding: 0, height: 'auto' }}
+              />
+          )}
+        </Space>
             <Text type="secondary" style={{ fontSize: 12 }}>
               {age !== null ? `${age} years` : 'Age N/A'}
               {bg ? ` • ${bg}` : ''}
             </Text>
-          </Space>
+        </Space>
         );
       },
     },
     {
       title: 'Date & Time',
       key: 'dateTime',
-      width: 150,
+      width: 130,
       render: (_: any, record: any) => {
         const dateLabel = (() => {
-          if (!record.dateObj && !record.date) return 'N/A';
-          const date = record.dateObj || new Date(record.date);
-          const today = new Date();
-          today.setHours(0, 0, 0, 0);
-          const appointmentDate = new Date(date);
-          appointmentDate.setHours(0, 0, 0, 0);
+        if (!record.dateObj && !record.date) return 'N/A';
+        const date = record.dateObj || new Date(record.date);
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        const appointmentDate = new Date(date);
+        appointmentDate.setHours(0, 0, 0, 0);
           if (appointmentDate.getTime() === today.getTime()) return 'Today';
-          const tomorrow = new Date(today);
-          tomorrow.setDate(tomorrow.getDate() + 1);
+        const tomorrow = new Date(today);
+        tomorrow.setDate(tomorrow.getDate() + 1);
           if (appointmentDate.getTime() === tomorrow.getTime()) return 'Tomorrow';
-          return dayjs(date).format('DD MMM YYYY');
+        return dayjs(date).format('DD MMM YYYY');
         })();
 
         const timeLabel = record.time ? formatTimeSlot12h(record.time) : 'N/A';
@@ -1333,7 +1675,7 @@ export default function ReceptionistDashboard() {
       title: 'Token',
       dataIndex: 'tokenNumber',
       key: 'tokenNumber',
-      width: 70,
+      width: 60,
       align: 'center' as const,
       render: (tokenNumber: number | null | undefined) =>
         tokenNumber ? <Text strong>{tokenNumber}</Text> : <Text type="secondary">-</Text>,
@@ -1342,13 +1684,13 @@ export default function ReceptionistDashboard() {
       title: 'Doctor',
       dataIndex: 'doctor',
       key: 'doctor',
-      width: 150,
+      width: 130,
       ellipsis: true,
     },
     {
       title: 'Details',
       key: 'details',
-      width: 150,
+      width: 130,
       render: (_: any, record: any) => (
         <Space direction="vertical" size={0}>
           <Text type="secondary" style={{ fontSize: 12 }}>{record.department || 'General'}</Text>
@@ -1369,7 +1711,7 @@ export default function ReceptionistDashboard() {
       title: 'Status',
       dataIndex: 'status',
       key: 'status',
-      width: 110,
+      width: 100,
       render: (status: string) => {
         const config = getStatusConfig(status);
         return <Tag color={config.color}>{config.label}</Tag>;
@@ -1378,7 +1720,7 @@ export default function ReceptionistDashboard() {
     {
       title: 'Actions',
       key: 'actions',
-      width: 160,
+      width: 180,
       fixed: 'right' as const,
       render: (record: any) => {
         // Check if appointment is in the past
@@ -1435,10 +1777,10 @@ export default function ReceptionistDashboard() {
               <Button
                 size="small"
                 type="default"
+                icon={<img src={checkInIcon} alt="Check-in" style={{ width: 16, height: 16 }} />}
                 onClick={() => handleCheckIn(record.id)}
-              >
-                Check-in
-              </Button>
+                title="Check-in patient"
+              />
             )}
 
             {/* Reschedule - for pending/confirmed/checked-in/attended (not in consultation / not completed / not cancelled) */}
@@ -2166,6 +2508,18 @@ export default function ReceptionistDashboard() {
           flex: 1 1 auto !important;
           min-height: 0 !important;
         }
+        /* Add padding to table body scroll container so last row is fully visible in all tabs */
+        .receptionist-dashboard-wrapper .ant-table-body,
+        .receptionist-dashboard-wrapper .ant-table-body-inner {
+          padding-bottom: 40px !important;
+        }
+        /* Also ensure the scroll container itself has padding */
+        .receptionist-dashboard-wrapper .ant-table-container {
+          padding-bottom: 0 !important;
+        }
+        .receptionist-dashboard-wrapper .ant-table-body-outer {
+          padding-bottom: 0 !important;
+        }
         
         .receptionist-dashboard-menu .ant-menu-item {
           border-radius: 12px !important;
@@ -2236,6 +2590,16 @@ export default function ReceptionistDashboard() {
         }
         .receptionist-dashboard-wrapper .patient-name-link:active {
           color: #096dd9 !important;
+        }
+        /* Reduce table cell padding to make more room for columns */
+        .receptionist-dashboard-wrapper .ant-table-thead > tr > th,
+        .receptionist-dashboard-wrapper .ant-table-tbody > tr > td {
+          padding: 8px 8px !important;
+        }
+        /* Ensure Actions column is always visible with proper spacing and shadow */
+        .receptionist-dashboard-wrapper .ant-table-cell-fix-right {
+          background: var(--ant-table-bg) !important;
+          box-shadow: -2px 0 8px rgba(0, 0, 0, 0.1) !important;
         }
       `}</style>
       <Layout className="receptionist-dashboard-wrapper" style={{ minHeight: '100vh', background: receptionistTheme.background }}>
@@ -2317,6 +2681,44 @@ export default function ReceptionistDashboard() {
                 />
                 <Title level={4} style={{ margin: 0 }}>Dashboard</Title>
                 <NotificationBell />
+              </div>
+            )}
+            
+            {/* Alert/Banner Notifications - Show important unread notifications */}
+            {notifications.filter((n: any) => !n.isRead).length > 0 && (
+              <div style={{ marginBottom: 16 }}>
+                {notifications
+                  .filter((n: any) => !n.isRead)
+                  .slice(0, 3) // Show max 3 alerts
+                  .map((notif: any) => {
+                    const type = (notif.type || '').toLowerCase();
+                    let alertType: 'info' | 'success' | 'warning' | 'error' = 'info';
+                    if (type.includes('cancel') || type.includes('reject')) alertType = 'error';
+                    else if (type.includes('confirm') || type.includes('complete')) alertType = 'success';
+                    else if (type.includes('pending') || type.includes('resched')) alertType = 'warning';
+                    
+                    return (
+                      <Alert
+                        key={notif.id}
+                        message={notif.title || 'Notification'}
+                        description={notif.message}
+                        type={alertType}
+                        showIcon
+                        closable
+                        style={{ marginBottom: 8 }}
+                        onClose={() => {
+                          // Mark as read when closed
+                          const token = localStorage.getItem('auth-token');
+                          fetch(`/api/notifications/read/${notif.id}`, {
+                            method: 'POST',
+                            headers: { Authorization: `Bearer ${token}` },
+                          }).then(() => {
+                            queryClient.invalidateQueries({ queryKey: ['/api/notifications/me'] });
+                          });
+                        }}
+                      />
+                    );
+                  })}
               </div>
             )}
             
@@ -2478,9 +2880,17 @@ export default function ReceptionistDashboard() {
                   display: 'flex', 
                   flexDirection: 'column',
                 overflow: 'hidden',
-                padding: isMobile ? 12 : 16,
+                padding: 0,
                 }}
               >
+                <div style={{ 
+                  flex: 1, 
+                  minHeight: 0, 
+                  display: 'flex', 
+                  flexDirection: 'column',
+                  overflow: 'hidden',
+                  padding: isMobile ? 12 : 16,
+                }}>
                 {appointmentTabs.length === 0 ? (
                   <div style={{ textAlign: 'center', padding: '40px 0' }}>
                     <Text type="secondary">
@@ -2505,13 +2915,13 @@ export default function ReceptionistDashboard() {
                         <div style={{ 
                           flex: 1,
                           minHeight: 0,
-                          height: '100%',
+                            height: '100%',
                           overflow: 'hidden',
                           display: 'flex',
                           flexDirection: 'column',
                         }}>
                           {isMobile ? (
-                            <Space direction="vertical" size={12} style={{ width: '100%', flex: 1, overflowY: 'auto', paddingRight: 8 }}>
+                              <Space direction="vertical" size={12} style={{ width: '100%', flex: 1, overflowY: 'auto', paddingRight: 8, paddingBottom: 40 }}>
                               {appointmentsLoading ? (
                                 <>
                                   <Card size="small" style={{ borderRadius: 16 }}><Spin /></Card>
@@ -2522,34 +2932,34 @@ export default function ReceptionistDashboard() {
                               )}
                             </Space>
                           ) : (
-                            // Desktop/tablet: let the parent flex container control available height and scroll.
-                            // Avoid hard-coded `scroll.y` heights which create large empty (dark) space when rows are few.
-                            <div style={{ flex: 1, height: '100%', overflow: 'hidden', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
-                              <div style={{ flex: 1, height: '100%', overflowY: 'auto', overflowX: 'auto', minHeight: 0 }}>
-                                <Table
-                                  columns={appointmentColumns}
-                                  dataSource={appointmentsToShow}
-                                  pagination={false}
-                                  rowKey="id"
-                                  loading={appointmentsLoading}
-                                  size={isMobile ? "small" : "middle"}
-                                  // Enable vertical scroll only when needed to avoid large empty space for short lists.
-                                  scroll={{
-                                    x: 'max-content',
-                                    ...(appointmentsToShow.length > 3 ? { y: 'calc(100vh - 520px)' } : {}),
-                                  }}
-                                  rowClassName={(record: any) =>
-                                    record.status === 'pending' ? 'appointment-row-pending' : ''
-                                  }
-                                />
-                              </div>
+                              // Desktop/tablet: scroll container wraps the table
+                              <div style={{ flex: 1, height: '100%', overflow: 'hidden', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+                                <div style={{ flex: 1, height: '100%', overflowY: 'auto', overflowX: 'auto', minHeight: 0 }}>
+                                  <div style={{ paddingBottom: 40 }}>
+                          <Table
+                            columns={appointmentColumns}
+                            dataSource={appointmentsToShow}
+                            pagination={false}
+                            rowKey="id"
+                            loading={appointmentsLoading}
+                            size={isMobile ? "small" : "middle"}
+                                scroll={{ 
+                                        x: 'max-content',
+                                        ...(appointmentsToShow.length > 3 ? { y: 'calc(100vh - 520px)' } : {}),
+                                }}
+                                rowClassName={(record: any) =>
+                                  record.status === 'pending' ? 'appointment-row-pending' : ''
+                                }
+                              />
+                                  </div>
                             </div>
+                          </div>
                           )}
                         </div>
                       ),
                     }))}
                     style={{ 
-                      marginTop: 0,
+                        marginTop: 0,
                       display: 'flex',
                       flexDirection: 'column',
                       flex: 1,
@@ -2557,6 +2967,7 @@ export default function ReceptionistDashboard() {
                     }}
                   />
                 )}
+                </div>
               </Card>
             </Col>
           </Row>
@@ -3351,6 +3762,7 @@ export default function ReceptionistDashboard() {
             onClose={() => {
               setPatientInfoDrawerOpen(false);
               setPatientInfo(null);
+              setRecommendedLabTests([]);
             }}
             open={patientInfoDrawerOpen}
           >
@@ -3468,24 +3880,87 @@ export default function ReceptionistDashboard() {
                   </Card>
                 )}
 
+                {/* Recommended Lab Tests - Doctor Recommendations Awaiting Confirmation */}
+                {recommendedLabTests && recommendedLabTests.length > 0 && (
+                  <Card 
+                    title={
+                      <Space>
+                        <span>Recommended Lab Tests ({recommendedLabTests.length})</span>
+                        <Tag color="orange">Awaiting Confirmation</Tag>
+                      </Space>
+                    } 
+                    size="small"
+                    style={{ borderColor: '#FF9800', borderWidth: 2 }}
+                  >
+                    <List
+                      dataSource={recommendedLabTests}
+                      renderItem={(recommendation: any) => (
+                        <List.Item
+                          actions={[
+                            <Button
+                              type="primary"
+                              size="small"
+                              loading={confirmingLabTest === recommendation.id}
+                              onClick={() => handleConfirmLabRecommendation(recommendation.id)}
+                            >
+                              Confirm & Send to Lab
+                            </Button>
+                          ]}
+                        >
+                          <div style={{ width: '100%' }}>
+                            <Text strong>{recommendation.testName}</Text>
+                            <br />
+                            <Text type="secondary" style={{ fontSize: 12 }}>
+                              {dayjs(recommendation.reportDate).format('DD MMM YYYY')} • {recommendation.testType}
+                            </Text>
+                            {recommendation.priority && (
+                              <Tag color={recommendation.priority === 'Critical' ? 'red' : 'orange'} style={{ marginLeft: 8 }}>
+                                {recommendation.priority}
+                              </Tag>
+                            )}
+                            {recommendation.notes && (
+                              <div style={{ marginTop: 4 }}>
+                                <Text type="secondary" style={{ fontSize: 11 }}>
+                                  Notes: {recommendation.notes}
+                                </Text>
+                              </div>
+                            )}
+                          </div>
+                        </List.Item>
+                      )}
+                    />
+                  </Card>
+                )}
+
                 {/* Lab Reports */}
                 {patientInfo.labReports && patientInfo.labReports.length > 0 && (
                   <Card title={`Lab Reports (${patientInfo.labReports.length})`} size="small">
                     <List
                       dataSource={patientInfo.labReports}
                       renderItem={(report: any) => (
-                        <List.Item>
+                        <List.Item
+                          style={{ cursor: 'pointer' }}
+                          onClick={() => {
+                            setSelectedLabReport(report);
+                            setIsLabReportModalOpen(true);
+                          }}
+                        >
                           <div style={{ width: '100%' }}>
+                            <Space>
                             <Text strong>{report.testName}</Text>
-                            <br />
-                            <Text type="secondary" style={{ fontSize: 12 }}>
-                              {dayjs(report.reportDate).format('DD MMM YYYY')} • {report.testType}
-                            </Text>
                             {report.status && (
-                              <Tag color={report.status === 'completed' ? 'green' : 'orange'} style={{ marginLeft: 8 }}>
+                                <Tag color={report.status === 'completed' ? 'green' : report.status === 'ready' ? 'blue' : 'orange'}>
                                 {report.status}
                               </Tag>
                             )}
+                            </Space>
+                            <br />
+                            <Text type="secondary" style={{ fontSize: 12 }}>
+                              {dayjs(report.reportDate).format('DD MMM YYYY')} • {report.testType || 'N/A'}
+                            </Text>
+                            <Text type="secondary" style={{ fontSize: 11, display: 'block', marginTop: 4, fontStyle: 'italic' }}>
+                              Click to view detailed report
+                            </Text>
                           </div>
                         </List.Item>
                       )}
@@ -3732,6 +4207,118 @@ export default function ReceptionistDashboard() {
           </div>
         </Content>
       </Layout>
+
+      {/* Lab Report Viewer Modal */}
+      {/* Recommended Lab Tests Modal */}
+      <Modal
+        title={
+          <Space>
+            <ExperimentOutlined style={{ fontSize: '20px', color: '#1D4ED8' }} />
+            <span>
+              Recommended Lab Tests
+              {selectedPatientForLabTests && labTestsByPatient[selectedPatientForLabTests] && (
+                <Text type="secondary" style={{ marginLeft: 8, fontWeight: 'normal' }}>
+                  ({labTestsByPatient[selectedPatientForLabTests].length})
+                </Text>
+              )}
+            </span>
+          </Space>
+        }
+        open={isLabTestsModalOpen}
+        onCancel={() => {
+          setIsLabTestsModalOpen(false);
+          setSelectedPatientForLabTests(null);
+        }}
+        footer={null}
+        width={700}
+        destroyOnClose
+      >
+        {selectedPatientForLabTests && labTestsByPatient[selectedPatientForLabTests] ? (
+          <>
+            {(() => {
+              console.log(`📋 Displaying ${labTestsByPatient[selectedPatientForLabTests].length} tests for patient ${selectedPatientForLabTests}`);
+              return null;
+            })()}
+            <List
+              dataSource={labTestsByPatient[selectedPatientForLabTests]}
+              itemLayout="vertical"
+              renderItem={(test: any) => {
+                console.log('📋 Rendering lab test:', test);
+                return (
+              <List.Item
+                actions={[
+                  <Button
+                    key="confirm"
+                    type="primary"
+                    loading={confirmingLabTest === test.id}
+                    onClick={() => handleConfirmLabRecommendation(test.id)}
+                  >
+                    Confirm & Send to Lab
+                  </Button>
+                ]}
+              >
+                <List.Item.Meta
+                  title={
+                    <Space>
+                      <Text strong>{test.testName || 'Unknown Test'}</Text>
+                      {test.priority && (
+                        <Tag color={
+                          test.priority.toLowerCase() === 'urgent' ? 'red' :
+                          test.priority.toLowerCase() === 'high' ? 'orange' : 'blue'
+                        }>
+                          {test.priority}
+                        </Tag>
+                      )}
+                    </Space>
+                  }
+                  description={
+                    <Space direction="vertical" size={4}>
+                      {test.doctorName && (
+                        <Text type="secondary">
+                          Recommended by: <Text strong>{test.doctorName}</Text>
+                          {test.createdAt && (
+                            <Text type="secondary" style={{ marginLeft: 8, fontSize: 11 }}>
+                              • {dayjs(test.createdAt).fromNow()}
+                            </Text>
+                          )}
+                        </Text>
+                      )}
+                      {!test.doctorName && test.createdAt && (
+                        <Text type="secondary" style={{ fontSize: 12 }}>
+                          Recommended {dayjs(test.createdAt).fromNow()}
+                        </Text>
+                      )}
+                      {test.notes && (
+                        <Text type="secondary" style={{ fontSize: 12 }}>{test.notes}</Text>
+                      )}
+                      <Text type="secondary" style={{ fontSize: 12 }}>
+                        Status: <Tag color="orange">Recommended - Awaiting Confirmation</Tag>
+                      </Text>
+                    </Space>
+                  }
+                />
+              </List.Item>
+              );
+            }}
+            locale={{ emptyText: 'No recommended lab tests found' }}
+          />
+          </>
+        ) : (
+          <div style={{ textAlign: 'center', padding: '40px 0' }}>
+            <Text type="secondary">No recommended lab tests found for this patient.</Text>
+          </div>
+        )}
+      </Modal>
+
+      <LabReportViewerModal
+        open={isLabReportModalOpen}
+        onCancel={() => {
+          setIsLabReportModalOpen(false);
+          setSelectedLabReport(null);
+        }}
+        report={selectedLabReport}
+        loading={false}
+      />
     </Layout>
     </>
   );

@@ -32,28 +32,38 @@ router.get("/appointments", async (req, res) => {
   const role = (user.role || "").toUpperCase();
 
   if (role === "RECEPTIONIST") {
-    const rec = await db
-      .select({ hospitalId: receptionists.hospitalId })
-      .from(receptionists)
-      .where(eq(receptionists.userId, user.id))
-      .limit(1);
-    hospitalId = rec[0]?.hospitalId ?? null;
+    try {
+      const rec = await db
+        .select({ hospitalId: receptionists.hospitalId })
+        .from(receptionists)
+        .where(eq(receptionists.userId, user.id))
+        .limit(1);
+      hospitalId = rec[0]?.hospitalId ?? null;
+    } catch (e) {
+      console.error("❌ SSE: Failed to resolve receptionist hospital context:", e);
+      return res.status(503).json({ message: "Database unavailable. Please retry shortly." });
+    }
   }
 
   if (role === "HOSPITAL") {
-    const hosp = await db
-      .select({ id: hospitals.id })
-      .from(hospitals)
-      .where(eq(hospitals.userId, user.id))
-      .limit(1);
-    hospitalId = hosp[0]?.id ?? null;
+    try {
+      const hosp = await db
+        .select({ id: hospitals.id })
+        .from(hospitals)
+        .where(eq(hospitals.userId, user.id))
+        .limit(1);
+      hospitalId = hosp[0]?.id ?? null;
+    } catch (e) {
+      console.error("❌ SSE: Failed to resolve hospital context:", e);
+      return res.status(503).json({ message: "Database unavailable. Please retry shortly." });
+    }
   }
 
   res.setHeader("Content-Type", "text/event-stream");
   res.setHeader("Cache-Control", "no-cache");
   res.setHeader("Connection", "keep-alive");
-  // @ts-expect-error flushHeaders exists in Node response
-  res.flushHeaders?.();
+  // flushHeaders exists in Node response (not typed on Express Response)
+  (res as any).flushHeaders?.();
 
   const send = (payload: any) => {
     res.write(`data: ${JSON.stringify(payload)}\n\n`);

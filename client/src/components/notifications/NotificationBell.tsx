@@ -138,9 +138,18 @@ export function NotificationBell({
     return 'default';
   };
 
+  const normalizeTypeLabel = (type: string) => {
+    const t = (type || '').toUpperCase();
+    if (t === 'APPOINTMENT_RESCHEDULED' || t === 'APPOINTMENT_RESCHEDULED'.toUpperCase()) return 'RESCHEDULED';
+    if (t === 'APPOINTMENT_CONFIRMED') return 'CONFIRMED';
+    if (t === 'APPOINTMENT_CANCELLED') return 'CANCELLED';
+    return t || 'SYSTEM';
+  };
+
   return (
     <>
-      <Badge count={unreadCount} size="small" offset={[-2, 2]}>
+      {/* Keep badge inside bounds even when placed at the far right edge */}
+      <Badge count={unreadCount} size="small" offset={[-10, 6]}>
         <Button
           type="text"
           icon={<BellOutlined style={{ fontSize: 18 }} />}
@@ -180,39 +189,44 @@ export function NotificationBell({
                 borderRadius: 10,
                 padding: 12,
                 marginBottom: 10,
+                display: 'block', // prevent List actions from shrinking meta to a few pixels
               }}
-              actions={[
-                <Button
-                  key="read"
-                  size="small"
-                  type="link"
-                  disabled={!!item.isRead}
-                  loading={markOneMutation.isPending && (markOneMutation.variables as any) === item.id}
-                  onClick={() => markOneMutation.mutate(item.id)}
-                >
-                  Mark read
-                </Button>,
-              ]}
             >
-              <List.Item.Meta
-                title={
-                  <Space>
-                    <Text strong>{item.title}</Text>
-                    <Tag color={typeTagColor(item.type)}>{(item.type || 'system').toUpperCase()}</Tag>
-                    {!item.isRead && <Tag color="blue">NEW</Tag>}
-                  </Space>
-                }
-                description={
-                  <div>
-                    <div style={{ marginBottom: 6 }}>{item.message}</div>
-                    {item.createdAt && (
-                      <Text type="secondary" style={{ fontSize: 12 }}>
-                        {new Date(item.createdAt).toLocaleString()}
+              <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, width: '100%' }}>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 }}>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <Text strong style={{ display: 'block', wordBreak: 'break-word' }}>
+                        {item.title}
                       </Text>
-                    )}
+                      <div style={{ marginTop: 6 }}>
+                        <Space size={8} wrap>
+                          <Tag color={typeTagColor(item.type)}>{normalizeTypeLabel(item.type)}</Tag>
+                          {!item.isRead && <Tag color="blue">NEW</Tag>}
+                        </Space>
+                      </div>
+                    </div>
+
+                    <Button
+                      size="small"
+                      type="link"
+                      disabled={!!item.isRead}
+                      loading={markOneMutation.isPending && (markOneMutation.variables as any) === item.id}
+                      onClick={() => markOneMutation.mutate(item.id)}
+                      style={{ padding: 0, whiteSpace: 'nowrap' }}
+                    >
+                      Mark read
+                    </Button>
                   </div>
-                }
-              />
+
+                  <div style={{ marginTop: 10, wordBreak: 'break-word' }}>{item.message}</div>
+                  {item.createdAt && (
+                    <Text type="secondary" style={{ fontSize: 12, display: 'block', marginTop: 6 }}>
+                      {new Date(item.createdAt).toLocaleString()}
+                    </Text>
+                  )}
+                </div>
+              </div>
             </List.Item>
           )}
         />

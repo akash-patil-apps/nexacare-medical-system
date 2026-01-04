@@ -1,7 +1,7 @@
 // server/services/notifications.service.ts
 import { db } from '../db';
 import { notifications } from '../../shared/schema';
-import { eq } from 'drizzle-orm';
+import { eq, desc } from 'drizzle-orm';
 import type { InsertNotification } from '../../shared/schema-types';
 
 /**
@@ -17,13 +17,14 @@ export const createNotification = async (
 };
 
 /**
- * Get all notifications for a user.
+ * Get all notifications for a user, ordered by most recent first.
  */
 export const getUserNotifications = async (userId: number) => {
   return db
     .select()
     .from(notifications)
-    .where(eq(notifications.userId, userId));
+    .where(eq(notifications.userId, userId))
+    .orderBy(desc(notifications.createdAt));
 };
 
 /**

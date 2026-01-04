@@ -94,6 +94,12 @@ router.get(
   async (req: AuthenticatedRequest, res) => {
     try {
       const hospitalId = Number(req.params.id);
+      
+      // Validate hospitalId is a valid number
+      if (isNaN(hospitalId) || hospitalId <= 0) {
+        return res.status(400).json({ message: 'Invalid hospital ID' });
+      }
+      
       const hospital = await getHospitalById(hospitalId);
       if (!hospital) {
         return res.status(404).json({ message: 'Hospital not found' });

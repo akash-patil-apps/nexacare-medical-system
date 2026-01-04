@@ -140,6 +140,74 @@ export const bookAppointment = async (
     });
 
     console.log(`✅ Appointment created: ${appointment.id} with status: ${appointment.status}`);
+
+    // Notify receptionists when a patient creates a PENDING appointment (so they can confirm)
+    // Best-effort: appointment booking must succeed even if notification fails.
+    try {
+      const isOnlinePending = !isWalkIn && initialStatus === 'pending';
+      console.log(`🔔 Notification check: isWalkIn=${isWalkIn}, initialStatus=${initialStatus}, isOnlinePending=${isOnlinePending}`);
+      
+      if (isOnlinePending) {
+        const [patientRow] = await db
+          .select({ userId: patients.userId })
+          .from(patients)
+          .where(eq(patients.id, data.patientId))
+          .limit(1);
+        
+        const patientUser = patientRow?.userId
+          ? (await db
+              .select({ fullName: users.fullName })
+              .from(users)
+              .where(eq(users.id, patientRow.userId))
+              .limit(1))[0]
+          : null;
+        const patientName = patientUser?.fullName || 'Patient';
+
+        const day = appointmentDayStr;
+        const slot = String(data.timeSlot || '').trim();
+        const title = 'New Pending Appointment';
+        const message = `${patientName} booked ${day} (${slot}). Please confirm or reject.`;
+
+        console.log(`🔔 Creating notifications for hospital ${data.hospitalId}, appointment ${appointment.id}`);
+        const receptionistUsers = await db
+          .select({ userId: receptionists.userId })
+          .from(receptionists)
+          .where(eq(receptionists.hospitalId, data.hospitalId))
+          .limit(50);
+
+        console.log(`🔔 Found ${receptionistUsers.length} receptionists for hospital ${data.hospitalId}`);
+
+        const notificationResults = await Promise.all(
+          receptionistUsers
+            .map((r) => r.userId)
+            .filter(Boolean)
+            .map(async (uid) => {
+              try {
+                const result = await createNotification({
+                  userId: uid as number,
+                  type: 'appointment_pending',
+                  title,
+                  message,
+                  relatedId: appointment.id,
+                  relatedType: 'appointment',
+                });
+                console.log(`✅ Created notification for receptionist userId ${uid}, notification ID: ${result[0]?.id}`);
+                return result;
+              } catch (err) {
+                console.error(`❌ Failed to create notification for receptionist userId ${uid}:`, err);
+                throw err;
+              }
+            }),
+        );
+        console.log(`🔔 Successfully created ${notificationResults.length} notifications`);
+      } else {
+        console.log(`🔔 Skipping notification: appointment is not online pending (isWalkIn=${isWalkIn}, status=${initialStatus})`);
+      }
+    } catch (e) {
+      console.error('⚠️ Failed to create receptionist pending notifications:', e);
+      // Don't throw - appointment booking should succeed even if notification fails
+    }
+
     await emitAppointmentChanged(
       appointment.id,
       isWalkIn ? (isWalkInToday ? "checked-in" : "confirmed") : "created"
@@ -637,7 +705,47 @@ export const updateAppointmentStatus = async (
 };
 
 /**
+ * Parse appointment start time from date and time slot
+ */
+function parseAppointmentStartTime(appointmentDate: Date | string, timeSlot: string | null): Date | null {
+  try {
+    const date = appointmentDate instanceof Date ? appointmentDate : new Date(appointmentDate);
+    if (isNaN(date.getTime())) return null;
+    
+    if (!timeSlot) return null;
+    
+    // Parse time slot (e.g., "02:00-02:30", "02:00 PM", "14:00")
+    const startPart = timeSlot.includes('-') ? timeSlot.split('-')[0].trim() : timeSlot.trim();
+    const match = startPart.match(/(\d{1,2}):(\d{2})(?:\s*(AM|PM|am|pm))?/);
+    
+    if (!match) return null;
+    
+    let hours = parseInt(match[1], 10);
+    const minutes = parseInt(match[2], 10);
+    const period = match[3]?.toUpperCase();
+    
+    // Handle 12-hour format
+    if (period === 'PM' && hours !== 12) hours += 12;
+    if (period === 'AM' && hours === 12) hours = 0;
+    
+    // Legacy convention: "02:00-05:00" slots represent AFTERNOON when AM/PM is missing
+    if (!period && hours >= 2 && hours <= 5) {
+      hours += 12;
+    }
+    
+    const startTime = new Date(date);
+    startTime.setHours(hours, minutes, 0, 0);
+    
+    return startTime;
+  } catch (error) {
+    console.error('Error parsing appointment start time:', error);
+    return null;
+  }
+}
+
+/**
  * Cancel appointment.
+ * Patients can only cancel appointments at least 3 hours before the appointment start time.
  */
 export const cancelAppointment = async (appointmentId: number, userId: number, cancellationReason?: string) => {
   console.log(`📅 Cancelling appointment ${appointmentId}${cancellationReason ? ` with reason: ${cancellationReason}` : ''}`);
@@ -652,6 +760,34 @@ export const cancelAppointment = async (appointmentId: number, userId: number, c
     
     if (!existingAppointment) {
       throw new Error('Appointment not found');
+    }
+    
+    // Check if appointment is already cancelled
+    if (existingAppointment.status === 'cancelled') {
+      throw new Error('Appointment is already cancelled');
+    }
+    
+    // Check 3-hour restriction: Patients can only cancel at least 3 hours before appointment start time
+    const appointmentStartTime = parseAppointmentStartTime(
+      existingAppointment.appointmentDate,
+      existingAppointment.timeSlot
+    );
+    
+    if (appointmentStartTime) {
+      const now = new Date();
+      const threeHoursInMs = 3 * 60 * 60 * 1000; // 3 hours in milliseconds
+      const timeUntilAppointment = appointmentStartTime.getTime() - now.getTime();
+      
+      if (timeUntilAppointment < threeHoursInMs) {
+        const hoursUntil = Math.floor(timeUntilAppointment / (60 * 60 * 1000));
+        const minutesUntil = Math.floor((timeUntilAppointment % (60 * 60 * 1000)) / (60 * 1000));
+        
+        if (timeUntilAppointment < 0) {
+          throw new Error('Cannot cancel appointment that has already started or passed');
+        } else {
+          throw new Error(`Appointments can only be cancelled at least 3 hours before the scheduled time. Your appointment is in ${hoursUntil} hour(s) and ${minutesUntil} minute(s).`);
+        }
+      }
     }
     
     const updateData: any = {
@@ -680,6 +816,9 @@ export const cancelAppointment = async (appointmentId: number, userId: number, c
     return result;
   } catch (error) {
     console.error('Error cancelling appointment:', error);
+    if (error instanceof Error) {
+      throw error; // Re-throw with original message
+    }
     throw new Error('Failed to cancel appointment');
   }
 };
@@ -790,6 +929,62 @@ export const confirmAppointmentByReceptionist = async (appointmentId: number, re
       receptionistId: result.receptionistId,
       confirmedAt: result.confirmedAt
     });
+    
+    // Notify patient and doctor about confirmation
+    try {
+      const [patientRow] = await db
+        .select({ userId: patients.userId })
+        .from(patients)
+        .where(eq(patients.id, result.patientId))
+        .limit(1);
+      
+      const [doctorRow] = await db
+        .select({ userId: doctors.userId })
+        .from(doctors)
+        .where(eq(doctors.id, result.doctorId))
+        .limit(1);
+
+      const appointmentDate = result.appointmentDate instanceof Date 
+        ? result.appointmentDate.toISOString().slice(0, 10)
+        : String(result.appointmentDate).slice(0, 10);
+      const timeSlot = String(result.timeSlot || '').trim();
+
+      if (patientRow?.userId) {
+        await createNotification({
+          userId: patientRow.userId,
+          type: 'appointment_confirmed',
+          title: 'Appointment Confirmed',
+          message: `Your appointment on ${appointmentDate} (${timeSlot}) has been confirmed.`,
+          relatedId: result.id,
+          relatedType: 'appointment',
+        });
+        console.log(`✅ Created confirmation notification for patient userId ${patientRow.userId}`);
+      }
+
+      if (doctorRow?.userId) {
+        const [patientUser] = patientRow?.userId
+          ? await db
+              .select({ fullName: users.fullName })
+              .from(users)
+              .where(eq(users.id, patientRow.userId))
+              .limit(1)
+          : [null];
+        const patientName = patientUser?.fullName || 'Patient';
+
+        await createNotification({
+          userId: doctorRow.userId,
+          type: 'appointment_confirmed',
+          title: 'New Confirmed Appointment',
+          message: `${patientName} has a confirmed appointment on ${appointmentDate} (${timeSlot}).`,
+          relatedId: result.id,
+          relatedType: 'appointment',
+        });
+        console.log(`✅ Created confirmation notification for doctor userId ${doctorRow.userId}`);
+      }
+    } catch (e) {
+      console.error('⚠️ Failed to create confirmation notifications:', e);
+      // Don't throw - appointment confirmation should succeed even if notification fails
+    }
     
     await emitAppointmentChanged(result.id, "confirmed");
     return result;
@@ -1022,16 +1217,30 @@ export const rescheduleAppointment = async (
       .where(eq(doctors.id, (updated as any).doctorId))
       .limit(1);
 
-    const newDay = String(input.appointmentDate).slice(0, 10);
-    const title = 'Appointment Rescheduled';
-    const msg = `Your appointment has been rescheduled to ${newDay} (${input.timeSlot}). Reason: ${reason}`;
+    const [patientUser] = patientRow?.userId
+      ? await db
+          .select({ fullName: users.fullName })
+          .from(users)
+          .where(eq(users.id, patientRow.userId))
+          .limit(1)
+      : [null];
+
+    const patientName = patientUser?.fullName || 'Patient';
+
+    const fromDay = String((updated as any).rescheduledFromDate || '').slice(0, 10) || 'N/A';
+    const fromSlot = String((updated as any).rescheduledFromTimeSlot || '').trim() || 'N/A';
+    const toDay = String((updated as any).appointmentDate || input.appointmentDate || '').slice(0, 10);
+    const toSlot = String((updated as any).timeSlot || input.timeSlot || '').trim();
+
+    const titlePatient = 'Appointment Rescheduled';
+    const msgPatient = `Your appointment has been shifted from ${fromDay} (${fromSlot}) to ${toDay} (${toSlot}). Reason: ${reason}`;
 
     if (patientRow?.userId) {
       await createNotification({
         userId: patientRow.userId,
         type: 'appointment_rescheduled',
-        title,
-        message: msg,
+        title: titlePatient,
+        message: msgPatient,
         relatedId: (updated as any).id,
         relatedType: 'appointment',
       });
@@ -1041,8 +1250,8 @@ export const rescheduleAppointment = async (
       await createNotification({
         userId: doctorRow.userId,
         type: 'appointment_rescheduled',
-        title: 'Appointment Rescheduled (Patient)',
-        message: `An appointment has been rescheduled to ${newDay} (${input.timeSlot}).`,
+        title: `${patientName}: Appointment Rescheduled`,
+        message: `${patientName}'s appointment has been shifted from ${fromDay} (${fromSlot}) to ${toDay} (${toSlot}).`,
         relatedId: (updated as any).id,
         relatedType: 'appointment',
       });

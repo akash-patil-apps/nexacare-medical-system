@@ -90,14 +90,13 @@ export default function LabReportUploadModal({
     if (open) {
       if (report) {
         // Edit mode - populate form with existing data
+        // Use patientName/doctorName from report if available, otherwise use IDs
         form.setFieldsValue({
           patientId: report.patientId,
           doctorId: report.doctorId,
           testName: report.testName,
-          testType: report.testType,
           results: report.results,
           normalRanges: report.normalRanges,
-          reportDate: report.reportDate ? dayjs(report.reportDate) : dayjs(),
           notes: report.notes,
           status: report.status || 'pending',
         });
@@ -105,7 +104,6 @@ export default function LabReportUploadModal({
         // New report - reset form
         form.resetFields();
         form.setFieldsValue({
-          reportDate: dayjs(),
           status: 'pending',
         });
       }
@@ -116,11 +114,33 @@ export default function LabReportUploadModal({
   const uploadMutation = useMutation({
     mutationFn: async (values: any) => {
       const token = localStorage.getItem('auth-token');
-      const payload = {
-        ...values,
-        reportDate: values.reportDate ? values.reportDate.format('YYYY-MM-DD') : dayjs().format('YYYY-MM-DD'),
-        reportUrl: fileList.length > 0 ? fileList[0].url : undefined,
-      };
+      
+      // When updating, only send fields that should be updated
+      // When creating, include all fields including reportDate
+      const payload = report 
+        ? {
+            // Only update these fields when editing
+            results: values.results,
+            normalRanges: values.normalRanges,
+            notes: values.notes,
+            status: values.status,
+            // Don't update reportDate when editing - keep original
+            // Don't update patientId, doctorId, testName - these are read-only
+            ...(fileList.length > 0 && { reportUrl: fileList[0].url }),
+          }
+        : {
+            // New report - include all fields
+            patientId: values.patientId,
+            doctorId: values.doctorId,
+            testName: values.testName,
+            results: values.results,
+            normalRanges: values.normalRanges,
+            notes: values.notes,
+            status: values.status || 'pending',
+            // Report date is automatically set to current date/time when submitted
+            reportDate: dayjs().format('YYYY-MM-DD'),
+            ...(fileList.length > 0 && { reportUrl: fileList[0].url }),
+          };
 
       const url = report 
         ? `/api/labs/reports/${report.id}` 
@@ -137,8 +157,15 @@ export default function LabReportUploadModal({
       });
 
       if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.message || 'Failed to save lab report');
+        let errorMessage = 'Failed to save lab report';
+        try {
+          const error = await response.json();
+          errorMessage = error.message || error.error || errorMessage;
+          console.error('Lab report update error:', error);
+        } catch (e) {
+          console.error('Failed to parse error response:', e);
+        }
+        throw new Error(errorMessage);
       }
 
       return response.json();
@@ -179,18 +206,6 @@ export default function LabReportUploadModal({
     }
   };
 
-  const testTypes = [
-    'Blood Test',
-    'Urine Test',
-    'X-Ray',
-    'CT Scan',
-    'MRI',
-    'Ultrasound',
-    'ECG',
-    'Biopsy',
-    'Culture',
-    'Other',
-  ];
 
   return (
     <Modal
@@ -234,15 +249,31 @@ export default function LabReportUploadModal({
               <Select
                 placeholder="Select patient"
                 showSearch
+                disabled={!!report} // Disable when editing - patient cannot be changed
                 filterOption={(input, option) =>
+                  (option?.label as string)?.toLowerCase().includes(input.toLowerCase()) ||
                   (option?.children as string)?.toLowerCase().includes(input.toLowerCase())
                 }
+                optionLabelProp="label"
               >
-                {patients.map((patient: any) => (
-                  <Option key={patient.id} value={patient.id}>
-                    {patient.fullName || patient.name}
+                {patients.map((patient: any) => {
+                  const patientName = patient.fullName || patient.name || `Patient #${patient.id}`;
+                  // If editing and this is the report's patient, show name from report
+                  const displayName = (report && report.patientId === patient.id && report.patientName) 
+                    ? report.patientName 
+                    : patientName;
+                  return (
+                    <Option key={patient.id} value={patient.id} label={displayName}>
+                      {displayName}
+                    </Option>
+                  );
+                })}
+                {/* If report has patientName but patient not in list, add it */}
+                {report?.patientName && !patients.find((p: any) => p.id === report.patientId) && (
+                  <Option key={report.patientId} value={report.patientId} label={report.patientName}>
+                    {report.patientName}
                   </Option>
-                ))}
+                )}
               </Select>
             </Form.Item>
           </Col>
@@ -255,46 +286,47 @@ export default function LabReportUploadModal({
                 placeholder="Select doctor"
                 allowClear
                 showSearch
+                disabled={!!report} // Disable when editing - doctor cannot be changed
                 filterOption={(input, option) =>
+                  (option?.label as string)?.toLowerCase().includes(input.toLowerCase()) ||
                   (option?.children as string)?.toLowerCase().includes(input.toLowerCase())
                 }
+                optionLabelProp="label"
               >
-                {doctors.map((doctor: any) => (
-                  <Option key={doctor.id} value={doctor.id}>
-                    {doctor.fullName || doctor.name}
+                {doctors.map((doctor: any) => {
+                  const doctorName = doctor.fullName || doctor.name || `Doctor #${doctor.id}`;
+                  // If editing and this is the report's doctor, show name from report
+                  const displayName = (report && report.doctorId === doctor.id && report.doctorName) 
+                    ? report.doctorName 
+                    : doctorName;
+                  return (
+                    <Option key={doctor.id} value={doctor.id} label={displayName}>
+                      {displayName}
+                    </Option>
+                  );
+                })}
+                {/* If report has doctorName but doctor not in list, add it */}
+                {report?.doctorName && report.doctorId && !doctors.find((d: any) => d.id === report.doctorId) && (
+                  <Option key={report.doctorId} value={report.doctorId} label={report.doctorName}>
+                    {report.doctorName}
                   </Option>
-                ))}
+                )}
               </Select>
             </Form.Item>
           </Col>
         </Row>
 
-        <Row gutter={16}>
-          <Col span={12}>
-            <Form.Item
-              name="testName"
-              label="Test Name"
-              rules={[{ required: true, message: 'Please enter test name' }]}
-            >
-              <Input placeholder="e.g., Complete Blood Count" />
-            </Form.Item>
-          </Col>
-          <Col span={12}>
-            <Form.Item
-              name="testType"
-              label="Test Type"
-              rules={[{ required: true, message: 'Please select test type' }]}
-            >
-              <Select placeholder="Select test type">
-                {testTypes.map((type) => (
-                  <Option key={type} value={type}>
-                    {type}
-                  </Option>
-                ))}
-              </Select>
-            </Form.Item>
-          </Col>
-        </Row>
+        <Form.Item
+          name="testName"
+          label="Test Name"
+          rules={[{ required: true, message: 'Please enter test name' }]}
+        >
+          <Input 
+            placeholder="e.g., Complete Blood Count" 
+            disabled={!!report} // Make read-only when editing - test name should not be changed
+            readOnly={!!report}
+          />
+        </Form.Item>
 
         <Form.Item
           name="results"
@@ -314,42 +346,53 @@ export default function LabReportUploadModal({
           <Input placeholder="e.g., 4.0-11.0 x 10^9/L" />
         </Form.Item>
 
-        <Row gutter={16}>
-          <Col span={12}>
-            <Form.Item
-              name="reportDate"
-              label="Report Date"
-              rules={[{ required: true, message: 'Please select report date' }]}
-            >
-              <DatePicker
-                style={{ width: '100%' }}
-                format="YYYY-MM-DD"
-              />
-            </Form.Item>
-          </Col>
-          <Col span={12}>
-            <Form.Item
-              name="status"
-              label="Status"
-              rules={[{ required: true, message: 'Please select status' }]}
-            >
-              <Select>
-                <Option value="pending">
-                  <Tag color="orange">Pending</Tag>
-                </Option>
-                <Option value="processing">
-                  <Tag color="blue">Processing</Tag>
-                </Option>
-                <Option value="ready">
-                  <Tag color="green">Ready</Tag>
-                </Option>
-                <Option value="completed">
-                  <Tag color="green">Completed</Tag>
-                </Option>
-              </Select>
-            </Form.Item>
-          </Col>
-        </Row>
+        <Form.Item
+          name="status"
+          label="Status"
+          rules={[{ required: true, message: 'Please select status' }]}
+          tooltip="Status indicates the current stage of the lab report processing workflow"
+          extra={
+            <div style={{ marginTop: 4, fontSize: '12px', color: '#8c8c8c' }}>
+              <strong>Status Flow:</strong> Pending → Processing → Ready → Completed
+              <br />
+              <strong>Pending:</strong> Request received, awaiting processing
+              <br />
+              <strong>Processing:</strong> Sample is being analyzed
+              <br />
+              <strong>Ready:</strong> Results are ready for review
+              <br />
+              <strong>Completed:</strong> Report is finalized and sent to patient/doctor
+            </div>
+          }
+        >
+          <Select>
+            <Option value="pending">
+              <Tag color="orange">Pending</Tag>
+            </Option>
+            <Option value="processing">
+              <Tag color="blue">Processing</Tag>
+            </Option>
+            <Option value="ready">
+              <Tag color="green">Ready</Tag>
+            </Option>
+            <Option value="completed">
+              <Tag color="green">Completed</Tag>
+            </Option>
+          </Select>
+        </Form.Item>
+        
+        {report && (
+          <Form.Item label="Report Date">
+            <Input 
+              value={report.reportDate ? dayjs(report.reportDate).format('YYYY-MM-DD HH:mm') : 'N/A'} 
+              disabled 
+              readOnly
+            />
+            <Text type="secondary" style={{ fontSize: '12px', display: 'block', marginTop: 4 }}>
+              Report date is automatically set when the report is submitted
+            </Text>
+          </Form.Item>
+        )}
 
         <Form.Item
           name="notes"

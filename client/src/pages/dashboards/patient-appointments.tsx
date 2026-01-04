@@ -289,12 +289,20 @@ export default function PatientAppointments() {
       const displayStatus = (appointment.displayStatus || appointment.status || '').toLowerCase();
 
       // Past if it is explicitly finished/cancelled/absent OR the appointment day is before today (IST).
+      // Also move to past if appointment time has passed for today's appointments (especially pending ones).
       const isFinishedStatus = displayStatus === 'completed' || displayStatus === 'cancelled' || displayStatus === 'absent';
 
       if (appointmentDateTimeIST) {
         const aptDayIST = getISTStartOfDay(appointmentDateTimeIST);
         const isPastDay = aptDayIST.getTime() < todayIST.getTime();
-        if (isFinishedStatus || isPastDay) {
+        const isToday = aptDayIST.getTime() === todayIST.getTime();
+        
+        // For today's appointments: check if time has passed
+        // If pending/confirmed and time has passed, move to past
+        const isTimePassed = isToday && appointmentDateTimeIST.getTime() < nowIST.getTime();
+        const shouldBePast = isTimePassed && (displayStatus === 'pending' || displayStatus === 'confirmed');
+        
+        if (isFinishedStatus || isPastDay || shouldBePast) {
           past.push(appointment);
         } else {
           upcoming.push(appointment);
@@ -412,7 +420,7 @@ export default function PatientAppointments() {
     try {
       const token = localStorage.getItem('auth-token');
       const response = await fetch(`/api/appointments/${appointmentId}/cancel`, {
-        method: 'PUT',
+        method: 'PATCH',
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'
@@ -703,21 +711,8 @@ export default function PatientAppointments() {
               </div>
             )}
 
-            {/* Header Section */}
-            <div style={{ 
-              background: '#F3F4F6', 
-              padding: '24px 32px',
-            }}>
-              <Title level={2} style={{ margin: 0, fontSize: '32px', fontWeight: 700, color: '#111827' }}>
-                My Appointments
-              </Title>
-              <Text style={{ fontSize: '16px', color: '#6B7280', marginTop: '4px', display: 'block' }}>
-                Manage your medical appointments
-              </Text>
-            </div>
-
             {/* Content */}
-            <div style={{ padding: '0 32px 32px 32px', maxWidth: '1400px', margin: '0 auto', width: '100%' }}>
+            <div style={{ padding: '24px 32px 32px 32px', maxWidth: '1400px', margin: '0 auto', width: '100%' }}>
               {/* KPI Cards */}
               <Row gutter={[16, 16]} style={{ marginBottom: '24px' }}>
                 <Col xs={24} sm={12} lg={6}>

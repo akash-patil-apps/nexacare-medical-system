@@ -13,6 +13,7 @@ import {
   Skeleton,
   Tabs,
   Drawer,
+  Alert,
 } from 'antd';
 import {
   CalendarOutlined,
@@ -84,6 +85,21 @@ export default function PatientDashboard() {
   const [selectedMenuKey] = useState<string>('dashboard');
   
   useOnboardingCheck();
+
+  // Get notifications for patient
+  const { data: notifications = [] } = useQuery({
+    queryKey: ['/api/notifications/me'],
+    queryFn: async () => {
+      const token = localStorage.getItem('auth-token');
+      const response = await fetch('/api/notifications/me', {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!response.ok) return [];
+      return response.json();
+    },
+    refetchInterval: 15000,
+    refetchOnWindowFocus: true,
+  });
 
   const {
     data: allAppointments = [],
@@ -508,6 +524,43 @@ export default function PatientDashboard() {
                 />
                 <Title level={4} style={{ margin: 0 }}>Dashboard</Title>
                 <NotificationBell />
+              </div>
+            )}
+
+            {/* Alert/Banner Notifications - Show important unread notifications */}
+            {notifications.filter((n: any) => !n.isRead).length > 0 && (
+              <div style={{ marginBottom: 16 }}>
+                {notifications
+                  .filter((n: any) => !n.isRead)
+                  .slice(0, 3)
+                  .map((notif: any) => {
+                    const type = (notif.type || '').toLowerCase();
+                    let alertType: 'info' | 'success' | 'warning' | 'error' = 'info';
+                    if (type.includes('cancel') || type.includes('reject')) alertType = 'error';
+                    else if (type.includes('confirm') || type.includes('complete')) alertType = 'success';
+                    else if (type.includes('pending') || type.includes('resched')) alertType = 'warning';
+                    
+                    return (
+                      <Alert
+                        key={notif.id}
+                        message={notif.title || 'Notification'}
+                        description={notif.message}
+                        type={alertType}
+                        showIcon
+                        closable
+                        style={{ marginBottom: 8 }}
+                        onClose={() => {
+                          const token = localStorage.getItem('auth-token');
+                          fetch(`/api/notifications/read/${notif.id}`, {
+                            method: 'POST',
+                            headers: { Authorization: `Bearer ${token}` },
+                          }).then(() => {
+                            queryClient.invalidateQueries({ queryKey: ['/api/notifications/me'] });
+                          });
+                        }}
+                      />
+                    );
+                  })}
               </div>
             )}
 
