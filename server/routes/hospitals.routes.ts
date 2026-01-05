@@ -60,7 +60,7 @@ router.post('/register', async (req, res) => {
 router.post(
   '/approve/doctor/:id',
   authenticateToken,
-  authorizeRoles('hospital'),
+  authorizeRoles('HOSPITAL'),
   async (req: AuthenticatedRequest, res) => {
     try {
       const approved = await approveDoctor(Number(req.params.id));
@@ -75,7 +75,7 @@ router.post(
 router.post(
   '/approve/lab/:id',
   authenticateToken,
-  authorizeRoles('hospital'),
+  authorizeRoles('HOSPITAL'),
   async (req: AuthenticatedRequest, res) => {
     try {
       const approved = await approveLab(Number(req.params.id));
@@ -87,26 +87,29 @@ router.post(
   }
 );
 
-// Get hospital by ID
+// Get current user's hospital (MUST be before /:id route)
 router.get(
-  '/:id',
+  '/my',
   authenticateToken,
+  authorizeRoles('HOSPITAL'),
   async (req: AuthenticatedRequest, res) => {
     try {
-      const hospitalId = Number(req.params.id);
+      const userId = req.user!.id;
       
-      // Validate hospitalId is a valid number
-      if (isNaN(hospitalId) || hospitalId <= 0) {
-        return res.status(400).json({ message: 'Invalid hospital ID' });
-      }
+      // Get hospital from user
+      const [hospital] = await db
+        .select()
+        .from(hospitals)
+        .where(eq(hospitals.userId, userId))
+        .limit(1);
       
-      const hospital = await getHospitalById(hospitalId);
       if (!hospital) {
-        return res.status(404).json({ message: 'Hospital not found' });
+        return res.status(404).json({ message: 'Hospital not found for this user' });
       }
+      
       res.json(hospital);
     } catch (err: any) {
-      console.error('Get hospital by ID error:', err);
+      console.error('Get my hospital error:', err);
       res.status(500).json({ message: err.message || 'Failed to fetch hospital' });
     }
   }
@@ -116,7 +119,7 @@ router.get(
 router.get(
   '/stats',
   authenticateToken,
-  authorizeRoles('hospital'),
+  authorizeRoles('HOSPITAL'),
   async (req: AuthenticatedRequest, res) => {
     try {
       const userId = req.user!.id;
@@ -137,6 +140,31 @@ router.get(
     } catch (err: any) {
       console.error('Get hospital stats error:', err);
       res.status(500).json({ message: err.message || 'Failed to fetch hospital statistics' });
+    }
+  }
+);
+
+// Get hospital by ID (must be after /my and /stats routes)
+router.get(
+  '/:id',
+  authenticateToken,
+  async (req: AuthenticatedRequest, res) => {
+    try {
+      const hospitalId = Number(req.params.id);
+      
+      // Validate hospitalId is a valid number
+      if (isNaN(hospitalId) || hospitalId <= 0) {
+        return res.status(400).json({ message: 'Invalid hospital ID' });
+      }
+      
+      const hospital = await getHospitalById(hospitalId);
+      if (!hospital) {
+        return res.status(404).json({ message: 'Hospital not found' });
+      }
+      res.json(hospital);
+    } catch (err: any) {
+      console.error('Get hospital by ID error:', err);
+      res.status(500).json({ message: err.message || 'Failed to fetch hospital' });
     }
   }
 );
