@@ -40,12 +40,19 @@ export async function setupVite(app: Express, server: Server) {
     customLogger: {
       ...viteLogger,
       error: (msg, options) => {
-        // Suppress JSON parsing errors for CSS files
-        if (msg.includes('Failed to parse JSON file') && msg.includes('.css')) {
-          return;
+        // Suppress JSON parsing errors for CSS files and Chrome DevTools files
+        const msgStr = String(msg);
+        if (msgStr.includes('Failed to parse JSON file')) {
+          if (msgStr.includes('.css') || msgStr.includes('devtools') || msgStr.includes('.well-known') || msgStr.includes('chrome') || msgStr.includes('appspecific')) {
+            // Silently ignore these harmless errors
+            return;
+          }
         }
-        console.error('Vite Error:', msg);
-        viteLogger.error(msg, options);
+        // Only log actual errors, not Chrome DevTools noise
+        if (!msgStr.includes('.well-known') && !msgStr.includes('devtools') && !msgStr.includes('appspecific')) {
+          console.error('Vite Error:', msg);
+          viteLogger.error(msg, options);
+        }
       },
     },
     optimizeDeps: {
@@ -60,16 +67,29 @@ export async function setupVite(app: Express, server: Server) {
 
   app.use("*", async (req, res, next) => {
     const url = req.originalUrl;
+    
+    // Skip Chrome DevTools and other browser extension requests early
+    if (url.includes('.well-known') || url.includes('devtools') || url.includes('chrome-extension') || url.includes('appspecific')) {
+      res.status(404).end();
+      return;
+    }
+    
     try {
       const clientTemplate = path.resolve(clientRoot, "index.html");
       let template = await fs.promises.readFile(clientTemplate, "utf-8");
       const html = await vite.transformIndexHtml(url, template);
       res.status(200).set({ "Content-Type": "text/html" }).end(html);
     } catch (e) {
-      // Suppress JSON parsing errors for CSS files
-      if (e instanceof Error && e.message.includes('Failed to parse JSON file') && e.message.includes('.css')) {
-        console.log('Suppressed CSS JSON parsing error');
-        return;
+      // Suppress JSON parsing errors for CSS files and Chrome DevTools files
+      if (e instanceof Error) {
+        const errorMsg = e.message || String(e);
+        if (errorMsg.includes('Failed to parse JSON file')) {
+          if (errorMsg.includes('.css') || errorMsg.includes('devtools') || errorMsg.includes('.well-known') || errorMsg.includes('chrome') || errorMsg.includes('appspecific')) {
+            // Silently ignore these harmless errors - return 404 instead of crashing
+            res.status(404).end();
+            return;
+          }
+        }
       }
       console.error('Vite transform error:', e);
       vite.ssrFixStacktrace(e as Error);

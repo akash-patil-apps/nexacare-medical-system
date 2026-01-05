@@ -24,5 +24,10 @@ export default defineConfig({
   },
   esbuild: {
     logOverride: { 'this-is-undefined-in-esm': 'silent' }
-  }
+  },
+  // Suppress Chrome DevTools JSON parsing errors
+  json: {
+    namedExports: true,
+    stringify: false,
+  },
 });
