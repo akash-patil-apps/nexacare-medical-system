@@ -114,3 +114,5 @@ Doctor Dashboard (View in Patient Info Drawer)
 
 The doctor-to-lab and lab-to-doctor/patient flow is **fully implemented** and working. The only missing piece is a dedicated patient lab reports page for better UX. The lab dashboard is showing **real data**, not dummy data.
 
+
+

@@ -121,3 +121,5 @@ Non-goals v1: full teleconsult chat/video, attachments heavy workflow.
 - Appointment confirm/cancel/reschedule emits notification + optional SMS/WhatsApp.
 
 
+
+

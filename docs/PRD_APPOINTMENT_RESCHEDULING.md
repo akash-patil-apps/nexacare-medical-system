@@ -244,3 +244,5 @@ Recommendation for v1 simplicity:
 - All reschedules are recorded in history and visible to receptionist (and patient, minimal).
 
 
+
+

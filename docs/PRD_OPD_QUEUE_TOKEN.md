@@ -246,3 +246,5 @@ Emit “queue changed” events to update receptionist + doctor dashboards:
 5. Add events + client subscriptions for instant refresh
 
 
+
+
