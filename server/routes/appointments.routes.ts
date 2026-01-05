@@ -223,6 +223,72 @@ router.get('/:appointmentId', async (req: AuthenticatedRequest, res) => {
   }
 });
 
+// Update appointment (general update endpoint for notes, payment status, etc.)
+router.patch('/:appointmentId', authenticateToken, async (req: AuthenticatedRequest, res) => {
+  try {
+    const { appointmentId } = req.params;
+    const updateData = req.body;
+    
+    const { db } = await import('../db');
+    const { appointments } = await import('../../shared/schema');
+    const { eq } = await import('drizzle-orm');
+    const { sql } = await import('drizzle-orm');
+    
+    // Build update object (only allow certain fields for security)
+    const allowedFields: any = {};
+    
+    // Handle notes update - if notes are provided, use them directly
+    if (updateData.notes !== undefined) {
+      const existing = await db.select().from(appointments).where(eq(appointments.id, +appointmentId)).limit(1);
+      const existingNotes = existing[0]?.notes || '';
+      
+      // If notes already contain payment info, don't duplicate
+      if (updateData.notes.includes('Payment:') || updateData.notes.includes('Payment Status:')) {
+        allowedFields.notes = updateData.notes;
+      } else if (existingNotes && !existingNotes.includes('Payment:')) {
+        // Append to existing notes if they don't already have payment info
+        allowedFields.notes = existingNotes + (existingNotes ? '\n' : '') + updateData.notes;
+      } else {
+        allowedFields.notes = updateData.notes;
+      }
+    }
+    
+    // Handle paymentStatus separately (for backward compatibility)
+    if (updateData.paymentStatus !== undefined) {
+      const existing = await db.select().from(appointments).where(eq(appointments.id, +appointmentId)).limit(1);
+      const existingNotes = existing[0]?.notes || '';
+      
+      // Only add payment status if notes don't already have payment info
+      if (!existingNotes || (!existingNotes.includes('Payment:') && !existingNotes.includes('Payment Status:'))) {
+        allowedFields.notes = existingNotes 
+          ? `${existingNotes}\nPayment Status: ${updateData.paymentStatus}`
+          : `Payment Status: ${updateData.paymentStatus}`;
+      }
+    }
+    
+    if (Object.keys(allowedFields).length === 0) {
+      return res.status(400).json({ message: 'No valid fields to update' });
+    }
+    
+    allowedFields.updatedAt = sql`NOW()`;
+    
+    const [updated] = await db
+      .update(appointments)
+      .set(allowedFields)
+      .where(eq(appointments.id, +appointmentId))
+      .returning();
+    
+    if (!updated) {
+      return res.status(404).json({ message: 'Appointment not found' });
+    }
+    
+    res.json(updated);
+  } catch (err: any) {
+    console.error('Update appointment error:', err);
+    res.status(400).json({ message: err.message || 'Failed to update appointment' });
+  }
+});
+
 // Update appointment status
 router.patch('/:appointmentId/status', async (req: AuthenticatedRequest, res) => {
   try {

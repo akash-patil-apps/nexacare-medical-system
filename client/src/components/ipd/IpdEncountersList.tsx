@@ -18,7 +18,7 @@ export const IpdEncountersList: React.FC<IpdEncountersListProps> = ({
   onDischarge,
 }) => {
   // Fetch IPD encounters
-  const { data: encounters = [], isLoading } = useQuery<IpdEncounter[]>({
+  const { data: encountersRaw = [], isLoading } = useQuery<any[]>({
     queryKey: ['/api/ipd/encounters', hospitalId],
     queryFn: async () => {
       const token = localStorage.getItem('auth-token');
@@ -29,9 +29,34 @@ export const IpdEncountersList: React.FC<IpdEncountersListProps> = ({
         headers: { Authorization: `Bearer ${token}` },
       });
       if (!response.ok) throw new Error('Failed to fetch encounters');
-      return response.json();
+      const data = await response.json();
+      console.log('Fetched encounters:', data);
+      console.log('First encounter patient data:', data[0]?.patient);
+      console.log('First encounter patient user:', data[0]?.patient?.user);
+      return data;
     },
     refetchInterval: 10000, // Auto-refresh every 10 seconds
+  });
+
+  // Flatten encounters if they come in nested structure
+  const encounters: IpdEncounter[] = encountersRaw.map((enc: any) => {
+    // If already flattened, return as is
+    if (enc.id && !enc.encounter) {
+      return enc;
+    }
+    // If nested, flatten it
+    if (enc.encounter) {
+      return {
+        ...enc.encounter,
+        patient: enc.patient,
+        hospital: enc.hospital,
+        admittingDoctor: enc.admittingDoctor,
+        attendingDoctor: enc.attendingDoctor,
+        currentBed: enc.currentBed,
+        currentBedId: enc.currentBedId,
+      };
+    }
+    return enc;
   });
 
   // Filter active encounters (not discharged)
@@ -63,12 +88,20 @@ export const IpdEncountersList: React.FC<IpdEncountersListProps> = ({
       title: 'Patient',
       dataIndex: 'patient',
       key: 'patient',
-      render: (_: any, record: IpdEncounter) => (
-        <Space>
-          <UserOutlined />
-          <Text strong>{record.patient?.user?.fullName || 'Unknown'}</Text>
-        </Space>
-      ),
+      render: (_: any, record: IpdEncounter) => {
+        // Handle both nested and flattened patient structures
+        console.log('Rendering patient for encounter:', record.id, 'Patient data:', record.patient);
+        const patientName = record.patient?.user?.fullName 
+          || (record.patient as any)?.fullName 
+          || (record.patient as any)?.user?.fullName
+          || 'Unknown';
+        return (
+          <Space>
+            <UserOutlined />
+            <Text strong>{patientName}</Text>
+          </Space>
+        );
+      },
     },
     {
       title: 'Admission Type',

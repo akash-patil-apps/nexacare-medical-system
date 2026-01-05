@@ -357,22 +357,59 @@ export const BedStructureManager: React.FC = () => {
     }
   };
 
-  // Flatten nested data structures from API
+  // Extract data structures from API (already flattened by backend)
   const floors = structure?.floors || [];
-  const wards = (structure?.wards || []).map((item: any) => ({
-    ...item.ward,
-    floor: item.floor,
-  }));
-  const rooms = (structure?.rooms || []).map((item: any) => ({
-    ...item.room,
-    ward: item.ward,
-  }));
-  const beds = (structure?.beds || []).map((item: any) => ({
-    ...item.bed,
-    room: item.room,
-    ward: item.ward,
-    floor: item.floor,
-  }));
+  const wards = structure?.wards || [];
+  const rooms = structure?.rooms || [];
+  const beds = structure?.beds || [];
+  
+  // Debug logging
+  if (structure) {
+    console.log('📊 BedStructureManager - Structure data:', {
+      floorsCount: floors.length,
+      wardsCount: wards.length,
+      roomsCount: rooms.length,
+      bedsCount: beds.length,
+      sampleWard: wards[0],
+      sampleRoom: rooms[0],
+      sampleBed: beds[0],
+    });
+  }
+  
+  // Enrich wards with floor information (if not already included)
+  const enrichedWards = wards.map((ward: any) => {
+    // If ward already has floor object, use it; otherwise find it
+    if (ward.floor) {
+      return ward;
+    }
+    const floor = ward.floorId ? floors.find((f: any) => f.id === ward.floorId) : null;
+    return {
+      ...ward,
+      floor: floor || null,
+    };
+  });
+  
+  // Enrich rooms with ward information
+  const enrichedRooms = rooms.map((room: any) => {
+    const ward = enrichedWards.find((w: any) => w.id === room.wardId);
+    return {
+      ...room,
+      ward: ward || null,
+    };
+  });
+  
+  // Enrich beds with room, ward, and floor information
+  const enrichedBeds = beds.map((bed: any) => {
+    const room = rooms.find((r: any) => r.id === bed.roomId);
+    const ward = room ? enrichedWards.find((w: any) => w.id === room.wardId) : null;
+    const floor = ward ? (ward.floor || floors.find((f: any) => f.id === ward.floorId)) : null;
+    return {
+      ...bed,
+      room: room || null,
+      ward: ward || null,
+      floor: floor || null,
+    };
+  });
 
   const floorColumns = [
     { title: 'Floor Number', dataIndex: 'floorNumber', key: 'floorNumber' },
@@ -460,17 +497,41 @@ export const BedStructureManager: React.FC = () => {
   ];
 
   const roomColumns = [
-    { title: 'Room Number', dataIndex: 'roomNumber', key: 'roomNumber' },
-    { title: 'Room Name', dataIndex: 'roomName', key: 'roomName' },
-    { title: 'Category', dataIndex: 'category', key: 'category', render: (cat: string) => <Tag>{cat}</Tag> },
-    { title: 'Ward', key: 'ward', render: (_: any, record: Room) => {
-      if (record.ward) {
-        return record.ward.name || 'Unknown';
+    { 
+      title: 'Room Number', 
+      dataIndex: 'roomNumber', 
+      key: 'roomNumber',
+      render: (roomNumber: string) => roomNumber || <Text type="secondary">—</Text>
+    },
+    { 
+      title: 'Room Name', 
+      dataIndex: 'roomName', 
+      key: 'roomName',
+      render: (roomName: string) => roomName || <Text type="secondary">—</Text>
+    },
+    { 
+      title: 'Category', 
+      dataIndex: 'category', 
+      key: 'category', 
+      render: (cat: string) => cat ? <Tag>{cat}</Tag> : <Text type="secondary">—</Text>
+    },
+    { 
+      title: 'Ward', 
+      key: 'ward', 
+      render: (_: any, record: Room) => {
+        if (record.ward) {
+          return record.ward.name || 'Unknown';
+        }
+        const ward = wards.find((w) => w.id === record.wardId);
+        return ward?.name || 'Unknown';
       }
-      const ward = wards.find((w) => w.id === record.wardId);
-      return ward?.name || 'Unknown';
-    }},
-    { title: 'Capacity', dataIndex: 'capacity', key: 'capacity' },
+    },
+    { 
+      title: 'Capacity', 
+      dataIndex: 'capacity', 
+      key: 'capacity',
+      render: (capacity: number) => capacity !== null && capacity !== undefined ? capacity : <Text type="secondary">—</Text>
+    },
     {
       title: 'Actions',
       key: 'actions',
@@ -494,25 +555,50 @@ export const BedStructureManager: React.FC = () => {
   ];
 
   const bedColumns = [
-    { title: 'Bed Number', dataIndex: 'bedNumber', key: 'bedNumber' },
-    { title: 'Bed Name', dataIndex: 'bedName', key: 'bedName' },
-    { title: 'Status', dataIndex: 'status', key: 'status', render: (status: string) => {
-      const colors: Record<string, string> = {
-        available: 'success',
-        occupied: 'error',
-        cleaning: 'warning',
-        blocked: 'default',
-      };
-      return <Tag color={colors[status]}>{status}</Tag>;
-    }},
-    { title: 'Bed Type', dataIndex: 'bedType', key: 'bedType' },
-    { title: 'Room', key: 'room', render: (_: any, record: Bed) => {
-      if (record.room) {
-        return record.room.roomName || record.room.roomNumber || 'Unknown';
+    { 
+      title: 'Bed Number', 
+      dataIndex: 'bedNumber', 
+      key: 'bedNumber',
+      render: (bedNumber: string) => bedNumber || <Text type="secondary">—</Text>
+    },
+    { 
+      title: 'Bed Name', 
+      dataIndex: 'bedName', 
+      key: 'bedName',
+      render: (bedName: string) => bedName || <Text type="secondary">—</Text>
+    },
+    { 
+      title: 'Status', 
+      dataIndex: 'status', 
+      key: 'status', 
+      render: (status: string) => {
+        if (!status) return <Text type="secondary">—</Text>;
+        const colors: Record<string, string> = {
+          available: 'success',
+          occupied: 'error',
+          cleaning: 'warning',
+          blocked: 'default',
+        };
+        return <Tag color={colors[status] || 'default'}>{status}</Tag>;
       }
-      const room = rooms.find((r) => r.id === record.roomId);
-      return room ? (room.roomName || room.roomNumber) : 'Unknown';
-    }},
+    },
+    { 
+      title: 'Bed Type', 
+      dataIndex: 'bedType', 
+      key: 'bedType',
+      render: (bedType: string) => bedType || <Text type="secondary">—</Text>
+    },
+    { 
+      title: 'Room', 
+      key: 'room', 
+      render: (_: any, record: Bed) => {
+        if (record.room) {
+          return record.room.roomName || record.room.roomNumber || 'Unknown';
+        }
+        const room = rooms.find((r) => r.id === record.roomId);
+        return room ? (room.roomName || room.roomNumber) : 'Unknown';
+      }
+    },
     {
       title: 'Actions',
       key: 'actions',
@@ -535,165 +621,214 @@ export const BedStructureManager: React.FC = () => {
   ];
 
   return (
-    <div>
-      <Tabs
-        items={[
-          {
-            key: 'floors',
-            label: (
-              <span>
-                <HomeOutlined /> Floors
-              </span>
-            ),
-            children: (
-              <Card
-                title="Floors"
-                extra={
-                  <Button
-                    type="primary"
-                    icon={<PlusOutlined />}
-                    onClick={() => {
-                      setEditingFloor(null);
-                      floorForm.resetFields();
-                      setIsFloorModalOpen(true);
-                    }}
-                  >
-                    Add Floor
-                  </Button>
-                }
-                bodyStyle={{ padding: 0 }}
-              >
-                <div style={{ maxHeight: 'calc(100vh - 300px)', overflow: 'auto' }}>
-                  <Table
-                    columns={floorColumns}
-                    dataSource={floors}
-                    rowKey={(record) => record.id || `floor-${record.floorNumber}`}
-                    loading={isLoading}
-                    pagination={false}
-                    scroll={{ y: 'calc(100vh - 350px)' }}
-                  />
-                </div>
-              </Card>
-            ),
-          },
-          {
-            key: 'wards',
-            label: (
-              <span>
-                <BuildOutlined /> Wards
-              </span>
-            ),
-            children: (
-              <Card
-                title="Wards"
-                extra={
-                  <Button
-                    type="primary"
-                    icon={<PlusOutlined />}
-                    onClick={() => {
-                      setEditingWard(null);
-                      wardForm.resetFields();
-                      setIsWardModalOpen(true);
-                    }}
-                  >
-                    Add Ward
-                  </Button>
-                }
-                bodyStyle={{ padding: 0 }}
-              >
-                <div style={{ maxHeight: 'calc(100vh - 300px)', overflow: 'auto' }}>
-                  <Table
-                    columns={wardColumns}
-                    dataSource={wards}
-                    rowKey={(record) => record.id || `ward-${record.name || 'unknown'}`}
-                    loading={isLoading}
-                    pagination={false}
-                    scroll={{ y: 'calc(100vh - 350px)' }}
-                  />
-                </div>
-              </Card>
-            ),
-          },
-          {
-            key: 'rooms',
-            label: (
-              <span>
-                <PartitionOutlined /> Rooms
-              </span>
-            ),
-            children: (
-              <Card
-                title="Rooms"
-                extra={
-                  <Button
-                    type="primary"
-                    icon={<PlusOutlined />}
-                    onClick={() => {
-                      setEditingRoom(null);
-                      setSelectedWardForRoom(null);
-                      roomForm.resetFields();
-                      setIsRoomModalOpen(true);
-                    }}
-                  >
-                    Add Room
-                  </Button>
-                }
-                bodyStyle={{ padding: 0 }}
-              >
-                <div style={{ maxHeight: 'calc(100vh - 300px)', overflow: 'auto' }}>
-                  <Table
-                    columns={roomColumns}
-                    dataSource={rooms}
-                    rowKey={(record) => record.id || `room-${record.roomNumber || 'unknown'}`}
-                    loading={isLoading}
-                    pagination={false}
-                    scroll={{ y: 'calc(100vh - 350px)' }}
-                  />
-                </div>
-              </Card>
-            ),
-          },
-          {
-            key: 'beds',
-            label: (
-              <span>
-                <AppstoreOutlined /> Beds
-              </span>
-            ),
-            children: (
-              <Card
-                title="Beds"
-                extra={
-                  <Button
-                    type="primary"
-                    icon={<PlusOutlined />}
-                    onClick={() => {
-                      setEditingBed(null);
-                      setSelectedRoomForBed(null);
-                      bedForm.resetFields();
-                      setIsBedModalOpen(true);
-                    }}
-                  >
-                    Add Bed
-                  </Button>
-                }
-                bodyStyle={{ padding: 0 }}
-              >
-                <div style={{ maxHeight: 'calc(100vh - 300px)', overflow: 'auto' }}>
-                  <Table
-                    columns={bedColumns}
-                    dataSource={beds}
-                    rowKey={(record) => record.id || `bed-${record.bedNumber || 'unknown'}`}
-                    loading={isLoading}
-                    pagination={{ pageSize: 20 }}
-                    scroll={{ y: 'calc(100vh - 350px)' }}
-                  />
-                </div>
-              </Card>
-            ),
-          },
-        ]}
-      />
+    <div style={{ 
+      display: 'flex', 
+      flexDirection: 'column', 
+      flex: 1, 
+      minHeight: 0, 
+      overflow: 'hidden',
+      height: '100%',
+    }}>
+        <style>{`
+          .bed-structure-tabs .ant-tabs {
+            display: flex !important;
+            flex-direction: column !important;
+            flex: 1 1 auto !important;
+            min-height: 0 !important;
+            position: relative !important;
+            height: 100% !important;
+          }
+          .bed-structure-tabs .ant-tabs-nav {
+            margin: 0 !important;
+            padding: 0 16px !important;
+            flex-shrink: 0 !important;
+            position: relative !important;
+            z-index: 1 !important;
+          }
+          .bed-structure-tabs .ant-tabs-content-holder {
+            flex: 1 1 auto !important;
+            min-height: 0 !important;
+            overflow: hidden !important;
+            position: relative !important;
+          }
+          .bed-structure-tabs .ant-tabs-content {
+            height: 100% !important;
+            display: flex !important;
+            flex: 1 1 auto !important;
+            min-height: 0 !important;
+          }
+          .bed-structure-tabs .ant-tabs-tabpane {
+            height: 100% !important;
+            display: flex !important;
+            flex-direction: column !important;
+            flex: 1 1 auto !important;
+            min-height: 0 !important;
+            padding-top: 0 !important;
+          }
+        `}</style>
+        <Tabs
+          className="bed-structure-tabs"
+          items={[
+            {
+              key: 'floors',
+              label: (
+                <span>
+                  <HomeOutlined /> Floors
+                </span>
+              ),
+              children: (
+                <Card
+                  title="Floors"
+                  extra={
+                    <Button
+                      type="primary"
+                      icon={<PlusOutlined />}
+                      onClick={() => {
+                        setEditingFloor(null);
+                        floorForm.resetFields();
+                        setIsFloorModalOpen(true);
+                      }}
+                    >
+                      Add Floor
+                    </Button>
+                  }
+                  bodyStyle={{ padding: 0, display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}
+                  style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, height: '100%' }}
+                >
+                  <div style={{ flex: 1, minHeight: 0, overflow: 'auto' }}>
+                    <Table
+                      columns={floorColumns}
+                      dataSource={floors}
+                      rowKey={(record) => record.id || `floor-${record.floorNumber}`}
+                      loading={isLoading}
+                      pagination={false}
+                      scroll={{ y: 'calc(100vh - 400px)' }}
+                    />
+                  </div>
+                </Card>
+              ),
+            },
+            {
+              key: 'wards',
+              label: (
+                <span>
+                  <BuildOutlined /> Wards
+                </span>
+              ),
+              children: (
+                <Card
+                  title="Wards"
+                  extra={
+                    <Button
+                      type="primary"
+                      icon={<PlusOutlined />}
+                      onClick={() => {
+                        setEditingWard(null);
+                        wardForm.resetFields();
+                        setIsWardModalOpen(true);
+                      }}
+                    >
+                      Add Ward
+                    </Button>
+                  }
+                  bodyStyle={{ padding: 0, display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}
+                  style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, height: '100%' }}
+                >
+                  <div style={{ flex: 1, minHeight: 0, overflow: 'auto' }}>
+                    <Table
+                      columns={wardColumns}
+                      dataSource={enrichedWards}
+                      rowKey={(record) => record.id || `ward-${record.name || 'unknown'}`}
+                      loading={isLoading}
+                      pagination={false}
+                      scroll={{ y: 'calc(100vh - 400px)' }}
+                    />
+                  </div>
+                </Card>
+              ),
+            },
+            {
+              key: 'rooms',
+              label: (
+                <span>
+                  <PartitionOutlined /> Rooms
+                </span>
+              ),
+              children: (
+                <Card
+                  title="Rooms"
+                  extra={
+                    <Button
+                      type="primary"
+                      icon={<PlusOutlined />}
+                      onClick={() => {
+                        setEditingRoom(null);
+                        setSelectedWardForRoom(null);
+                        roomForm.resetFields();
+                        setIsRoomModalOpen(true);
+                      }}
+                    >
+                      Add Room
+                    </Button>
+                  }
+                  bodyStyle={{ padding: 0, display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}
+                  style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, height: '100%' }}
+                >
+                  <div style={{ flex: 1, minHeight: 0, overflow: 'auto' }}>
+                    <Table
+                      columns={roomColumns}
+                      dataSource={enrichedRooms}
+                      rowKey={(record) => record.id || `room-${record.roomNumber || 'unknown'}`}
+                      loading={isLoading}
+                      pagination={false}
+                      scroll={{ y: 'calc(100vh - 400px)' }}
+                    />
+                  </div>
+                </Card>
+              ),
+            },
+            {
+              key: 'beds',
+              label: (
+                <span>
+                  <AppstoreOutlined /> Beds
+                </span>
+              ),
+              children: (
+                <Card
+                  title="Beds"
+                  extra={
+                    <Button
+                      type="primary"
+                      icon={<PlusOutlined />}
+                      onClick={() => {
+                        setEditingBed(null);
+                        setSelectedRoomForBed(null);
+                        bedForm.resetFields();
+                        setIsBedModalOpen(true);
+                      }}
+                    >
+                      Add Bed
+                    </Button>
+                  }
+                  bodyStyle={{ padding: 0, display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}
+                  style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, height: '100%' }}
+                >
+                  <div style={{ flex: 1, minHeight: 0, overflow: 'auto' }}>
+                    <Table
+                      columns={bedColumns}
+                      dataSource={enrichedBeds}
+                      rowKey={(record) => record.id || `bed-${record.bedNumber || 'unknown'}`}
+                      loading={isLoading}
+                      pagination={{ pageSize: 20 }}
+                      scroll={{ y: 'calc(100vh - 400px)' }}
+                    />
+                  </div>
+                </Card>
+              ),
+            },
+          ]}
+        />
 
       {/* Floor Modal */}
       <Modal

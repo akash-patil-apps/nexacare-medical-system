@@ -9,8 +9,10 @@ import {
   patients,
   doctors,
   hospitals,
+  users,
 } from '../../shared/schema';
 import { eq, and, sql, isNull, asc, inArray } from 'drizzle-orm';
+import * as auditService from './audit.service';
 
 /**
  * Create floor
@@ -243,8 +245,22 @@ export const getBedStructure = async (hospitalId: number) => {
   console.log(`📊 Found ${floorsList.length} floors`);
   
   // Get all wards (with floor info)
-  const wardsList = await getWards(hospitalId);
-  console.log(`📊 Found ${wardsList.length} wards`);
+  const wardsListRaw = await getWards(hospitalId);
+  console.log(`📊 Found ${wardsListRaw.length} wards`);
+  
+  // Flatten wards structure
+  const wardsList = wardsListRaw.map((row: any) => {
+    if (!row.ward) {
+      console.warn('⚠️ Ward row missing ward data:', row);
+      return null;
+    }
+    return {
+      ...row.ward,
+      floorId: row.ward.floorId || row.floor?.id || null,
+      floor: row.floor || null,
+    };
+  }).filter((w: any) => w !== null);
+  console.log(`📊 Flattened ${wardsList.length} wards`);
   
   // Get all rooms - flatten the nested structure
   const roomsListRaw = await db
@@ -379,6 +395,10 @@ export const admitPatient = async (data: {
   attendingDoctorId?: number;
   admissionType: string;
   bedId: number;
+  actorUserId?: number;
+  actorRole?: string;
+  ipAddress?: string;
+  userAgent?: string;
 }) => {
   // Check bed availability
   const bed = await db.select().from(beds).where(eq(beds.id, data.bedId)).limit(1);
@@ -390,6 +410,11 @@ export const admitPatient = async (data: {
   if (bed[0].status !== 'available') {
     throw new Error('Bed is not available');
   }
+
+  const beforeState = {
+    bedStatus: bed[0].status,
+    bedId: data.bedId,
+  };
 
   // Create encounter
   const [encounter] = await db
@@ -417,6 +442,32 @@ export const admitPatient = async (data: {
 
   // Update bed status
   await db.update(beds).set({ status: 'occupied', updatedAt: sql`NOW()` }).where(eq(beds.id, data.bedId));
+
+  const afterState = {
+    encounterId: encounter.id,
+    status: 'admitted',
+    bedId: data.bedId,
+    bedStatus: 'occupied',
+    admissionType: data.admissionType,
+  };
+
+  // Log audit event
+  if (data.actorUserId && data.actorRole) {
+    await auditService.logPatientAudit({
+      hospitalId: data.hospitalId,
+      patientId: data.patientId,
+      actorUserId: data.actorUserId,
+      actorRole: data.actorRole,
+      action: 'admit',
+      entityType: 'ipd_encounter',
+      entityId: encounter.id,
+      before: beforeState,
+      after: afterState,
+      message: `Patient admitted to IPD. Bed ${data.bedId} allocated. Admission type: ${data.admissionType}`,
+      ipAddress: data.ipAddress,
+      userAgent: data.userAgent,
+    });
+  }
 
   return encounter;
 };
@@ -450,14 +501,16 @@ export const getIpdEncounters = async (filters: {
     .select({
       encounter: ipdEncounters,
       patient: patients,
+      patientUser: users,
       hospital: hospitals,
     })
     .from(ipdEncounters)
     .leftJoin(patients, eq(ipdEncounters.patientId, patients.id))
+    .leftJoin(users, eq(patients.userId, users.id))
     .leftJoin(hospitals, eq(ipdEncounters.hospitalId, hospitals.id))
     .where(conditions.length > 0 ? and(...conditions) : undefined);
 
-  // Enrich with doctor info separately
+  // Enrich with doctor info and current bed separately
   const enrichedEncounters = await Promise.all(
     encounters.map(async (enc) => {
       const admittingDoctor = enc.encounter.admittingDoctorId
@@ -466,10 +519,52 @@ export const getIpdEncounters = async (filters: {
       const attendingDoctor = enc.encounter.attendingDoctorId
         ? await db.select().from(doctors).where(eq(doctors.id, enc.encounter.attendingDoctorId)).limit(1)
         : [];
+      
+      // Get current bed allocation
+      const currentAllocation = await db
+        .select({
+          allocation: bedAllocations,
+          bed: beds,
+        })
+        .from(bedAllocations)
+        .leftJoin(beds, eq(bedAllocations.bedId, beds.id))
+        .where(and(eq(bedAllocations.encounterId, enc.encounter.id), isNull(bedAllocations.toAt)))
+        .limit(1);
+      
+      const currentBed = currentAllocation[0]?.bed || null;
+      
+      // Enrich patient with user info
+      const enrichedPatient = enc.patient ? {
+        ...enc.patient,
+        user: enc.patientUser ? {
+          id: enc.patientUser.id,
+          fullName: enc.patientUser.fullName,
+          mobileNumber: enc.patientUser.mobileNumber,
+          email: enc.patientUser.email,
+        } : null,
+      } : null;
+      
+      console.log(`📋 Enriched encounter ${enc.encounter.id}:`, {
+        patientId: enc.patient?.id,
+        patientUserId: enc.patient?.userId,
+        patientUser: enc.patientUser ? {
+          id: enc.patientUser.id,
+          fullName: enc.patientUser.fullName,
+        } : null,
+        enrichedPatient: enrichedPatient ? {
+          id: enrichedPatient.id,
+          user: enrichedPatient.user,
+        } : null,
+      });
+      
       return {
-        ...enc,
+        ...enc.encounter,
+        patient: enrichedPatient,
+        hospital: enc.hospital,
         admittingDoctor: admittingDoctor[0] || null,
         attendingDoctor: attendingDoctor[0] || null,
+        currentBed: currentBed,
+        currentBedId: currentBed?.id || null,
       };
     }),
   );
@@ -485,10 +580,12 @@ export const getIpdEncounterById = async (encounterId: number) => {
     .select({
       encounter: ipdEncounters,
       patient: patients,
+      patientUser: users,
       hospital: hospitals,
     })
     .from(ipdEncounters)
     .leftJoin(patients, eq(ipdEncounters.patientId, patients.id))
+    .leftJoin(users, eq(patients.userId, users.id))
     .leftJoin(hospitals, eq(ipdEncounters.hospitalId, hospitals.id))
     .where(eq(ipdEncounters.id, encounterId))
     .limit(1);
@@ -506,8 +603,20 @@ export const getIpdEncounterById = async (encounterId: number) => {
     ? await db.select().from(doctors).where(eq(doctors.id, enc.encounter.attendingDoctorId)).limit(1)
     : [];
 
+  // Enrich patient with user info
+  const enrichedPatient = enc.patient ? {
+    ...enc.patient,
+    user: enc.patientUser ? {
+      id: enc.patientUser.id,
+      fullName: enc.patientUser.fullName,
+      mobileNumber: enc.patientUser.mobileNumber,
+      email: enc.patientUser.email,
+    } : null,
+  } : null;
+
   const enrichedEncounter = {
     ...enc,
+    patient: enrichedPatient,
     admittingDoctor: admittingDoctor[0] || null,
     attendingDoctor: attendingDoctor[0] || null,
   };
@@ -527,9 +636,17 @@ export const getIpdEncounterById = async (encounterId: number) => {
     .where(and(eq(bedAllocations.encounterId, encounterId), isNull(bedAllocations.toAt)))
     .limit(1);
 
+  // Flatten the current bed structure
+  const currentBedData = currentAllocation[0]?.bed || null;
+  
   return {
-    ...enrichedEncounter,
-    currentBed: currentAllocation[0] || null,
+    ...enrichedEncounter.encounter,
+    patient: enrichedEncounter.patient,
+    hospital: enrichedEncounter.hospital,
+    admittingDoctor: enrichedEncounter.admittingDoctor,
+    attendingDoctor: enrichedEncounter.attendingDoctor,
+    currentBed: currentBedData,
+    currentBedId: currentBedData?.id || null,
   };
 };
 
@@ -541,7 +658,18 @@ export const transferPatient = async (data: {
   newBedId: number;
   reason?: string;
   transferredBy?: number;
+  actorUserId?: number;
+  actorRole?: string;
+  ipAddress?: string;
+  userAgent?: string;
 }) => {
+  // Get encounter to access patientId and hospitalId
+  const encounter = await db.select().from(ipdEncounters).where(eq(ipdEncounters.id, data.encounterId)).limit(1);
+  if (encounter.length === 0) {
+    throw new Error('Encounter not found');
+  }
+  const enc = encounter[0];
+
   // Get current allocation
   const currentAllocation = await db
     .select()
@@ -563,6 +691,15 @@ export const transferPatient = async (data: {
   if (newBed[0].status !== 'available') {
     throw new Error('New bed is not available');
   }
+
+  const beforeState = {
+    encounterId: data.encounterId,
+    status: enc.status,
+    currentBedId: currentAllocation[0].bedId,
+    currentBedStatus: 'occupied',
+    newBedId: data.newBedId,
+    newBedStatus: newBed[0].status,
+  };
 
   // Close current allocation
   await db
@@ -590,6 +727,32 @@ export const transferPatient = async (data: {
     .set({ status: 'transferred', updatedAt: sql`NOW()` })
     .where(eq(ipdEncounters.id, data.encounterId));
 
+  const afterState = {
+    encounterId: data.encounterId,
+    status: 'transferred',
+    previousBedId: currentAllocation[0].bedId,
+    previousBedStatus: 'cleaning',
+    newBedId: data.newBedId,
+    newBedStatus: 'occupied',
+  };
+
+  // Log audit event
+  if (data.actorUserId && data.actorRole) {
+    await auditService.logPatientAudit({
+      hospitalId: enc.hospitalId,
+      patientId: enc.patientId,
+      actorUserId: data.actorUserId,
+      actorRole: data.actorRole,
+      action: 'transfer',
+      entityType: 'ipd_encounter',
+      entityId: data.encounterId,
+      before: beforeState,
+      after: afterState,
+      message: `Patient transferred from bed ${currentAllocation[0].bedId} to bed ${data.newBedId}. Reason: ${data.reason || 'Transfer'}`,
+      ipAddress: data.ipAddress,
+      userAgent: data.userAgent,
+    });
+  }
 
   return await getIpdEncounterById(data.encounterId);
 };
@@ -600,6 +763,11 @@ export const transferPatient = async (data: {
 export const dischargePatient = async (data: {
   encounterId: number;
   dischargeSummaryText: string;
+  status?: string; // Allow custom discharge status (discharged, LAMA, transfer, death, absconded)
+  actorUserId?: number;
+  actorRole?: string;
+  ipAddress?: string;
+  userAgent?: string;
 }) => {
   // Get encounter
   const encounter = await db
@@ -612,12 +780,21 @@ export const dischargePatient = async (data: {
     throw new Error('Encounter not found');
   }
 
+  const enc = encounter[0];
+
   // Get current bed allocation
   const currentAllocation = await db
     .select()
     .from(bedAllocations)
     .where(and(eq(bedAllocations.encounterId, data.encounterId), isNull(bedAllocations.toAt)))
     .limit(1);
+
+  const beforeState = {
+    encounterId: data.encounterId,
+    status: enc.status,
+    bedId: currentAllocation.length > 0 ? currentAllocation[0].bedId : null,
+    bedStatus: currentAllocation.length > 0 ? 'occupied' : null,
+  };
 
   // Close bed allocation
   if (currentAllocation.length > 0) {
@@ -633,17 +810,44 @@ export const dischargePatient = async (data: {
       .where(eq(beds.id, currentAllocation[0].bedId));
   }
 
-  // Update encounter
+  // Update encounter - use provided status or default to 'discharged'
+  const dischargeStatus = data.status || 'discharged';
   const [updated] = await db
     .update(ipdEncounters)
     .set({
-      status: 'discharged',
+      status: dischargeStatus,
       dischargedAt: sql`NOW()`,
       dischargeSummaryText: data.dischargeSummaryText,
       updatedAt: sql`NOW()`,
     })
     .where(eq(ipdEncounters.id, data.encounterId))
     .returning();
+
+  const afterState = {
+    encounterId: data.encounterId,
+    status: dischargeStatus,
+    bedId: currentAllocation.length > 0 ? currentAllocation[0].bedId : null,
+    bedStatus: currentAllocation.length > 0 ? 'cleaning' : null,
+    dischargedAt: new Date().toISOString(),
+  };
+
+  // Log audit event
+  if (data.actorUserId && data.actorRole) {
+    await auditService.logPatientAudit({
+      hospitalId: enc.hospitalId,
+      patientId: enc.patientId,
+      actorUserId: data.actorUserId,
+      actorRole: data.actorRole,
+      action: 'discharge',
+      entityType: 'ipd_encounter',
+      entityId: data.encounterId,
+      before: beforeState,
+      after: afterState,
+      message: `Patient discharged. Status: ${dischargeStatus}. Bed ${currentAllocation.length > 0 ? currentAllocation[0].bedId : 'N/A'} released.`,
+      ipAddress: data.ipAddress,
+      userAgent: data.userAgent,
+    });
+  }
 
   return updated;
 };

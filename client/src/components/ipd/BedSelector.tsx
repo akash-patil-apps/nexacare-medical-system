@@ -19,6 +19,7 @@ interface BedSelectorProps {
   isLoading?: boolean;
   filterByStatus?: ('available' | 'occupied' | 'cleaning' | 'blocked')[];
   showOnlyAvailable?: boolean;
+  excludeBedId?: number | null; // Exclude a specific bed (e.g., current bed in transfer)
 }
 
 export const BedSelector: React.FC<BedSelectorProps> = ({
@@ -28,6 +29,7 @@ export const BedSelector: React.FC<BedSelectorProps> = ({
   isLoading = false,
   filterByStatus,
   showOnlyAvailable = false,
+  excludeBedId = null,
 }) => {
   const [selectedFloorId, setSelectedFloorId] = useState<number | null>(null);
   const [selectedWardId, setSelectedWardId] = useState<number | null>(null);
@@ -85,9 +87,16 @@ export const BedSelector: React.FC<BedSelectorProps> = ({
       console.log(`BedSelector: Filtered by ward ${selectedWardId}: ${beforeFilter} -> ${beds.length}`, { roomIds });
     }
 
+    // Exclude specific bed (e.g., current bed in transfer)
+    if (excludeBedId) {
+      const beforeFilter = beds.length;
+      beds = beds.filter((bed) => bed.id !== excludeBedId);
+      console.log(`BedSelector: Excluded bed ${excludeBedId}: ${beforeFilter} -> ${beds.length}`);
+    }
+
     console.log('BedSelector: Final filtered beds count:', beds.length);
     return beds;
-  }, [structure, selectedFloorId, selectedWardId, filterByStatus, showOnlyAvailable]);
+  }, [structure, selectedFloorId, selectedWardId, filterByStatus, showOnlyAvailable, excludeBedId]);
 
   // Get bed with full hierarchy
   const getBedHierarchy = (bed: Bed) => {

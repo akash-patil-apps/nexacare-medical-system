@@ -13,6 +13,7 @@ import {
   Divider,
   Empty,
 } from 'antd';
+import { ExclamationCircleOutlined } from '@ant-design/icons';
 import { UserOutlined, SearchOutlined } from '@ant-design/icons';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { BedSelector } from './BedSelector';
@@ -43,6 +44,7 @@ export const AdmissionModal: React.FC<AdmissionModalProps> = ({
   const [searchMobile, setSearchMobile] = useState('');
   const [foundPatient, setFoundPatient] = useState<any>(null);
   const [isSearching, setIsSearching] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Fetch bed structure
   const { data: structure, isLoading: structureLoading, error: structureError } = useQuery<BedStructure>({
@@ -189,39 +191,63 @@ export const AdmissionModal: React.FC<AdmissionModalProps> = ({
       return;
     }
 
-    try {
-      const token = localStorage.getItem('auth-token');
-      const response = await fetch('/api/ipd/encounters', {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          patientId: values.patientId || patientId,
-          admittingDoctorId: values.admittingDoctorId || null,
-          attendingDoctorId: values.attendingDoctorId || null,
-          admissionType: values.admissionType,
-          bedId: selectedBedId,
-          admissionNotes: values.admissionNotes || null,
-        }),
-      });
-
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.message || 'Failed to admit patient');
-      }
-
-      const encounter = await response.json();
-      message.success('Patient admitted successfully');
-      queryClient.invalidateQueries({ queryKey: ['/api/ipd/encounters'] });
-      queryClient.invalidateQueries({ queryKey: ['/api/ipd/beds/available'] });
-      queryClient.invalidateQueries({ queryKey: ['/api/ipd/structure'] });
-      onSuccess(encounter);
-      handleClose();
-    } catch (error: any) {
-      message.error(error.message || 'Failed to admit patient');
+    if (!values.patientId && !patientId) {
+      message.warning('Please search and select a patient');
+      return;
     }
+
+    if (!values.admissionType) {
+      message.warning('Please select an admission type');
+      return;
+    }
+
+    // Show confirmation dialog
+    Modal.confirm({
+      title: 'Confirm Patient Admission',
+      icon: <ExclamationCircleOutlined />,
+      content: `Are you sure you want to admit this patient to the selected bed? This action will allocate the bed and create an IPD encounter.`,
+      okText: 'Yes, Admit Patient',
+      okType: 'primary',
+      cancelText: 'Cancel',
+      onOk: async () => {
+        setIsSubmitting(true);
+        try {
+          const token = localStorage.getItem('auth-token');
+          const response = await fetch('/api/ipd/encounters', {
+            method: 'POST',
+            headers: {
+              Authorization: `Bearer ${token}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              patientId: values.patientId || patientId,
+              admittingDoctorId: values.admittingDoctorId || null,
+              attendingDoctorId: values.attendingDoctorId || null,
+              admissionType: values.admissionType,
+              bedId: selectedBedId,
+              // Note: admissionNotes is not stored in schema yet - can be added later
+            }),
+          });
+
+          if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.message || 'Failed to admit patient');
+          }
+
+          const encounter = await response.json();
+          message.success('Patient admitted successfully');
+          queryClient.invalidateQueries({ queryKey: ['/api/ipd/encounters'] });
+          queryClient.invalidateQueries({ queryKey: ['/api/ipd/beds/available'] });
+          queryClient.invalidateQueries({ queryKey: ['/api/ipd/structure'] });
+          onSuccess(encounter);
+          handleClose();
+        } catch (error: any) {
+          message.error(error.message || 'Failed to admit patient');
+        } finally {
+          setIsSubmitting(false);
+        }
+      },
+    });
   };
 
   const handleClose = () => {
@@ -440,7 +466,11 @@ export const AdmissionModal: React.FC<AdmissionModalProps> = ({
         <Form.Item style={{ marginTop: 24, marginBottom: 0 }}>
           <Space>
             <Button onClick={handleClose}>Cancel</Button>
-            <Button type="primary" htmlType="submit" disabled={!selectedBedId}>
+            <Button 
+              type="primary" 
+              htmlType="submit" 
+              disabled={!selectedBedId || (!patientId && !form.getFieldValue('patientId'))}
+            >
               Admit Patient
             </Button>
           </Space>

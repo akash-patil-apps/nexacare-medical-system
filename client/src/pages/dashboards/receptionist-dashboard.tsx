@@ -43,6 +43,7 @@ import {
   StarOutlined,
   LoginOutlined,
   ExperimentOutlined,
+  FileTextOutlined,
 } from '@ant-design/icons';
 import { useAuth } from '../../hooks/use-auth';
 import { useResponsive } from '../../hooks/use-responsive';
@@ -62,7 +63,10 @@ import { playNotificationSound } from '../../lib/notification-sounds';
 import { NotificationBell } from '../../components/notifications/NotificationBell';
 import LabReportViewerModal from '../../components/modals/lab-report-viewer-modal';
 import { QueuePanel } from '../../components/queue/QueuePanel';
-import { AdmissionModal } from '../../components/ipd';
+import { AdmissionModal, IpdEncountersList, TransferModal, DischargeModal } from '../../components/ipd';
+import type { IpdEncounter } from '../../types/ipd';
+import { InvoiceModal } from '../../components/billing/InvoiceModal';
+import { PaymentModal } from '../../components/billing/PaymentModal';
 import tubeIcon from '../../assets/images/tube.png';
 import checkInIcon from '../../assets/images/check-in.png';
 import medicalIcon from '../../assets/images/medical.png';
@@ -112,6 +116,10 @@ export default function ReceptionistDashboard() {
   const [isAdmissionModalOpen, setIsAdmissionModalOpen] = useState(false);
   const [selectedPatientForAdmission, setSelectedPatientForAdmission] = useState<number | undefined>(undefined);
   const [hospitalId, setHospitalId] = useState<number | undefined>(undefined);
+  const [selectedEncounter, setSelectedEncounter] = useState<IpdEncounter | null>(null);
+  const [isTransferModalOpen, setIsTransferModalOpen] = useState(false);
+  const [isDischargeModalOpen, setIsDischargeModalOpen] = useState(false);
+  const [activeMainTab, setActiveMainTab] = useState<string>('appointments');
   const [patientInfoLoading, setPatientInfoLoading] = useState(false);
   const [recommendedLabTests, setRecommendedLabTests] = useState<any[]>([]);
   const [confirmingLabTest, setConfirmingLabTest] = useState<number | null>(null);
@@ -121,6 +129,11 @@ export default function ReceptionistDashboard() {
   const [labTestsByPatient, setLabTestsByPatient] = useState<Record<number, any[]>>({});
   const [isLabTestsModalOpen, setIsLabTestsModalOpen] = useState(false);
   const [selectedPatientForLabTests, setSelectedPatientForLabTests] = useState<number | null>(null);
+  const [isInvoiceModalOpen, setIsInvoiceModalOpen] = useState(false);
+  const [selectedAppointmentForInvoice, setSelectedAppointmentForInvoice] = useState<any>(null);
+  const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
+  const [selectedInvoiceForPayment, setSelectedInvoiceForPayment] = useState<number | null>(null);
+  const [appointmentInvoices, setAppointmentInvoices] = useState<Record<number, any>>({});
   const appointmentStartTimeValue = Form.useWatch('appointmentStartTime', walkInForm);
   const durationMinutesValue = Form.useWatch('durationMinutes', walkInForm);
   
@@ -392,6 +405,44 @@ export default function ReceptionistDashboard() {
 
     return () => clearInterval(interval);
   }, [appointments, labTestsByPatient]);
+
+  // Fetch invoices for appointments
+  useEffect(() => {
+    const fetchInvoices = async () => {
+      if (!appointments || appointments.length === 0) {
+        setAppointmentInvoices({});
+        return;
+      }
+
+      const token = localStorage.getItem('auth-token');
+      if (!token) return;
+
+      const invoiceMap: Record<number, any> = {};
+
+      // Fetch invoices for each appointment
+      await Promise.all(
+        appointments.map(async (apt: any) => {
+          try {
+            const response = await fetch(`/api/billing/opd/invoices?appointmentId=${apt.id}`, {
+              headers: { Authorization: `Bearer ${token}` },
+            });
+            if (response.ok) {
+              const invoices = await response.json();
+              if (Array.isArray(invoices) && invoices.length > 0) {
+                invoiceMap[apt.id] = invoices[0]; // One invoice per appointment
+              }
+            }
+          } catch (error) {
+            console.error(`Error fetching invoice for appointment ${apt.id}:`, error);
+          }
+        })
+      );
+
+      setAppointmentInvoices(invoiceMap);
+    };
+
+    fetchInvoices();
+  }, [appointments]);
 
   // Listen for lab test creation events to refetch immediately
   useEffect(() => {
@@ -1712,7 +1763,8 @@ export default function ReceptionistDashboard() {
               return <Tag color={src.color} style={{ margin: 0 }}>{src.label}</Tag>;
             })()}
             {(() => {
-              const pay = getPaymentConfig(record.paymentStatus);
+              const invoice = appointmentInvoices[record.id];
+              const pay = getPaymentConfig(record.paymentStatus, invoice);
               return <Tag color={pay.color} style={{ margin: 0 }}>{pay.label}</Tag>;
             })()}
           </Space>
@@ -1842,6 +1894,68 @@ export default function ReceptionistDashboard() {
                 }}
               />
             )}
+
+            {/* Billing buttons */}
+            {(() => {
+              const invoice = appointmentInvoices[record.id];
+              const balance = invoice ? parseFloat(invoice.balanceAmount || '0') : null;
+              
+              return (
+                <>
+                  {/* Create Invoice button - show if no invoice exists and appointment is confirmed/checked-in */}
+                  {!invoice && ['confirmed', 'checked-in', 'attended'].includes(String(record.status || '').toLowerCase()) && (
+                    <Button
+                      size="small"
+                      type="default"
+                      icon={<DollarOutlined />}
+                      onClick={() => {
+                        setSelectedAppointmentForInvoice(record);
+                        setIsInvoiceModalOpen(true);
+                      }}
+                      title="Create invoice"
+                      style={{
+                        background: '#f6ffed',
+                        border: '1px solid #b7eb8f',
+                        color: '#52c41a'
+                      }}
+                    />
+                  )}
+
+                  {/* Record Payment button - show if invoice exists and has balance */}
+                  {invoice && balance !== null && balance > 0 && (
+                    <Button
+                      size="small"
+                      type="default"
+                      icon={<DollarOutlined />}
+                      onClick={() => {
+                        setSelectedInvoiceForPayment(invoice.id);
+                        setIsPaymentModalOpen(true);
+                      }}
+                      title="Record payment"
+                      style={{
+                        background: '#fff7e6',
+                        border: '1px solid #ffd591',
+                        color: '#fa8c16'
+                      }}
+                    />
+                  )}
+
+                  {/* View Invoice button - show if invoice exists */}
+                  {invoice && (
+                    <Button
+                      size="small"
+                      type="link"
+                      icon={<FileTextOutlined />}
+                      onClick={() => {
+                        // Open invoice in new tab or modal
+                        window.open(`/api/billing/opd/invoices/${invoice.id}`, '_blank');
+                      }}
+                      title="View invoice"
+                    />
+                  )}
+                </>
+              );
+            })()}
             </Space>
           );
       },
@@ -2262,6 +2376,26 @@ export default function ReceptionistDashboard() {
   };
 
   // Helper functions for walk-in booking flow (matching patient dashboard)
+  // Fetch slots from availability API
+  const fetchDoctorSlots = async (doctorId: number, date: string): Promise<string[]> => {
+    try {
+      const token = localStorage.getItem('auth-token');
+      const response = await fetch(`/api/availability/doctor/${doctorId}/slots/${date}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
+        return data.slots || [];
+      }
+    } catch (error) {
+      console.error('Error fetching slots from availability API:', error);
+    }
+    
+    // Fallback to doctor's availableSlots if availability API fails
+    return [];
+  };
+
   const getDoctorSlots = (doctor: any): string[] => {
     if (!doctor || !doctor.availableSlots) return [];
     try {
@@ -2308,18 +2442,30 @@ export default function ReceptionistDashboard() {
     const currentDate = record?.dateObj ? dayjs(record.dateObj) : record?.date ? dayjs(record.date) : dayjs();
     setRescheduleSelectedDate(currentDate);
 
-    const doctor = doctors.find((d: any) => d.id === record?.doctorId);
-    const slots = getDoctorSlots(doctor);
-    setRescheduleAvailableSlots(slots);
-
     try {
-      if (doctor?.id) {
-        const bookings = await fetchBookedAppointments(doctor.id, currentDate.format('YYYY-MM-DD'));
+      if (record?.doctorId) {
+        // Fetch slots from availability API
+        const slots = await fetchDoctorSlots(record.doctorId, currentDate.format('YYYY-MM-DD'));
+        if (slots.length > 0) {
+          setRescheduleAvailableSlots(slots);
+        } else {
+          // Fallback to doctor's availableSlots
+          const doctor = doctors.find((d: any) => d.id === record.doctorId);
+          const fallbackSlots = getDoctorSlots(doctor);
+          setRescheduleAvailableSlots(fallbackSlots);
+        }
+        
+        const bookings = await fetchBookedAppointments(record.doctorId, currentDate.format('YYYY-MM-DD'));
         setRescheduleSlotBookings(bookings);
       } else {
+        setRescheduleAvailableSlots([]);
         setRescheduleSlotBookings({});
       }
     } catch {
+      // Fallback to doctor's availableSlots
+      const doctor = doctors.find((d: any) => d.id === record?.doctorId);
+      const fallbackSlots = getDoctorSlots(doctor);
+      setRescheduleAvailableSlots(fallbackSlots);
       setRescheduleSlotBookings({});
     }
 
@@ -2334,13 +2480,26 @@ export default function ReceptionistDashboard() {
     setRescheduleSelectedDate(date);
     rescheduleForm.setFieldsValue({ timeSlot: undefined });
     if (!date || !appointmentForReschedule?.doctorId) return;
-    const doctor = doctors.find((d: any) => d.id === appointmentForReschedule.doctorId);
-    const slots = getDoctorSlots(doctor);
-    setRescheduleAvailableSlots(slots);
+    
     try {
+      // Fetch slots from availability API
+      const slots = await fetchDoctorSlots(appointmentForReschedule.doctorId, date.format('YYYY-MM-DD'));
+      if (slots.length > 0) {
+        setRescheduleAvailableSlots(slots);
+      } else {
+        // Fallback to doctor's availableSlots
+        const doctor = doctors.find((d: any) => d.id === appointmentForReschedule.doctorId);
+        const fallbackSlots = getDoctorSlots(doctor);
+        setRescheduleAvailableSlots(fallbackSlots);
+      }
+      
       const bookings = await fetchBookedAppointments(appointmentForReschedule.doctorId, date.format('YYYY-MM-DD'));
       setRescheduleSlotBookings(bookings);
     } catch {
+      // Fallback to doctor's availableSlots
+      const doctor = doctors.find((d: any) => d.id === appointmentForReschedule.doctorId);
+      const fallbackSlots = getDoctorSlots(doctor);
+      setRescheduleAvailableSlots(fallbackSlots);
       setRescheduleSlotBookings({});
     }
   };
@@ -2447,21 +2606,36 @@ export default function ReceptionistDashboard() {
         const today = dayjs();
         setSelectedDate(today);
         walkInForm.setFieldsValue({ appointmentDate: today });
-        // Fetch slots for today - use the doctor from closure
-        const allSlots = getDoctorSlots(doctor);
-        const filteredSlots = allSlots.filter(slot => !isSlotInPast(slot, today));
-        setAvailableSlots(filteredSlots);
-        console.log(`📅 Filtered slots for date ${today.format('YYYY-MM-DD')}: ${filteredSlots.length} available`);
         
-        // Fetch booked appointments for this doctor and date
+        // Fetch slots from availability API
         const dateStr = today.format('YYYY-MM-DD');
-        fetchBookedAppointments(doctor.id, dateStr)
+        fetchDoctorSlots(doctor.id, dateStr)
+          .then(slots => {
+            if (slots.length > 0) {
+              const filteredSlots = slots.filter(slot => !isSlotInPast(slot, today));
+              setAvailableSlots(filteredSlots);
+              console.log(`📅 Availability API slots for date ${dateStr}: ${filteredSlots.length} available`);
+            } else {
+              // Fallback to doctor's availableSlots
+              const allSlots = getDoctorSlots(doctor);
+              const filteredSlots = allSlots.filter(slot => !isSlotInPast(slot, today));
+              setAvailableSlots(filteredSlots);
+              console.log(`📅 Fallback slots for date ${dateStr}: ${filteredSlots.length} available`);
+            }
+            
+            // Fetch booked appointments for this doctor and date
+            return fetchBookedAppointments(doctor.id, dateStr);
+          })
           .then(bookings => {
             setSlotBookings(bookings);
             console.log('📅 Booked appointments for', dateStr, ':', bookings);
           })
           .catch(error => {
-            console.error('Error fetching booked appointments:', error);
+            console.error('Error fetching slots/appointments:', error);
+            // Fallback to doctor's availableSlots
+            const allSlots = getDoctorSlots(doctor);
+            const filteredSlots = allSlots.filter(slot => !isSlotInPast(slot, today));
+            setAvailableSlots(filteredSlots);
             setSlotBookings({});
           });
       }, 500);
@@ -2475,19 +2649,33 @@ export default function ReceptionistDashboard() {
     walkInForm.setFieldsValue({ timeSlot: undefined, appointmentDate: date });
     
     if (date && selectedDoctor) {
-      const allSlots = getDoctorSlots(selectedDoctor);
-      const filteredSlots = allSlots.filter(slot => !isSlotInPast(slot, date));
-      setAvailableSlots(filteredSlots);
-      console.log(`📅 Filtered slots for date ${date.format('YYYY-MM-DD')}: ${filteredSlots.length} available`);
-      
-      // Fetch booked appointments for this doctor and date
-      const dateStr = date.format('YYYY-MM-DD');
       try {
-      const bookings = await fetchBookedAppointments(selectedDoctor.id, dateStr);
-      setSlotBookings(bookings);
+        // Fetch slots from availability API
+        const dateStr = date.format('YYYY-MM-DD');
+        const slots = await fetchDoctorSlots(selectedDoctor.id, dateStr);
+        
+        if (slots.length > 0) {
+          const filteredSlots = slots.filter(slot => !isSlotInPast(slot, date));
+          setAvailableSlots(filteredSlots);
+          console.log(`📅 Availability API slots for date ${dateStr}: ${filteredSlots.length} available`);
+        } else {
+          // Fallback to doctor's availableSlots
+          const allSlots = getDoctorSlots(selectedDoctor);
+          const filteredSlots = allSlots.filter(slot => !isSlotInPast(slot, date));
+          setAvailableSlots(filteredSlots);
+          console.log(`📅 Fallback slots for date ${dateStr}: ${filteredSlots.length} available`);
+        }
+        
+        // Fetch booked appointments for this doctor and date
+        const bookings = await fetchBookedAppointments(selectedDoctor.id, dateStr);
+        setSlotBookings(bookings);
         console.log('📅 Booked appointments for', dateStr, ':', bookings);
       } catch (error) {
-        console.error('Error fetching booked appointments:', error);
+        console.error('Error fetching slots/appointments:', error);
+        // Fallback to doctor's availableSlots
+        const allSlots = getDoctorSlots(selectedDoctor);
+        const filteredSlots = allSlots.filter(slot => !isSlotInPast(slot, date));
+        setAvailableSlots(filteredSlots);
         setSlotBookings({});
       }
     } else if (date && !selectedDoctor) {
@@ -2548,6 +2736,16 @@ export default function ReceptionistDashboard() {
           flex: 1 1 auto !important;
           min-height: 0 !important;
           padding-top: 0 !important;
+        }
+        /* Hide inactive tab panes to prevent side-by-side rendering */
+        .receptionist-dashboard-wrapper .ant-tabs-tabpane:not(.ant-tabs-tabpane-active) {
+          display: none !important;
+        }
+        /* Ensure active tab pane takes full width */
+        .receptionist-dashboard-wrapper .ant-tabs-tabpane-active {
+          display: flex !important;
+          width: 100% !important;
+          flex: 1 1 auto !important;
         }
         /* Add padding to table body scroll container so last row is fully visible in all tabs */
         .receptionist-dashboard-wrapper .ant-table-body,
@@ -2888,6 +3086,30 @@ export default function ReceptionistDashboard() {
             {/* Upcoming Appointments - Full width, fills remaining height */}
           <Row gutter={[16, 16]} style={{ flex: 1, minHeight: 0, display: 'flex' }}>
               <Col xs={24} lg={24} style={{ display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+              <div style={{ 
+                width: '100%', 
+                display: 'flex', 
+                flexDirection: 'column', 
+                flex: 1, 
+                minHeight: 0,
+                marginBottom: 24,
+              }}>
+              <Tabs
+                activeKey={activeMainTab}
+                onChange={setActiveMainTab}
+                type="line"
+                style={{ 
+                  display: 'flex',
+                  flexDirection: 'column',
+                  flex: 1,
+                  minHeight: 0,
+                  width: '100%',
+                }}
+                items={[
+                  {
+                    key: 'appointments',
+                    label: 'Appointments',
+                    children: (
               <Card 
                 variant="borderless"
                 style={{ 
@@ -2912,15 +3134,15 @@ export default function ReceptionistDashboard() {
                     >
                       Create Appointment (Walk-in)
                     </Button>
-                    <Button
-                      type="default"
-                      size={isMobile ? "middle" : "small"}
-                      icon={<UserAddOutlined />}
-                      onClick={() => setIsAdmissionModalOpen(true)}
-                      style={{ borderRadius: 8 }}
-                    >
-                      Admit to IPD
-                    </Button>
+                            <Button
+                              type="default"
+                              size={isMobile ? "middle" : "small"}
+                              icon={<UserAddOutlined />}
+                              onClick={() => setIsAdmissionModalOpen(true)}
+                              style={{ borderRadius: 8 }}
+                            >
+                              Admit to IPD
+                            </Button>
                   </Space>
                 }
                 extra={<Button type="link" onClick={() => message.info('View all appointments feature coming soon')}>View All</Button>}
@@ -2965,7 +3187,7 @@ export default function ReceptionistDashboard() {
                         <div style={{ 
                           flex: 1,
                           minHeight: 0,
-                          height: '100%',
+                            height: '100%',
                           overflow: 'hidden',
                           display: 'flex',
                           flexDirection: 'column',
@@ -3025,6 +3247,59 @@ export default function ReceptionistDashboard() {
                 )}
                 </div>
               </Card>
+                    ),
+                  },
+                  {
+                    key: 'ipd',
+                    label: 'IPD Management',
+                    children: (
+                      <Card 
+                        variant="borderless"
+                        style={{ 
+                          borderRadius: 16,
+                          boxShadow: '0 2px 8px rgba(0, 0, 0, 0.08)',
+                          border: '1px solid #E5E7EB',
+                          background: '#fff',
+                          display: 'flex',
+                          flexDirection: 'column',
+                          flex: 1,
+                          minHeight: 0,
+                        }}
+                        title={<Text strong>Active IPD Patients</Text>}
+                        bodyStyle={{ 
+                          flex: 1, 
+                          minHeight: 0, 
+                          display: 'flex', 
+                          flexDirection: 'column',
+                          overflow: 'hidden',
+                          padding: isMobile ? 12 : 16,
+                        }}
+                      >
+                        <div style={{ 
+                          flex: 1, 
+                          minHeight: 0, 
+                          display: 'flex', 
+                          flexDirection: 'column',
+                          overflow: 'hidden',
+                        }}>
+                          <IpdEncountersList
+                            hospitalId={hospitalId}
+                            onTransfer={(encounter: IpdEncounter) => {
+                              setSelectedEncounter(encounter);
+                              setIsTransferModalOpen(true);
+                            }}
+                            onDischarge={(encounter: IpdEncounter) => {
+                              setSelectedEncounter(encounter);
+                              setIsDischargeModalOpen(true);
+                            }}
+                          />
+                        </div>
+                      </Card>
+                    ),
+                  },
+                ]}
+              />
+              </div>
             </Col>
           </Row>
 
@@ -4384,6 +4659,38 @@ export default function ReceptionistDashboard() {
         hospitalId={hospitalId}
       />
 
+      {/* Transfer Modal */}
+      <TransferModal
+        open={isTransferModalOpen}
+        onCancel={() => {
+          setIsTransferModalOpen(false);
+          setSelectedEncounter(null);
+        }}
+        onSuccess={() => {
+          queryClient.invalidateQueries({ queryKey: ['/api/ipd/encounters'] });
+          queryClient.invalidateQueries({ queryKey: ['/api/ipd/beds/available'] });
+          setIsTransferModalOpen(false);
+          setSelectedEncounter(null);
+        }}
+        encounter={selectedEncounter}
+      />
+
+      {/* Discharge Modal */}
+      <DischargeModal
+        open={isDischargeModalOpen}
+        onCancel={() => {
+          setIsDischargeModalOpen(false);
+          setSelectedEncounter(null);
+        }}
+        onSuccess={() => {
+          queryClient.invalidateQueries({ queryKey: ['/api/ipd/encounters'] });
+          queryClient.invalidateQueries({ queryKey: ['/api/ipd/beds/available'] });
+          setIsDischargeModalOpen(false);
+          setSelectedEncounter(null);
+        }}
+        encounter={selectedEncounter}
+      />
+
       <LabReportViewerModal
         open={isLabReportModalOpen}
         onCancel={() => {
@@ -4393,6 +4700,45 @@ export default function ReceptionistDashboard() {
         report={selectedLabReport}
         loading={false}
       />
+
+      {/* Invoice Modal */}
+      {selectedAppointmentForInvoice && (
+        <InvoiceModal
+          open={isInvoiceModalOpen}
+          onCancel={() => {
+            setIsInvoiceModalOpen(false);
+            setSelectedAppointmentForInvoice(null);
+          }}
+          onSuccess={() => {
+            queryClient.invalidateQueries({ queryKey: ['/api/billing/opd/invoices'] });
+            queryClient.invalidateQueries({ queryKey: ['/api/appointments/my'] });
+            refetchAppointments();
+          }}
+          appointmentId={selectedAppointmentForInvoice.id}
+          patientId={selectedAppointmentForInvoice.patientId}
+          doctorId={selectedAppointmentForInvoice.doctorId}
+          hospitalId={hospitalId}
+          appointmentType={selectedAppointmentForInvoice.type}
+          paymentStatus={selectedAppointmentForInvoice.paymentStatus}
+        />
+      )}
+
+      {/* Payment Modal */}
+      {selectedInvoiceForPayment && (
+        <PaymentModal
+          open={isPaymentModalOpen}
+          onCancel={() => {
+            setIsPaymentModalOpen(false);
+            setSelectedInvoiceForPayment(null);
+          }}
+          onSuccess={() => {
+            queryClient.invalidateQueries({ queryKey: ['/api/billing/opd/invoices'] });
+            queryClient.invalidateQueries({ queryKey: ['/api/appointments/my'] });
+            refetchAppointments();
+          }}
+          invoiceId={selectedInvoiceForPayment}
+        />
+      )}
     </Layout>
     </>
   );

@@ -54,12 +54,39 @@ export const getDoctorById = async (doctorId: number) => {
   }
 
   console.log(`👨‍⚕️ Fetching doctor ${doctorId}`);
-  const result = await db
+  const [doctor] = await db
     .select()
     .from(doctors)
-    .where(eq(doctors.id, doctorId));
+    .where(eq(doctors.id, doctorId))
+    .limit(1);
   
-  return result[0] || null;
+  if (!doctor) {
+    return null;
+  }
+
+  // Get user information
+  let user = null;
+  if (doctor.userId) {
+    const [userData] = await db
+      .select({ 
+        id: users.id,
+        fullName: users.fullName,
+        mobileNumber: users.mobileNumber,
+        email: users.email,
+      })
+      .from(users)
+      .where(eq(users.id, doctor.userId))
+      .limit(1);
+    
+    if (userData) {
+      user = userData;
+    }
+  }
+
+  return {
+    ...doctor,
+    user,
+  };
 };
 
 /**

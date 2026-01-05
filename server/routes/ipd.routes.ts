@@ -273,6 +273,10 @@ router.post('/encounters', authorizeRoles('ADMIN', 'HOSPITAL', 'RECEPTIONIST'), 
       attendingDoctorId,
       admissionType,
       bedId,
+      actorUserId: req.user?.id,
+      actorRole: req.user?.role || 'UNKNOWN',
+      ipAddress: req.ip || req.socket.remoteAddress || undefined,
+      userAgent: req.get('user-agent') || undefined,
     });
 
     res.json(encounter);
@@ -282,10 +286,11 @@ router.post('/encounters', authorizeRoles('ADMIN', 'HOSPITAL', 'RECEPTIONIST'), 
   }
 });
 
-router.get('/encounters', async (req: AuthenticatedRequest, res) => {
+router.get('/encounters', authenticateToken, async (req: AuthenticatedRequest, res) => {
   try {
     const hospitalId = await getHospitalId(req.user);
     const { patientId, doctorId, status } = req.query;
+    console.log('📋 Fetching IPD encounters:', { hospitalId, patientId, doctorId, status });
 
     const encounters = await ipdService.getIpdEncounters({
       hospitalId,
@@ -293,6 +298,15 @@ router.get('/encounters', async (req: AuthenticatedRequest, res) => {
       doctorId: doctorId ? +doctorId : undefined,
       status: status as string | undefined,
     });
+
+    console.log(`✅ Returning ${encounters.length} encounters`);
+    if (encounters.length > 0) {
+      console.log('Sample encounter patient data:', {
+        encounterId: encounters[0].id,
+        patient: encounters[0].patient,
+        patientUser: encounters[0].patient?.user,
+      });
+    }
 
     res.json(encounters);
   } catch (err: any) {
@@ -326,6 +340,10 @@ router.patch('/encounters/:encounterId/transfer', authorizeRoles('ADMIN', 'HOSPI
       newBedId,
       reason,
       transferredBy: req.user?.id,
+      actorUserId: req.user?.id,
+      actorRole: req.user?.role || 'UNKNOWN',
+      ipAddress: req.ip || req.socket.remoteAddress || undefined,
+      userAgent: req.get('user-agent') || undefined,
     });
 
     res.json(encounter);
@@ -338,7 +356,7 @@ router.patch('/encounters/:encounterId/transfer', authorizeRoles('ADMIN', 'HOSPI
 router.patch('/encounters/:encounterId/discharge', authorizeRoles('ADMIN', 'HOSPITAL', 'DOCTOR'), async (req: AuthenticatedRequest, res) => {
   try {
     const { encounterId } = req.params;
-    const { dischargeSummaryText } = req.body;
+    const { dischargeSummaryText, status } = req.body;
 
     if (!dischargeSummaryText) {
       return res.status(400).json({ message: 'dischargeSummaryText is required' });
@@ -347,6 +365,11 @@ router.patch('/encounters/:encounterId/discharge', authorizeRoles('ADMIN', 'HOSP
     const encounter = await ipdService.dischargePatient({
       encounterId: +encounterId,
       dischargeSummaryText,
+      status: status || 'discharged', // Use provided status or default to 'discharged'
+      actorUserId: req.user?.id,
+      actorRole: req.user?.role || 'UNKNOWN',
+      ipAddress: req.ip || req.socket.remoteAddress || undefined,
+      userAgent: req.get('user-agent') || undefined,
     });
 
     res.json(encounter);

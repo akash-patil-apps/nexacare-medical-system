@@ -54,6 +54,7 @@ import { getISTNow, toIST, getISTStartOfDay, isSameDayIST } from '../../lib/time
 import { playNotificationSound } from '../../lib/notification-sounds';
 import { NotificationBell } from '../../components/notifications/NotificationBell';
 import { NowServingWidget } from '../../components/queue/NowServingWidget';
+import { AvailabilityManager } from '../../components/availability/AvailabilityManager';
 
 const { Content, Sider } = Layout;
 const { Title, Text } = Typography;
@@ -77,6 +78,7 @@ export default function DoctorDashboard() {
   const [selectedPatientName, setSelectedPatientName] = useState<string | undefined>(undefined);
   const [activeAppointmentTab, setActiveAppointmentTab] = useState<string>('upcoming');
   const [isLabRequestModalOpen, setIsLabRequestModalOpen] = useState(false);
+  const [selectedMenuKey, setSelectedMenuKey] = useState<string>('dashboard');
 
 
   // ALL HOOKS MUST BE CALLED BEFORE ANY CONDITIONAL RETURNS
@@ -909,8 +911,9 @@ export default function DoctorDashboard() {
   const handleMenuClick = (e: { key: string }) => {
     if (e.key === 'prescriptions') {
       handleOpenPrescriptionModal();
+    } else {
+      setSelectedMenuKey(e.key);
     }
-    // Add other navigation handlers as needed
   };
 
   const handleQuickAction = (key: 'consult' | 'prescription' | 'availability' | 'labs' | 'requestLab') => {
@@ -922,7 +925,7 @@ export default function DoctorDashboard() {
         handleOpenPrescriptionModal();
         break;
       case 'availability':
-        message.info('Availability management coming soon.');
+        setSelectedMenuKey('availability');
         break;
       case 'labs':
         message.info('Lab queue coming soon.');
@@ -1345,6 +1348,11 @@ export default function DoctorDashboard() {
       icon: <FileTextOutlined />,
       label: 'Lab Reports',
     },
+    {
+      key: 'availability',
+      icon: <SettingOutlined />,
+      label: 'Availability',
+    },
   ];
 
   const siderWidth = isMobile ? 0 : 260; // Fixed width, no collapse
@@ -1392,7 +1400,7 @@ export default function DoctorDashboard() {
       <Menu
         className="doctor-dashboard-menu"
         mode="inline"
-        defaultSelectedKeys={['dashboard']}
+        selectedKeys={[selectedMenuKey]}
         items={sidebarMenu}
         style={{ 
           border: 'none', 
@@ -1638,6 +1646,16 @@ export default function DoctorDashboard() {
           min-height: 0 !important;
           padding-top: 0 !important;
         }
+        /* Hide inactive tab panes to prevent side-by-side rendering */
+        .doctor-dashboard-wrapper .ant-tabs-tabpane:not(.ant-tabs-tabpane-active) {
+          display: none !important;
+        }
+        /* Ensure active tab pane takes full width */
+        .doctor-dashboard-wrapper .ant-tabs-tabpane-active {
+          display: flex !important;
+          width: 100% !important;
+          flex: 1 1 auto !important;
+        }
       `}</style>
       <Layout className="doctor-dashboard-wrapper" style={{ minHeight: '100vh', background: doctorTheme.background }}>
       {/* Desktop/Tablet Sidebar */}
@@ -1847,45 +1865,77 @@ export default function DoctorDashboard() {
               </div>
             )}
 
-            {/* Quick Actions - Single row with flexbox (matching receptionist dashboard) */}
-            <div style={{ 
-              marginBottom: 24, 
-              display: 'flex', 
-              gap: 12, 
-              flexWrap: isMobile ? 'wrap' : 'nowrap',
-              overflowX: isMobile ? 'auto' : 'visible',
-            }}>
-              <QuickActionTile
-                label="Start Consultation"
-                icon={<CalendarOutlined />}
-                onClick={() => handleQuickAction('consult')}
-                variant="primary"
-              />
-              <QuickActionTile
-                label="Write Prescription"
-                icon={<MedicineBoxOutlined />}
-                onClick={() => handleQuickAction('prescription')}
-              />
-              <QuickActionTile
-                label="Request Lab Test"
-                icon={<ExperimentOutlined />}
-                onClick={() => handleQuickAction('requestLab')}
-              />
-              <QuickActionTile
-                label="Update Availability"
-                icon={<CheckCircleOutlined />}
-                onClick={() => handleQuickAction('availability')}
-              />
-            </div>
+            {/* Render content based on selected menu */}
+            {selectedMenuKey === 'availability' ? (
+              <Card
+                variant="borderless"
+                style={{ 
+                  borderRadius: 16,
+                  display: 'flex',
+                  flexDirection: 'column',
+                  flex: 1,
+                  minHeight: 0,
+                  overflow: 'hidden',
+                }}
+                bodyStyle={{ 
+                  flex: 1, 
+                  display: 'flex', 
+                  flexDirection: 'column',
+                  padding: isMobile ? 16 : 20,
+                  overflow: 'auto',
+                }}
+                title={
+                  <Title level={4} style={{ margin: 0 }}>Availability Management</Title>
+                }
+              >
+                {doctorProfile?.id && (
+                  <AvailabilityManager
+                    doctorId={doctorProfile.id}
+                    hospitalId={doctorProfile.hospitalId}
+                  />
+                )}
+              </Card>
+            ) : (
+              <>
+                {/* Quick Actions - Single row with flexbox (matching receptionist dashboard) */}
+                <div style={{ 
+                  marginBottom: 24, 
+                  display: 'flex', 
+                  gap: 12, 
+                  flexWrap: isMobile ? 'wrap' : 'nowrap',
+                  overflowX: isMobile ? 'auto' : 'visible',
+                }}>
+                  <QuickActionTile
+                    label="Start Consultation"
+                    icon={<CalendarOutlined />}
+                    onClick={() => handleQuickAction('consult')}
+                    variant="primary"
+                  />
+                  <QuickActionTile
+                    label="Write Prescription"
+                    icon={<MedicineBoxOutlined />}
+                    onClick={() => handleQuickAction('prescription')}
+                  />
+                  <QuickActionTile
+                    label="Request Lab Test"
+                    icon={<ExperimentOutlined />}
+                    onClick={() => handleQuickAction('requestLab')}
+                  />
+                  <QuickActionTile
+                    label="Update Availability"
+                    icon={<CheckCircleOutlined />}
+                    onClick={() => handleQuickAction('availability')}
+                  />
+                </div>
 
-            {/* Queue Management Widget - Now Serving */}
-            {doctorId && (
-              <div style={{ marginBottom: 24 }}>
-                <NowServingWidget doctorId={doctorId} />
-              </div>
-            )}
+                {/* Queue Management Widget - Now Serving */}
+                {doctorId && (
+                  <div style={{ marginBottom: 24 }}>
+                    <NowServingWidget doctorId={doctorId} />
+                  </div>
+                )}
 
-            {/* Upcoming Appointments - Full width, matching receptionist dashboard */}
+                {/* Upcoming Appointments - Full width, matching receptionist dashboard */}
             <Card
               variant="borderless"
               style={{ 
@@ -1979,6 +2029,8 @@ export default function DoctorDashboard() {
                     </div>
                   )}
                 </Card>
+              </>
+            )}
           </div>
         </Content>
       </Layout>

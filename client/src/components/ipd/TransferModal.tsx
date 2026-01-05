@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { Modal, Form, Input, Button, Space, message, Spin } from 'antd';
+import { ExclamationCircleOutlined } from '@ant-design/icons';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { BedSelector } from './BedSelector';
 import type { BedStructure, IpdEncounter } from '../../types/ipd';
@@ -53,42 +54,68 @@ export const TransferModal: React.FC<TransferModalProps> = ({
   });
 
   const handleSubmit = async (values: any) => {
-    if (!encounter || !selectedBedId) {
-      message.warning('Please select a bed');
+    if (!encounter) {
+      message.warning('No encounter selected');
       return;
     }
 
-    setIsSubmitting(true);
-    try {
-      const token = localStorage.getItem('auth-token');
-      const response = await fetch(`/api/ipd/encounters/${encounter.id}/transfer`, {
-        method: 'PATCH',
-        headers: {
-          Authorization: `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          newBedId: selectedBedId,
-          reason: values.reason || 'Transfer',
-        }),
-      });
-
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.message || 'Failed to transfer patient');
-      }
-
-      message.success('Patient transferred successfully');
-      queryClient.invalidateQueries({ queryKey: ['/api/ipd/encounters'] });
-      queryClient.invalidateQueries({ queryKey: ['/api/ipd/beds/available'] });
-      queryClient.invalidateQueries({ queryKey: ['/api/ipd/structure'] });
-      onSuccess();
-      handleClose();
-    } catch (error: any) {
-      message.error(error.message || 'Failed to transfer patient');
-    } finally {
-      setIsSubmitting(false);
+    if (!selectedBedId) {
+      message.warning('Please select a new bed');
+      return;
     }
+
+    if (selectedBedId === encounter.currentBed?.id) {
+      message.warning('Please select a different bed');
+      return;
+    }
+
+    if (!values.reason || values.reason.trim().length === 0) {
+      message.warning('Please provide a reason for transfer');
+      return;
+    }
+
+    // Show confirmation dialog
+    Modal.confirm({
+      title: 'Confirm Patient Transfer',
+      icon: <ExclamationCircleOutlined />,
+      content: `Are you sure you want to transfer this patient to the new bed? The current bed will be marked for cleaning.`,
+      okText: 'Yes, Transfer Patient',
+      okType: 'primary',
+      cancelText: 'Cancel',
+      onOk: async () => {
+        setIsSubmitting(true);
+        try {
+          const token = localStorage.getItem('auth-token');
+          const response = await fetch(`/api/ipd/encounters/${encounter.id}/transfer`, {
+            method: 'PATCH',
+            headers: {
+              Authorization: `Bearer ${token}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              newBedId: selectedBedId,
+              reason: values.reason || 'Transfer',
+            }),
+          });
+
+          if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.message || 'Failed to transfer patient');
+          }
+
+          message.success('Patient transferred successfully');
+          queryClient.invalidateQueries({ queryKey: ['/api/ipd/encounters'] });
+          queryClient.invalidateQueries({ queryKey: ['/api/ipd/beds/available'] });
+          queryClient.invalidateQueries({ queryKey: ['/api/ipd/structure'] });
+          onSuccess();
+          handleClose();
+        } catch (error: any) {
+          message.error(error.message || 'Failed to transfer patient');
+        } finally {
+          setIsSubmitting(false);
+        }
+      },
+    });
   };
 
   const handleClose = () => {
@@ -116,7 +143,11 @@ export const TransferModal: React.FC<TransferModalProps> = ({
             <strong>Patient:</strong> {encounter.patient?.user?.fullName || 'Unknown'}
           </div>
           <div>
-            <strong>Current Bed:</strong> {encounter.currentBed?.bedName || `Bed ${encounter.currentBed?.bedNumber}` || 'N/A'}
+            <strong>Current Bed:</strong> {
+              encounter.currentBed 
+                ? (encounter.currentBed.bedName || `Bed ${encounter.currentBed.bedNumber}`)
+                : (encounter.currentBedId ? `Bed ID: ${encounter.currentBedId}` : 'N/A')
+            }
           </div>
           <div>
             <strong>Status:</strong> {encounter.status}
@@ -147,6 +178,7 @@ export const TransferModal: React.FC<TransferModalProps> = ({
             selectedBedId={selectedBedId}
             onSelectBed={setSelectedBedId}
             showOnlyAvailable={true}
+            excludeBedId={encounter.currentBed?.id || null}
           />
         )}
 
@@ -165,7 +197,7 @@ export const TransferModal: React.FC<TransferModalProps> = ({
               loading={isSubmitting}
               disabled={!selectedBedId}
             >
-              Transfer Patient
+              {isSubmitting ? 'Transferring...' : 'Transfer Patient'}
             </Button>
           </Space>
         </Form.Item>

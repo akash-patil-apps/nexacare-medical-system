@@ -55,7 +55,9 @@ export function authorizeRoles(...roles: string[]) {
 
     if (!allowedRoles.includes(userRole)) {
       console.log('❌ Role authorization - Insufficient permissions. User role:', req.user.role, 'Required:', roles);
-      return res.status(403).json({ message: 'Insufficient permissions' });
+      return res.status(403).json({ 
+        message: `Access denied. This action requires one of the following roles: ${roles.join(', ')}. Your current role is: ${req.user.role}` 
+      });
     }
 
     console.log('✅ Role authorization - Access granted');

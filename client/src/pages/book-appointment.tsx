@@ -49,6 +49,7 @@ import { PatientSidebar } from '../components/layout/PatientSidebar';
 import { useResponsive } from '../hooks/use-responsive';
 import { formatTimeSlot12h, parseTimeTo24h } from '../lib/time';
 import { playNotificationSound } from '../lib/notification-sounds';
+import AppointmentPaymentModal from '../components/modals/appointment-payment-modal';
 
 const { Option } = Select;
 const { TextArea } = Input;
@@ -116,6 +117,9 @@ export default function BookAppointment() {
   const [selectedSpecialty, setSelectedSpecialty] = useState<string>('');
   const [filteredHospitals, setFilteredHospitals] = useState<Hospital[]>([]);
   const [allSpecialties, setAllSpecialties] = useState<string[]>([]);
+  const [showPaymentModal, setShowPaymentModal] = useState(false);
+  const [bookedAppointmentId, setBookedAppointmentId] = useState<number | null>(null);
+  const [consultationFee, setConsultationFee] = useState<number>(500);
 
   // Load user city on component mount
   useEffect(() => {
@@ -660,6 +664,66 @@ export default function BookAppointment() {
     }
   };
 
+  const handlePaymentSuccess = async (paymentMethod: 'online' | 'counter', paymentDetails?: any) => {
+    try {
+      if (!bookedAppointmentId) {
+        message.error('Appointment ID not found');
+        return;
+      }
+
+      const token = localStorage.getItem('auth-token');
+      
+      // Update appointment with payment status
+      const updateData: any = {};
+
+      // Add payment details to notes if online payment
+      if (paymentMethod === 'online' && paymentDetails) {
+        const paymentNote = `Payment: ${paymentDetails.transactionId} | Method: ${paymentDetails.paymentMethod} | Amount: ₹${paymentDetails.amount} | Status: ${paymentDetails.status}`;
+        updateData.notes = paymentNote;
+        updateData.paymentStatus = 'paid';
+      } else {
+        updateData.paymentStatus = 'pending';
+      }
+
+      const response = await fetch(`/api/appointments/${bookedAppointmentId}`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify(updateData)
+      });
+
+      if (response.ok) {
+        // Play booking success sound
+        playNotificationSound('booking');
+        
+        // Invalidate all appointment queries to refresh dashboards
+        queryClient.invalidateQueries({ queryKey: ['/api/appointments/my'] });
+        queryClient.invalidateQueries({ queryKey: ['patient-appointments'] });
+        
+        if (paymentMethod === 'online') {
+          message.success('Appointment booked and payment completed successfully!');
+        } else {
+          message.success('Appointment booked successfully! Please pay at the counter when you arrive.');
+        }
+        
+        setTimeout(() => {
+          setLocation('/dashboard/patient/appointments');
+        }, 1500);
+      } else {
+        const errorData = await response.json();
+        console.error('❌ Failed to update payment status:', errorData);
+        message.warning('Appointment booked but payment status update failed. Please contact support.');
+        setLocation('/dashboard/patient/appointments');
+      }
+    } catch (error) {
+      console.error('❌ Error updating payment status:', error);
+      message.warning('Appointment booked but payment status update failed. Please contact support.');
+      setLocation('/dashboard/patient/appointments');
+    }
+  };
+
   const handleSubmit = async () => {
     try {
       setLoading(true);
@@ -727,15 +791,16 @@ export default function BookAppointment() {
         const result = await response.json();
         console.log('✅ Appointment booked successfully:', result);
         
-        // Play booking success sound
-        playNotificationSound('booking');
+        // Get consultation fee from selected doctor
+        const fee = selectedDoctor?.consultationFee 
+          ? parseFloat(selectedDoctor.consultationFee.toString()) 
+          : 500;
+        setConsultationFee(fee);
+        setBookedAppointmentId(result.id || result.appointment?.id);
         
-        // Invalidate all appointment queries to refresh dashboards
-        queryClient.invalidateQueries({ queryKey: ['/api/appointments/my'] });
-        queryClient.invalidateQueries({ queryKey: ['patient-appointments'] });
-        
-        message.success('Appointment booked successfully! Please wait for confirmation.');
-        setLocation('/dashboard/patient/appointments');
+        // Show payment modal instead of redirecting
+        setShowPaymentModal(true);
+        setLoading(false);
       } else {
         const errorData = await response.json();
         console.error('❌ Booking failed:', errorData);
@@ -1920,6 +1985,19 @@ export default function BookAppointment() {
         </Content>
     </Layout>
     </Layout>
+
+    {/* Payment Modal */}
+    <AppointmentPaymentModal
+      open={showPaymentModal}
+      onCancel={() => {
+        setShowPaymentModal(false);
+        // Still redirect even if cancelled
+        setLocation('/dashboard/patient/appointments');
+      }}
+      onSuccess={handlePaymentSuccess}
+      amount={consultationFee}
+      appointmentId={bookedAppointmentId || undefined}
+    />
     </>
   );
 }

@@ -780,6 +780,42 @@ export default function HospitalDashboard() {
           background: transparent !important;
           min-height: 100vh !important;
         }
+        
+        /* Fix tabs overlapping with table content */
+        .hospital-dashboard-wrapper .ant-tabs {
+          display: flex !important;
+          flex-direction: column !important;
+          flex: 1 1 auto !important;
+          min-height: 0 !important;
+          position: relative !important;
+        }
+        .hospital-dashboard-wrapper .ant-tabs-nav {
+          margin: 0 !important;
+          padding: 0 16px !important;
+          flex-shrink: 0 !important;
+          position: relative !important;
+          z-index: 1 !important;
+        }
+        .hospital-dashboard-wrapper .ant-tabs-content-holder {
+          flex: 1 1 auto !important;
+          min-height: 0 !important;
+          overflow: hidden !important;
+          position: relative !important;
+        }
+        .hospital-dashboard-wrapper .ant-tabs-content {
+          height: 100% !important;
+          display: flex !important;
+          flex: 1 1 auto !important;
+          min-height: 0 !important;
+        }
+        .hospital-dashboard-wrapper .ant-tabs-tabpane {
+          height: 100% !important;
+          display: flex !important;
+          flex-direction: column !important;
+          flex: 1 1 auto !important;
+          min-height: 0 !important;
+          padding-top: 0 !important;
+        }
 
         .hospital-dashboard-menu .ant-menu-item {
           border-radius: 12px !important;
@@ -878,6 +914,13 @@ export default function HospitalDashboard() {
           flex: 1 1 auto !important;
           min-height: 0 !important;
           padding-top: 0 !important;
+        }
+        /* Ensure only active tab pane is visible - prevents tabs from appearing side by side */
+        .hospital-dashboard-wrapper .ant-tabs-tabpane:not(.ant-tabs-tabpane-active) {
+          display: none !important;
+        }
+        .hospital-dashboard-wrapper .ant-tabs-tabpane-active {
+          display: flex !important;
         }
       `}</style>
       <Layout className="hospital-dashboard-wrapper" style={{ minHeight: '100vh', background: hospitalTheme.background }}>
@@ -1128,10 +1171,27 @@ export default function HospitalDashboard() {
           </Card>
 
             {/* Main Tabs: Appointments and IPD Management */}
-            <Tabs
-              activeKey={activeMainTab}
-              onChange={setActiveMainTab}
-              items={[
+            <div style={{ 
+              width: '100%', 
+              flex: 1, 
+              minHeight: 0, 
+              display: 'flex', 
+              flexDirection: 'column',
+              overflow: 'hidden',
+              marginBottom: 24,
+            }}>
+              <Tabs
+                activeKey={activeMainTab}
+                onChange={setActiveMainTab}
+                type="line"
+                style={{ 
+                  width: '100%',
+                  flex: 1,
+                  minHeight: 0,
+                  display: 'flex',
+                  flexDirection: 'column',
+                }}
+                items={[
                 {
                   key: 'appointments',
                   label: 'Appointments',
@@ -1270,6 +1330,13 @@ export default function HospitalDashboard() {
                             padding: isMobile ? 12 : 16,
                           }}>
                             <Tabs
+                              style={{ 
+                                display: 'flex', 
+                                flexDirection: 'column', 
+                                flex: 1, 
+                                minHeight: 0,
+                                height: '100%',
+                              }}
                               items={[
                                 {
                                   key: 'structure',
@@ -1282,6 +1349,7 @@ export default function HospitalDashboard() {
                                       display: 'flex',
                                       flexDirection: 'column',
                                       paddingTop: 16,
+                                      height: '100%',
                                     }}>
                                       <BedStructureManager />
                                     </div>
@@ -1333,12 +1401,6 @@ export default function HospitalDashboard() {
                                   ),
                                 },
                               ]}
-                              style={{
-                                display: 'flex',
-                                flexDirection: 'column',
-                                flex: 1,
-                                minHeight: 0,
-                              }}
                             />
                           </div>
                         </Card>
@@ -1347,8 +1409,8 @@ export default function HospitalDashboard() {
                   ),
                 },
               ]}
-              style={{ marginBottom: 24 }}
             />
+            </div>
           </div>
         </Content>
       </Layout>

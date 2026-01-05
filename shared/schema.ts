@@ -320,6 +320,36 @@ export const notificationsRelations = relations(notifications, ({ one }) => ({
   user: one(users, { fields: [notifications.userId], references: [users.id] }),
 }));
 
+// Doctor Availability Rules (weekly recurring schedule)
+export const doctorAvailabilityRules = pgTable("doctor_availability_rules", {
+  id: serial("id").primaryKey(),
+  doctorId: integer("doctor_id").references(() => doctors.id).notNull(),
+  hospitalId: integer("hospital_id").references(() => hospitals.id).notNull(),
+  dayOfWeek: integer("day_of_week").notNull(), // 0 = Sunday, 1 = Monday, ..., 6 = Saturday
+  startTime: text("start_time").notNull(), // HH:mm format (e.g., "09:00")
+  endTime: text("end_time").notNull(), // HH:mm format (e.g., "17:00")
+  slotDurationMinutes: integer("slot_duration_minutes").default(30),
+  maxPatientsPerSlot: integer("max_patients_per_slot").default(1),
+  isActive: boolean("is_active").default(true),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at"),
+});
+
+// Doctor Availability Exceptions (leave, overrides, blocked dates)
+export const doctorAvailabilityExceptions = pgTable("doctor_availability_exceptions", {
+  id: serial("id").primaryKey(),
+  doctorId: integer("doctor_id").references(() => doctors.id).notNull(),
+  hospitalId: integer("hospital_id").references(() => hospitals.id).notNull(),
+  date: text("date").notNull(), // YYYY-MM-DD format (IST)
+  type: text("type").notNull(), // leave, override_hours, blocked
+  startTime: text("start_time"), // HH:mm format (nullable for full-day leave)
+  endTime: text("end_time"), // HH:mm format (nullable for full-day leave)
+  reason: text("reason"),
+  createdByUserId: integer("created_by_user_id").references(() => users.id).notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at"),
+});
+
 // OPD Queue Entries
 export const opdQueueEntries = pgTable("opd_queue_entries", {
   id: serial("id").primaryKey(),
@@ -425,6 +455,82 @@ export const bedAllocations = pgTable("bed_allocations", {
   toAt: timestamp("to_at"), // null if current allocation
   reason: text("reason"), // Transfer reason or "Initial admission"
   transferredBy: integer("transferred_by").references(() => users.id), // User who performed transfer
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+// Patient Audit Logs - Track all patient-related actions for compliance
+export const patientAuditLogs = pgTable("patient_audit_logs", {
+  id: serial("id").primaryKey(),
+  hospitalId: integer("hospital_id").references(() => hospitals.id),
+  patientId: integer("patient_id").references(() => patients.id).notNull(),
+  actorUserId: integer("actor_user_id").references(() => users.id).notNull(),
+  actorRole: varchar("actor_role", { length: 50 }).notNull(),
+  action: text("action").notNull(), // admit, transfer, discharge, update, etc.
+  entityType: text("entity_type").notNull(), // ipd_encounter, appointment, prescription, etc.
+  entityId: integer("entity_id"),
+  before: text("before"), // JSON string of state before action
+  after: text("after"), // JSON string of state after action
+  message: text("message"), // Human readable description
+  ipAddress: varchar("ip_address", { length: 45 }),
+  userAgent: text("user_agent"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+// OPD Billing - Invoices
+export const invoices = pgTable("invoices", {
+  id: serial("id").primaryKey(),
+  hospitalId: integer("hospital_id").references(() => hospitals.id).notNull(),
+  patientId: integer("patient_id").references(() => patients.id).notNull(),
+  appointmentId: integer("appointment_id").references(() => appointments.id), // 1 invoice per appointment in v1
+  invoiceNumber: varchar("invoice_number", { length: 100 }).notNull(), // Unique per hospital
+  status: text("status").default("draft").notNull(), // draft, issued, paid, partially_paid, refunded, void
+  subtotal: decimal("subtotal", { precision: 10, scale: 2 }).notNull(),
+  discountAmount: decimal("discount_amount", { precision: 10, scale: 2 }).default("0"),
+  discountType: text("discount_type"), // amount, percent
+  discountReason: text("discount_reason"),
+  taxAmount: decimal("tax_amount", { precision: 10, scale: 2 }).default("0"),
+  total: decimal("total", { precision: 10, scale: 2 }).notNull(),
+  paidAmount: decimal("paid_amount", { precision: 10, scale: 2 }).default("0"),
+  balanceAmount: decimal("balance_amount", { precision: 10, scale: 2 }).notNull(),
+  currency: varchar("currency", { length: 10 }).default("INR"),
+  issuedAt: timestamp("issued_at"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at"),
+});
+
+// Invoice Items
+export const invoiceItems = pgTable("invoice_items", {
+  id: serial("id").primaryKey(),
+  invoiceId: integer("invoice_id").references(() => invoices.id).notNull(),
+  type: text("type").notNull(), // consultation_fee, registration_fee
+  description: text("description").notNull(),
+  quantity: integer("quantity").default(1),
+  unitPrice: decimal("unit_price", { precision: 10, scale: 2 }).notNull(),
+  amount: decimal("amount", { precision: 10, scale: 2 }).notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+// Payments
+export const payments = pgTable("payments", {
+  id: serial("id").primaryKey(),
+  invoiceId: integer("invoice_id").references(() => invoices.id).notNull(),
+  method: text("method").notNull(), // cash, card, upi, online
+  amount: decimal("amount", { precision: 10, scale: 2 }).notNull(),
+  reference: varchar("reference", { length: 255 }), // UPI txn id, card last 4 digits, etc.
+  receivedByUserId: integer("received_by_user_id").references(() => users.id).notNull(),
+  receivedAt: timestamp("received_at").defaultNow(),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+// Refunds
+export const refunds = pgTable("refunds", {
+  id: serial("id").primaryKey(),
+  invoiceId: integer("invoice_id").references(() => invoices.id).notNull(),
+  amount: decimal("amount", { precision: 10, scale: 2 }).notNull(),
+  reason: text("reason").notNull(),
+  processedByUserId: integer("processed_by_user_id").references(() => users.id).notNull(),
+  processedAt: timestamp("processed_at").defaultNow(),
   createdAt: timestamp("created_at").defaultNow(),
 });
 

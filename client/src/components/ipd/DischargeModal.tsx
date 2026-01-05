@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { Modal, Form, Input, Select, Button, Space, message, Spin } from 'antd';
+import { ExclamationCircleOutlined } from '@ant-design/icons';
 import { useQueryClient } from '@tanstack/react-query';
 import type { IpdEncounter } from '../../types/ipd';
 
@@ -28,37 +29,56 @@ export const DischargeModal: React.FC<DischargeModalProps> = ({
       return;
     }
 
-    setIsSubmitting(true);
-    try {
-      const token = localStorage.getItem('auth-token');
-      const response = await fetch(`/api/ipd/encounters/${encounter.id}/discharge`, {
-        method: 'PATCH',
-        headers: {
-          Authorization: `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          dischargeSummaryText: values.dischargeSummaryText || null,
-          status: values.status || 'discharged',
-        }),
-      });
-
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.message || 'Failed to discharge patient');
-      }
-
-      message.success('Patient discharged successfully');
-      queryClient.invalidateQueries({ queryKey: ['/api/ipd/encounters'] });
-      queryClient.invalidateQueries({ queryKey: ['/api/ipd/beds/available'] });
-      queryClient.invalidateQueries({ queryKey: ['/api/ipd/structure'] });
-      onSuccess();
-      handleClose();
-    } catch (error: any) {
-      message.error(error.message || 'Failed to discharge patient');
-    } finally {
-      setIsSubmitting(false);
+    if (!values.dischargeSummaryText || values.dischargeSummaryText.trim().length === 0) {
+      message.warning('Please enter a discharge summary');
+      return;
     }
+
+    // Show confirmation dialog
+    const dischargeType = values.status || 'discharged';
+    const dischargeTypeLabel = dischargeType === 'discharged' ? 'discharge' : dischargeType.toLowerCase();
+    
+    Modal.confirm({
+      title: 'Confirm Patient Discharge',
+      icon: <ExclamationCircleOutlined />,
+      content: `Are you sure you want to ${dischargeTypeLabel} this patient? The bed will be released and marked for cleaning. This action cannot be undone.`,
+      okText: `Yes, ${dischargeType === 'discharged' ? 'Discharge' : 'Confirm'}`,
+      okType: dischargeType === 'death' || dischargeType === 'LAMA' ? 'danger' : 'primary',
+      cancelText: 'Cancel',
+      onOk: async () => {
+        setIsSubmitting(true);
+        try {
+          const token = localStorage.getItem('auth-token');
+          const response = await fetch(`/api/ipd/encounters/${encounter.id}/discharge`, {
+            method: 'PATCH',
+            headers: {
+              Authorization: `Bearer ${token}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              dischargeSummaryText: values.dischargeSummaryText || null,
+              status: dischargeType, // Send discharge type (discharged, LAMA, transfer, death, absconded)
+            }),
+          });
+
+          if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.message || 'Failed to discharge patient');
+          }
+
+          message.success(`Patient ${dischargeTypeLabel}ed successfully`);
+          queryClient.invalidateQueries({ queryKey: ['/api/ipd/encounters'] });
+          queryClient.invalidateQueries({ queryKey: ['/api/ipd/beds/available'] });
+          queryClient.invalidateQueries({ queryKey: ['/api/ipd/structure'] });
+          onSuccess();
+          handleClose();
+        } catch (error: any) {
+          message.error(error.message || 'Failed to discharge patient');
+        } finally {
+          setIsSubmitting(false);
+        }
+      },
+    });
   };
 
   const handleClose = () => {
@@ -89,7 +109,11 @@ export const DischargeModal: React.FC<DischargeModalProps> = ({
             <strong>Patient:</strong> {encounter.patient?.user?.fullName || 'Unknown'}
           </div>
           <div>
-            <strong>Current Bed:</strong> {encounter.currentBed?.bedName || `Bed ${encounter.currentBed?.bedNumber}` || 'N/A'}
+            <strong>Current Bed:</strong> {
+              encounter.currentBed 
+                ? (encounter.currentBed.bedName || `Bed ${encounter.currentBed.bedNumber}`)
+                : (encounter.currentBedId ? `Bed ID: ${encounter.currentBedId}` : 'N/A')
+            }
           </div>
           <div>
             <strong>Admitted:</strong> {new Date(encounter.admittedAt).toLocaleDateString()}
@@ -131,7 +155,7 @@ export const DischargeModal: React.FC<DischargeModalProps> = ({
           <Space>
             <Button onClick={handleClose}>Cancel</Button>
             <Button type="primary" htmlType="submit" loading={isSubmitting} danger>
-              Discharge Patient
+              {isSubmitting ? 'Discharging...' : 'Discharge Patient'}
             </Button>
           </Space>
         </Form.Item>

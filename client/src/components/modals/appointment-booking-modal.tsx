@@ -151,28 +151,92 @@ export default function AppointmentBookingModal({
     }
   };
 
-  const handleDoctorSelect = (doctorId: number) => {
+  const handleDoctorSelect = async (doctorId: number) => {
     const doctor = doctors.find(d => d.id === doctorId);
     setSelectedDoctor(doctor || null);
     setAvailableSlots([]);
     setSelectedSlot('');
     form.setFieldsValue({ timeSlot: undefined });
     
-    if (doctor) {
+    // If date is already selected, fetch slots from availability API
+    if (selectedDate && doctor) {
       try {
-        const slots = JSON.parse(doctor.available_slots);
-        setAvailableSlots(slots);
+        setLoading(true);
+        const dateStr = selectedDate.format('YYYY-MM-DD');
+        const token = localStorage.getItem('auth-token');
+        const response = await fetch(`/api/availability/doctor/${doctorId}/slots/${dateStr}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        
+        if (response.ok) {
+          const data = await response.json();
+          setAvailableSlots(data.slots || []);
+        } else {
+          // Fallback to doctor's available_slots
+          try {
+            const slots = JSON.parse(doctor.available_slots || '[]');
+            setAvailableSlots(slots);
+          } catch {
+            setAvailableSlots([]);
+          }
+        }
       } catch (error) {
-        console.error('Error parsing available slots:', error);
-        setAvailableSlots([]);
+        console.error('Error fetching available slots:', error);
+        // Fallback to doctor's available_slots
+        try {
+          const slots = JSON.parse(doctor.available_slots || '[]');
+          setAvailableSlots(slots);
+        } catch {
+          setAvailableSlots([]);
+        }
+      } finally {
+        setLoading(false);
       }
     }
   };
 
-  const handleDateChange = (date: dayjs.Dayjs | null) => {
+  const handleDateChange = async (date: dayjs.Dayjs | null) => {
     setSelectedDate(date);
     setSelectedSlot('');
     form.setFieldsValue({ timeSlot: undefined });
+    
+    // Fetch available slots from availability API if doctor and date are selected
+    if (date && selectedDoctor?.id) {
+      try {
+        setLoading(true);
+        const dateStr = date.format('YYYY-MM-DD');
+        const token = localStorage.getItem('auth-token');
+        const response = await fetch(`/api/availability/doctor/${selectedDoctor.id}/slots/${dateStr}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        
+        if (response.ok) {
+          const data = await response.json();
+          setAvailableSlots(data.slots || []);
+        } else {
+          // Fallback to doctor's available_slots if availability API fails
+          try {
+            const slots = JSON.parse(selectedDoctor.available_slots || '[]');
+            setAvailableSlots(slots);
+          } catch {
+            setAvailableSlots([]);
+          }
+        }
+      } catch (error) {
+        console.error('Error fetching available slots:', error);
+        // Fallback to doctor's available_slots
+        try {
+          const slots = JSON.parse(selectedDoctor.available_slots || '[]');
+          setAvailableSlots(slots);
+        } catch {
+          setAvailableSlots([]);
+        }
+      } finally {
+        setLoading(false);
+      }
+    } else {
+      setAvailableSlots([]);
+    }
   };
 
   const handleSlotSelect = (slot: string) => {
