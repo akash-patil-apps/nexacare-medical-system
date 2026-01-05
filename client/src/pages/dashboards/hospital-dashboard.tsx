@@ -33,10 +33,13 @@ import { useAuth } from '../../hooks/use-auth';
 import { useResponsive } from '../../hooks/use-responsive';
 import { KpiCard } from '../../components/dashboard/KpiCard';
 import { NotificationBell } from '../../components/notifications/NotificationBell';
+import { BedOccupancyMap, TransferModal, DischargeModal, BedStructureManager } from '../../components/ipd';
+import { IpdEncountersList } from '../../components/ipd/IpdEncountersList';
 import { subscribeToAppointmentEvents } from '../../lib/appointments-events';
 import { getISTStartOfDay, isSameDayIST } from '../../lib/timezone';
 import dayjs from 'dayjs';
 import { normalizeStatus, APPOINTMENT_STATUS } from '../../lib/appointment-status';
+import type { IpdEncounter } from '../../types/ipd';
 
 const { Content, Sider } = Layout;
 const { Title, Text } = Typography;
@@ -56,6 +59,10 @@ export default function HospitalDashboard() {
   const [collapsed, setCollapsed] = useState(false);
   const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false);
   const [activeAppointmentTab, setActiveAppointmentTab] = useState<string>('today_all');
+  const [activeMainTab, setActiveMainTab] = useState<string>('appointments');
+  const [selectedEncounter, setSelectedEncounter] = useState<IpdEncounter | null>(null);
+  const [isTransferModalOpen, setIsTransferModalOpen] = useState(false);
+  const [isDischargeModalOpen, setIsDischargeModalOpen] = useState(false);
 
   // Auto-collapse sidebar on mobile/tablet
   useEffect(() => {
@@ -92,6 +99,35 @@ export default function HospitalDashboard() {
     enabled: !!user && user.role?.toUpperCase() === 'HOSPITAL',
     refetchInterval: 30000, // Refetch every 30 seconds
   });
+
+  // Get hospital profile to access hospital name
+  const { data: hospitalProfile } = useQuery({
+    queryKey: ['/api/hospitals/my'],
+    queryFn: async () => {
+      const token = localStorage.getItem('auth-token');
+      const response = await fetch('/api/hospitals/my', {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+      if (!response.ok) {
+        console.log('⚠️ Hospital profile API not ready yet');
+        return null;
+      }
+      const data = await response.json();
+      console.log('✅ Hospital profile fetched:', { id: data.id, name: data.name });
+      return data;
+    },
+    enabled: !!user && user.role?.toUpperCase() === 'HOSPITAL',
+  });
+
+  // Get hospital name from profile
+  const hospitalName = useMemo(() => {
+    if (hospitalProfile?.name) {
+      return hospitalProfile.name;
+    }
+    return null;
+  }, [hospitalProfile?.name]);
 
   // Get notifications for hospital admin
   const { data: notifications = [] } = useQuery({
@@ -687,6 +723,19 @@ export default function HospitalDashboard() {
             </div>
           </div>
           
+          {/* Layer 2: Hospital Name */}
+          {hospitalName && (
+            <div style={{
+              marginBottom: '12px',
+              paddingBottom: '12px',
+              borderBottom: '1px solid #E5E7EB',
+            }}>
+              <Text style={{ display: 'block', fontSize: '12px', color: '#8C8C8C', lineHeight: 1.4 }}>
+                {hospitalName}
+              </Text>
+            </div>
+          )}
+          
           {/* Layer 3: Active Hospital Admin Text + Settings Icon */}
           <div style={{
             display: 'flex',
@@ -793,6 +842,42 @@ export default function HospitalDashboard() {
         .hospital-dashboard-wrapper .ant-table-fixed-right {
           background: #fff;
           box-shadow: -2px 0 8px rgba(0, 0, 0, 0.08);
+        }
+        
+        /* Fix tabs overlapping with table content */
+        .hospital-dashboard-wrapper .ant-tabs {
+          display: flex !important;
+          flex-direction: column !important;
+          flex: 1 1 auto !important;
+          min-height: 0 !important;
+          position: relative !important;
+        }
+        .hospital-dashboard-wrapper .ant-tabs-nav {
+          margin: 0 !important;
+          padding: 0 16px !important;
+          flex-shrink: 0 !important;
+          position: relative !important;
+          z-index: 1 !important;
+        }
+        .hospital-dashboard-wrapper .ant-tabs-content-holder {
+          flex: 1 1 auto !important;
+          min-height: 0 !important;
+          overflow: hidden !important;
+          position: relative !important;
+        }
+        .hospital-dashboard-wrapper .ant-tabs-content {
+          height: 100% !important;
+          display: flex !important;
+          flex: 1 1 auto !important;
+          min-height: 0 !important;
+        }
+        .hospital-dashboard-wrapper .ant-tabs-tabpane {
+          height: 100% !important;
+          display: flex !important;
+          flex-direction: column !important;
+          flex: 1 1 auto !important;
+          min-height: 0 !important;
+          padding-top: 0 !important;
         }
       `}</style>
       <Layout className="hospital-dashboard-wrapper" style={{ minHeight: '100vh', background: hospitalTheme.background }}>
@@ -1042,8 +1127,16 @@ export default function HospitalDashboard() {
             </div>
           </Card>
 
-          {/* Upcoming Appointments - Full width, fills remaining height */}
-          <Row gutter={[16, 16]} style={{ flex: 1, minHeight: 0, display: 'flex' }}>
+            {/* Main Tabs: Appointments and IPD Management */}
+            <Tabs
+              activeKey={activeMainTab}
+              onChange={setActiveMainTab}
+              items={[
+                {
+                  key: 'appointments',
+                  label: 'Appointments',
+                  children: (
+                    <Row gutter={[16, 16]} style={{ flex: 1, minHeight: 0, display: 'flex' }}>
             <Col xs={24} lg={24} style={{ display: 'flex', flexDirection: 'column', minHeight: 0 }}>
               <Card 
                 variant="borderless"
@@ -1097,6 +1190,7 @@ export default function HospitalDashboard() {
                           overflow: 'hidden',
                           display: 'flex',
                           flexDirection: 'column',
+                          paddingTop: 16,
                         }}>
                 {isMobile ? (
                             <Space direction="vertical" size={12} style={{ width: '100%', flex: 1, overflowY: 'auto', paddingRight: 8, paddingBottom: 40 }}>
@@ -1138,10 +1232,155 @@ export default function HospitalDashboard() {
               </Card>
             </Col>
           </Row>
+                  ),
+                },
+                {
+                  key: 'ipd',
+                  label: 'IPD Management',
+                  children: (
+                    <Row gutter={[16, 16]} style={{ flex: 1, minHeight: 0, display: 'flex' }}>
+                      <Col xs={24} lg={24} style={{ display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+                        <Card 
+                          variant="borderless"
+                          style={{ 
+                            borderRadius: 16,
+                            boxShadow: '0 2px 8px rgba(0, 0, 0, 0.08)',
+                            border: '1px solid #E5E7EB',
+                            background: '#fff',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            flex: 1,
+                            minHeight: 0,
+                          }}
+                          bodyStyle={{ 
+                            flex: 1, 
+                            minHeight: 0, 
+                            display: 'flex', 
+                            flexDirection: 'column',
+                            overflow: 'hidden',
+                            padding: 0,
+                          }}
+                        >
+                          <div style={{ 
+                            flex: 1, 
+                            minHeight: 0, 
+                            display: 'flex', 
+                            flexDirection: 'column',
+                            overflow: 'hidden',
+                            padding: isMobile ? 12 : 16,
+                          }}>
+                            <Tabs
+                              items={[
+                                {
+                                  key: 'structure',
+                                  label: 'Bed Structure',
+                                  children: (
+                                    <div style={{ 
+                                      flex: 1,
+                                      minHeight: 0,
+                                      overflow: 'hidden',
+                                      display: 'flex',
+                                      flexDirection: 'column',
+                                      paddingTop: 16,
+                                    }}>
+                                      <BedStructureManager />
+                                    </div>
+                                  ),
+                                },
+                                {
+                                  key: 'beds',
+                                  label: 'Bed Occupancy',
+                                  children: (
+                                    <div style={{ 
+                                      flex: 1,
+                                      minHeight: 0,
+                                      overflow: 'hidden',
+                                      display: 'flex',
+                                      flexDirection: 'column',
+                                      paddingTop: 16,
+                                    }}>
+                                      <BedOccupancyMap
+                                        onBedClick={(bed) => {
+                                          console.log('Bed clicked:', bed);
+                                        }}
+                                      />
+                                    </div>
+                                  ),
+                                },
+                                {
+                                  key: 'encounters',
+                                  label: 'Active Encounters',
+                                  children: (
+                                    <div style={{ 
+                                      flex: 1,
+                                      minHeight: 0,
+                                      overflow: 'hidden',
+                                      display: 'flex',
+                                      flexDirection: 'column',
+                                      paddingTop: 16,
+                                    }}>
+                                      <IpdEncountersList
+                                        onTransfer={(encounter: IpdEncounter) => {
+                                          setSelectedEncounter(encounter);
+                                          setIsTransferModalOpen(true);
+                                        }}
+                                        onDischarge={(encounter: IpdEncounter) => {
+                                          setSelectedEncounter(encounter);
+                                          setIsDischargeModalOpen(true);
+                                        }}
+                                      />
+                                    </div>
+                                  ),
+                                },
+                              ]}
+                              style={{
+                                display: 'flex',
+                                flexDirection: 'column',
+                                flex: 1,
+                                minHeight: 0,
+                              }}
+                            />
+                          </div>
+                        </Card>
+                      </Col>
+                    </Row>
+                  ),
+                },
+              ]}
+              style={{ marginBottom: 24 }}
+            />
           </div>
         </Content>
       </Layout>
       </Layout>
+
+      {/* Transfer Modal */}
+      <TransferModal
+        open={isTransferModalOpen}
+        onCancel={() => {
+          setIsTransferModalOpen(false);
+          setSelectedEncounter(null);
+        }}
+        onSuccess={() => {
+          queryClient.invalidateQueries({ queryKey: ['/api/ipd/encounters'] });
+          queryClient.invalidateQueries({ queryKey: ['/api/ipd/beds/available'] });
+        }}
+        encounter={selectedEncounter}
+      />
+
+      {/* Discharge Modal */}
+      <DischargeModal
+        open={isDischargeModalOpen}
+        onCancel={() => {
+          setIsDischargeModalOpen(false);
+          setSelectedEncounter(null);
+        }}
+        onSuccess={() => {
+          queryClient.invalidateQueries({ queryKey: ['/api/ipd/encounters'] });
+          queryClient.invalidateQueries({ queryKey: ['/api/ipd/beds/available'] });
+        }}
+        encounter={selectedEncounter}
+      />
     </>
   );
 }

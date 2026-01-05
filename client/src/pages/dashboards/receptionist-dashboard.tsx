@@ -61,8 +61,11 @@ import { normalizeStatus, APPOINTMENT_STATUS } from '../../lib/appointment-statu
 import { playNotificationSound } from '../../lib/notification-sounds';
 import { NotificationBell } from '../../components/notifications/NotificationBell';
 import LabReportViewerModal from '../../components/modals/lab-report-viewer-modal';
+import { QueuePanel } from '../../components/queue/QueuePanel';
+import { AdmissionModal } from '../../components/ipd';
 import tubeIcon from '../../assets/images/tube.png';
 import checkInIcon from '../../assets/images/check-in.png';
+import medicalIcon from '../../assets/images/medical.png';
 
 const { Content, Sider } = Layout;
 const { Title, Text } = Typography;
@@ -106,6 +109,9 @@ export default function ReceptionistDashboard() {
   const [activeAppointmentTab, setActiveAppointmentTab] = useState<string>('today_all');
   const [patientInfoDrawerOpen, setPatientInfoDrawerOpen] = useState(false);
   const [patientInfo, setPatientInfo] = useState<any>(null);
+  const [isAdmissionModalOpen, setIsAdmissionModalOpen] = useState(false);
+  const [selectedPatientForAdmission, setSelectedPatientForAdmission] = useState<number | undefined>(undefined);
+  const [hospitalId, setHospitalId] = useState<number | undefined>(undefined);
   const [patientInfoLoading, setPatientInfoLoading] = useState(false);
   const [recommendedLabTests, setRecommendedLabTests] = useState<any[]>([]);
   const [confirmingLabTest, setConfirmingLabTest] = useState<number | null>(null);
@@ -523,6 +529,9 @@ export default function ReceptionistDashboard() {
         hospitalName: data.hospitalName,
         fullData: data 
       });
+      if (data.hospitalId) {
+        setHospitalId(data.hospitalId);
+      }
       return data;
     },
     enabled: !!user && user.role?.toUpperCase() === 'RECEPTIONIST',
@@ -706,6 +715,8 @@ export default function ReceptionistDashboard() {
   // Get appointments for active tab (only future appointments)
   const appointmentsToShow = useMemo(() => {
     switch (activeAppointmentTab) {
+      case 'queue':
+        return []; // Queue tab shows QueuePanel component, not appointments
       case 'today_all':
         return todayAllAppointments;
       case 'pending':
@@ -742,6 +753,7 @@ export default function ReceptionistDashboard() {
     const tabs: Array<{ key: string; label: string; count: number }> = [];
     
     // Fixed OPD ops tabs (Today)
+    tabs.push({ key: 'queue', label: 'Queue Management', count: 0 }); // Queue tab always visible
     tabs.push({ key: 'today_all', label: `Today (${todayAllAppointments.length})`, count: todayAllAppointments.length });
     tabs.push({ key: 'pending', label: `Pending (${pendingAppointments.length})`, count: pendingAppointments.length });
     tabs.push({ key: 'confirmed', label: `Confirmed (${confirmedAppointments.length})`, count: confirmedAppointments.length });
@@ -1811,6 +1823,25 @@ export default function ReceptionistDashboard() {
               onClick={() => handleMessage(record.phone)}
               title="Message patient"
             />
+            
+            {/* Admit to IPD button - available for all statuses if patient exists */}
+            {record.patientId && (
+              <Button 
+                size="small"
+                type="default"
+                icon={<img src={medicalIcon} alt="Admit" style={{ width: 16, height: 16 }} />}
+                onClick={() => {
+                  setSelectedPatientForAdmission(record.patientId);
+                  setIsAdmissionModalOpen(true);
+                }}
+                title="Admit patient to IPD"
+                style={{ 
+                  background: '#f0f9ff', 
+                  border: '1px solid #91caff',
+                  color: '#1890ff'
+                }}
+              />
+            )}
             </Space>
           );
       },
@@ -2489,11 +2520,20 @@ export default function ReceptionistDashboard() {
           flex-direction: column !important;
           flex: 1 1 auto !important;
           min-height: 0 !important;
+          position: relative !important;
+        }
+        .receptionist-dashboard-wrapper .ant-tabs-nav {
+          margin: 0 !important;
+          padding: 0 16px !important;
+          flex-shrink: 0 !important;
+          position: relative !important;
+          z-index: 1 !important;
         }
         .receptionist-dashboard-wrapper .ant-tabs-content-holder {
           flex: 1 1 auto !important;
           min-height: 0 !important;
           overflow: hidden !important;
+          position: relative !important;
         }
         .receptionist-dashboard-wrapper .ant-tabs-content {
           height: 100% !important;
@@ -2507,6 +2547,7 @@ export default function ReceptionistDashboard() {
           flex-direction: column !important;
           flex: 1 1 auto !important;
           min-height: 0 !important;
+          padding-top: 0 !important;
         }
         /* Add padding to table body scroll container so last row is fully visible in all tabs */
         .receptionist-dashboard-wrapper .ant-table-body,
@@ -2871,6 +2912,15 @@ export default function ReceptionistDashboard() {
                     >
                       Create Appointment (Walk-in)
                     </Button>
+                    <Button
+                      type="default"
+                      size={isMobile ? "middle" : "small"}
+                      icon={<UserAddOutlined />}
+                      onClick={() => setIsAdmissionModalOpen(true)}
+                      style={{ borderRadius: 8 }}
+                    >
+                      Admit to IPD
+                    </Button>
                   </Space>
                 }
                 extra={<Button type="link" onClick={() => message.info('View all appointments feature coming soon')}>View All</Button>}
@@ -2915,12 +2965,18 @@ export default function ReceptionistDashboard() {
                         <div style={{ 
                           flex: 1,
                           minHeight: 0,
-                            height: '100%',
+                          height: '100%',
                           overflow: 'hidden',
                           display: 'flex',
                           flexDirection: 'column',
+                          paddingTop: 16,
                         }}>
-                          {isMobile ? (
+                          {tab.key === 'queue' ? (
+                            // Queue Management Panel
+                            <div style={{ flex: 1, overflowY: 'auto', padding: '16px' }}>
+                              <QueuePanel />
+                            </div>
+                          ) : isMobile ? (
                               <Space direction="vertical" size={12} style={{ width: '100%', flex: 1, overflowY: 'auto', paddingRight: 8, paddingBottom: 40 }}>
                               {appointmentsLoading ? (
                                 <>
@@ -4309,6 +4365,24 @@ export default function ReceptionistDashboard() {
           </div>
         )}
       </Modal>
+
+      {/* IPD Admission Modal */}
+      <AdmissionModal
+        open={isAdmissionModalOpen}
+        onCancel={() => {
+          setIsAdmissionModalOpen(false);
+          setSelectedPatientForAdmission(undefined);
+        }}
+        onSuccess={(encounter) => {
+          message.success('Patient admitted successfully');
+          queryClient.invalidateQueries({ queryKey: ['/api/ipd/encounters'] });
+          queryClient.invalidateQueries({ queryKey: ['/api/ipd/beds/available'] });
+          setIsAdmissionModalOpen(false);
+          setSelectedPatientForAdmission(undefined);
+        }}
+        patientId={selectedPatientForAdmission}
+        hospitalId={hospitalId}
+      />
 
       <LabReportViewerModal
         open={isLabReportModalOpen}

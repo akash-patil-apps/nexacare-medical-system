@@ -53,6 +53,7 @@ import {
 import { getISTNow, toIST, getISTStartOfDay, isSameDayIST } from '../../lib/timezone';
 import { playNotificationSound } from '../../lib/notification-sounds';
 import { NotificationBell } from '../../components/notifications/NotificationBell';
+import { NowServingWidget } from '../../components/queue/NowServingWidget';
 
 const { Content, Sider } = Layout;
 const { Title, Text } = Typography;
@@ -1601,6 +1602,42 @@ export default function DoctorDashboard() {
           background: var(--ant-table-bg) !important;
           box-shadow: -2px 0 8px rgba(0, 0, 0, 0.1) !important;
         }
+        
+        /* Fix tabs overlapping with table content */
+        .doctor-dashboard-wrapper .ant-tabs {
+          display: flex !important;
+          flex-direction: column !important;
+          flex: 1 1 auto !important;
+          min-height: 0 !important;
+          position: relative !important;
+        }
+        .doctor-dashboard-wrapper .ant-tabs-nav {
+          margin: 0 !important;
+          padding: 0 16px !important;
+          flex-shrink: 0 !important;
+          position: relative !important;
+          z-index: 1 !important;
+        }
+        .doctor-dashboard-wrapper .ant-tabs-content-holder {
+          flex: 1 1 auto !important;
+          min-height: 0 !important;
+          overflow: hidden !important;
+          position: relative !important;
+        }
+        .doctor-dashboard-wrapper .ant-tabs-content {
+          height: 100% !important;
+          display: flex !important;
+          flex: 1 1 auto !important;
+          min-height: 0 !important;
+        }
+        .doctor-dashboard-wrapper .ant-tabs-tabpane {
+          height: 100% !important;
+          display: flex !important;
+          flex-direction: column !important;
+          flex: 1 1 auto !important;
+          min-height: 0 !important;
+          padding-top: 0 !important;
+        }
       `}</style>
       <Layout className="doctor-dashboard-wrapper" style={{ minHeight: '100vh', background: doctorTheme.background }}>
       {/* Desktop/Tablet Sidebar */}
@@ -1841,6 +1878,13 @@ export default function DoctorDashboard() {
               />
             </div>
 
+            {/* Queue Management Widget - Now Serving */}
+            {doctorId && (
+              <div style={{ marginBottom: 24 }}>
+                <NowServingWidget doctorId={doctorId} />
+              </div>
+            )}
+
             {/* Upcoming Appointments - Full width, matching receptionist dashboard */}
             <Card
               variant="borderless"
@@ -1891,7 +1935,7 @@ export default function DoctorDashboard() {
                               overflow: 'hidden',
                               display: 'flex',
                               flexDirection: 'column',
-                              marginTop: 8,
+                              paddingTop: 16,
                             }}>
                               {isMobile ? (
                                 <div style={{ flex: 1, overflowY: 'auto', paddingBottom: 20 }}>
