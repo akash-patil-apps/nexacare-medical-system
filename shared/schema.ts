@@ -8,6 +8,7 @@ import {
   timestamp,
   decimal,
   uuid,
+  unique,
 } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { createInsertSchema } from "drizzle-zod";
@@ -319,12 +320,163 @@ export const notificationsRelations = relations(notifications, ({ one }) => ({
   user: one(users, { fields: [notifications.userId], references: [users.id] }),
 }));
 
+// OPD Queue Entries
+export const opdQueueEntries = pgTable("opd_queue_entries", {
+  id: serial("id").primaryKey(),
+  hospitalId: integer("hospital_id").references(() => hospitals.id).notNull(),
+  doctorId: integer("doctor_id").references(() => doctors.id).notNull(),
+  appointmentId: integer("appointment_id").references(() => appointments.id),
+  patientId: integer("patient_id").references(() => patients.id).notNull(),
+  queueDate: text("queue_date").notNull(), // YYYY-MM-DD in IST
+  tokenNumber: integer("token_number").notNull(),
+  position: integer("position").notNull(), // order in queue
+  status: text("status").default("waiting").notNull(), // waiting, called, in_consultation, completed, skipped, no_show, cancelled
+  checkedInAt: timestamp("checked_in_at"),
+  calledAt: timestamp("called_at"),
+  consultationStartedAt: timestamp("consultation_started_at"),
+  completedAt: timestamp("completed_at"),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at"),
+}, (table) => {
+  return {
+    doctorDateTokenUnique: unique().on(table.doctorId, table.queueDate, table.tokenNumber),
+    appointmentUnique: unique().on(table.appointmentId),
+  };
+});
+
+// IPD Floors (optional hierarchy level)
+export const floors = pgTable("floors", {
+  id: serial("id").primaryKey(),
+  hospitalId: integer("hospital_id").references(() => hospitals.id).notNull(),
+  floorNumber: integer("floor_number").notNull(), // 0 = Ground, 1 = First, -1 = Basement, etc.
+  floorName: text("floor_name"), // Optional: "Ground Floor", "First Floor", "ICU Floor", etc.
+  description: text("description"),
+  isActive: boolean("is_active").default(true),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+// IPD Wards
+export const wards = pgTable("wards", {
+  id: serial("id").primaryKey(),
+  hospitalId: integer("hospital_id").references(() => hospitals.id).notNull(),
+  floorId: integer("floor_id").references(() => floors.id), // Optional: null if no floor structure
+  name: text("name").notNull(),
+  type: text("type").notNull(), // general, icu, er, pediatric, maternity, surgical, etc.
+  genderPolicy: text("gender_policy"), // male, female, mixed, null
+  capacity: integer("capacity"), // Total bed capacity
+  description: text("description"),
+  isActive: boolean("is_active").default(true),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+// IPD Rooms
+export const rooms = pgTable("rooms", {
+  id: serial("id").primaryKey(),
+  wardId: integer("ward_id").references(() => wards.id).notNull(),
+  roomNumber: text("room_number").notNull(),
+  roomName: text("room_name"), // Optional: "VIP Suite", "Deluxe Room", etc.
+  category: text("category").notNull(), // general, semi, private, deluxe, vip, icu, etc.
+  capacity: integer("capacity"), // Number of beds in this room
+  amenities: text("amenities"), // JSON: ["AC", "TV", "Attached Bathroom", etc.]
+  isActive: boolean("is_active").default(true),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+// IPD Beds
+export const beds = pgTable("beds", {
+  id: serial("id").primaryKey(),
+  roomId: integer("room_id").references(() => rooms.id).notNull(),
+  bedNumber: text("bed_number").notNull(),
+  bedName: text("bed_name"), // Optional: "Bed A", "Bed 1", etc.
+  status: text("status").default("available").notNull(), // available, occupied, cleaning, blocked, maintenance
+  bedType: text("bed_type"), // standard, electric, manual, icu, etc.
+  equipment: text("equipment"), // JSON: ["Ventilator", "Monitor", "Oxygen", etc.]
+  notes: text("notes"), // Special notes about this bed
+  lastCleanedAt: timestamp("last_cleaned_at"),
+  blockedReason: text("blocked_reason"), // Why bed is blocked
+  blockedUntil: timestamp("blocked_until"), // When block expires
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at"),
+});
+
+// IPD Encounters
+export const ipdEncounters = pgTable("ipd_encounters", {
+  id: serial("id").primaryKey(),
+  hospitalId: integer("hospital_id").references(() => hospitals.id).notNull(),
+  patientId: integer("patient_id").references(() => patients.id).notNull(),
+  admittingDoctorId: integer("admitting_doctor_id").references(() => doctors.id),
+  attendingDoctorId: integer("attending_doctor_id").references(() => doctors.id),
+  admissionType: text("admission_type").notNull(), // elective, emergency, daycare, observation
+  status: text("status").default("admitted").notNull(), // admitted, transferred, discharged
+  admittedAt: timestamp("admitted_at").defaultNow(),
+  dischargedAt: timestamp("discharged_at"),
+  dischargeSummaryText: text("discharge_summary_text"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at"),
+});
+
+// Bed Allocations (for transfers)
+export const bedAllocations = pgTable("bed_allocations", {
+  id: serial("id").primaryKey(),
+  encounterId: integer("encounter_id").references(() => ipdEncounters.id).notNull(),
+  bedId: integer("bed_id").references(() => beds.id).notNull(),
+  fromAt: timestamp("from_at").defaultNow(),
+  toAt: timestamp("to_at"), // null if current allocation
+  reason: text("reason"), // Transfer reason or "Initial admission"
+  transferredBy: integer("transferred_by").references(() => users.id), // User who performed transfer
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
 export const statesRelations = relations(states, ({ many }) => ({
   cities: many(cities),
 }));
 
 export const citiesRelations = relations(cities, ({ one }) => ({
   state: one(states, { fields: [cities.stateId], references: [states.id] }),
+}));
+
+// Queue Relations
+export const opdQueueEntriesRelations = relations(opdQueueEntries, ({ one }) => ({
+  hospital: one(hospitals, { fields: [opdQueueEntries.hospitalId], references: [hospitals.id] }),
+  doctor: one(doctors, { fields: [opdQueueEntries.doctorId], references: [doctors.id] }),
+  appointment: one(appointments, { fields: [opdQueueEntries.appointmentId], references: [appointments.id] }),
+  patient: one(patients, { fields: [opdQueueEntries.patientId], references: [patients.id] }),
+}));
+
+// IPD Relations
+export const floorsRelations = relations(floors, ({ one, many }) => ({
+  hospital: one(hospitals, { fields: [floors.hospitalId], references: [hospitals.id] }),
+  wards: many(wards),
+}));
+
+export const wardsRelations = relations(wards, ({ one, many }) => ({
+  hospital: one(hospitals, { fields: [wards.hospitalId], references: [hospitals.id] }),
+  floor: one(floors, { fields: [wards.floorId], references: [floors.id] }),
+  rooms: many(rooms),
+}));
+
+export const roomsRelations = relations(rooms, ({ one, many }) => ({
+  ward: one(wards, { fields: [rooms.wardId], references: [wards.id] }),
+  beds: many(beds),
+}));
+
+export const bedsRelations = relations(beds, ({ one, many }) => ({
+  room: one(rooms, { fields: [beds.roomId], references: [rooms.id] }),
+  allocations: many(bedAllocations),
+}));
+
+export const ipdEncountersRelations = relations(ipdEncounters, ({ one, many }) => ({
+  hospital: one(hospitals, { fields: [ipdEncounters.hospitalId], references: [hospitals.id] }),
+  patient: one(patients, { fields: [ipdEncounters.patientId], references: [patients.id] }),
+  admittingDoctor: one(doctors, { fields: [ipdEncounters.admittingDoctorId], references: [doctors.id] }),
+  attendingDoctor: one(doctors, { fields: [ipdEncounters.attendingDoctorId], references: [doctors.id] }),
+  bedAllocations: many(bedAllocations),
+}));
+
+export const bedAllocationsRelations = relations(bedAllocations, ({ one }) => ({
+  encounter: one(ipdEncounters, { fields: [bedAllocations.encounterId], references: [ipdEncounters.id] }),
+  bed: one(beds, { fields: [bedAllocations.bedId], references: [beds.id] }),
 }));
 
 // ZOD VALIDATION SCHEMAS
@@ -429,3 +581,24 @@ export type OtpVerification = InferSelectModel<typeof otpVerifications>;
 
 export type InsertNotification = InferInsertModel<typeof notifications>;
 export type Notification = InferSelectModel<typeof notifications>;
+
+export type InsertOpdQueueEntry = InferInsertModel<typeof opdQueueEntries>;
+export type OpdQueueEntry = InferSelectModel<typeof opdQueueEntries>;
+
+export type InsertWard = InferInsertModel<typeof wards>;
+export type Ward = InferSelectModel<typeof wards>;
+
+export type InsertRoom = InferInsertModel<typeof rooms>;
+export type Room = InferSelectModel<typeof rooms>;
+
+export type InsertBed = InferInsertModel<typeof beds>;
+export type Bed = InferSelectModel<typeof beds>;
+
+export type InsertIpdEncounter = InferInsertModel<typeof ipdEncounters>;
+export type IpdEncounter = InferSelectModel<typeof ipdEncounters>;
+
+export type InsertBedAllocation = InferInsertModel<typeof bedAllocations>;
+export type BedAllocation = InferSelectModel<typeof bedAllocations>;
+
+export type InsertFloor = InferInsertModel<typeof floors>;
+export type Floor = InferSelectModel<typeof floors>;
