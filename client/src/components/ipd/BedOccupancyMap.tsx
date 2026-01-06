@@ -61,11 +61,28 @@ export const BedOccupancyMap: React.FC<BedOccupancyMapProps> = ({
 
     const beds = structure.beds;
     const total = beds.length;
+    
+    // Log bed statuses for debugging
+    console.log('🛏️ BedOccupancyMap - Bed statuses:', beds.map((b: any) => ({
+      id: b.id,
+      bedNumber: b.bedNumber,
+      status: b.status,
+    })));
+    
     const available = beds.filter((b) => b.status === 'available').length;
     const occupied = beds.filter((b) => b.status === 'occupied').length;
     const cleaning = beds.filter((b) => b.status === 'cleaning').length;
     const blocked = beds.filter((b) => b.status === 'blocked').length;
     const occupancyRate = total > 0 ? ((occupied / total) * 100).toFixed(1) : '0';
+
+    console.log('🛏️ BedOccupancyMap - Stats calculated:', {
+      total,
+      available,
+      occupied,
+      cleaning,
+      blocked,
+      occupancyRate,
+    });
 
     return {
       total,

@@ -3,7 +3,7 @@ import * as ipdService from '../services/ipd.service';
 import { authenticateToken, authorizeRoles, type AuthenticatedRequest } from '../middleware/auth';
 import { db } from '../db';
 import { eq } from 'drizzle-orm';
-import { receptionists, hospitals } from '../../shared/schema';
+import { receptionists, hospitals, doctors } from '../../shared/schema';
 
 const router = Router();
 
@@ -12,7 +12,10 @@ router.use(authenticateToken);
 
 // Helper to get hospital ID
 const getHospitalId = async (user: any): Promise<number> => {
-  if (user.role === 'RECEPTIONIST') {
+  const userRole = user.role?.toUpperCase();
+  console.log(`🔍 getHospitalId - User role: ${user.role} (normalized: ${userRole}), User ID: ${user.id}`);
+  
+  if (userRole === 'RECEPTIONIST') {
     const receptionist = await db
       .select()
       .from(receptionists)
@@ -22,7 +25,7 @@ const getHospitalId = async (user: any): Promise<number> => {
       throw new Error('Receptionist not found');
     }
     return receptionist[0].hospitalId;
-  } else if (user.role === 'ADMIN' || user.role === 'HOSPITAL') {
+  } else if (userRole === 'ADMIN' || userRole === 'HOSPITAL') {
     const hospital = await db
       .select()
       .from(hospitals)
@@ -32,7 +35,24 @@ const getHospitalId = async (user: any): Promise<number> => {
       throw new Error('Hospital not found');
     }
     return hospital[0].id;
+  } else if (userRole === 'DOCTOR') {
+    console.log(`🔍 getHospitalId - Checking DOCTOR role, user ID: ${user.id}`);
+    const doctor = await db
+      .select()
+      .from(doctors)
+      .where(eq(doctors.userId, user.id))
+      .limit(1);
+    console.log(`🔍 getHospitalId - Doctor query result:`, doctor.length > 0 ? { id: doctor[0].id, hospitalId: doctor[0].hospitalId } : 'not found');
+    if (doctor.length === 0) {
+      throw new Error('Doctor not found');
+    }
+    if (!doctor[0].hospitalId) {
+      throw new Error('Doctor not associated with a hospital');
+    }
+    console.log(`✅ getHospitalId - Returning hospital ID: ${doctor[0].hospitalId}`);
+    return doctor[0].hospitalId;
   }
+  console.log(`❌ getHospitalId - Unauthorized: role=${user.role}, id=${user.id}`);
   throw new Error('Unauthorized');
 };
 
@@ -350,6 +370,32 @@ router.patch('/encounters/:encounterId/transfer', authorizeRoles('ADMIN', 'HOSPI
   } catch (err: any) {
     console.error('❌ Transfer patient error:', err);
     res.status(400).json({ message: err.message || 'Failed to transfer patient' });
+  }
+});
+
+router.patch('/encounters/:encounterId/transfer-doctor', authorizeRoles('ADMIN', 'HOSPITAL', 'RECEPTIONIST', 'DOCTOR'), async (req: AuthenticatedRequest, res) => {
+  try {
+    const { encounterId } = req.params;
+    const { newAttendingDoctorId, reason } = req.body;
+
+    if (!newAttendingDoctorId) {
+      return res.status(400).json({ message: 'newAttendingDoctorId is required' });
+    }
+
+    const encounter = await ipdService.transferPatientToDoctor({
+      encounterId: +encounterId,
+      newAttendingDoctorId: +newAttendingDoctorId,
+      reason,
+      actorUserId: req.user?.id,
+      actorRole: req.user?.role || 'UNKNOWN',
+      ipAddress: req.ip || req.socket.remoteAddress || undefined,
+      userAgent: req.get('user-agent') || undefined,
+    });
+
+    res.json(encounter);
+  } catch (err: any) {
+    console.error('❌ Transfer patient to doctor error:', err);
+    res.status(400).json({ message: err.message || 'Failed to transfer patient to doctor' });
   }
 });
 

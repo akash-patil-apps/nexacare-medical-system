@@ -11,7 +11,7 @@ import {
   hospitals,
   users,
 } from '../../shared/schema';
-import { eq, and, sql, isNull, asc, inArray } from 'drizzle-orm';
+import { eq, and, sql, isNull, asc, inArray, or } from 'drizzle-orm';
 import * as auditService from './audit.service';
 
 /**
@@ -210,6 +210,8 @@ export const getBeds = async (roomId: number) => {
  * Get available beds for hospital (with full hierarchy)
  */
 export const getAvailableBeds = async (hospitalId: number) => {
+  // Get beds that are available OR cleaning (cleaning beds should be available for new patients)
+  // Also check that there's no active allocation (toAt is null)
   const availableBeds = await db
     .select({
       bed: beds,
@@ -221,10 +223,15 @@ export const getAvailableBeds = async (hospitalId: number) => {
     .leftJoin(rooms, eq(beds.roomId, rooms.id))
     .leftJoin(wards, eq(rooms.wardId, wards.id))
     .leftJoin(floors, eq(wards.floorId, floors.id))
+    .leftJoin(bedAllocations, and(
+      eq(bedAllocations.bedId, beds.id),
+      isNull(bedAllocations.toAt) // Only active allocations
+    ))
     .where(
       and(
         eq(wards.hospitalId, hospitalId),
-        eq(beds.status, 'available'),
+        sql`${beds.status} IN ('available', 'cleaning')`, // Include both available and cleaning beds
+        isNull(bedAllocations.id), // No active allocation
         eq(rooms.isActive, true),
         eq(wards.isActive, true),
       ),
@@ -334,15 +341,44 @@ export const getBedStructure = async (hospitalId: number) => {
     const isOccupied = !!row.currentAllocation;
     
     // Determine bed status
+    // Priority: occupied > blocked > cleaning > available
+    // If there's an active allocation, bed is occupied regardless of bed.status
+    // If no active allocation, use bed.status but ensure it's not showing as occupied
     let status = bed.status || 'available';
+    
+    // Log bed status determination for debugging
+    if (bedsListRaw.length <= 3 || bedsListRaw.indexOf(row) < 3) {
+      console.log(`🛏️ Bed ${bed.id} (${bed.bedNumber}) status determination:`, {
+        bedId: bed.id,
+        bedNumber: bed.bedNumber,
+        bedStatusInDb: bed.status,
+        hasActiveAllocation: isOccupied,
+        allocationId: row.currentAllocation?.id || null,
+        determinedStatus: 'pending',
+      });
+    }
+    
     if (isOccupied) {
+      // Active allocation exists - bed is definitely occupied
       status = 'occupied';
-    } else if (bed.status === 'blocked') {
-      status = 'blocked';
-    } else if (bed.status === 'cleaning') {
-      status = 'cleaning';
     } else {
-      status = 'available';
+      // No active allocation - bed should not be occupied
+      // Priority: blocked > available (cleaning beds should be available for new patients if no allocation)
+      if (bed.status === 'blocked') {
+        // Keep blocked status
+        status = 'blocked';
+      } else if (bed.status === 'occupied') {
+        // Bed status says occupied but no active allocation - fix inconsistency
+        status = 'available';
+        console.log(`  ✅ Fixed bed ${bed.id}: bed.status was 'occupied' but no active allocation, setting to 'available'`);
+      } else {
+        // If no active allocation, bed should be available (even if status says 'cleaning')
+        // Cleaning is a temporary state - if there's no active allocation, the bed is available for new patients
+        status = 'available';
+        if (bed.status && bed.status !== 'available' && bed.status !== 'blocked') {
+          console.log(`  ✅ Fixed bed ${bed.id}: bed.status was '${bed.status}' but no active allocation, setting to 'available'`);
+        }
+      }
     }
     
     return {
@@ -359,13 +395,22 @@ export const getBedStructure = async (hospitalId: number) => {
   }).filter((b: any) => b !== null);
   
   console.log(`📊 Found ${bedsList.length} beds`);
+  
+  // Log bed status breakdown
+  const statusBreakdown = bedsList.reduce((acc: any, bed: any) => {
+    acc[bed.status] = (acc[bed.status] || 0) + 1;
+    return acc;
+  }, {});
+  console.log('📊 Bed status breakdown:', statusBreakdown);
+  
   if (bedsList.length > 0) {
-    console.log('📊 Sample bed:', {
-      id: bedsList[0].id,
-      roomId: bedsList[0].roomId,
-      status: bedsList[0].status,
-      bedNumber: bedsList[0].bedNumber,
-    });
+    console.log('📊 Sample beds:', bedsList.slice(0, 3).map((bed: any) => ({
+      id: bed.id,
+      bedNumber: bed.bedNumber,
+      status: bed.status,
+      roomId: bed.roomId,
+      hasCurrentPatient: !!bed.currentPatient,
+    })));
   }
 
   const structure = {
@@ -489,12 +534,34 @@ export const getIpdEncounters = async (filters: {
     conditions.push(eq(ipdEncounters.patientId, filters.patientId));
   }
   if (filters.doctorId) {
-    conditions.push(
-      sql`(${ipdEncounters.admittingDoctorId} = ${filters.doctorId} OR ${ipdEncounters.attendingDoctorId} = ${filters.doctorId})`,
+    // Filter by doctor ID - check both admitting and attending doctor
+    // Also ensure we convert to number for proper comparison
+    const doctorIdNum = typeof filters.doctorId === 'string' ? parseInt(filters.doctorId, 10) : filters.doctorId;
+    
+    // Use or() from drizzle-orm for proper type-safe filtering
+    // Wrap in a check to ensure it's not undefined
+    const doctorCondition = or(
+      eq(ipdEncounters.admittingDoctorId, doctorIdNum),
+      eq(ipdEncounters.attendingDoctorId, doctorIdNum)
     );
+    
+    if (doctorCondition) {
+      conditions.push(doctorCondition);
+    }
+    console.log(`🔍 Filtering encounters by doctorId: ${doctorIdNum} (type: ${typeof doctorIdNum})`);
   }
   if (filters.status) {
     conditions.push(eq(ipdEncounters.status, filters.status));
+  }
+
+  const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
+  
+  console.log(`🔍 getIpdEncounters filters:`, JSON.stringify(filters, null, 2));
+  console.log(`🔍 Conditions count: ${conditions.length}`);
+  if (filters.doctorId) {
+    const doctorIdNum = typeof filters.doctorId === 'string' ? parseInt(filters.doctorId, 10) : filters.doctorId;
+    console.log(`🔍 Doctor filter - doctorId: ${filters.doctorId}, parsed: ${doctorIdNum}, type: ${typeof filters.doctorId}`);
+    console.log(`🔍 Where clause structure:`, whereClause ? 'exists' : 'undefined');
   }
 
   const encounters = await db
@@ -508,16 +575,63 @@ export const getIpdEncounters = async (filters: {
     .leftJoin(patients, eq(ipdEncounters.patientId, patients.id))
     .leftJoin(users, eq(patients.userId, users.id))
     .leftJoin(hospitals, eq(ipdEncounters.hospitalId, hospitals.id))
-    .where(conditions.length > 0 ? and(...conditions) : undefined);
+    .where(whereClause);
+  
+  console.log(`📋 Found ${encounters.length} raw encounters before enrichment`);
+  
+  // Debug: Log first few encounters to see doctor IDs
+  if (filters.doctorId && encounters.length > 0) {
+    console.log(`🔍 Sample encounters for doctor ${filters.doctorId}:`, encounters.slice(0, 3).map(enc => ({
+      id: enc.encounter.id,
+      patientId: enc.encounter.patientId,
+      admittingDoctorId: enc.encounter.admittingDoctorId,
+      attendingDoctorId: enc.encounter.attendingDoctorId,
+      status: enc.encounter.status,
+    })));
+  } else if (filters.doctorId && encounters.length === 0) {
+    console.log(`⚠️ No encounters found for doctor ${filters.doctorId}. Checking all encounters...`);
+    // Debug: Check if there are any encounters at all for this hospital
+    const allEncounters = await db
+      .select({
+        id: ipdEncounters.id,
+        patientId: ipdEncounters.patientId,
+        admittingDoctorId: ipdEncounters.admittingDoctorId,
+        attendingDoctorId: ipdEncounters.attendingDoctorId,
+        status: ipdEncounters.status,
+      })
+      .from(ipdEncounters)
+      .where(filters.hospitalId ? eq(ipdEncounters.hospitalId, filters.hospitalId) : undefined)
+      .limit(10);
+    console.log(`📋 All encounters in hospital (first 10):`, allEncounters);
+  }
 
   // Enrich with doctor info and current bed separately
   const enrichedEncounters = await Promise.all(
     encounters.map(async (enc) => {
+      // Get admitting doctor with user info
       const admittingDoctor = enc.encounter.admittingDoctorId
-        ? await db.select().from(doctors).where(eq(doctors.id, enc.encounter.admittingDoctorId)).limit(1)
+        ? await db
+            .select({
+              doctor: doctors,
+              user: users,
+            })
+            .from(doctors)
+            .leftJoin(users, eq(doctors.userId, users.id))
+            .where(eq(doctors.id, enc.encounter.admittingDoctorId))
+            .limit(1)
         : [];
+      
+      // Get attending doctor with user info
       const attendingDoctor = enc.encounter.attendingDoctorId
-        ? await db.select().from(doctors).where(eq(doctors.id, enc.encounter.attendingDoctorId)).limit(1)
+        ? await db
+            .select({
+              doctor: doctors,
+              user: users,
+            })
+            .from(doctors)
+            .leftJoin(users, eq(doctors.userId, users.id))
+            .where(eq(doctors.id, enc.encounter.attendingDoctorId))
+            .limit(1)
         : [];
       
       // Get current bed allocation
@@ -544,25 +658,51 @@ export const getIpdEncounters = async (filters: {
         } : null,
       } : null;
       
-      console.log(`📋 Enriched encounter ${enc.encounter.id}:`, {
+      const logData = {
+        encounterId: enc.encounter.id,
         patientId: enc.patient?.id,
         patientUserId: enc.patient?.userId,
-        patientUser: enc.patientUser ? {
-          id: enc.patientUser.id,
-          fullName: enc.patientUser.fullName,
-        } : null,
-        enrichedPatient: enrichedPatient ? {
-          id: enrichedPatient.id,
-          user: enrichedPatient.user,
-        } : null,
-      });
+        admittingDoctorId: enc.encounter.admittingDoctorId,
+        attendingDoctorId: enc.encounter.attendingDoctorId,
+        status: enc.encounter.status,
+        patientName: enc.patientUser?.fullName || 'Unknown',
+        admittingDoctorName: admittingDoctor[0]?.user?.fullName || 'N/A',
+        attendingDoctorName: attendingDoctor[0]?.user?.fullName || 'N/A',
+      };
+      console.log(`📋 Enriched encounter:`, logData);
+      
+      // Check if this encounter matches the doctor filter
+      if (filters.doctorId) {
+        const doctorIdNum = typeof filters.doctorId === 'string' ? parseInt(filters.doctorId, 10) : filters.doctorId;
+        const matchesAdmitting = enc.encounter.admittingDoctorId === doctorIdNum;
+        const matchesAttending = enc.encounter.attendingDoctorId === doctorIdNum;
+        console.log(`  🔍 Doctor match check for ${doctorIdNum}:`, {
+          matchesAdmitting,
+          matchesAttending,
+          admittingId: enc.encounter.admittingDoctorId,
+          attendingId: enc.encounter.attendingDoctorId,
+        });
+      }
+      
+      // Format doctor objects with user info
+      const formattedAdmittingDoctor = admittingDoctor[0] ? {
+        id: admittingDoctor[0].doctor.id,
+        fullName: admittingDoctor[0].user?.fullName || null,
+        userId: admittingDoctor[0].doctor.userId,
+      } : null;
+      
+      const formattedAttendingDoctor = attendingDoctor[0] ? {
+        id: attendingDoctor[0].doctor.id,
+        fullName: attendingDoctor[0].user?.fullName || null,
+        userId: attendingDoctor[0].doctor.userId,
+      } : null;
       
       return {
         ...enc.encounter,
         patient: enrichedPatient,
         hospital: enc.hospital,
-        admittingDoctor: admittingDoctor[0] || null,
-        attendingDoctor: attendingDoctor[0] || null,
+        admittingDoctor: formattedAdmittingDoctor,
+        attendingDoctor: formattedAttendingDoctor,
         currentBed: currentBed,
         currentBedId: currentBed?.id || null,
       };
@@ -758,6 +898,71 @@ export const transferPatient = async (data: {
 };
 
 /**
+ * Transfer patient to another doctor
+ */
+export const transferPatientToDoctor = async (data: {
+  encounterId: number;
+  newAttendingDoctorId: number;
+  reason?: string;
+  actorUserId?: number;
+  actorRole?: string;
+  ipAddress?: string;
+  userAgent?: string;
+}) => {
+  // Get encounter
+  const encounter = await db.select().from(ipdEncounters).where(eq(ipdEncounters.id, data.encounterId)).limit(1);
+  if (encounter.length === 0) {
+    throw new Error('Encounter not found');
+  }
+  const enc = encounter[0];
+
+  // Verify new doctor exists
+  const newDoctor = await db.select().from(doctors).where(eq(doctors.id, data.newAttendingDoctorId)).limit(1);
+  if (newDoctor.length === 0) {
+    throw new Error('New attending doctor not found');
+  }
+
+  const beforeState = {
+    encounterId: data.encounterId,
+    attendingDoctorId: enc.attendingDoctorId,
+  };
+
+  // Update attending doctor
+  await db
+    .update(ipdEncounters)
+    .set({ 
+      attendingDoctorId: data.newAttendingDoctorId,
+      updatedAt: sql`NOW()`,
+    })
+    .where(eq(ipdEncounters.id, data.encounterId));
+
+  const afterState = {
+    encounterId: data.encounterId,
+    attendingDoctorId: data.newAttendingDoctorId,
+  };
+
+  // Log audit event
+  if (data.actorUserId && data.actorRole) {
+    await auditService.logPatientAudit({
+      hospitalId: enc.hospitalId,
+      patientId: enc.patientId,
+      actorUserId: data.actorUserId,
+      actorRole: data.actorRole,
+      action: 'transfer_doctor',
+      entityType: 'ipd_encounter',
+      entityId: data.encounterId,
+      before: beforeState,
+      after: afterState,
+      message: `Patient transferred to doctor ${data.newAttendingDoctorId}. Reason: ${data.reason || 'Doctor transfer'}`,
+      ipAddress: data.ipAddress,
+      userAgent: data.userAgent,
+    });
+  }
+
+  return await getIpdEncounterById(data.encounterId);
+};
+
+/**
  * Discharge patient
  */
 export const dischargePatient = async (data: {
@@ -798,16 +1003,37 @@ export const dischargePatient = async (data: {
 
   // Close bed allocation
   if (currentAllocation.length > 0) {
+    const bedId = currentAllocation[0].bedId;
+    console.log(`🛏️ Discharging patient - closing bed allocation for bed ${bedId}`);
+    
+    // Get current bed status before update
+    const [currentBed] = await db
+      .select()
+      .from(beds)
+      .where(eq(beds.id, bedId))
+      .limit(1);
+    const previousStatus = currentBed?.status || 'unknown';
+    
+    // Close the bed allocation
     await db
       .update(bedAllocations)
       .set({ toAt: sql`NOW()` })
       .where(eq(bedAllocations.id, currentAllocation[0].id));
+    console.log(`✅ Bed allocation closed for bed ${bedId}`);
 
-    // Release bed
-    await db
+    // Release bed - set to available immediately (cleaning can be handled separately if needed)
+    const [updatedBed] = await db
       .update(beds)
-      .set({ status: 'cleaning', updatedAt: sql`NOW()` })
-      .where(eq(beds.id, currentAllocation[0].bedId));
+      .set({ status: 'available', updatedAt: sql`NOW()` })
+      .where(eq(beds.id, bedId))
+      .returning();
+    console.log(`✅ Bed ${bedId} status updated to 'available':`, {
+      bedId: updatedBed.id,
+      newStatus: updatedBed.status,
+      previousStatus: previousStatus,
+    });
+  } else {
+    console.log(`⚠️ No active bed allocation found for encounter ${data.encounterId}`);
   }
 
   // Update encounter - use provided status or default to 'discharged'
@@ -827,7 +1053,7 @@ export const dischargePatient = async (data: {
     encounterId: data.encounterId,
     status: dischargeStatus,
     bedId: currentAllocation.length > 0 ? currentAllocation[0].bedId : null,
-    bedStatus: currentAllocation.length > 0 ? 'cleaning' : null,
+    bedStatus: currentAllocation.length > 0 ? 'available' : null,
     dischargedAt: new Date().toISOString(),
   };
 

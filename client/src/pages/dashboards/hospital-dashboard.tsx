@@ -18,6 +18,7 @@ import {
   Alert,
   Divider,
   Tabs,
+  List,
 } from 'antd';
 import { 
   UserOutlined, 
@@ -33,8 +34,10 @@ import { useAuth } from '../../hooks/use-auth';
 import { useResponsive } from '../../hooks/use-responsive';
 import { KpiCard } from '../../components/dashboard/KpiCard';
 import { NotificationBell } from '../../components/notifications/NotificationBell';
-import { BedOccupancyMap, TransferModal, DischargeModal, BedStructureManager } from '../../components/ipd';
+import { BedOccupancyMap, TransferModal, TransferDoctorModal, DischargeModal, BedStructureManager } from '../../components/ipd';
 import { IpdEncountersList } from '../../components/ipd/IpdEncountersList';
+import { ClinicalNotesEditor } from '../../components/clinical/ClinicalNotesEditor';
+import { VitalsEntryForm } from '../../components/clinical/VitalsEntryForm';
 import { subscribeToAppointmentEvents } from '../../lib/appointments-events';
 import { getISTStartOfDay, isSameDayIST } from '../../lib/timezone';
 import dayjs from 'dayjs';
@@ -62,7 +65,15 @@ export default function HospitalDashboard() {
   const [activeMainTab, setActiveMainTab] = useState<string>('appointments');
   const [selectedEncounter, setSelectedEncounter] = useState<IpdEncounter | null>(null);
   const [isTransferModalOpen, setIsTransferModalOpen] = useState(false);
+  const [isTransferDoctorModalOpen, setIsTransferDoctorModalOpen] = useState(false);
   const [isDischargeModalOpen, setIsDischargeModalOpen] = useState(false);
+  const [patientInfoDrawerOpen, setPatientInfoDrawerOpen] = useState(false);
+  const [selectedPatientId, setSelectedPatientId] = useState<number | null>(null);
+  const [patientInfo, setPatientInfo] = useState<any>(null);
+  const [clinicalNotes, setClinicalNotes] = useState<any[]>([]);
+  const [vitalsHistory, setVitalsHistory] = useState<any[]>([]);
+  const [isClinicalNoteModalOpen, setIsClinicalNoteModalOpen] = useState(false);
+  const [isVitalsModalOpen, setIsVitalsModalOpen] = useState(false);
 
   // Auto-collapse sidebar on mobile/tablet
   useEffect(() => {
@@ -70,6 +81,61 @@ export default function HospitalDashboard() {
       setCollapsed(true);
     }
   }, [isMobile, isTablet]);
+
+  // Fetch clinical notes and vitals
+  const fetchClinicalData = async (patientId: number) => {
+    try {
+      const token = localStorage.getItem('auth-token');
+      
+      // Fetch clinical notes
+      const notesResponse = await fetch(`/api/clinical/notes?patientId=${patientId}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (notesResponse.ok) {
+        const notes = await notesResponse.json();
+        setClinicalNotes(notes);
+      }
+      
+      // Fetch vitals
+      const vitalsResponse = await fetch(`/api/clinical/vitals?patientId=${patientId}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (vitalsResponse.ok) {
+        const vitals = await vitalsResponse.json();
+        setVitalsHistory(vitals);
+      }
+    } catch (error) {
+      console.error('Error fetching clinical data:', error);
+    }
+  };
+
+  // Handle view patient info
+  const handleViewPatientInfo = async (patientId: number, encounter?: IpdEncounter) => {
+    try {
+      const token = localStorage.getItem('auth-token');
+      const response = await fetch(`/api/reception/patients/${patientId}/info`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      
+      if (!response.ok) {
+        message.error('Failed to fetch patient information');
+        return;
+      }
+      
+      const data = await response.json();
+      setPatientInfo({
+        ...data,
+        encounter: encounter,
+      });
+      setPatientInfoDrawerOpen(true);
+      
+      // Fetch clinical notes and vitals
+      await fetchClinicalData(patientId);
+    } catch (error: any) {
+      console.error('Error loading patient info:', error);
+      message.error('Failed to load patient information');
+    }
+  };
 
   // Get dashboard stats from real data
   const { data: stats, isLoading: statsLoading } = useQuery({
@@ -1388,9 +1454,19 @@ export default function HospitalDashboard() {
                                       paddingTop: 16,
                                     }}>
                                       <IpdEncountersList
+                                        showDoctorInfo={true}
+                                        onViewPatient={async (encounter: IpdEncounter) => {
+                                          if (encounter.patientId) {
+                                            await handleViewPatientInfo(encounter.patientId, encounter);
+                                          }
+                                        }}
                                         onTransfer={(encounter: IpdEncounter) => {
                                           setSelectedEncounter(encounter);
                                           setIsTransferModalOpen(true);
+                                        }}
+                                        onTransferDoctor={(encounter: IpdEncounter) => {
+                                          setSelectedEncounter(encounter);
+                                          setIsTransferDoctorModalOpen(true);
                                         }}
                                         onDischarge={(encounter: IpdEncounter) => {
                                           setSelectedEncounter(encounter);
@@ -1430,6 +1506,20 @@ export default function HospitalDashboard() {
         encounter={selectedEncounter}
       />
 
+      {/* Transfer Doctor Modal */}
+      <TransferDoctorModal
+        open={isTransferDoctorModalOpen}
+        onCancel={() => {
+          setIsTransferDoctorModalOpen(false);
+          setSelectedEncounter(null);
+        }}
+        onSuccess={() => {
+          queryClient.invalidateQueries({ queryKey: ['/api/ipd/encounters'] });
+        }}
+        encounter={selectedEncounter}
+        hospitalId={hospitalProfile?.id}
+      />
+
       {/* Discharge Modal */}
       <DischargeModal
         open={isDischargeModalOpen}
@@ -1443,6 +1533,201 @@ export default function HospitalDashboard() {
         }}
         encounter={selectedEncounter}
       />
+
+      {/* Patient Info Drawer with Clinical Documentation */}
+      <Drawer
+        title={patientInfo?.patient?.user?.fullName || 'Patient Information'}
+        placement="right"
+        width={isMobile ? '100%' : 600}
+        onClose={() => {
+          setPatientInfoDrawerOpen(false);
+          setPatientInfo(null);
+          setClinicalNotes([]);
+          setVitalsHistory([]);
+        }}
+        open={patientInfoDrawerOpen}
+      >
+        {patientInfo ? (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
+            {/* Patient Basic Info */}
+            <Card title="Patient Information" size="small">
+              <Space direction="vertical" style={{ width: '100%' }}>
+                <div>
+                  <Text type="secondary">Name:</Text>
+                  <Text strong style={{ marginLeft: 8 }}>
+                    {patientInfo.patient?.user?.fullName || 'N/A'}
+                  </Text>
+                </div>
+                <div>
+                  <Text type="secondary">Mobile:</Text>
+                  <Text strong style={{ marginLeft: 8 }}>
+                    {patientInfo.patient?.user?.mobileNumber || 'N/A'}
+                  </Text>
+                </div>
+                {patientInfo.encounter && (
+                  <>
+                    <div>
+                      <Text type="secondary">Attending Doctor:</Text>
+                      <Text strong style={{ marginLeft: 8 }}>
+                        {patientInfo.encounter.attendingDoctor?.fullName || patientInfo.encounter.admittingDoctor?.fullName || 'N/A'}
+                      </Text>
+                    </div>
+                    <div>
+                      <Text type="secondary">Current Bed:</Text>
+                      <Text strong style={{ marginLeft: 8 }}>
+                        {patientInfo.encounter.currentBed?.bedName || `Bed ${patientInfo.encounter.currentBed?.bedNumber}` || 'N/A'}
+                      </Text>
+                    </div>
+                  </>
+                )}
+              </Space>
+            </Card>
+
+            {/* Clinical Documentation */}
+            <Card 
+              title="Clinical Documentation"
+              size="small"
+              extra={
+                <Space>
+                  <Button
+                    size="small"
+                    onClick={() => {
+                      if (patientInfo?.patient?.id) {
+                        setIsClinicalNoteModalOpen(true);
+                      }
+                    }}
+                  >
+                    Add Note
+                  </Button>
+                  <Button
+                    size="small"
+                    onClick={() => {
+                      if (patientInfo?.patient?.id) {
+                        setIsVitalsModalOpen(true);
+                      }
+                    }}
+                  >
+                    Record Vitals
+                  </Button>
+                </Space>
+              }
+            >
+              <Tabs
+                size="small"
+                items={[
+                  {
+                    key: 'notes',
+                    label: `Clinical Notes (${clinicalNotes.length})`,
+                    children: (
+                      <div>
+                        {clinicalNotes.length === 0 ? (
+                          <Text type="secondary">No clinical notes yet</Text>
+                        ) : (
+                          <List
+                            size="small"
+                            dataSource={clinicalNotes}
+                            renderItem={(note: any) => (
+                              <List.Item>
+                                <div style={{ width: '100%' }}>
+                                  <Space>
+                                    <Text strong>{note.noteType}</Text>
+                                    <Tag color={note.isDraft ? 'orange' : 'green'}>
+                                      {note.isDraft ? 'Draft' : 'Signed'}
+                                    </Tag>
+                                  </Space>
+                                  <br />
+                                  <Text type="secondary" style={{ fontSize: 12 }}>
+                                    {dayjs(note.createdAt).format('DD MMM YYYY, hh:mm A')}
+                                  </Text>
+                                  {note.assessment && (
+                                    <div style={{ marginTop: 8 }}>
+                                      <Text type="secondary" style={{ fontSize: 12 }}>Assessment: </Text>
+                                      <Text style={{ fontSize: 12 }}>{note.assessment.substring(0, 100)}...</Text>
+                                    </div>
+                                  )}
+                                </div>
+                              </List.Item>
+                            )}
+                          />
+                        )}
+                      </div>
+                    ),
+                  },
+                  {
+                    key: 'vitals',
+                    label: `Vitals (${vitalsHistory.length})`,
+                    children: (
+                      <div>
+                        {vitalsHistory.length === 0 ? (
+                          <Text type="secondary">No vitals recorded yet</Text>
+                        ) : (
+                          <List
+                            size="small"
+                            dataSource={vitalsHistory.slice(0, 10)}
+                            renderItem={(vital: any) => (
+                              <List.Item>
+                                <div style={{ width: '100%' }}>
+                                  <Space>
+                                    {vital.temperature && (
+                                      <Text>Temp: {vital.temperature}°{vital.temperatureUnit || 'C'}</Text>
+                                    )}
+                                    {vital.bpSystolic && vital.bpDiastolic && (
+                                      <Text>BP: {vital.bpSystolic}/{vital.bpDiastolic}</Text>
+                                    )}
+                                    {vital.pulse && <Text>Pulse: {vital.pulse}</Text>}
+                                    {vital.spo2 && <Text>SpO2: {vital.spo2}%</Text>}
+                                  </Space>
+                                  <br />
+                                  <Text type="secondary" style={{ fontSize: 12 }}>
+                                    {dayjs(vital.recordedAt).format('DD MMM YYYY, hh:mm A')}
+                                  </Text>
+                                </div>
+                              </List.Item>
+                            )}
+                          />
+                        )}
+                      </div>
+                    ),
+                  },
+                ]}
+              />
+            </Card>
+          </div>
+        ) : (
+          <Text type="secondary">No patient information available</Text>
+        )}
+      </Drawer>
+
+      {/* Clinical Notes Editor Modal */}
+      {patientInfo?.patient?.id && (
+        <ClinicalNotesEditor
+          open={isClinicalNoteModalOpen}
+          onCancel={() => setIsClinicalNoteModalOpen(false)}
+          onSuccess={() => {
+            if (patientInfo?.patient?.id) {
+              fetchClinicalData(patientInfo.patient.id);
+            }
+          }}
+          patientId={patientInfo.patient.id}
+          encounterId={patientInfo?.encounter?.id}
+          noteType={patientInfo?.encounter ? "progress" : "consultation"}
+        />
+      )}
+
+      {/* Vitals Entry Form Modal */}
+      {patientInfo?.patient?.id && (
+        <VitalsEntryForm
+          open={isVitalsModalOpen}
+          onCancel={() => setIsVitalsModalOpen(false)}
+          onSuccess={() => {
+            if (patientInfo?.patient?.id) {
+              fetchClinicalData(patientInfo.patient.id);
+            }
+          }}
+          patientId={patientInfo.patient.id}
+          encounterId={patientInfo?.encounter?.id}
+        />
+      )}
     </>
   );
 }

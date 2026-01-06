@@ -476,6 +476,105 @@ export const patientAuditLogs = pgTable("patient_audit_logs", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
+// Clinical Notes - SOAP notes, admission notes, progress notes
+export const clinicalNotes = pgTable("clinical_notes", {
+  id: serial("id").primaryKey(),
+  hospitalId: integer("hospital_id").references(() => hospitals.id).notNull(),
+  patientId: integer("patient_id").references(() => patients.id).notNull(),
+  encounterId: integer("encounter_id").references(() => ipdEncounters.id), // For IPD encounters
+  appointmentId: integer("appointment_id").references(() => appointments.id), // For OPD appointments
+  noteType: text("note_type").notNull(), // admission, progress, discharge, consultation
+  chiefComplaint: text("chief_complaint"),
+  historyOfPresentIllness: text("history_of_present_illness"),
+  // SOAP format
+  subjective: text("subjective"), // Patient complaints, symptoms
+  objective: text("objective"), // Physical exam findings, vitals summary
+  assessment: text("assessment"), // Diagnosis, condition assessment
+  plan: text("plan"), // Treatment plan, orders, follow-up
+  // Additional fields
+  admissionDiagnosis: text("admission_diagnosis"),
+  physicalExamination: text("physical_examination"),
+  reviewOfSystems: text("review_of_systems"),
+  allergies: text("allergies"),
+  medications: text("medications"), // Current medications
+  pastMedicalHistory: text("past_medical_history"),
+  familyHistory: text("family_history"),
+  socialHistory: text("social_history"),
+  // Metadata
+  createdByUserId: integer("created_by_user_id").references(() => users.id).notNull(),
+  signedByUserId: integer("signed_by_user_id").references(() => users.id), // Doctor who signed
+  signedAt: timestamp("signed_at"),
+  isDraft: boolean("is_draft").default(false),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at"),
+});
+
+// Vitals Chart - Patient vital signs tracking
+export const vitalsChart = pgTable("vitals_chart", {
+  id: serial("id").primaryKey(),
+  hospitalId: integer("hospital_id").references(() => hospitals.id).notNull(),
+  patientId: integer("patient_id").references(() => patients.id).notNull(),
+  encounterId: integer("encounter_id").references(() => ipdEncounters.id), // For IPD encounters
+  appointmentId: integer("appointment_id").references(() => appointments.id), // For OPD appointments
+  // Vital signs
+  temperature: decimal("temperature", { precision: 4, scale: 2 }), // Celsius
+  temperatureUnit: text("temperature_unit").default("C"), // C or F
+  bpSystolic: integer("bp_systolic"), // Blood pressure systolic
+  bpDiastolic: integer("bp_diastolic"), // Blood pressure diastolic
+  pulse: integer("pulse"), // Heart rate per minute
+  respirationRate: integer("respiration_rate"), // Breaths per minute
+  spo2: integer("spo2"), // Oxygen saturation percentage
+  painScale: integer("pain_scale"), // 0-10 pain scale
+  weight: decimal("weight", { precision: 5, scale: 2 }), // kg
+  height: decimal("height", { precision: 5, scale: 2 }), // cm
+  bmi: decimal("bmi", { precision: 4, scale: 2 }), // Body Mass Index
+  bloodGlucose: decimal("blood_glucose", { precision: 5, scale: 2 }), // mg/dL
+  // Additional vitals
+  gcs: integer("gcs"), // Glasgow Coma Scale (3-15)
+  urineOutput: decimal("urine_output", { precision: 6, scale: 2 }), // ml
+  // Metadata
+  recordedByUserId: integer("recorded_by_user_id").references(() => users.id).notNull(),
+  recordedAt: timestamp("recorded_at").defaultNow().notNull(),
+  notes: text("notes"), // Additional notes about vitals
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+// Nursing Notes - Nursing assessments, care plans, shift handover
+export const nursingNotes = pgTable("nursing_notes", {
+  id: serial("id").primaryKey(),
+  hospitalId: integer("hospital_id").references(() => hospitals.id).notNull(),
+  patientId: integer("patient_id").references(() => patients.id).notNull(),
+  encounterId: integer("encounter_id").references(() => ipdEncounters.id).notNull(),
+  noteType: text("note_type").notNull(), // assessment, care_plan, shift_handover, general
+  // Assessment fields
+  nursingAssessment: text("nursing_assessment"),
+  carePlan: text("care_plan"), // Care plan documentation
+  interventions: text("interventions"), // Nursing interventions performed
+  evaluation: text("evaluation"), // Evaluation of care effectiveness
+  // Shift handover
+  shiftType: text("shift_type"), // morning, afternoon, night
+  handoverNotes: text("handover_notes"), // Shift handover information
+  criticalInformation: text("critical_information"), // Critical patient information
+  outstandingTasks: text("outstanding_tasks"), // Tasks for next shift
+  // General notes
+  notes: text("notes"), // General nursing notes
+  // Metadata
+  createdByUserId: integer("created_by_user_id").references(() => users.id).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at"),
+});
+
+// Diagnosis Codes - ICD-10 codes for diagnosis coding
+export const diagnosisCodes = pgTable("diagnosis_codes", {
+  id: serial("id").primaryKey(),
+  code: varchar("code", { length: 20 }).notNull().unique(), // ICD-10 code (e.g., "I10", "E11.9")
+  description: text("description").notNull(), // Full description
+  category: text("category"), // Category (e.g., "Diseases of the circulatory system")
+  isActive: boolean("is_active").default(true),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at"),
+});
+
 // OPD Billing - Invoices
 export const invoices = pgTable("invoices", {
   id: serial("id").primaryKey(),
@@ -583,6 +682,31 @@ export const ipdEncountersRelations = relations(ipdEncounters, ({ one, many }) =
 export const bedAllocationsRelations = relations(bedAllocations, ({ one }) => ({
   encounter: one(ipdEncounters, { fields: [bedAllocations.encounterId], references: [ipdEncounters.id] }),
   bed: one(beds, { fields: [bedAllocations.bedId], references: [beds.id] }),
+}));
+
+// Clinical Documentation Relations
+export const clinicalNotesRelations = relations(clinicalNotes, ({ one }) => ({
+  hospital: one(hospitals, { fields: [clinicalNotes.hospitalId], references: [hospitals.id] }),
+  patient: one(patients, { fields: [clinicalNotes.patientId], references: [patients.id] }),
+  encounter: one(ipdEncounters, { fields: [clinicalNotes.encounterId], references: [ipdEncounters.id] }),
+  appointment: one(appointments, { fields: [clinicalNotes.appointmentId], references: [appointments.id] }),
+  createdBy: one(users, { fields: [clinicalNotes.createdByUserId], references: [users.id] }),
+  signedBy: one(users, { fields: [clinicalNotes.signedByUserId], references: [users.id] }),
+}));
+
+export const vitalsChartRelations = relations(vitalsChart, ({ one }) => ({
+  hospital: one(hospitals, { fields: [vitalsChart.hospitalId], references: [hospitals.id] }),
+  patient: one(patients, { fields: [vitalsChart.patientId], references: [patients.id] }),
+  encounter: one(ipdEncounters, { fields: [vitalsChart.encounterId], references: [ipdEncounters.id] }),
+  appointment: one(appointments, { fields: [vitalsChart.appointmentId], references: [appointments.id] }),
+  recordedBy: one(users, { fields: [vitalsChart.recordedByUserId], references: [users.id] }),
+}));
+
+export const nursingNotesRelations = relations(nursingNotes, ({ one }) => ({
+  hospital: one(hospitals, { fields: [nursingNotes.hospitalId], references: [hospitals.id] }),
+  patient: one(patients, { fields: [nursingNotes.patientId], references: [patients.id] }),
+  encounter: one(ipdEncounters, { fields: [nursingNotes.encounterId], references: [ipdEncounters.id] }),
+  createdBy: one(users, { fields: [nursingNotes.createdByUserId], references: [users.id] }),
 }));
 
 // ZOD VALIDATION SCHEMAS
@@ -708,3 +832,15 @@ export type BedAllocation = InferSelectModel<typeof bedAllocations>;
 
 export type InsertFloor = InferInsertModel<typeof floors>;
 export type Floor = InferSelectModel<typeof floors>;
+
+export type InsertClinicalNote = InferInsertModel<typeof clinicalNotes>;
+export type ClinicalNote = InferSelectModel<typeof clinicalNotes>;
+
+export type InsertVitalsChart = InferInsertModel<typeof vitalsChart>;
+export type VitalsChart = InferSelectModel<typeof vitalsChart>;
+
+export type InsertNursingNote = InferInsertModel<typeof nursingNotes>;
+export type NursingNote = InferSelectModel<typeof nursingNotes>;
+
+export type InsertDiagnosisCode = InferInsertModel<typeof diagnosisCodes>;
+export type DiagnosisCode = InferSelectModel<typeof diagnosisCodes>;

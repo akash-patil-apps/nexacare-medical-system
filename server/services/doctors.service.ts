@@ -54,8 +54,29 @@ export const getDoctorById = async (doctorId: number) => {
   }
 
   console.log(`👨‍⚕️ Fetching doctor ${doctorId}`);
+  
+  // Explicitly select all doctor fields to avoid drizzle ORM issues
   const [doctor] = await db
-    .select()
+    .select({
+      id: doctors.id,
+      userId: doctors.userId,
+      hospitalId: doctors.hospitalId,
+      specialty: doctors.specialty,
+      consultationFee: doctors.consultationFee,
+      qualification: doctors.qualification,
+      experience: doctors.experience,
+      licenseNumber: doctors.licenseNumber,
+      workingHours: doctors.workingHours,
+      availableSlots: doctors.availableSlots,
+      status: doctors.status,
+      languages: doctors.languages,
+      awards: doctors.awards,
+      bio: doctors.bio,
+      isAvailable: doctors.isAvailable,
+      isVerified: doctors.isVerified,
+      approvalStatus: doctors.approvalStatus,
+      createdAt: doctors.createdAt,
+    })
     .from(doctors)
     .where(eq(doctors.id, doctorId))
     .limit(1);

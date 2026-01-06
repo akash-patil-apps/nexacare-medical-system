@@ -1,5 +1,5 @@
 // server/services/reception.service.ts
-import { and, eq, isNull, asc, desc, ilike, or, count } from 'drizzle-orm';
+import { and, eq, isNull, asc, desc, ilike, or, count, sql } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 import { db } from '../db';
 import {
@@ -573,6 +573,78 @@ export async function getPatientInfo(patientId: number) {
       .where(eq(labReports.patientId, patientId))
       .orderBy(desc(labReports.reportDate));
 
+    // Get current IPD admission status
+    const { ipdEncounters } = await import('../../shared/schema');
+    const { isNull: isNullFn } = await import('drizzle-orm');
+    const currentIpdEncounter = await db
+      .select({
+        encounter: ipdEncounters,
+      })
+      .from(ipdEncounters)
+      .where(
+        and(
+          eq(ipdEncounters.patientId, patientId),
+          sql`${ipdEncounters.status} IN ('admitted', 'transferred')`
+        )
+      )
+      .orderBy(desc(ipdEncounters.admittedAt))
+      .limit(1);
+
+    let ipdStatus = null;
+    let attendingDoctor = null;
+    let admittingDoctor = null;
+    
+    if (currentIpdEncounter.length > 0) {
+      const enc = currentIpdEncounter[0].encounter;
+      ipdStatus = {
+        isAdmitted: true,
+        status: enc.status,
+        admittedAt: enc.admittedAt,
+        encounterId: enc.id,
+      };
+      
+      // Get attending and admitting doctors
+      if (enc.attendingDoctorId) {
+        const { doctors } = await import('../../shared/schema');
+        const { users } = await import('../../shared/schema');
+        const [attendingDoc] = await db
+          .select({
+            doctor: doctors,
+            user: users,
+          })
+          .from(doctors)
+          .leftJoin(users, eq(doctors.userId, users.id))
+          .where(eq(doctors.id, enc.attendingDoctorId))
+          .limit(1);
+        if (attendingDoc?.user) {
+          attendingDoctor = {
+            id: attendingDoc.doctor.id,
+            name: attendingDoc.user.fullName,
+          };
+        }
+      }
+      
+      if (enc.admittingDoctorId) {
+        const { doctors } = await import('../../shared/schema');
+        const { users } = await import('../../shared/schema');
+        const [admittingDoc] = await db
+          .select({
+            doctor: doctors,
+            user: users,
+          })
+          .from(doctors)
+          .leftJoin(users, eq(doctors.userId, users.id))
+          .where(eq(doctors.id, enc.admittingDoctorId))
+          .limit(1);
+        if (admittingDoc?.user) {
+          admittingDoctor = {
+            id: admittingDoc.doctor.id,
+            name: admittingDoc.user.fullName,
+          };
+        }
+      }
+    }
+
     // Get prescriptions - limit to last 30 for performance, but show all active ones
     const sixMonthsAgo = new Date();
     sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
@@ -648,6 +720,9 @@ export async function getPatientInfo(patientId: number) {
         ...patient,
         user: user || null,
       },
+      ipdStatus, // Current IPD admission status
+      attendingDoctor, // Attending doctor info if admitted
+      admittingDoctor, // Admitting doctor info if admitted
       labReports: labReportsList,
       prescriptions: prescriptionsList,
       prescriptionsTotal: allPrescriptions.length, // Total count for UI display

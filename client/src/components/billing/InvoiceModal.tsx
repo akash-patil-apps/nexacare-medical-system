@@ -80,11 +80,17 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({
     // Format: "Payment: TXN123 | Method: card | Amount: ₹500 | Status: success"
     const paymentMatch = notes.match(/Payment:\s*([^|]+)\s*\|\s*Method:\s*([^|]+)\s*\|\s*Amount:\s*([^|]+)\s*\|\s*Status:\s*([^\n]+)/i);
     if (paymentMatch) {
+      // Try to extract date/time if available
+      const dateMatch = notes.match(/Date:\s*([^\n|]+)/i);
+      const timeMatch = notes.match(/Time:\s*([^\n|]+)/i);
+      
       return {
         transactionId: paymentMatch[1].trim(),
         method: paymentMatch[2].trim(),
         amount: paymentMatch[3].trim(),
         status: paymentMatch[4].trim().toLowerCase(),
+        date: dateMatch ? dateMatch[1].trim() : appointmentDetails.confirmedAt ? new Date(appointmentDetails.confirmedAt).toLocaleDateString() : null,
+        time: timeMatch ? timeMatch[1].trim() : appointmentDetails.confirmedAt ? new Date(appointmentDetails.confirmedAt).toLocaleTimeString() : null,
       };
     }
     
@@ -92,10 +98,12 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({
     if (notes.toLowerCase().includes('payment status: paid') || 
         notes.toLowerCase().includes('payment status:paid')) {
       return {
-        transactionId: 'Online Payment',
+        transactionId: appointmentDetails.id ? `TXN-${appointmentDetails.id}` : 'Online Payment',
         method: 'online',
         amount: null,
         status: 'paid',
+        date: appointmentDetails.confirmedAt ? new Date(appointmentDetails.confirmedAt).toLocaleDateString() : null,
+        time: appointmentDetails.confirmedAt ? new Date(appointmentDetails.confirmedAt).toLocaleTimeString() : null,
       };
     }
     
@@ -104,7 +112,7 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({
 
   const paymentDetails = extractPaymentDetails();
   const isOnlinePayment = appointmentType?.toLowerCase() === 'online' && 
-    (paymentStatus?.toLowerCase() === 'paid' || (paymentDetails && paymentDetails.status === 'paid' || paymentDetails.status === 'success'));
+    (paymentStatus?.toLowerCase() === 'paid' || (paymentDetails && (paymentDetails.status === 'paid' || paymentDetails.status === 'success')));
   const needsPaymentMethod = !isOnlinePayment; // Only walk-in or unpaid online appointments need payment method
 
   // Fetch doctor details to get consultation fee
@@ -444,6 +452,18 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({
                     <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                       <Text type="secondary">Amount Paid:</Text>
                       <Text strong>{paymentDetails.amount}</Text>
+                    </div>
+                  )}
+                  {paymentDetails.date && (
+                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <Text type="secondary">Payment Date:</Text>
+                      <Text strong>{paymentDetails.date}</Text>
+                    </div>
+                  )}
+                  {paymentDetails.time && (
+                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <Text type="secondary">Payment Time:</Text>
+                      <Text strong>{paymentDetails.time}</Text>
                     </div>
                   )}
                   <div style={{ display: 'flex', justifyContent: 'space-between' }}>

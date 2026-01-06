@@ -3355,11 +3355,18 @@ export default function ReceptionistDashboard() {
             onCancel={closeWalkInModal}
             footer={null}
             width={1000}
-            styles={{ body: { padding: '24px 32px', maxHeight: '85vh', overflowY: 'auto' } }}
+            styles={{ 
+              body: { 
+                padding: '24px 32px', 
+                maxHeight: '85vh', 
+                overflowY: 'auto',
+                overflowX: 'hidden'
+              } 
+            }}
           >
             {/* Step 0: Mobile Number Lookup */}
             {walkInStep === 0 && (
-              <div>
+              <div style={{ overflow: 'visible' }}>
                 {isCheckingMobile && (
                   <div style={{ textAlign: 'center', marginBottom: 24 }}>
                     <Spin size="large" />
@@ -3638,7 +3645,7 @@ export default function ReceptionistDashboard() {
 
             {/* Step 2 (existing) or Step 4 (new): Appointment Booking - Redesigned to match patient dashboard */}
             {((walkInStep === 2 && foundUser) || (walkInStep === 4 && foundPatient)) ? (
-              <div style={{ maxHeight: '75vh', overflowY: 'auto', paddingRight: 8 }}>
+              <div style={{ paddingRight: 8 }}>
                 <Form
                   layout="vertical"
                   form={walkInForm}
@@ -4110,6 +4117,47 @@ export default function ReceptionistDashboard() {
                         {patientInfo.patient?.user?.fullName || 'N/A'}
                       </Text>
                     </div>
+                    
+                    {/* IPD Admission Status */}
+                    {patientInfo.ipdStatus?.isAdmitted && (
+                      <>
+                        <Divider style={{ margin: '8px 0' }} />
+                        <div style={{ padding: 12, background: '#f0f9ff', borderRadius: 8, border: '1px solid #91caff' }}>
+                          <Space direction="vertical" size="small" style={{ width: '100%' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                              <Tag color="blue" style={{ margin: 0 }}>IPD ADMITTED</Tag>
+                              <Text type="secondary" style={{ fontSize: 12 }}>
+                                Status: {patientInfo.ipdStatus.status}
+                              </Text>
+                            </div>
+                            {patientInfo.attendingDoctor && (
+                              <div>
+                                <Text type="secondary" style={{ fontSize: 12 }}>Attending Doctor: </Text>
+                                <Text strong style={{ fontSize: 12 }}>
+                                  {patientInfo.attendingDoctor.name}
+                                </Text>
+                              </div>
+                            )}
+                            {patientInfo.admittingDoctor && patientInfo.admittingDoctor.id !== patientInfo.attendingDoctor?.id && (
+                              <div>
+                                <Text type="secondary" style={{ fontSize: 12 }}>Admitting Doctor: </Text>
+                                <Text strong style={{ fontSize: 12 }}>
+                                  {patientInfo.admittingDoctor.name}
+                                </Text>
+                              </div>
+                            )}
+                            {patientInfo.ipdStatus.admittedAt && (
+                              <div>
+                                <Text type="secondary" style={{ fontSize: 12 }}>Admitted: </Text>
+                                <Text style={{ fontSize: 12 }}>
+                                  {dayjs(patientInfo.ipdStatus.admittedAt).format('DD MMM YYYY, hh:mm A')}
+                                </Text>
+                              </div>
+                            )}
+                          </Space>
+                        </div>
+                      </>
+                    )}
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                       <div style={{ flex: 1 }}>
                         <Text type="secondary">Mobile:</Text>

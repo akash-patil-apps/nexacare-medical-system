@@ -1,6 +1,6 @@
 import React from 'react';
 import { Table, Tag, Button, Space, Typography, Empty, Spin } from 'antd';
-import { UserOutlined, SwapOutlined, CheckCircleOutlined } from '@ant-design/icons';
+import { UserOutlined, SwapOutlined, CheckCircleOutlined, TeamOutlined } from '@ant-design/icons';
 import { useQuery } from '@tanstack/react-query';
 import type { IpdEncounter } from '../../types/ipd';
 
@@ -8,31 +8,60 @@ const { Text } = Typography;
 
 interface IpdEncountersListProps {
   hospitalId?: number;
+  doctorId?: number; // Filter by attending doctor
   onTransfer?: (encounter: IpdEncounter) => void;
+  onTransferDoctor?: (encounter: IpdEncounter) => void; // Transfer to another doctor
   onDischarge?: (encounter: IpdEncounter) => void;
+  onViewPatient?: (encounter: IpdEncounter) => void; // View patient details with clinical docs
+  showDoctorInfo?: boolean; // Show doctor information in table
 }
 
 export const IpdEncountersList: React.FC<IpdEncountersListProps> = ({
   hospitalId,
+  doctorId,
   onTransfer,
+  onTransferDoctor,
   onDischarge,
+  onViewPatient,
+  showDoctorInfo = false,
 }) => {
   // Fetch IPD encounters
   const { data: encountersRaw = [], isLoading } = useQuery<any[]>({
-    queryKey: ['/api/ipd/encounters', hospitalId],
+    queryKey: ['/api/ipd/encounters', hospitalId, doctorId],
     queryFn: async () => {
       const token = localStorage.getItem('auth-token');
-      const url = hospitalId
-        ? `/api/ipd/encounters?hospitalId=${hospitalId}`
-        : '/api/ipd/encounters';
+      let url = '/api/ipd/encounters?';
+      const params = new URLSearchParams();
+      if (hospitalId) params.append('hospitalId', String(hospitalId));
+      if (doctorId) {
+        params.append('doctorId', String(doctorId));
+        console.log('🔍 Fetching IPD encounters for doctorId:', doctorId, 'type:', typeof doctorId);
+      }
+      url += params.toString();
+      
       const response = await fetch(url, {
         headers: { Authorization: `Bearer ${token}` },
       });
-      if (!response.ok) throw new Error('Failed to fetch encounters');
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('❌ Failed to fetch encounters:', response.status, errorText);
+        throw new Error('Failed to fetch encounters');
+      }
       const data = await response.json();
-      console.log('Fetched encounters:', data);
-      console.log('First encounter patient data:', data[0]?.patient);
-      console.log('First encounter patient user:', data[0]?.patient?.user);
+      console.log('📋 Fetched encounters:', data.length, 'total');
+      console.log('🔍 Filter params:', { hospitalId, doctorId });
+      if (data.length > 0) {
+        console.log('📋 First encounter:', {
+          id: data[0].id,
+          patientId: data[0].patientId,
+          admittingDoctorId: data[0].admittingDoctorId,
+          attendingDoctorId: data[0].attendingDoctorId,
+          status: data[0].status,
+          patient: data[0].patient?.user?.fullName || 'Unknown',
+        });
+      } else {
+        console.log('⚠️ No encounters found. Checking if doctorId filter is correct:', doctorId);
+      }
       return data;
     },
     refetchInterval: 10000, // Auto-refresh every 10 seconds
@@ -63,6 +92,19 @@ export const IpdEncountersList: React.FC<IpdEncountersListProps> = ({
   const activeEncounters = encounters.filter(
     (e) => e.status === 'admitted' || e.status === 'transferred',
   );
+  
+  console.log('📋 IpdEncountersList - Total encounters:', encounters.length);
+  console.log('📋 IpdEncountersList - Active encounters:', activeEncounters.length);
+  console.log('📋 IpdEncountersList - Encounter statuses:', encounters.map(e => ({ id: e.id, status: e.status, patient: e.patient?.user?.fullName })));
+  if (doctorId) {
+    console.log('📋 IpdEncountersList - Doctor ID filter:', doctorId);
+    console.log('📋 IpdEncountersList - Doctor IDs in encounters:', encounters.map(e => ({
+      id: e.id,
+      admittingDoctorId: e.admittingDoctorId,
+      attendingDoctorId: e.attendingDoctorId,
+      patient: e.patient?.user?.fullName
+    })));
+  }
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -123,6 +165,18 @@ export const IpdEncountersList: React.FC<IpdEncountersListProps> = ({
         ),
     },
     {
+      title: 'Attending Doctor',
+      key: 'attendingDoctor',
+      render: (_: any, record: IpdEncounter) => (
+        <Space>
+          <TeamOutlined />
+          <Text>
+            {record.attendingDoctor?.fullName || record.admittingDoctor?.fullName || 'N/A'}
+          </Text>
+        </Space>
+      ),
+    },
+    {
       title: 'Admitted',
       dataIndex: 'admittedAt',
       key: 'admittedAt',
@@ -141,6 +195,25 @@ export const IpdEncountersList: React.FC<IpdEncountersListProps> = ({
       key: 'actions',
       render: (_: any, record: IpdEncounter) => (
         <Space>
+          {onViewPatient && (
+            <Button
+              size="small"
+              type="primary"
+              icon={<UserOutlined />}
+              onClick={() => onViewPatient(record)}
+            >
+              View Patient
+            </Button>
+          )}
+          {onTransferDoctor && (record.status === 'admitted' || record.status === 'transferred') && (
+            <Button
+              size="small"
+              icon={<TeamOutlined />}
+              onClick={() => onTransferDoctor(record)}
+            >
+              Transfer Doctor
+            </Button>
+          )}
           {onTransfer && (record.status === 'admitted' || record.status === 'transferred') && (
             <Button
               size="small"
