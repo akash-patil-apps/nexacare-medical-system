@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { useLocation } from 'wouter';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Form, Input, DatePicker, Select, Button, Card, Steps, App } from 'antd';
-import { UserOutlined, MedicineBoxOutlined, SafetyOutlined } from '@ant-design/icons';
+import { UserOutlined, MedicineBoxOutlined, SecurityScanOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import { apiRequest } from '../../lib/queryClient';
 
@@ -257,7 +257,7 @@ export default function PatientOnboarding() {
     },
     {
       title: 'Emergency & Insurance',
-      icon: <SafetyOutlined />,
+      icon: <SecurityScanOutlined />,
       content: (
         <>
           <Form.Item

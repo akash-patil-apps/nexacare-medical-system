@@ -15,9 +15,7 @@ const router = Router();
 // GET /hospitals - List all hospitals
 router.get('/', async (_req, res) => {
   try {
-    console.log('📡 GET /api/hospitals - Request received');
     const hospitals = await getAllHospitals();
-    console.log(`✅ Returning ${hospitals.length} hospitals`);
     res.json({ hospitals });
   } catch (err: any) {
     console.error('❌ Fetch hospitals error:', err);

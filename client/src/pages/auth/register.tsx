@@ -20,7 +20,8 @@ const ROLE_OPTIONS: RoleOption[] = [
     label: "I'm a Patient",
     caption: 'Access appointments and prescriptions',
     emoji: '🙂',
-    available: false,
+    route: '/onboarding/patient',
+    available: true,
   },
   {
     key: 'doctor',

@@ -18,18 +18,15 @@ router.get('/profile', async (req: AuthenticatedRequest, res) => {
       return res.status(401).json({ message: 'User not authenticated' });
     }
 
-    console.log(`👩‍⚕️ Fetching nurse profile for user: ${req.user.id}`);
     const nurse = await nursesService.getNurseByUserId(req.user.id);
 
     if (!nurse) {
-      console.log(`❌ Nurse profile not found for user: ${req.user.id}`);
       return res.status(404).json({
         message: 'Nurse profile not found. Please complete your registration.',
         needsOnboarding: true
       });
     }
 
-    console.log(`✅ Nurse profile found: ${nurse.nurse.id}`);
     res.json(nurse);
   } catch (err: any) {
     console.error('❌ Get nurse profile error:', err);
@@ -43,9 +40,7 @@ router.get('/profile', async (req: AuthenticatedRequest, res) => {
 // Get all nurses (admin only)
 router.get('/', authorizeRoles('ADMIN', 'HOSPITAL'), async (req: AuthenticatedRequest, res) => {
   try {
-    console.log('👩‍⚕️ Fetching all nurses');
     const nurses = await nursesService.getAllNurses();
-    console.log(`✅ Returning ${nurses.length} nurses`);
     res.json(nurses);
   } catch (err: any) {
     console.error('❌ Get all nurses error:', err);
@@ -57,14 +52,12 @@ router.get('/', authorizeRoles('ADMIN', 'HOSPITAL'), async (req: AuthenticatedRe
 router.get('/hospital/:hospitalId', async (req: AuthenticatedRequest, res) => {
   try {
     const hospitalId = +req.params.hospitalId;
-    console.log(`🏥 Fetching nurses for hospital: ${hospitalId}`);
 
     if (!hospitalId || isNaN(hospitalId) || hospitalId <= 0) {
       return res.status(400).json({ message: 'Invalid hospital ID' });
     }
 
     const nurses = await nursesService.getNursesByHospital(hospitalId);
-    console.log(`✅ Returning ${nurses.length} nurses for hospital ${hospitalId}`);
     res.json(nurses);
   } catch (err: any) {
     console.error('❌ Get nurses by hospital error:', err);
@@ -76,7 +69,6 @@ router.get('/hospital/:hospitalId', async (req: AuthenticatedRequest, res) => {
 router.get('/:nurseId', async (req: AuthenticatedRequest, res) => {
   try {
     const nurseId = +req.params.nurseId;
-    console.log(`👩‍⚕️ Fetching nurse by ID: ${nurseId}`);
 
     if (!nurseId || isNaN(nurseId) || nurseId <= 0) {
       return res.status(400).json({ message: 'Invalid nurse ID' });
@@ -120,7 +112,6 @@ router.post('/', authorizeRoles('ADMIN', 'HOSPITAL'), async (req: AuthenticatedR
       });
     }
 
-    console.log(`👩‍⚕️ Creating nurse profile for user: ${userId}`);
     const nurse = await nursesService.createNurse({
       userId,
       hospitalId,
@@ -137,7 +128,6 @@ router.post('/', authorizeRoles('ADMIN', 'HOSPITAL'), async (req: AuthenticatedR
       bio,
     });
 
-    console.log(`✅ Nurse profile created: ${nurse.id}`);
     res.status(201).json(nurse);
   } catch (err: any) {
     console.error('❌ Create nurse error:', err);
@@ -158,7 +148,6 @@ router.post('/', authorizeRoles('ADMIN', 'HOSPITAL'), async (req: AuthenticatedR
 router.patch('/:nurseId', authorizeRoles('ADMIN', 'HOSPITAL', 'DOCTOR'), async (req: AuthenticatedRequest, res) => {
   try {
     const nurseId = +req.params.nurseId;
-    console.log(`👩‍⚕️ Updating nurse profile: ${nurseId}`);
 
     if (!nurseId || isNaN(nurseId) || nurseId <= 0) {
       return res.status(400).json({ message: 'Invalid nurse ID' });
@@ -192,7 +181,6 @@ router.patch('/:nurseId', authorizeRoles('ADMIN', 'HOSPITAL', 'DOCTOR'), async (
       return res.status(404).json({ message: 'Nurse not found' });
     }
 
-    console.log(`✅ Nurse profile updated: ${nurseId}`);
     res.json(nurse);
   } catch (err: any) {
     console.error('❌ Update nurse error:', err);
@@ -213,14 +201,12 @@ router.patch('/:nurseId/availability', authorizeRoles('ADMIN', 'HOSPITAL', 'DOCT
       return res.status(400).json({ message: 'isAvailable must be a boolean' });
     }
 
-    console.log(`👩‍⚕️ Updating nurse availability: ${nurseId} -> ${isAvailable}`);
     const nurse = await nursesService.updateNurseAvailability(nurseId, isAvailable);
 
     if (!nurse) {
       return res.status(404).json({ message: 'Nurse not found' });
     }
 
-    console.log(`✅ Nurse availability updated`);
     res.json(nurse);
   } catch (err: any) {
     console.error('❌ Update nurse availability error:', err);
@@ -237,7 +223,6 @@ router.get('/search/:query', async (req: AuthenticatedRequest, res) => {
     const query = req.params.query;
     const { hospitalId } = req.query;
 
-    console.log(`🔍 Searching nurses: "${query}"`, hospitalId ? `in hospital ${hospitalId}` : '');
 
     if (!query || query.length < 2) {
       return res.status(400).json({ message: 'Search query must be at least 2 characters' });
@@ -248,7 +233,6 @@ router.get('/search/:query', async (req: AuthenticatedRequest, res) => {
       hospitalId ? +hospitalId : undefined
     );
 
-    console.log(`✅ Found ${nurses.length} nurses matching "${query}"`);
     res.json(nurses);
   } catch (err: any) {
     console.error('❌ Search nurses error:', err);

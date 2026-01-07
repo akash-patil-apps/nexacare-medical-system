@@ -1,114 +1,230 @@
 {
-  "project": {
-    "name": "nexacare-medical-system",
-    "type": "full-stack web app",
-    "domain": "hospital / clinic management (OPD-focused today, IPD largely not implemented yet)",
-    "monorepo_structure": {
-      "client": "React + Vite app in client/",
-      "server": "Express API in server/",
-      "db_schema": "Drizzle schema in shared/schema.ts and drizzle/schema.ts"
-    }
-  },
-  "tech_stack": {
-    "frontend": {
-      "framework": "React 18",
-      "language": "TypeScript",
-      "ui": "Ant Design 5",
-      "routing": "wouter",
-      "data_fetching": "@tanstack/react-query",
-      "date_time": "dayjs"
+  "tech_stack": [
+    "TypeScript",
+    "React 18.3.1",
+    "Express.js",
+    "PostgreSQL",
+    "Ant Design 5.27.4",
+    "Drizzle ORM",
+    "React Query (TanStack Query)",
+    "Wouter",
+    "Day.js",
+    "Zod",
+    "JWT",
+    "bcrypt"
+  ],
+  "features": [
+    {
+      "name": "Multi-Role Authentication",
+      "description": "Complete authentication system with password and OTP login, role-based access control, JWT tokens, and user registration",
+      "files": [
+        "client/src/pages/auth/login.tsx",
+        "client/src/pages/auth/register.tsx",
+        "client/src/pages/auth/otp-verification.tsx",
+        "server/routes/auth.routes.ts",
+        "server/middleware/auth.ts",
+        "server/services/auth.service.ts"
+      ]
     },
-    "backend": {
-      "runtime": "Node.js",
-      "framework": "Express",
-      "language": "TypeScript (tsx for dev)",
-      "validation": "zod + drizzle-zod",
-      "realtime": "ws + server-sent/events style endpoints (events routes present)"
+    {
+      "name": "Patient Dashboard",
+      "description": "Complete patient portal with KPIs, appointments, prescriptions, lab reports, care timeline, and notifications",
+      "files": [
+        "client/src/pages/dashboards/patient-dashboard.tsx",
+        "client/src/pages/dashboards/patient-appointments.tsx",
+        "client/src/pages/dashboards/patient-prescriptions.tsx"
+      ]
     },
-    "database": {
-      "engine": "PostgreSQL (Neon supported via @neondatabase/serverless)",
-      "orm": "drizzle-orm",
-      "migrations": "drizzle-kit"
+    {
+      "name": "Doctor Dashboard",
+      "description": "Doctor dashboard with schedule management, prescription creation, patient history, and appointment tracking",
+      "files": [
+        "client/src/pages/dashboards/doctor-dashboard.tsx",
+        "client/src/pages/dashboards/doctor-appointments.tsx",
+        "client/src/pages/dashboards/doctor-prescriptions.tsx",
+        "server/routes/doctors.routes.ts",
+        "server/services/doctors.service.ts"
+      ]
+    },
+    {
+      "name": "Receptionist Dashboard",
+      "description": "Receptionist dashboard for appointment confirmation, walk-in registration, queue management, and patient check-in",
+      "files": [
+        "client/src/pages/dashboards/receptionist-dashboard.tsx",
+        "server/routes/reception.routes.ts",
+        "server/services/reception.service.ts"
+      ]
+    },
+    {
+      "name": "Hospital Admin Dashboard",
+      "description": "Hospital administration dashboard with analytics, staff management, appointment overview, and hospital settings",
+      "files": [
+        "client/src/pages/dashboards/hospital-dashboard.tsx",
+        "server/routes/hospitals.routes.ts",
+        "server/services/hospitals.service.ts"
+      ]
+    },
+    {
+      "name": "Lab Technician Dashboard",
+      "description": "Lab dashboard for managing lab test requests, uploading reports, tracking sample status, and processing test results",
+      "files": [
+        "client/src/pages/dashboards/lab-dashboard.tsx",
+        "server/routes/labs.routes.ts",
+        "server/services/lab.service.ts"
+      ]
+    },
+    {
+      "name": "Nurse Dashboard",
+      "description": "Nurse station dashboard for IPD patient management, vitals recording, nursing notes, and patient care monitoring",
+      "files": [
+        "client/src/pages/dashboards/nurse-dashboard.tsx",
+        "server/routes/nurses.routes.ts",
+        "server/services/nurses.service.ts",
+        "server/routes/clinical.routes.ts",
+        "server/services/clinical.service.ts"
+      ]
+    },
+    {
+      "name": "Pharmacist Dashboard",
+      "description": "Pharmacy dashboard for prescription dispensing, inventory management, patient counseling, and medication tracking",
+      "files": [
+        "client/src/pages/dashboards/pharmacist-dashboard.tsx",
+        "server/routes/pharmacists.routes.ts",
+        "server/services/pharmacists.service.ts"
+      ]
+    },
+    {
+      "name": "Radiology Technician Dashboard",
+      "description": "Radiology dashboard for imaging order management, equipment status, image upload, and procedure scheduling",
+      "files": [
+        "client/src/pages/dashboards/radiology-technician-dashboard.tsx",
+        "server/routes/radiology-technicians.routes.ts",
+        "server/services/radiology-technicians.service.ts"
+      ]
+    },
+    {
+      "name": "Appointment Booking System",
+      "description": "Complete appointment booking flow with hospital/doctor selection, date/time slot selection, and status management",
+      "files": [
+        "client/src/pages/book-appointment.tsx",
+        "server/routes/appointments.routes.ts",
+        "server/services/appointments.service.ts",
+        "client/src/lib/appointment-status.ts"
+      ]
+    },
+    {
+      "name": "Prescription Management",
+      "description": "Digital prescription system with medication details, dosages, instructions, and prescription history",
+      "files": [
+        "client/src/pages/dashboards/doctor-prescriptions.tsx",
+        "client/src/pages/dashboards/patient-prescriptions.tsx",
+        "server/routes/prescriptions.routes.ts",
+        "server/services/prescriptions.service.ts"
+      ]
+    },
+    {
+      "name": "Lab Report System",
+      "description": "Lab test request and report management system with upload functionality, status tracking, and patient/doctor viewing",
+      "files": [
+        "server/routes/labs.routes.ts",
+        "server/services/lab.service.ts",
+        "shared/schema.ts"
+      ]
+    },
+    {
+      "name": "OPD Queue Management",
+      "description": "Queue and token system for OPD operations with real-time updates, current serving display, and patient check-in",
+      "files": [
+        "server/routes/queue.routes.ts",
+        "server/services/queue.service.ts",
+        "client/src/components/queue/QueuePanel.tsx",
+        "client/src/components/queue/NowServingWidget.tsx"
+      ]
+    },
+    {
+      "name": "IPD Patient Management",
+      "description": "Inpatient department management with bed allocation, encounter tracking, and patient admission/discharge",
+      "files": [
+        "server/routes/ipd.routes.ts",
+        "server/services/ipd.service.ts",
+        "shared/schema.ts"
+      ]
+    },
+    {
+      "name": "Clinical Documentation",
+      "description": "Clinical notes, vitals charting, nursing notes, and patient documentation system",
+      "files": [
+        "server/routes/clinical.routes.ts",
+        "server/services/clinical.service.ts",
+        "client/src/components/clinical/VitalsEntryForm.tsx",
+        "client/src/components/clinical/ClinicalNotesEditor.tsx",
+        "client/src/components/clinical/NursingNotesForm.tsx"
+      ]
+    },
+    {
+      "name": "Notification System",
+      "description": "Real-time notification system with in-app notifications, sound alerts, and cross-tab synchronization",
+      "files": [
+        "server/routes/notifications.routes.ts",
+        "server/services/notifications.service.ts",
+        "client/src/lib/notification-sounds.ts",
+        "client/src/components/notifications/NotificationBell.tsx"
+      ]
+    },
+    {
+      "name": "User Onboarding",
+      "description": "Multi-step onboarding flows for all user roles with profile completion and verification",
+      "files": [
+        "client/src/pages/onboarding/patient-onboarding.tsx",
+        "client/src/pages/onboarding/hospital-onboarding.tsx",
+        "client/src/pages/onboarding/nurse-onboarding.tsx",
+        "client/src/pages/onboarding/pharmacist-onboarding.tsx",
+        "client/src/pages/onboarding/radiology-technician-onboarding.tsx",
+        "server/routes/onboarding.routes.ts",
+        "server/services/onboarding.service.ts"
+      ]
+    },
+    {
+      "name": "Billing System",
+      "description": "Invoice generation, payment processing, and billing management for appointments and services",
+      "files": [
+        "server/routes/billing.routes.ts",
+        "server/services/billing.service.ts",
+        "client/src/components/billing/InvoiceModal.tsx",
+        "client/src/components/billing/PaymentModal.tsx"
+      ]
+    },
+    {
+      "name": "Doctor Availability Management",
+      "description": "Doctor schedule management with weekly availability rules, exceptions, and leave management",
+      "files": [
+        "server/routes/availability.routes.ts",
+        "server/services/availability.service.ts"
+      ]
+    },
+    {
+      "name": "Real-Time Updates",
+      "description": "Cross-tab synchronization and real-time updates using localStorage events and React Query",
+      "files": [
+        "client/src/lib/timezone.ts",
+        "server/routes/events.routes.ts"
+      ]
+    },
+    {
+      "name": "Responsive Design",
+      "description": "Mobile-responsive design with drawer navigation, adaptive layouts, and touch-friendly interfaces",
+      "files": [
+        "client/src/hooks/use-responsive.ts",
+        "client/src/pages/dashboards/patient-dashboard.tsx"
+      ]
+    },
+    {
+      "name": "Database Schema",
+      "description": "Complete database schema with all tables, relations, and validation schemas using Drizzle ORM",
+      "files": [
+        "shared/schema.ts",
+        "drizzle/meta"
+      ]
     }
-  },
-  "actors_and_roles": [
-    "PATIENT",
-    "DOCTOR",
-    "RECEPTIONIST",
-    "HOSPITAL_ADMIN (hospital role in codebase)",
-    "LAB_TECHNICIAN",
-    "SYSTEM_ADMIN (limited / implied)"
-  ],
-  "implemented_modules_high_level": [
-    "Authentication (OTP-based flows + role-based access)",
-    "Hospital onboarding/registration",
-    "Patient onboarding/registration",
-    "Doctor registration",
-    "Appointment booking (patient) + walk-in booking (receptionist)",
-    "Appointment lifecycle (pending/confirmed/completed/cancelled) with filtering on dashboards",
-    "Receptionist operational actions (confirm, reject with reason, check-in)",
-    "Doctor dashboards: schedule + prescriptions workflow",
-    "Prescription creation + listing",
-    "Lab reports: routes/services exist; UI partially present",
-    "Notifications: API routes/services exist; UI presence varies",
-    "Cross-dashboard update plumbing via events/subscribe patterns"
-  ],
-  "key_frontend_pages": {
-    "booking": [
-      "client/src/pages/book-appointment.tsx"
-    ],
-    "dashboards": [
-      "client/src/pages/dashboards/patient-dashboard.tsx",
-      "client/src/pages/dashboards/patient-appointments.tsx",
-      "client/src/pages/dashboards/doctor-dashboard.tsx",
-      "client/src/pages/dashboards/receptionist-dashboard.tsx",
-      "client/src/pages/dashboards/hospital-dashboard.tsx",
-      "client/src/pages/dashboards/lab-dashboard.tsx"
-    ],
-    "auth": [
-      "client/src/pages/auth/login.tsx",
-      "client/src/pages/auth/register.tsx",
-      "client/src/pages/auth/otp-verification.tsx"
-    ]
-  },
-  "key_backend_routes": [
-    "server/routes/auth.routes.ts",
-    "server/routes/appointments.routes.ts",
-    "server/routes/reception.routes.ts",
-    "server/routes/doctors.routes.ts",
-    "server/routes/hospitals.routes.ts",
-    "server/routes/patients.routes.ts",
-    "server/routes/prescriptions.routes.ts",
-    "server/routes/labs.routes.ts",
-    "server/routes/notifications.routes.ts",
-    "server/routes/events.routes.ts"
-  ],
-  "appointment_flow": {
-    "patient_booking": "Patient selects hospital -> selects doctor -> selects date & time -> submits appointment (typically pending).",
-    "receptionist_flow": "Receptionist sees pending -> confirm (confirmed) or reject/cancel with reason; receptionist can also book walk-in appointments (auto-confirmed).",
-    "doctor_flow": "Doctor sees confirmed schedule -> completes appointment and can generate prescription.",
-    "patient_view": "Patient sees upcoming/past, including cancelled appointments shown in upcoming with cancellation reason."
-  },
-  "notable_recent_work": [
-    "Notification sounds utility added (client/src/lib/notification-sounds.ts) and integrated into dashboards and booking flow",
-    "Cancelled appointments shown as upcoming for patient with displayed cancellation reason",
-    "Receptionist dashboard action buttons switched to icon-based actions; rejection modal with predefined reasons",
-    "Walk-in booking improved with step-based UI and slot availability fixes",
-    "Age column added to receptionist + doctor appointment tables (requires patient DOB in appointment queries)"
-  ],
-  "current_limitations_vs_full_hms": [
-    "No IPD/ADT (admission/transfer/discharge) workflows yet",
-    "No bed/ward management, nursing charting, medication administration record, diet, OT scheduling, ICU flows",
-    "No billing/claims engine (packages, payer, TPA, invoices, ledger, refunds) beyond basic revenue KPIs",
-    "No pharmacy inventory and dispensing workflow (stock, purchase, batch/expiry, controlled drugs)",
-    "No LIS/RIS/PACS integrations (HL7/FHIR/DICOM) and limited lab order lifecycle UI",
-    "No full EMR clinical documentation suite (problem list, allergies, vitals charting, CPOE, clinical notes templates)",
-    "No audit/compliance-grade reporting and access logs"
   ]
 }
-
-
-
-
-
-

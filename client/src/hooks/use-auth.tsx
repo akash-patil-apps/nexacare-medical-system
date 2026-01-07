@@ -26,28 +26,25 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const checkAuth = () => {
       try {
         const token = getAuthToken();
-        console.log('🔍 Auth check - token exists:', !!token);
         if (token) {
           const tokenUser = getUserFromToken();
-          console.log('🔍 Auth check - decoded user:', tokenUser);
           if (tokenUser) {
             setUser(tokenUser);
             localStorage.setItem('userRole', tokenUser.role.toLowerCase());
-            console.log('✅ User set in auth context');
           } else {
             // Token is invalid, clear it
-            console.log('❌ Invalid token, clearing');
+            sessionStorage.removeItem('auth-token');
             localStorage.removeItem('auth-token');
             localStorage.removeItem('userRole');
             setUser(null);
           }
         } else {
-          console.log('❌ No token found');
           localStorage.removeItem('userRole');
           setUser(null);
         }
       } catch (error) {
         console.error('❌ Auth check error:', error);
+        sessionStorage.removeItem('auth-token');
         localStorage.removeItem('auth-token');
         setUser(null);
       }
@@ -56,14 +53,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     
     checkAuth();
 
-    // Listen for storage changes (when token is set in another tab/window)
+    // Listen for storage changes (when token is set in another tab/window via localStorage)
+    // Note: sessionStorage changes don't trigger storage events between tabs
     const handleStorageChange = (e: StorageEvent) => {
       if (e.key === 'auth-token') {
+        // Only sync if localStorage changed (for backward compatibility)
+        // sessionStorage is per-tab, so we don't need to sync it
         checkAuth();
       }
     };
 
-    // Listen for custom token change events
+    // Listen for custom token change events (works for both localStorage and sessionStorage)
     const handleTokenChange = () => {
       checkAuth();
     };
@@ -106,4 +106,3 @@ function useAuth() {
 }
 
 export { useAuth };
-export default useAuth;

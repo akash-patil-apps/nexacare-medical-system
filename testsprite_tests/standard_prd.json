@@ -1,0 +1,279 @@
+{
+  "meta": {
+    "project": "NexaCare Medical System",
+    "date": "2025-12-30",
+    "prepared_by": "NexaCare Development Team"
+  },
+  "product_overview": "NexaCare Medical System is a comprehensive full-stack healthcare management platform designed to streamline hospital operations, patient care, and clinical workflows across multiple healthcare roles. It provides role-based dashboards, real-time updates, and integrated workflows for hospitals, clinics, and healthcare facilities in India, accessible via a responsive web application.",
+  "core_goals": [
+    "Digitize hospital operations from appointment booking to patient discharge",
+    "Streamline multi-role workflows between patients, doctors, receptionists, and hospital staff",
+    "Improve patient care through integrated prescription management, lab reports, and medical records",
+    "Enhance operational efficiency with real-time updates, queue management, and automated notifications",
+    "Provide comprehensive healthcare management covering outpatient (OPD) and inpatient (IPD) department workflows"
+  ],
+  "key_features": [
+    "Multi-role authentication with password and OTP login, JWT tokens, and role-based access control",
+    "Role-specific dashboards for Patients, Doctors, Receptionists, Hospital Admins, Lab Technicians, Nurses, Pharmacists, and Radiology Technicians",
+    "Complete appointment booking and management flow with hospital/doctor selection, time slot booking, status tracking and confirmation",
+    "Digital prescription creation and management linked to patient appointments",
+    "Lab test requests and lab report upload system with status tracking and notifications",
+    "OPD queue and token management with real-time updates and patient check-in system",
+    "Inpatient department (IPD) patient management including bed allocation, vitals recording, clinical documentation, and nursing notes",
+    "Real-time notifications with in-app alerts, sound notifications, and cross-tab synchronization",
+    "Responsive and mobile-first design using Ant Design system for seamless user experience across devices",
+    "User onboarding flows tailored for each role to complete profile and verification",
+    "Secure authentication and authorization with password hashing, JWT expiration, and route protection",
+    "Comprehensive database schema using PostgreSQL and Drizzle ORM for data integrity and relations",
+    "Scalable architecture with React Query caching, optimized database queries, and efficient API response times"
+  ],
+  "user_flow_summary": [
+    "Patient searches and books appointment selecting hospital, doctor, and time slot; receptionist confirms appointment; patient receives confirmation and doctor sees appointment schedule.",
+    "Doctor manages daily schedule, creates prescriptions during consultations, views patient medical history, and requests lab tests.",
+    "Lab technician receives lab test requests, processes samples, uploads reports, and updates status; patient and doctor notified of report availability.",
+    "Nurse manages IPD patients by recording vitals, documenting nursing notes, monitoring patient status, and coordinating care with other staff.",
+    "Receptionist manages OPD queue by confirming appointments, registering walk-ins, calling next patients, and updating queue status in real-time across displays."
+  ],
+  "validation_criteria": [
+    "All user roles must authenticate securely via password or OTP with proper JWT token handling and role-based access control.",
+    "Appointment booking flow must support search, selection, booking, confirmation, check-in, and status updates with real-time synchronization.",
+    "Prescription system must allow doctors to create, save, and link prescriptions; patients to view and download prescriptions.",
+    "Lab report system must handle test requests, sample processing, report uploads, status tracking, and notifications to patient and doctor.",
+    "OPD queue management must display current serving token and update queue in real-time across user dashboards.",
+    "IPD patient management must enable nurses to record vitals, input nursing notes, and track patient information efficiently.",
+    "Notifications must work across tabs with sound alerts and visual indicators for all defined notification types.",
+    "The platform UI must be responsive and mobile-friendly, maintaining usability and consistency across devices and screen sizes.",
+    "Database schema must enforce data integrity, relations, and validation using Drizzle ORM and Zod schemas.",
+    "Performance metrics like API response times, page load times, and real-time update latency must meet defined operational thresholds."
+  ],
+  "code_summary": {
+    "tech_stack": [
+      "TypeScript",
+      "React 18.3.1",
+      "Express.js",
+      "PostgreSQL",
+      "Ant Design 5.27.4",
+      "Drizzle ORM",
+      "React Query (TanStack Query)",
+      "Wouter",
+      "Day.js",
+      "Zod",
+      "JWT",
+      "bcrypt"
+    ],
+    "features": [
+      {
+        "name": "Multi-Role Authentication",
+        "description": "Complete authentication system with password and OTP login, role-based access control, JWT tokens, and user registration",
+        "files": [
+          "client/src/pages/auth/login.tsx",
+          "client/src/pages/auth/register.tsx",
+          "client/src/pages/auth/otp-verification.tsx",
+          "server/routes/auth.routes.ts",
+          "server/middleware/auth.ts",
+          "server/services/auth.service.ts"
+        ]
+      },
+      {
+        "name": "Patient Dashboard",
+        "description": "Complete patient portal with KPIs, appointments, prescriptions, lab reports, care timeline, and notifications",
+        "files": [
+          "client/src/pages/dashboards/patient-dashboard.tsx",
+          "client/src/pages/dashboards/patient-appointments.tsx",
+          "client/src/pages/dashboards/patient-prescriptions.tsx"
+        ]
+      },
+      {
+        "name": "Doctor Dashboard",
+        "description": "Doctor dashboard with schedule management, prescription creation, patient history, and appointment tracking",
+        "files": [
+          "client/src/pages/dashboards/doctor-dashboard.tsx",
+          "client/src/pages/dashboards/doctor-appointments.tsx",
+          "client/src/pages/dashboards/doctor-prescriptions.tsx",
+          "server/routes/doctors.routes.ts",
+          "server/services/doctors.service.ts"
+        ]
+      },
+      {
+        "name": "Receptionist Dashboard",
+        "description": "Receptionist dashboard for appointment confirmation, walk-in registration, queue management, and patient check-in",
+        "files": [
+          "client/src/pages/dashboards/receptionist-dashboard.tsx",
+          "server/routes/reception.routes.ts",
+          "server/services/reception.service.ts"
+        ]
+      },
+      {
+        "name": "Hospital Admin Dashboard",
+        "description": "Hospital administration dashboard with analytics, staff management, appointment overview, and hospital settings",
+        "files": [
+          "client/src/pages/dashboards/hospital-dashboard.tsx",
+          "server/routes/hospitals.routes.ts",
+          "server/services/hospitals.service.ts"
+        ]
+      },
+      {
+        "name": "Lab Technician Dashboard",
+        "description": "Lab dashboard for managing lab test requests, uploading reports, tracking sample status, and processing test results",
+        "files": [
+          "client/src/pages/dashboards/lab-dashboard.tsx",
+          "server/routes/labs.routes.ts",
+          "server/services/lab.service.ts"
+        ]
+      },
+      {
+        "name": "Nurse Dashboard",
+        "description": "Nurse station dashboard for IPD patient management, vitals recording, nursing notes, and patient care monitoring",
+        "files": [
+          "client/src/pages/dashboards/nurse-dashboard.tsx",
+          "server/routes/nurses.routes.ts",
+          "server/services/nurses.service.ts",
+          "server/routes/clinical.routes.ts",
+          "server/services/clinical.service.ts"
+        ]
+      },
+      {
+        "name": "Pharmacist Dashboard",
+        "description": "Pharmacy dashboard for prescription dispensing, inventory management, patient counseling, and medication tracking",
+        "files": [
+          "client/src/pages/dashboards/pharmacist-dashboard.tsx",
+          "server/routes/pharmacists.routes.ts",
+          "server/services/pharmacists.service.ts"
+        ]
+      },
+      {
+        "name": "Radiology Technician Dashboard",
+        "description": "Radiology dashboard for imaging order management, equipment status, image upload, and procedure scheduling",
+        "files": [
+          "client/src/pages/dashboards/radiology-technician-dashboard.tsx",
+          "server/routes/radiology-technicians.routes.ts",
+          "server/services/radiology-technicians.service.ts"
+        ]
+      },
+      {
+        "name": "Appointment Booking System",
+        "description": "Complete appointment booking flow with hospital/doctor selection, date/time slot selection, and status management",
+        "files": [
+          "client/src/pages/book-appointment.tsx",
+          "server/routes/appointments.routes.ts",
+          "server/services/appointments.service.ts",
+          "client/src/lib/appointment-status.ts"
+        ]
+      },
+      {
+        "name": "Prescription Management",
+        "description": "Digital prescription system with medication details, dosages, instructions, and prescription history",
+        "files": [
+          "client/src/pages/dashboards/doctor-prescriptions.tsx",
+          "client/src/pages/dashboards/patient-prescriptions.tsx",
+          "server/routes/prescriptions.routes.ts",
+          "server/services/prescriptions.service.ts"
+        ]
+      },
+      {
+        "name": "Lab Report System",
+        "description": "Lab test request and report management system with upload functionality, status tracking, and patient/doctor viewing",
+        "files": [
+          "server/routes/labs.routes.ts",
+          "server/services/lab.service.ts",
+          "shared/schema.ts"
+        ]
+      },
+      {
+        "name": "OPD Queue Management",
+        "description": "Queue and token system for OPD operations with real-time updates, current serving display, and patient check-in",
+        "files": [
+          "server/routes/queue.routes.ts",
+          "server/services/queue.service.ts",
+          "client/src/components/queue/QueuePanel.tsx",
+          "client/src/components/queue/NowServingWidget.tsx"
+        ]
+      },
+      {
+        "name": "IPD Patient Management",
+        "description": "Inpatient department management with bed allocation, encounter tracking, and patient admission/discharge",
+        "files": [
+          "server/routes/ipd.routes.ts",
+          "server/services/ipd.service.ts",
+          "shared/schema.ts"
+        ]
+      },
+      {
+        "name": "Clinical Documentation",
+        "description": "Clinical notes, vitals charting, nursing notes, and patient documentation system",
+        "files": [
+          "server/routes/clinical.routes.ts",
+          "server/services/clinical.service.ts",
+          "client/src/components/clinical/VitalsEntryForm.tsx",
+          "client/src/components/clinical/ClinicalNotesEditor.tsx",
+          "client/src/components/clinical/NursingNotesForm.tsx"
+        ]
+      },
+      {
+        "name": "Notification System",
+        "description": "Real-time notification system with in-app notifications, sound alerts, and cross-tab synchronization",
+        "files": [
+          "server/routes/notifications.routes.ts",
+          "server/services/notifications.service.ts",
+          "client/src/lib/notification-sounds.ts",
+          "client/src/components/notifications/NotificationBell.tsx"
+        ]
+      },
+      {
+        "name": "User Onboarding",
+        "description": "Multi-step onboarding flows for all user roles with profile completion and verification",
+        "files": [
+          "client/src/pages/onboarding/patient-onboarding.tsx",
+          "client/src/pages/onboarding/hospital-onboarding.tsx",
+          "client/src/pages/onboarding/nurse-onboarding.tsx",
+          "client/src/pages/onboarding/pharmacist-onboarding.tsx",
+          "client/src/pages/onboarding/radiology-technician-onboarding.tsx",
+          "server/routes/onboarding.routes.ts",
+          "server/services/onboarding.service.ts"
+        ]
+      },
+      {
+        "name": "Billing System",
+        "description": "Invoice generation, payment processing, and billing management for appointments and services",
+        "files": [
+          "server/routes/billing.routes.ts",
+          "server/services/billing.service.ts",
+          "client/src/components/billing/InvoiceModal.tsx",
+          "client/src/components/billing/PaymentModal.tsx"
+        ]
+      },
+      {
+        "name": "Doctor Availability Management",
+        "description": "Doctor schedule management with weekly availability rules, exceptions, and leave management",
+        "files": [
+          "server/routes/availability.routes.ts",
+          "server/services/availability.service.ts"
+        ]
+      },
+      {
+        "name": "Real-Time Updates",
+        "description": "Cross-tab synchronization and real-time updates using localStorage events and React Query",
+        "files": [
+          "client/src/lib/timezone.ts",
+          "server/routes/events.routes.ts"
+        ]
+      },
+      {
+        "name": "Responsive Design",
+        "description": "Mobile-responsive design with drawer navigation, adaptive layouts, and touch-friendly interfaces",
+        "files": [
+          "client/src/hooks/use-responsive.ts",
+          "client/src/pages/dashboards/patient-dashboard.tsx"
+        ]
+      },
+      {
+        "name": "Database Schema",
+        "description": "Complete database schema with all tables, relations, and validation schemas using Drizzle ORM",
+        "files": [
+          "shared/schema.ts",
+          "drizzle/meta"
+        ]
+      }
+    ]
+  }
+}

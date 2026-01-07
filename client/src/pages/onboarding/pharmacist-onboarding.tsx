@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { useLocation } from 'wouter';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Form, Input, Select, Button, Card, Steps, App, Space, Typography } from 'antd';
-import { UserOutlined, MedicineBoxOutlined, SafetyOutlined, ShoppingOutlined } from '@ant-design/icons';
+import { UserOutlined, MedicineBoxOutlined, SecurityScanOutlined, ShoppingOutlined } from '@ant-design/icons';
 import { apiRequest } from '../../lib/queryClient';
 
 const { Option } = Select;

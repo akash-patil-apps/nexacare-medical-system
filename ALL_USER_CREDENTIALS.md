@@ -2,7 +2,7 @@
 ================================================================================
 
 Export Date: 15/12/2025, 1:19:50 pm
-Total Users: 341
+Total Users: 401
 Universal Password: password123
 
 ================================================================================
@@ -15,6 +15,9 @@ Universal Password: password123
 - **PATIENT**: 100 user(s)
 - **RECEPTIONIST**: 20 user(s)
 - **LAB**: 10 user(s)
+- **NURSE**: 20 user(s)
+- **PHARMACIST**: 20 user(s)
+- **RADIOLOGY_TECHNICIAN**: 20 user(s)
 
 ---
 
@@ -413,6 +416,93 @@ Universal Password: password123
 
 ---
 
+## 👩‍⚕️ NURSE USERS
+
+| # | Mobile Number | Nurse Name | Hospital | Specialization | Shift | Email |
+|---|---------------|------------|----------|----------------|-------|-------|
+| 1 | `9860000000` | Priya Sharma | Apollo Hospitals Mumbai | General Medicine | Day | priya.sharma.9860000000@nexacare.com |
+| 2 | `9860000001` | Anita Patel | Apollo Hospitals Mumbai | ICU | Night | anita.patel.9860000001@nexacare.com |
+| 3 | `9860000002` | Sunita Singh | Fortis Healthcare Mumbai | Emergency | Day | sunita.singh.9860000002@nexacare.com |
+| 4 | `9860000003` | Kavita Verma | Fortis Healthcare Mumbai | Pediatrics | Night | kavita.verma.9860000003@nexacare.com |
+| 5 | `9860000004` | Meera Reddy | Kokilaben Hospital Mumbai | Maternity | Day | meera.reddy.9860000004@nexacare.com |
+| 6 | `9860000005` | Deepa Iyer | Kokilaben Hospital Mumbai | Surgical | Night | deepa.iyer.9860000005@nexacare.com |
+| 7 | `9860000006` | Uma Gaikwad | Manipal Hospital Mumbai | Cardiac | Day | uma.gaikwad.9860000006@nexacare.com |
+| 8 | `9860000007` | Lakshmi Desai | Manipal Hospital Mumbai | Oncology | Night | lakshmi.desai.9860000007@nexacare.com |
+| 9 | `9860000008` | Priya Sharma | Sahyadri Hospital Pune | General Medicine | Day | priya.sharma.9860000008@nexacare.com |
+| 10 | `9860000009` | Anita Patel | Sahyadri Hospital Pune | ICU | Night | anita.patel.9860000009@nexacare.com |
+| 11 | `9860000010` | Sunita Singh | Ruby Hall Clinic Pune | Emergency | Day | sunita.singh.9860000010@nexacare.com |
+| 12 | `9860000011` | Kavita Verma | Ruby Hall Clinic Pune | Pediatrics | Night | kavita.verma.9860000011@nexacare.com |
+| 13 | `9860000012` | Meera Reddy | SevenHills Hospital Mumbai | Maternity | Day | meera.reddy.9860000012@nexacare.com |
+| 14 | `9860000013` | Deepa Iyer | SevenHills Hospital Mumbai | Surgical | Night | deepa.iyer.9860000013@nexacare.com |
+| 15 | `9860000014` | Uma Gaikwad | Wockhardt Hospital Mumbai | Cardiac | Day | uma.gaikwad.9860000014@nexacare.com |
+| 16 | `9860000015` | Lakshmi Desai | Wockhardt Hospital Mumbai | Oncology | Night | lakshmi.desai.9860000015@nexacare.com |
+| 17 | `9860000016` | Priya Sharma | Global Hospital Mumbai | General Medicine | Day | priya.sharma.9860000016@nexacare.com |
+| 18 | `9860000017` | Anita Patel | Global Hospital Mumbai | ICU | Night | anita.patel.9860000017@nexacare.com |
+| 19 | `9860000018` | Sunita Singh | Max Super Specialty Mumbai | Emergency | Day | sunita.singh.9860000018@nexacare.com |
+| 20 | `9860000019` | Kavita Verma | Max Super Specialty Mumbai | Pediatrics | Night | kavita.verma.9860000019@nexacare.com |
+
+**Password for all users:** `password123`
+
+---
+
+## 💊 PHARMACIST USERS
+
+| # | Mobile Number | Pharmacist Name | Hospital | Specialization | Pharmacy Type | Email |
+|---|---------------|-----------------|----------|----------------|---------------|-------|
+| 1 | `9870000000` | Priya Patel | Apollo Hospitals Mumbai | Clinical Pharmacy | Hospital Pharmacy | priya.patel.9870000000@nexacare.com |
+| 2 | `9870000001` | Anjali Sharma | Apollo Hospitals Mumbai | Hospital Pharmacy | Hospital Pharmacy | anjali.sharma.9870000001@nexacare.com |
+| 3 | `9870000002` | Kavita Verma | Fortis Healthcare Mumbai | Oncology | Hospital Pharmacy | kavita.verma.9870000002@nexacare.com |
+| 4 | `9870000003` | Sunita Singh | Fortis Healthcare Mumbai | Clinical Pharmacy | Hospital Pharmacy | sunita.singh.9870000003@nexacare.com |
+| 5 | `9870000004` | Meera Gupta | Kokilaben Hospital Mumbai | General Pharmacy | Hospital Pharmacy | meera.gupta.9870000004@nexacare.com |
+| 6 | `9870000005` | Deepa Jain | Kokilaben Hospital Mumbai | Clinical Pharmacy | Hospital Pharmacy | deepa.jain.9870000005@nexacare.com |
+| 7 | `9870000006` | Uma Reddy | Manipal Hospital Mumbai | Hospital Pharmacy | Hospital Pharmacy | uma.reddy.9870000006@nexacare.com |
+| 8 | `9870000007` | Lakshmi Iyer | Manipal Hospital Mumbai | Oncology | Hospital Pharmacy | lakshmi.iyer.9870000007@nexacare.com |
+| 9 | `9870000008` | Priya Patel | Sahyadri Hospital Pune | Clinical Pharmacy | Hospital Pharmacy | priya.patel.9870000008@nexacare.com |
+| 10 | `9870000009` | Anjali Sharma | Sahyadri Hospital Pune | General Pharmacy | Hospital Pharmacy | anjali.sharma.9870000009@nexacare.com |
+| 11 | `9870000010` | Kavita Verma | Ruby Hall Clinic Pune | Clinical Pharmacy | Hospital Pharmacy | kavita.verma.9870000010@nexacare.com |
+| 12 | `9870000011` | Sunita Singh | Ruby Hall Clinic Pune | Hospital Pharmacy | Hospital Pharmacy | sunita.singh.9870000011@nexacare.com |
+| 13 | `9870000012` | Meera Gupta | SevenHills Hospital Mumbai | General Pharmacy | Hospital Pharmacy | meera.gupta.9870000012@nexacare.com |
+| 14 | `9870000013` | Deepa Jain | SevenHills Hospital Mumbai | Clinical Pharmacy | Hospital Pharmacy | deepa.jain.9870000013@nexacare.com |
+| 15 | `9870000014` | Uma Reddy | Wockhardt Hospital Mumbai | Hospital Pharmacy | Hospital Pharmacy | uma.reddy.9870000014@nexacare.com |
+| 16 | `9870000015` | Lakshmi Iyer | Wockhardt Hospital Mumbai | Oncology | Hospital Pharmacy | lakshmi.iyer.9870000015@nexacare.com |
+| 17 | `9870000016` | Priya Patel | Global Hospital Mumbai | Clinical Pharmacy | Hospital Pharmacy | priya.patel.9870000016@nexacare.com |
+| 18 | `9870000017` | Anjali Sharma | Global Hospital Mumbai | General Pharmacy | Hospital Pharmacy | anjali.sharma.9870000017@nexacare.com |
+| 19 | `9870000018` | Kavita Verma | Max Super Specialty Mumbai | Clinical Pharmacy | Hospital Pharmacy | kavita.verma.9870000018@nexacare.com |
+| 20 | `9870000019` | Sunita Singh | Max Super Specialty Mumbai | Hospital Pharmacy | Hospital Pharmacy | sunita.singh.9870000019@nexacare.com |
+
+**Password for all users:** `password123`
+
+---
+
+## 🩻 RADIOLOGY TECHNICIAN USERS
+
+| # | Mobile Number | Technician Name | Hospital | Specialization | Modalities | Email |
+|---|---------------|-----------------|----------|----------------|------------|-------|
+| 1 | `9880000000` | Raj Kumar | Apollo Hospitals Mumbai | X-Ray | X-Ray, CT Scan | raj.kumar.9880000000@nexacare.com |
+| 2 | `9880000001` | Amit Kumar | Apollo Hospitals Mumbai | CT Scan | CT Scan, MRI | amit.kumar.9880000001@nexacare.com |
+| 3 | `9880000002` | Vikram Kumar | Fortis Healthcare Mumbai | MRI | MRI, Ultrasound | vikram.kumar.9880000002@nexacare.com |
+| 4 | `9880000003` | Suresh Kumar | Fortis Healthcare Mumbai | Ultrasound | Ultrasound, X-Ray | suresh.kumar.9880000003@nexacare.com |
+| 5 | `9880000004` | Ravi Kumar | Kokilaben Hospital Mumbai | General Radiology | X-Ray, CT Scan, MRI | ravi.kumar.9880000004@nexacare.com |
+| 6 | `9880000005` | Arjun Kumar | Kokilaben Hospital Mumbai | X-Ray | X-Ray, Fluoroscopy | arjun.kumar.9880000005@nexacare.com |
+| 7 | `9880000006` | Karan Kumar | Manipal Hospital Mumbai | CT Scan | CT Scan, MRI | karan.kumar.9880000006@nexacare.com |
+| 8 | `9880000007` | Mohan Kumar | Manipal Hospital Mumbai | Mammography | Mammography, X-Ray | mohan.kumar.9880000007@nexacare.com |
+| 9 | `9880000008` | Raj Singh | Sahyadri Hospital Pune | Ultrasound | Ultrasound, Doppler | raj.singh.9880000008@nexacare.com |
+| 10 | `9880000009` | Amit Singh | Sahyadri Hospital Pune | Interventional | X-Ray, Fluoroscopy | amit.singh.9880000009@nexacare.com |
+| 11 | `9880000010` | Vikram Singh | Ruby Hall Clinic Pune | X-Ray | X-Ray, CT Scan | vikram.singh.9880000010@nexacare.com |
+| 12 | `9880000011` | Suresh Singh | Ruby Hall Clinic Pune | CT Scan | CT Scan, MRI | suresh.singh.9880000011@nexacare.com |
+| 13 | `9880000012` | Ravi Singh | SevenHills Hospital Mumbai | MRI | MRI, Ultrasound | ravi.singh.9880000012@nexacare.com |
+| 14 | `9880000013` | Arjun Singh | SevenHills Hospital Mumbai | Ultrasound | Ultrasound, X-Ray | arjun.singh.9880000013@nexacare.com |
+| 15 | `9880000014` | Karan Singh | Wockhardt Hospital Mumbai | General Radiology | X-Ray, CT Scan, MRI | karan.singh.9880000014@nexacare.com |
+| 16 | `9880000015` | Mohan Singh | Wockhardt Hospital Mumbai | X-Ray | X-Ray, Fluoroscopy | mohan.singh.9880000015@nexacare.com |
+| 17 | `9880000016` | Raj Kumar | Global Hospital Mumbai | CT Scan | CT Scan, MRI | raj.kumar.9880000016@nexacare.com |
+| 18 | `9880000017` | Amit Kumar | Global Hospital Mumbai | Mammography | Mammography, X-Ray | amit.kumar.9880000017@nexacare.com |
+| 19 | `9880000018` | Vikram Kumar | Max Super Specialty Mumbai | Ultrasound | Ultrasound, Doppler | vikram.kumar.9880000018@nexacare.com |
+| 20 | `9880000019` | Suresh Kumar | Max Super Specialty Mumbai | Interventional | X-Ray, Fluoroscopy | suresh.kumar.9880000019@nexacare.com |
+
+**Password for all users:** `password123`
+
+---
+
 ## 📋 CSV FORMAT (All Users)
 
 ```csv
@@ -758,6 +848,66 @@ LAB,9840000006,Lab Admin 7,lab.admin.7.9840000006@nexacare.com,Metro Lab 7
 LAB,9840000007,Lab Admin 8,lab.admin.8.9840000007@nexacare.com,City Lab 8
 LAB,9840000008,Lab Admin 9,lab.admin.9.9840000008@nexacare.com,Prime Lab 9
 LAB,9840000009,Lab Admin 10,lab.admin.10.9840000009@nexacare.com,Prime Lab 10
+NURSE,9860000000,Priya Sharma,priya.sharma.9860000000@nexacare.com,Apollo Hospitals Mumbai - General Medicine
+NURSE,9860000001,Anita Patel,anita.patel.9860000001@nexacare.com,Apollo Hospitals Mumbai - ICU
+NURSE,9860000002,Sunita Singh,sunita.singh.9860000002@nexacare.com,Fortis Healthcare Mumbai - Emergency
+NURSE,9860000003,Kavita Verma,kavita.verma.9860000003@nexacare.com,Fortis Healthcare Mumbai - Pediatrics
+NURSE,9860000004,Meera Reddy,meera.reddy.9860000004@nexacare.com,Kokilaben Hospital Mumbai - Maternity
+NURSE,9860000005,Deepa Iyer,deepa.iyer.9860000005@nexacare.com,Kokilaben Hospital Mumbai - Surgical
+NURSE,9860000006,Uma Gaikwad,uma.gaikwad.9860000006@nexacare.com,Manipal Hospital Mumbai - Cardiac
+NURSE,9860000007,Lakshmi Desai,lakshmi.desai.9860000007@nexacare.com,Manipal Hospital Mumbai - Oncology
+NURSE,9860000008,Priya Sharma,priya.sharma.9860000008@nexacare.com,Sahyadri Hospital Pune - General Medicine
+NURSE,9860000009,Anita Patel,anita.patel.9860000009@nexacare.com,Sahyadri Hospital Pune - ICU
+NURSE,9860000010,Sunita Singh,sunita.singh.9860000010@nexacare.com,Ruby Hall Clinic Pune - Emergency
+NURSE,9860000011,Kavita Verma,kavita.verma.9860000011@nexacare.com,Ruby Hall Clinic Pune - Pediatrics
+NURSE,9860000012,Meera Reddy,meera.reddy.9860000012@nexacare.com,SevenHills Hospital Mumbai - Maternity
+NURSE,9860000013,Deepa Iyer,deepa.iyer.9860000013@nexacare.com,SevenHills Hospital Mumbai - Surgical
+NURSE,9860000014,Uma Gaikwad,uma.gaikwad.9860000014@nexacare.com,Wockhardt Hospital Mumbai - Cardiac
+NURSE,9860000015,Lakshmi Desai,lakshmi.desai.9860000015@nexacare.com,Wockhardt Hospital Mumbai - Oncology
+NURSE,9860000016,Priya Sharma,priya.sharma.9860000016@nexacare.com,Global Hospital Mumbai - General Medicine
+NURSE,9860000017,Anita Patel,anita.patel.9860000017@nexacare.com,Global Hospital Mumbai - ICU
+NURSE,9860000018,Sunita Singh,sunita.singh.9860000018@nexacare.com,Max Super Specialty Mumbai - Emergency
+NURSE,9860000019,Kavita Verma,kavita.verma.9860000019@nexacare.com,Max Super Specialty Mumbai - Pediatrics
+PHARMACIST,9870000000,Priya Patel,priya.patel.9870000000@nexacare.com,Apollo Hospitals Mumbai - Clinical Pharmacy
+PHARMACIST,9870000001,Anjali Sharma,anjali.sharma.9870000001@nexacare.com,Apollo Hospitals Mumbai - Hospital Pharmacy
+PHARMACIST,9870000002,Kavita Verma,kavita.verma.9870000002@nexacare.com,Fortis Healthcare Mumbai - Oncology
+PHARMACIST,9870000003,Sunita Singh,sunita.singh.9870000003@nexacare.com,Fortis Healthcare Mumbai - Clinical Pharmacy
+PHARMACIST,9870000004,Meera Gupta,meera.gupta.9870000004@nexacare.com,Kokilaben Hospital Mumbai - General Pharmacy
+PHARMACIST,9870000005,Deepa Jain,deepa.jain.9870000005@nexacare.com,Kokilaben Hospital Mumbai - Clinical Pharmacy
+PHARMACIST,9870000006,Uma Reddy,uma.reddy.9870000006@nexacare.com,Manipal Hospital Mumbai - Hospital Pharmacy
+PHARMACIST,9870000007,Lakshmi Iyer,lakshmi.iyer.9870000007@nexacare.com,Manipal Hospital Mumbai - Oncology
+PHARMACIST,9870000008,Priya Patel,priya.patel.9870000008@nexacare.com,Sahyadri Hospital Pune - Clinical Pharmacy
+PHARMACIST,9870000009,Anjali Sharma,anjali.sharma.9870000009@nexacare.com,Sahyadri Hospital Pune - General Pharmacy
+PHARMACIST,9870000010,Kavita Verma,kavita.verma.9870000010@nexacare.com,Ruby Hall Clinic Pune - Clinical Pharmacy
+PHARMACIST,9870000011,Sunita Singh,sunita.singh.9870000011@nexacare.com,Ruby Hall Clinic Pune - Hospital Pharmacy
+PHARMACIST,9870000012,Meera Gupta,meera.gupta.9870000012@nexacare.com,SevenHills Hospital Mumbai - General Pharmacy
+PHARMACIST,9870000013,Deepa Jain,deepa.jain.9870000013@nexacare.com,SevenHills Hospital Mumbai - Clinical Pharmacy
+PHARMACIST,9870000014,Uma Reddy,uma.reddy.9870000014@nexacare.com,Wockhardt Hospital Mumbai - Hospital Pharmacy
+PHARMACIST,9870000015,Lakshmi Iyer,lakshmi.iyer.9870000015@nexacare.com,Wockhardt Hospital Mumbai - Oncology
+PHARMACIST,9870000016,Priya Patel,priya.patel.9870000016@nexacare.com,Global Hospital Mumbai - Clinical Pharmacy
+PHARMACIST,9870000017,Anjali Sharma,anjali.sharma.9870000017@nexacare.com,Global Hospital Mumbai - General Pharmacy
+PHARMACIST,9870000018,Kavita Verma,kavita.verma.9870000018@nexacare.com,Max Super Specialty Mumbai - Clinical Pharmacy
+PHARMACIST,9870000019,Sunita Singh,sunita.singh.9870000019@nexacare.com,Max Super Specialty Mumbai - Hospital Pharmacy
+RADIOLOGY_TECHNICIAN,9880000000,Raj Kumar,raj.kumar.9880000000@nexacare.com,Apollo Hospitals Mumbai - X-Ray
+RADIOLOGY_TECHNICIAN,9880000001,Amit Kumar,amit.kumar.9880000001@nexacare.com,Apollo Hospitals Mumbai - CT Scan
+RADIOLOGY_TECHNICIAN,9880000002,Vikram Kumar,vikram.kumar.9880000002@nexacare.com,Fortis Healthcare Mumbai - MRI
+RADIOLOGY_TECHNICIAN,9880000003,Suresh Kumar,suresh.kumar.9880000003@nexacare.com,Fortis Healthcare Mumbai - Ultrasound
+RADIOLOGY_TECHNICIAN,9880000004,Ravi Kumar,ravi.kumar.9880000004@nexacare.com,Kokilaben Hospital Mumbai - General Radiology
+RADIOLOGY_TECHNICIAN,9880000005,Arjun Kumar,arjun.kumar.9880000005@nexacare.com,Kokilaben Hospital Mumbai - X-Ray
+RADIOLOGY_TECHNICIAN,9880000006,Karan Kumar,karan.kumar.9880000006@nexacare.com,Manipal Hospital Mumbai - CT Scan
+RADIOLOGY_TECHNICIAN,9880000007,Mohan Kumar,mohan.kumar.9880000007@nexacare.com,Manipal Hospital Mumbai - Mammography
+RADIOLOGY_TECHNICIAN,9880000008,Raj Singh,raj.singh.9880000008@nexacare.com,Sahyadri Hospital Pune - Ultrasound
+RADIOLOGY_TECHNICIAN,9880000009,Amit Singh,amit.singh.9880000009@nexacare.com,Sahyadri Hospital Pune - Interventional
+RADIOLOGY_TECHNICIAN,9880000010,Vikram Singh,vikram.singh.9880000010@nexacare.com,Ruby Hall Clinic Pune - X-Ray
+RADIOLOGY_TECHNICIAN,9880000011,Suresh Singh,suresh.singh.9880000011@nexacare.com,Ruby Hall Clinic Pune - CT Scan
+RADIOLOGY_TECHNICIAN,9880000012,Ravi Singh,ravi.singh.9880000012@nexacare.com,SevenHills Hospital Mumbai - MRI
+RADIOLOGY_TECHNICIAN,9880000013,Arjun Singh,arjun.singh.9880000013@nexacare.com,SevenHills Hospital Mumbai - Ultrasound
+RADIOLOGY_TECHNICIAN,9880000014,Karan Singh,karan.singh.9880000014@nexacare.com,Wockhardt Hospital Mumbai - General Radiology
+RADIOLOGY_TECHNICIAN,9880000015,Mohan Singh,mohan.singh.9880000015@nexacare.com,Wockhardt Hospital Mumbai - X-Ray
+RADIOLOGY_TECHNICIAN,9880000016,Raj Kumar,raj.kumar.9880000016@nexacare.com,Global Hospital Mumbai - CT Scan
+RADIOLOGY_TECHNICIAN,9880000017,Amit Kumar,amit.kumar.9880000017@nexacare.com,Global Hospital Mumbai - Mammography
+RADIOLOGY_TECHNICIAN,9880000018,Vikram Kumar,vikram.kumar.9880000018@nexacare.com,Max Super Specialty Mumbai - Ultrasound
+RADIOLOGY_TECHNICIAN,9880000019,Suresh Kumar,suresh.kumar.9880000019@nexacare.com,Max Super Specialty Mumbai - Interventional
 ```
 
 ---
@@ -1108,5 +1258,65 @@ ALL USERS USE PASSWORD: password123
 9840000007 | password123 | LAB | Lab Admin 8
 9840000008 | password123 | LAB | Lab Admin 9
 9840000009 | password123 | LAB | Lab Admin 10
+9860000000 | password123 | NURSE | Priya Sharma
+9860000001 | password123 | NURSE | Anita Patel
+9860000002 | password123 | NURSE | Sunita Singh
+9860000003 | password123 | NURSE | Kavita Verma
+9860000004 | password123 | NURSE | Meera Reddy
+9860000005 | password123 | NURSE | Deepa Iyer
+9860000006 | password123 | NURSE | Uma Gaikwad
+9860000007 | password123 | NURSE | Lakshmi Desai
+9860000008 | password123 | NURSE | Priya Sharma
+9860000009 | password123 | NURSE | Anita Patel
+9860000010 | password123 | NURSE | Sunita Singh
+9860000011 | password123 | NURSE | Kavita Verma
+9860000012 | password123 | NURSE | Meera Reddy
+9860000013 | password123 | NURSE | Deepa Iyer
+9860000014 | password123 | NURSE | Uma Gaikwad
+9860000015 | password123 | NURSE | Lakshmi Desai
+9860000016 | password123 | NURSE | Priya Sharma
+9860000017 | password123 | NURSE | Anita Patel
+9860000018 | password123 | NURSE | Sunita Singh
+9860000019 | password123 | NURSE | Kavita Verma
+9870000000 | password123 | PHARMACIST | Priya Patel
+9870000001 | password123 | PHARMACIST | Anjali Sharma
+9870000002 | password123 | PHARMACIST | Kavita Verma
+9870000003 | password123 | PHARMACIST | Sunita Singh
+9870000004 | password123 | PHARMACIST | Meera Gupta
+9870000005 | password123 | PHARMACIST | Deepa Jain
+9870000006 | password123 | PHARMACIST | Uma Reddy
+9870000007 | password123 | PHARMACIST | Lakshmi Iyer
+9870000008 | password123 | PHARMACIST | Priya Patel
+9870000009 | password123 | PHARMACIST | Anjali Sharma
+9870000010 | password123 | PHARMACIST | Kavita Verma
+9870000011 | password123 | PHARMACIST | Sunita Singh
+9870000012 | password123 | PHARMACIST | Meera Gupta
+9870000013 | password123 | PHARMACIST | Deepa Jain
+9870000014 | password123 | PHARMACIST | Uma Reddy
+9870000015 | password123 | PHARMACIST | Lakshmi Iyer
+9870000016 | password123 | PHARMACIST | Priya Patel
+9870000017 | password123 | PHARMACIST | Anjali Sharma
+9870000018 | password123 | PHARMACIST | Kavita Verma
+9870000019 | password123 | PHARMACIST | Sunita Singh
+9880000000 | password123 | RADIOLOGY_TECHNICIAN | Raj Kumar
+9880000001 | password123 | RADIOLOGY_TECHNICIAN | Amit Kumar
+9880000002 | password123 | RADIOLOGY_TECHNICIAN | Vikram Kumar
+9880000003 | password123 | RADIOLOGY_TECHNICIAN | Suresh Kumar
+9880000004 | password123 | RADIOLOGY_TECHNICIAN | Ravi Kumar
+9880000005 | password123 | RADIOLOGY_TECHNICIAN | Arjun Kumar
+9880000006 | password123 | RADIOLOGY_TECHNICIAN | Karan Kumar
+9880000007 | password123 | RADIOLOGY_TECHNICIAN | Mohan Kumar
+9880000008 | password123 | RADIOLOGY_TECHNICIAN | Raj Singh
+9880000009 | password123 | RADIOLOGY_TECHNICIAN | Amit Singh
+9880000010 | password123 | RADIOLOGY_TECHNICIAN | Vikram Singh
+9880000011 | password123 | RADIOLOGY_TECHNICIAN | Suresh Singh
+9880000012 | password123 | RADIOLOGY_TECHNICIAN | Ravi Singh
+9880000013 | password123 | RADIOLOGY_TECHNICIAN | Arjun Singh
+9880000014 | password123 | RADIOLOGY_TECHNICIAN | Karan Singh
+9880000015 | password123 | RADIOLOGY_TECHNICIAN | Mohan Singh
+9880000016 | password123 | RADIOLOGY_TECHNICIAN | Raj Kumar
+9880000017 | password123 | RADIOLOGY_TECHNICIAN | Amit Kumar
+9880000018 | password123 | RADIOLOGY_TECHNICIAN | Vikram Kumar
+9880000019 | password123 | RADIOLOGY_TECHNICIAN | Suresh Kumar
 ```
 

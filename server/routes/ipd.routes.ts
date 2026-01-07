@@ -13,7 +13,6 @@ router.use(authenticateToken);
 // Helper to get hospital ID
 const getHospitalId = async (user: any): Promise<number> => {
   const userRole = user.role?.toUpperCase();
-  console.log(`🔍 getHospitalId - User role: ${user.role} (normalized: ${userRole}), User ID: ${user.id}`);
   
   if (userRole === 'RECEPTIONIST') {
     const receptionist = await db
@@ -36,23 +35,19 @@ const getHospitalId = async (user: any): Promise<number> => {
     }
     return hospital[0].id;
   } else if (userRole === 'DOCTOR') {
-    console.log(`🔍 getHospitalId - Checking DOCTOR role, user ID: ${user.id}`);
     const doctor = await db
       .select()
       .from(doctors)
       .where(eq(doctors.userId, user.id))
       .limit(1);
-    console.log(`🔍 getHospitalId - Doctor query result:`, doctor.length > 0 ? { id: doctor[0].id, hospitalId: doctor[0].hospitalId } : 'not found');
     if (doctor.length === 0) {
       throw new Error('Doctor not found');
     }
     if (!doctor[0].hospitalId) {
       throw new Error('Doctor not associated with a hospital');
     }
-    console.log(`✅ getHospitalId - Returning hospital ID: ${doctor[0].hospitalId}`);
     return doctor[0].hospitalId;
   }
-  console.log(`❌ getHospitalId - Unauthorized: role=${user.role}, id=${user.id}`);
   throw new Error('Unauthorized');
 };
 
@@ -251,7 +246,6 @@ router.get('/structure', authenticateToken, authorizeRoles('ADMIN', 'HOSPITAL', 
     }
     
     const hospitalId = await getHospitalId(req.user);
-    console.log(`🏥 Fetching bed structure for hospital ${hospitalId} (user: ${req.user.id}, role: ${req.user.role})`);
     
     if (!hospitalId) {
       console.error('❌ Get bed structure: No hospital ID found');
@@ -259,12 +253,6 @@ router.get('/structure', authenticateToken, authorizeRoles('ADMIN', 'HOSPITAL', 
     }
     
     const structure = await ipdService.getBedStructure(hospitalId);
-    console.log(`✅ Bed structure fetched:`, {
-      floors: structure.floors?.length || 0,
-      wards: structure.wards?.length || 0,
-      rooms: structure.rooms?.length || 0,
-      beds: structure.beds?.length || 0,
-    });
     res.json(structure);
   } catch (err: any) {
     console.error('❌ Get bed structure error:', err);
@@ -309,9 +297,10 @@ router.post('/encounters', authorizeRoles('ADMIN', 'HOSPITAL', 'RECEPTIONIST'), 
 router.get('/encounters', authenticateToken, async (req: AuthenticatedRequest, res) => {
   try {
     const hospitalId = await getHospitalId(req.user);
-    const { patientId, doctorId, status } = req.query;
-    console.log('📋 Fetching IPD encounters:', { hospitalId, patientId, doctorId, status });
+    const { patientId, doctorId, status, nurse } = req.query;
 
+    // For nurse queries, return all encounters for the hospital
+    // The frontend can filter by ward preferences if needed
     const encounters = await ipdService.getIpdEncounters({
       hospitalId,
       patientId: patientId ? +patientId : undefined,
@@ -319,14 +308,6 @@ router.get('/encounters', authenticateToken, async (req: AuthenticatedRequest, r
       status: status as string | undefined,
     });
 
-    console.log(`✅ Returning ${encounters.length} encounters`);
-    if (encounters.length > 0) {
-      console.log('Sample encounter patient data:', {
-        encounterId: encounters[0].id,
-        patient: encounters[0].patient,
-        patientUser: encounters[0].patient?.user,
-      });
-    }
 
     res.json(encounters);
   } catch (err: any) {

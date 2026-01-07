@@ -143,7 +143,6 @@ export default function PatientAppointments() {
 
       if (response.ok) {
         const data = await response.json();
-        console.log('📅 Loaded appointments:', data);
         const rxData = rxResponse.ok ? await rxResponse.json() : [];
         const rxByAppointment: Record<number, boolean> = {};
         const rxMap: Record<number, any> = {};
@@ -243,14 +242,12 @@ export default function PatientAppointments() {
   useEffect(() => {
     const handleStorageChange = (e: StorageEvent) => {
       if (e.key === 'appointment-updated') {
-        console.log('🔄 Appointment update detected in patient appointments, refreshing...');
         loadAppointments();
       }
     };
     
     // Also listen for custom events (same-window updates)
     const handleCustomEvent = () => {
-      console.log('🔄 Custom appointment update event in patient appointments');
       loadAppointments();
     };
     

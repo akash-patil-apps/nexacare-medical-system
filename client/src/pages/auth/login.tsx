@@ -17,7 +17,7 @@ import {
 import { 
   LockOutlined, 
   PhoneOutlined, 
-  SafetyOutlined,
+  SecurityScanOutlined,
   MedicineBoxOutlined 
 } from '@ant-design/icons';
 import { authApi, setAuthToken } from "../../lib/auth";
@@ -26,7 +26,8 @@ const { Title, Text } = Typography;
 
 export default function Login() {
   const { message } = App.useApp();
-  const [form] = Form.useForm();
+  const [passwordForm] = Form.useForm();
+  const [otpSendForm] = Form.useForm();
   const [otpForm] = Form.useForm();
   const [otpSent, setOtpSent] = useState(false);
   const [, setLocation] = useLocation();
@@ -63,10 +64,12 @@ export default function Login() {
       
       return response.json();
     },
-    onSuccess: (data) => {
+    onSuccess: (data, mobileNumber) => {
       console.log('🔍 OTP sent successfully:', data);
+      // Preserve mobile number in OTP form
+      otpForm.setFieldsValue({ mobileNumber });
       setOtpSent(true);
-      message.success(`OTP sent to ${data.mobileNumber}`);
+      message.success(`OTP sent to ${data.mobileNumber || mobileNumber}`);
     },
     onError: (error) => {
       message.error(error.message);
@@ -166,11 +169,12 @@ export default function Login() {
                     children: (
                       <div style={{ height: '350px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
                       <Form
-                        form={form}
+                        form={passwordForm}
                         name="password-login"
                         onFinish={onPasswordLogin}
                         layout="vertical"
                         size="large"
+                        preserve={false}
                       >
                         <Form.Item
                           name="mobileNumber"
@@ -227,7 +231,7 @@ export default function Login() {
                     key: 'otp',
                     label: (
                       <span>
-                        <SafetyOutlined />
+                        <SecurityScanOutlined />
                         OTP Login
                       </span>
                     ),
@@ -235,11 +239,12 @@ export default function Login() {
                       <div style={{ height: '350px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
                         {!otpSent ? (
                       <Form
-                        form={form}
+                        form={otpSendForm}
                         name="send-otp"
                         onFinish={onSendOtp}
                         layout="vertical"
                         size="large"
+                        preserve={false}
                       >
                         <Form.Item
                           name="mobileNumber"
@@ -306,7 +311,7 @@ export default function Login() {
                           ]}
                         >
                     <Input
-                            prefix={<SafetyOutlined />}
+                            prefix={<SecurityScanOutlined />}
                       placeholder="Enter 6-digit OTP"
                             className="medical-input"
                                 style={{ height: '48px', borderRadius: '8px' }}

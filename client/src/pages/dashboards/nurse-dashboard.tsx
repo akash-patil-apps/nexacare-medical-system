@@ -36,7 +36,6 @@ import {
   SettingOutlined,
   MenuUnfoldOutlined,
   HeartOutlined,
-  StethoscopeOutlined,
   ClockCircleOutlined,
   PlusOutlined,
   EditOutlined,
@@ -204,7 +203,7 @@ export default function NurseDashboard() {
       {
         title: 'Vitals Recorded Today',
         value: todayVitals,
-        icon: <StethoscopeOutlined />,
+        icon: <HeartOutlined />,
         color: nurseTheme.accent,
         trend: '+5',
         trendLabel: 'vs yesterday',
@@ -225,7 +224,7 @@ export default function NurseDashboard() {
     {
       title: 'Record Vitals',
       description: 'Take patient vital signs',
-      icon: <StethoscopeOutlined />,
+      icon: <HeartOutlined />,
       action: () => setIsVitalsModalOpen(true),
       color: nurseTheme.primary,
     },
@@ -265,7 +264,7 @@ export default function NurseDashboard() {
     },
     {
       key: 'vitals',
-      icon: <StethoscopeOutlined />,
+      icon: <HeartOutlined />,
       label: 'Vitals History',
     },
     {
@@ -630,7 +629,7 @@ export default function NurseDashboard() {
       <Modal
         title={
           <Space>
-            <StethoscopeOutlined />
+            <HeartOutlined />
             <span>Record Vitals - {selectedPatientName}</span>
           </Space>
         }

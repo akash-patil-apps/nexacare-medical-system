@@ -55,16 +55,20 @@ export const authApi = {
   },
 
   logout: () => {
-    localStorage.removeItem('auth-token');
+    sessionStorage.removeItem('auth-token');
+    localStorage.removeItem('auth-token'); // Also clear localStorage for backward compatibility
     window.location.href = '/';
   },
 };
 
 export const getAuthToken = () => {
-  return localStorage.getItem('auth-token');
+  // Check sessionStorage first (per-tab), fallback to localStorage (shared)
+  return sessionStorage.getItem('auth-token') || localStorage.getItem('auth-token');
 };
 
 export const setAuthToken = (token: string) => {
+  // Store in sessionStorage for per-tab isolation, also in localStorage for backward compatibility
+  sessionStorage.setItem('auth-token', token);
   localStorage.setItem('auth-token', token);
   // Dispatch custom event to notify auth context
   window.dispatchEvent(new CustomEvent('tokenChanged'));
@@ -85,7 +89,6 @@ export const decodeToken = (token: string): User | null => {
         .join('')
     );
     const decoded = JSON.parse(jsonPayload);
-    console.log('🔍 Decoded token:', decoded);
     return decoded;
   } catch (error) {
     console.error('❌ Token decode error:', error);

@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Redirect, useLocation } from "wouter";
 import { 
@@ -11,11 +11,11 @@ import {
   Typography,
   Menu,
   message,
+  notification,
   Spin,
   Tabs,
   Drawer,
   List,
-  Alert,
   Divider,
 } from 'antd';
 import { 
@@ -107,7 +107,6 @@ export default function DoctorDashboard() {
         throw new Error(`Failed to fetch doctor profile: ${response.status}`);
       }
       const data = await response.json();
-      console.log('✅ Doctor profile fetched:', { id: data.id, hospitalId: data.hospitalId, hospitalName: data.hospitalName });
       return data;
     },
     enabled: !!user && user.role?.toUpperCase() === 'DOCTOR',
@@ -117,10 +116,8 @@ export default function DoctorDashboard() {
   // This matches how receptionist dashboard fetches hospital name - directly from profile
   const hospitalName = useMemo(() => {
     if (doctorProfile?.hospitalName) {
-      console.log('✅ Hospital name from doctor profile:', doctorProfile.hospitalName);
       return doctorProfile.hospitalName;
     }
-    console.log('⚠️ No hospital name in doctor profile. Doctor profile:', doctorProfile);
     return null;
   }, [doctorProfile?.hospitalName]);
 
@@ -135,7 +132,6 @@ export default function DoctorDashboard() {
         }
       });
       if (!response.ok) {
-        console.log('⚠️ Lab reports API not ready yet');
         return [];
       }
       return response.json();
@@ -155,12 +151,9 @@ export default function DoctorDashboard() {
         }
       });
       if (!response.ok) {
-        console.log('⚠️ Prescriptions API not ready yet');
         return [];
       }
       const data = await response.json();
-      console.log('📋 Prescriptions fetched:', data.length, 'prescriptions');
-      console.log('📋 Sample prescription:', data[0] ? { id: data[0].id, appointmentId: data[0].appointmentId || data[0].appointment_id, patientId: data[0].patientId } : 'none');
       return data;
     },
     enabled: !!user && user.role?.toUpperCase() === 'DOCTOR',
@@ -180,7 +173,6 @@ export default function DoctorDashboard() {
   // This tracks whether a doctor has given a prescription to a patient for a specific appointment
   const prescriptionsByAppointmentId = useMemo(() => {
     const map = new Map<string | number, any>();
-    console.log('📋 Building prescriptions map. Total prescriptions:', prescriptions.length);
     prescriptions.forEach((p: any) => {
       // Try multiple field names for appointmentId (handles different API response formats)
       const appointmentKey =
@@ -189,10 +181,8 @@ export default function DoctorDashboard() {
         (p.appointment ? p.appointment.id : undefined);
       if (appointmentKey) {
         map.set(appointmentKey, p);
-        console.log(`✅ Mapped prescription ${p.id} to appointment ${appointmentKey}`);
       }
     });
-    console.log('📋 Prescriptions map built. Total entries:', map.size);
     return map;
   }, [prescriptions]);
 
@@ -306,7 +296,6 @@ export default function DoctorDashboard() {
         }
       });
       if (!response.ok) {
-        console.log('⚠️ Notifications API not ready yet');
         return [];
       }
       return response.json();
@@ -350,9 +339,6 @@ export default function DoctorDashboard() {
         throw new Error('Failed to fetch appointments');
       }
       const data = await response.json();
-      console.log('📅 Doctor appointments loaded from API:', data.length, 'appointments');
-      console.log('📅 Raw appointment data:', JSON.stringify(data, null, 2));
-      console.log('🏥 Checking for hospitalName in appointments:', data.map((apt: any) => ({ id: apt.id, hospitalName: apt.hospitalName })));
       
       // Transform API data to match table format
       const transformed = data.map((apt: any) => {
@@ -362,7 +348,6 @@ export default function DoctorDashboard() {
           // Try to parse the date string
           appointmentDate = new Date(appointmentDate);
           if (isNaN(appointmentDate.getTime())) {
-            console.warn(`⚠️ Invalid date for appointment ${apt.id}:`, apt.appointmentDate);
             appointmentDate = null;
           }
         } else if (appointmentDate) {
@@ -394,7 +379,6 @@ export default function DoctorDashboard() {
         };
       });
       
-      console.log('✅ Transformed appointments:', transformed);
       return transformed;
     },
     enabled: !!user && user.role?.toUpperCase() === 'DOCTOR',
@@ -536,8 +520,6 @@ export default function DoctorDashboard() {
     const now = getISTNow();
     const today = getISTStartOfDay(now);
     
-    console.log('🔍 Filtering appointments. Total:', allAppointments.length);
-    console.log('🔍 Current date/time (IST):', now.toISOString());
 
     const parseEndDateTime = (apt: any) => {
       const base = apt?.dateObj || (apt?.date ? new Date(apt.date) : null);
@@ -574,13 +556,11 @@ export default function DoctorDashboard() {
         const normalizedStatus = normalizeStatus(apt.status);
         // Only show active statuses (using universal status constants)
         if (!activeStatuses.includes(normalizedStatus) && !activeStatuses.includes(apt.status?.toLowerCase())) {
-          console.log(`⏭️  Skipping appointment ${apt.id} - status: ${apt.status}`);
           return false;
         }
         
         const end = parseEndDateTime(apt);
         if (!end) {
-          console.log(`⏭️  Skipping appointment ${apt.id} - no valid end time`);
           return false;
         }
         // Upcoming includes:
@@ -590,7 +570,6 @@ export default function DoctorDashboard() {
         const isFutureDay = end.getTime() >= now.getTime() && !isSameDay(end, today);
         const include = isSameDayFuture || isFutureDay;
         if (!include) {
-          console.log(`⏭️  Skipping appointment ${apt.id} - end ${end.toISOString()} is not future or same-day future`);
         }
         return include;
       })
@@ -601,7 +580,6 @@ export default function DoctorDashboard() {
         return dateTimeA.getTime() - dateTimeB.getTime();
       });
     
-    console.log(`✅ Filtered to ${filtered.length} confirmed future appointments`);
     return filtered;
   }, [allAppointments, activeStatuses]);
 
@@ -689,17 +667,6 @@ export default function DoctorDashboard() {
     const today = getISTStartOfDay(now);
     return isSameDay(start, today) && start.getTime() < now.getTime();
   };
-  
-  console.log('📅 All appointments from API:', allAppointments.length);
-  console.log('📅 Today appointments:', todayAppointments.length);
-  console.log('📅 Confirmed future appointments:', confirmedFutureAppointments.length);
-  console.log('📅 Appointments in active tab:', appointmentsToShow.length);
-  console.log('📅 Appointments breakdown by status:', {
-    confirmed: allAppointments.filter((a: any) => a.status === 'confirmed').length,
-    completed: allAppointments.filter((a: any) => a.status === 'completed').length,
-    pending: allAppointments.filter((a: any) => a.status === 'pending').length,
-    cancelled: allAppointments.filter((a: any) => a.status === 'cancelled').length
-  });
 
   // Calculate real stats from appointments data (AFTER appointments are loaded)
   // For today's pending appointments (for prescription modal), use confirmed appointments from today
@@ -740,6 +707,50 @@ export default function DoctorDashboard() {
   const unreadNotifications = useMemo(() => {
     return notifications.filter((notif: any) => !notif.read);
   }, [notifications]);
+
+  // Show all unread notifications as auto-dismissing banners (toast-style)
+  const shownNotificationIdsRef = useRef<Set<number>>(new Set());
+  useEffect(() => {
+    if (!notifications || notifications.length === 0) return;
+
+    const unread = notifications.filter((notif: any) => !notif.isRead && !notif.read);
+    
+    unread.forEach((notif: any) => {
+      const notifId = Number(notif.id);
+      
+      // Only show if we haven't shown this notification before
+      if (!shownNotificationIdsRef.current.has(notifId)) {
+        shownNotificationIdsRef.current.add(notifId);
+        
+        const type = (notif.type || '').toLowerCase();
+        let notificationType: 'info' | 'success' | 'warning' | 'error' = 'info';
+        if (type.includes('cancel') || type.includes('reject')) notificationType = 'error';
+        else if (type.includes('confirm') || type.includes('complete')) notificationType = 'success';
+        else if (type.includes('pending') || type.includes('resched')) notificationType = 'warning';
+        
+        // Show as auto-dismissing banner (toast notification)
+        notification[notificationType]({
+          message: notif.title || 'Notification',
+          description: notif.message,
+          placement: 'topRight',
+          duration: 5, // Auto-dismiss after 5 seconds
+          key: `notif-${notifId}`, // Unique key for each notification
+          onClick: () => {
+            // Mark as read when clicked
+            const token = localStorage.getItem('auth-token');
+            if (token) {
+              fetch(`/api/notifications/read/${notifId}`, {
+                method: 'POST',
+                headers: { Authorization: `Bearer ${token}` },
+              }).then(() => {
+                queryClient.invalidateQueries({ queryKey: ['/api/notifications/me'] });
+              });
+            }
+          },
+        });
+      }
+    });
+  }, [notifications, queryClient]);
   
   // Calculate completed appointments using universal status constants
   const completedAppointmentsCount = useMemo(() => {
@@ -789,7 +800,6 @@ export default function DoctorDashboard() {
 
   // Listen for appointment updates from other tabs/windows
   useEffect(() => {
-    console.log('👂 Doctor dashboard: Setting up appointment update listeners...');
     
     let lastProcessedUpdate = 0;
     
@@ -799,10 +809,6 @@ export default function DoctorDashboard() {
         // Prevent duplicate processing
         if (updateTime > lastProcessedUpdate) {
           lastProcessedUpdate = updateTime;
-          console.log('🔄 Doctor dashboard: Storage event detected, refetching appointments...', {
-            updateTime,
-            timeSinceUpdate: Date.now() - updateTime
-          });
           refetchAppointments();
         }
       }
@@ -813,7 +819,6 @@ export default function DoctorDashboard() {
       const updateTime = Date.now();
       if (updateTime > lastProcessedUpdate) {
         lastProcessedUpdate = updateTime;
-        console.log('🔄 Doctor dashboard: Custom event detected, refetching appointments...');
         refetchAppointments();
       }
     };
@@ -830,10 +835,6 @@ export default function DoctorDashboard() {
         // If update happened within last 10 seconds, refetch
         if (updateTime > lastProcessedUpdate && now - updateTime < 10000) {
           lastProcessedUpdate = updateTime;
-          console.log('🔄 Doctor dashboard: Polling detected update, invalidating and refetching...', {
-            updateTime,
-            timeSinceUpdate: now - updateTime
-          });
           // Invalidate cache and refetch
           queryClient.invalidateQueries({ queryKey: ['/api/appointments/my'] });
           refetchAppointments();
@@ -841,10 +842,8 @@ export default function DoctorDashboard() {
       }
     }, 1000); // Check every 1 second instead of 2
     
-    console.log('✅ Doctor dashboard: Update listeners set up');
     
     return () => {
-      console.log('🧹 Doctor dashboard: Cleaning up update listeners');
       window.removeEventListener('storage', handleStorageChange);
       window.removeEventListener('appointment-updated', handleCustomEvent);
       clearInterval(interval);
@@ -854,7 +853,6 @@ export default function DoctorDashboard() {
   // NOW CHECK AUTHENTICATION AND ROLE (after all hooks)
   // Show loading while checking authentication
   if (isLoading) {
-    console.log('⏳ Doctor Dashboard - Auth loading...');
     return (
       <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh' }}>
         <Spin size="large" tip="Loading dashboard…" />
@@ -864,19 +862,15 @@ export default function DoctorDashboard() {
 
   // Redirect to login if not authenticated
   if (!user) {
-    console.log('❌ Doctor Dashboard - No user found, redirecting to login');
     return <Redirect to="/login" />;
   }
   
-  console.log('✅ Doctor Dashboard - User found:', user);
 
   // Redirect if user doesn't have DOCTOR role
   // Check role case-insensitively
   const userRole = user.role?.toUpperCase();
-  console.log('🔍 Doctor Dashboard - User role:', userRole, 'Full user:', user);
   
   if (userRole !== 'DOCTOR') {
-    console.warn('⚠️ User does not have DOCTOR role. Current role:', userRole);
     message.warning('You do not have access to this dashboard');
     // Redirect based on user role
     switch (userRole) {
@@ -893,7 +887,6 @@ export default function DoctorDashboard() {
     }
   }
   
-  console.log('✅ User has DOCTOR role, rendering dashboard');
 
   const handleOpenPrescriptionModal = async (appointment?: any, prescription?: any) => {
     // If appointment status is "checked-in", automatically start consultation
@@ -940,10 +933,8 @@ export default function DoctorDashboard() {
     setSelectedPrescription(undefined);
     // Force refetch prescriptions to update the UI after modal closes
     try {
-      console.log('🔄 Refetching prescriptions after modal close...');
       await queryClient.invalidateQueries({ queryKey: ['/api/prescriptions/doctor'] });
       const result = await refetchPrescriptions();
-      console.log('✅ Prescriptions refetched after modal close. Count:', result.data?.length || 0);
     } catch (error) {
       console.error('❌ Error refetching prescriptions after modal close:', error);
     }
@@ -1047,7 +1038,7 @@ export default function DoctorDashboard() {
           background: '#fff',
           boxShadow: '0 2px 8px rgba(0, 0, 0, 0.06)',
         }}
-        bodyStyle={{ padding: 14 }}
+        styles={{ body: { padding: 14 } }}
       >
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
           <div style={{ minWidth: 0, flex: 1 }}>
@@ -1269,19 +1260,7 @@ export default function DoctorDashboard() {
           (record.appointmentId && prescriptionsByAppointmentId.get(record.appointmentId));
         const hasPrescription = !!existingPrescription;
         
-        // Debug logging to track prescription lookup
-        if (record.id && process.env.NODE_ENV === 'development') {
-          const mapKeys = Array.from(prescriptionsByAppointmentId.keys());
-          console.log(`🔍 Appointment ${record.id} prescription check:`, {
-            appointmentId: record.id,
-            hasPrescription,
-            prescriptionId: existingPrescription?.id,
-            prescriptionAppointmentId: existingPrescription?.appointmentId || existingPrescription?.appointment_id,
-            totalPrescriptions: prescriptions.length,
-            mapSize: prescriptionsByAppointmentId.size,
-            mapKeys: mapKeys.slice(0, 10), // Show first 10 keys
-          });
-        }
+        // Debug logging to track prescription lookup (removed for production)
         
         const isFinal = isFinalStatus(normalizedStatus);
         const isChecked = normalizedStatus === APPOINTMENT_STATUS.COMPLETED;
@@ -1796,42 +1775,8 @@ export default function DoctorDashboard() {
               </div>
             )}
 
-            {/* Alert/Banner Notifications - Show important unread notifications */}
-            {notifications.filter((n: any) => !n.isRead).length > 0 && (
-              <div style={{ marginBottom: 16 }}>
-                {notifications
-                  .filter((n: any) => !n.isRead)
-                  .slice(0, 3)
-                  .map((notif: any) => {
-                    const type = (notif.type || '').toLowerCase();
-                    let alertType: 'info' | 'success' | 'warning' | 'error' = 'info';
-                    if (type.includes('cancel') || type.includes('reject')) alertType = 'error';
-                    else if (type.includes('confirm') || type.includes('complete')) alertType = 'success';
-                    else if (type.includes('pending') || type.includes('resched')) alertType = 'warning';
-                    
-                    return (
-                      <Alert
-                        key={notif.id}
-                        message={notif.title || 'Notification'}
-                        description={notif.message}
-                        type={alertType}
-                        showIcon
-                        closable
-                        style={{ marginBottom: 8 }}
-                        onClose={() => {
-                          const token = localStorage.getItem('auth-token');
-                          fetch(`/api/notifications/read/${notif.id}`, {
-                            method: 'POST',
-                            headers: { Authorization: `Bearer ${token}` },
-                          }).then(() => {
-                            queryClient.invalidateQueries({ queryKey: ['/api/notifications/me'] });
-                          });
-                        }}
-                      />
-                    );
-                  })}
-              </div>
-            )}
+            {/* Notifications are now shown as auto-dismissing toast banners (top-right corner) */}
+            {/* They automatically disappear after 5 seconds and don't take vertical space */}
 
             {/* KPI Cards - Matching Receptionist Dashboard Design */}
             {isMobile ? (
@@ -1923,12 +1868,14 @@ export default function DoctorDashboard() {
                   minHeight: 0,
                   overflow: 'hidden',
                 }}
-                bodyStyle={{ 
-                  flex: 1, 
-                  display: 'flex', 
-                  flexDirection: 'column',
-                  padding: isMobile ? 16 : 20,
-                  overflow: 'auto',
+                styles={{ 
+                  body: {
+                    flex: 1, 
+                    display: 'flex', 
+                    flexDirection: 'column',
+                    padding: isMobile ? 16 : 20,
+                    overflow: 'auto',
+                  }
                 }}
                 title={
                   <Title level={4} style={{ margin: 0 }}>Availability Management</Title>
@@ -1952,12 +1899,14 @@ export default function DoctorDashboard() {
                   minHeight: 0,
                   overflow: 'hidden',
                 }}
-                bodyStyle={{ 
-                  flex: 1, 
-                  display: 'flex', 
-                  flexDirection: 'column',
-                  padding: isMobile ? 16 : 20,
-                  overflow: 'auto',
+                styles={{ 
+                  body: {
+                    flex: 1, 
+                    display: 'flex', 
+                    flexDirection: 'column',
+                    padding: isMobile ? 16 : 20,
+                    overflow: 'auto',
+                  }
                 }}
                 title={
                   <Title level={4} style={{ margin: 0 }}>My IPD Patients</Title>
@@ -2040,12 +1989,14 @@ export default function DoctorDashboard() {
                 minHeight: 0,
                 overflow: 'hidden',
               }}
-              bodyStyle={{ 
-                flex: 1, 
-                display: 'flex', 
-                flexDirection: 'column',
-                padding: isMobile ? 16 : 20,
-                overflow: 'hidden',
+              styles={{ 
+                body: {
+                  flex: 1, 
+                  display: 'flex', 
+                  flexDirection: 'column',
+                  padding: isMobile ? 16 : 20,
+                  overflow: 'hidden',
+                }
               }}
               title={
                 <Title level={4} style={{ margin: 0 }}>Appointments</Title>

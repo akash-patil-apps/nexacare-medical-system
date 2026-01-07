@@ -34,7 +34,6 @@ import {
   BellOutlined,
   SettingOutlined,
   MenuUnfoldOutlined,
-  ScanOutlined,
   PlusOutlined,
   EditOutlined,
   CameraOutlined,
@@ -151,7 +150,7 @@ export default function RadiologyTechnicianDashboard() {
       {
         title: 'Pending Orders',
         value: pendingOrders,
-        icon: <ScanOutlined />,
+        icon: <ExperimentOutlined />,
         color: radiologyTheme.primary,
         trend: '+1',
         trendLabel: 'new today',
@@ -188,7 +187,7 @@ export default function RadiologyTechnicianDashboard() {
     {
       title: 'New Imaging',
       description: 'Perform imaging procedure',
-      icon: <ScanOutlined />,
+      icon: <ExperimentOutlined />,
       action: () => message.info('Imaging procedure feature coming soon'),
       color: radiologyTheme.primary,
     },
@@ -223,7 +222,7 @@ export default function RadiologyTechnicianDashboard() {
     },
     {
       key: 'orders',
-      icon: <ScanOutlined />,
+      icon: <ExperimentOutlined />,
       label: 'Imaging Orders',
     },
     {

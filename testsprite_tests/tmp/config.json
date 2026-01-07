@@ -1,7 +1,18 @@
 {
-  "status": "init",
-  "scope": "codebase",
+  "status": "commited",
   "type": "frontend",
-  "localEndpoint": "http://localhost:3000/",
-  "serverPort": 57439
+  "scope": "codebase",
+  "localEndpoint": "http://localhost:3000",
+  "loginUser": "9810000000",
+  "loginPassword": "password123",
+  "executionArgs": {
+    "projectName": "nexacare-medical-system",
+    "projectPath": "/Users/akashpatil/Desktop/devspace/nexus/nexacare-medical-system",
+    "testIds": [],
+    "additionalInstruction": "Please wait for React components to fully load and hydrate before interacting. The application uses React 18 with Vite, so allow 10-15 seconds for components to render after page load. Use explicit waits for element visibility.",
+    "envs": {
+      "API_KEY": "sk-user-BPnjagl7Q416pbODZ4xSEsxXEhZ0cCcanNkf-2Tvk7os5VIX5ciqjAN9OSDyAen9dDWM-G0rsAc1OIgSAG0I81eazlyKHo2e1ZeRoHHxh98XqEnxOz_SiQV7uxTwlwjiTeU"
+    }
+  },
+  "proxy": "http://5800b560-3599-4cb8-b029-a882fde3900b:50Eawr8qYzRFltf1ahOM3Pjk1LVXXVbK@tun.testsprite.com:8080"
 }

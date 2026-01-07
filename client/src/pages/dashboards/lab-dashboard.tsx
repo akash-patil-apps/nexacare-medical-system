@@ -83,17 +83,9 @@ export default function LabDashboard() {
       });
       if (!response.ok) {
         // If API not ready, return empty array
-        console.log('⚠️ Lab reports API not ready yet');
         return [];
       }
       const data = await response.json();
-      console.log('📋 Lab reports loaded:', data.length, 'reports');
-      console.log('📋 Sample report data:', data[0] ? {
-        id: data[0].id,
-        patientId: data[0].patientId,
-        patientName: data[0].patientName,
-        testName: data[0].testName
-      } : 'No reports');
       return data;
     },
     enabled: !!user,
@@ -113,7 +105,6 @@ export default function LabDashboard() {
         }
       });
       if (!response.ok) {
-        console.log('⚠️ Lab profile API not ready yet');
         return null;
       }
       return response.json();
@@ -132,7 +123,6 @@ export default function LabDashboard() {
         }
       });
       if (!response.ok) {
-        console.log('⚠️ Notifications API not ready yet');
         return [];
       }
       return response.json();

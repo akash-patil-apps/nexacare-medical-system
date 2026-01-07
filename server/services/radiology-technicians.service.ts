@@ -8,7 +8,6 @@ import { eq, like, and } from 'drizzle-orm';
  * Create a new radiology technician profile.
  */
 export const createRadiologyTechnician = async (data: Omit<InsertRadiologyTechnician, 'id' | 'createdAt'>) => {
-  console.log(`🩻 Creating radiology technician profile for user: ${data.userId}`);
 
   const technicianData = {
     ...data,
@@ -16,7 +15,6 @@ export const createRadiologyTechnician = async (data: Omit<InsertRadiologyTechni
   };
 
   const result = await db.insert(radiologyTechnicians).values(technicianData).returning();
-  console.log(`✅ Radiology technician created: ${result[0]?.id}`);
 
   return result;
 };
@@ -25,13 +23,11 @@ export const createRadiologyTechnician = async (data: Omit<InsertRadiologyTechni
  * Get all radiology technicians.
  */
 export const getAllRadiologyTechnicians = async () => {
-  console.log(`🩻 Fetching all radiology technicians`);
   const result = await db
     .select()
     .from(radiologyTechnicians)
     .where(() => true);
 
-  console.log(`📋 Found ${result.length} radiology technicians`);
   return result;
 };
 
@@ -53,7 +49,6 @@ export const getRadiologyTechnicianById = async (technicianId: number) => {
     return null;
   }
 
-  console.log(`🩻 Fetching radiology technician by ID: ${technicianId}`);
 
   const result = await db
     .select({
@@ -68,11 +63,9 @@ export const getRadiologyTechnicianById = async (technicianId: number) => {
     .limit(1);
 
   if (result.length === 0) {
-    console.log(`❌ Radiology technician not found: ${technicianId}`);
     return null;
   }
 
-  console.log(`✅ Radiology technician found: ${result[0].technician.id}`);
   return result[0];
 };
 
@@ -94,7 +87,6 @@ export const getRadiologyTechniciansByHospital = async (hospitalId: number) => {
     return [];
   }
 
-  console.log(`🏥 Fetching radiology technicians for hospital: ${hospitalId}`);
 
   const result = await db
     .select({
@@ -105,7 +97,6 @@ export const getRadiologyTechniciansByHospital = async (hospitalId: number) => {
     .leftJoin(users, eq(radiologyTechnicians.userId, users.id))
     .where(eq(radiologyTechnicians.hospitalId, hospitalId));
 
-  console.log(`📋 Found ${result.length} radiology technicians for hospital ${hospitalId}`);
   return result;
 };
 
@@ -113,7 +104,6 @@ export const getRadiologyTechniciansByHospital = async (hospitalId: number) => {
  * Update radiology technician profile.
  */
 export const updateRadiologyTechnicianProfile = async (technicianId: number, data: Partial<Omit<InsertRadiologyTechnician, 'id' | 'userId' | 'createdAt'>>) => {
-  console.log(`🩻 Updating radiology technician profile: ${technicianId}`, data);
 
   const result = await db
     .update(radiologyTechnicians)
@@ -122,11 +112,9 @@ export const updateRadiologyTechnicianProfile = async (technicianId: number, dat
     .returning();
 
   if (result.length === 0) {
-    console.log(`❌ Radiology technician not found for update: ${technicianId}`);
     return null;
   }
 
-  console.log(`✅ Radiology technician updated: ${result[0].id}`);
   return result[0];
 };
 
@@ -134,7 +122,6 @@ export const updateRadiologyTechnicianProfile = async (technicianId: number, dat
  * Search radiology technicians by name or specialization.
  */
 export const searchRadiologyTechnicians = async (query: string, hospitalId?: number) => {
-  console.log(`🔍 Searching radiology technicians: "${query}"`, hospitalId ? `in hospital ${hospitalId}` : '');
 
   const searchCondition = hospitalId
     ? and(
@@ -155,7 +142,6 @@ export const searchRadiologyTechnicians = async (query: string, hospitalId?: num
     .where(searchCondition)
     .limit(20);
 
-  console.log(`📋 Found ${result.length} radiology technicians matching "${query}"`);
   return result;
 };
 
@@ -163,7 +149,6 @@ export const searchRadiologyTechnicians = async (query: string, hospitalId?: num
  * Get radiology technician by user ID.
  */
 export const getRadiologyTechnicianByUserId = async (userId: number) => {
-  console.log(`🩻 Fetching radiology technician by user ID: ${userId}`);
 
   const result = await db
     .select({

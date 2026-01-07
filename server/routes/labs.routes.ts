@@ -59,27 +59,13 @@ router.get(
   authorizeRoles("lab"),
   async (req: AuthenticatedRequest, res) => {
     try {
-      console.log(`🔬 GET /api/labs/me/reports - User ID: ${req.user!.id}`);
-      
       // Get lab ID from user ID
       const lab = await getLabByUserId(req.user!.id);
       if (!lab) {
-        console.log(`❌ Lab not found for user ID: ${req.user!.id}`);
         return res.status(404).json({ message: 'Lab not found for this user' });
       }
       
-      console.log(`✅ Found lab ID: ${lab.id} for user ID: ${req.user!.id}`);
       const reports = await getLabReportsForLab(lab.id);
-      
-      console.log(`📤 Returning ${reports.length} reports to client`);
-      if (reports.length > 0) {
-        console.log(`📄 Sample report:`, {
-          id: reports[0].id,
-          patientId: reports[0].patientId,
-          patientName: reports[0].patientName,
-          testName: reports[0].testName
-        });
-      }
       
       res.json(reports);
     } catch (err) {

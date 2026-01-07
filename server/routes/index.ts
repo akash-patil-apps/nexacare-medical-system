@@ -127,5 +127,13 @@ export async function registerRoutes(app: Express) {
   // NOTE: /api/prescriptions/patient and /api/prescriptions/doctor are handled by prescriptions.routes.ts
   // These mock endpoints should be removed - they are overridden by the prescriptions router
   
+  // 404 handler for undefined API routes - must be after all route registrations
+  app.use("/api/*", (req, res) => {
+    res.status(404).json({ 
+      message: `API endpoint not found: ${req.method} ${req.originalUrl}`,
+      path: req.originalUrl
+    });
+  });
+  
   return app;
 }

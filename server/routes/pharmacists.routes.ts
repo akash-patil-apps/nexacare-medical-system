@@ -15,18 +15,15 @@ router.get('/profile', async (req: AuthenticatedRequest, res) => {
       return res.status(401).json({ message: 'User not authenticated' });
     }
 
-    console.log(`💊 Fetching pharmacist profile for user: ${req.user.id}`);
     const pharmacist = await pharmacistsService.getPharmacistByUserId(req.user.id);
 
     if (!pharmacist) {
-      console.log(`❌ Pharmacist profile not found for user: ${req.user.id}`);
       return res.status(404).json({
         message: 'Pharmacist profile not found. Please complete your registration.',
         needsOnboarding: true
       });
     }
 
-    console.log(`✅ Pharmacist profile found: ${pharmacist.pharmacist.id}`);
     res.json(pharmacist);
   } catch (err: any) {
     console.error('❌ Get pharmacist profile error:', err);
@@ -40,9 +37,7 @@ router.get('/profile', async (req: AuthenticatedRequest, res) => {
 // Get all pharmacists (admin only)
 router.get('/', authorizeRoles('ADMIN', 'HOSPITAL'), async (req: AuthenticatedRequest, res) => {
   try {
-    console.log('💊 Fetching all pharmacists');
     const pharmacists = await pharmacistsService.getAllPharmacists();
-    console.log(`✅ Returning ${pharmacists.length} pharmacists`);
     res.json(pharmacists);
   } catch (err: any) {
     console.error('❌ Get all pharmacists error:', err);
@@ -54,14 +49,12 @@ router.get('/', authorizeRoles('ADMIN', 'HOSPITAL'), async (req: AuthenticatedRe
 router.get('/hospital/:hospitalId', async (req: AuthenticatedRequest, res) => {
   try {
     const hospitalId = +req.params.hospitalId;
-    console.log(`🏥 Fetching pharmacists for hospital: ${hospitalId}`);
 
     if (!hospitalId || isNaN(hospitalId) || hospitalId <= 0) {
       return res.status(400).json({ message: 'Invalid hospital ID' });
     }
 
     const pharmacists = await pharmacistsService.getPharmacistsByHospital(hospitalId);
-    console.log(`✅ Returning ${pharmacists.length} pharmacists for hospital ${hospitalId}`);
     res.json(pharmacists);
   } catch (err: any) {
     console.error('❌ Get pharmacists by hospital error:', err);
@@ -73,7 +66,6 @@ router.get('/hospital/:hospitalId', async (req: AuthenticatedRequest, res) => {
 router.get('/:pharmacistId', async (req: AuthenticatedRequest, res) => {
   try {
     const pharmacistId = +req.params.pharmacistId;
-    console.log(`💊 Fetching pharmacist by ID: ${pharmacistId}`);
 
     if (!pharmacistId || isNaN(pharmacistId) || pharmacistId <= 0) {
       return res.status(400).json({ message: 'Invalid pharmacist ID' });
@@ -116,7 +108,6 @@ router.post('/', authorizeRoles('ADMIN', 'HOSPITAL'), async (req: AuthenticatedR
       });
     }
 
-    console.log(`💊 Creating pharmacist profile for user: ${userId}`);
     const pharmacist = await pharmacistsService.createPharmacist({
       userId,
       hospitalId,
@@ -132,7 +123,6 @@ router.post('/', authorizeRoles('ADMIN', 'HOSPITAL'), async (req: AuthenticatedR
       bio,
     });
 
-    console.log(`✅ Pharmacist profile created: ${pharmacist.id}`);
     res.status(201).json(pharmacist);
   } catch (err: any) {
     console.error('❌ Create pharmacist error:', err);
@@ -153,7 +143,6 @@ router.post('/', authorizeRoles('ADMIN', 'HOSPITAL'), async (req: AuthenticatedR
 router.patch('/:pharmacistId', authorizeRoles('ADMIN', 'HOSPITAL'), async (req: AuthenticatedRequest, res) => {
   try {
     const pharmacistId = +req.params.pharmacistId;
-    console.log(`💊 Updating pharmacist profile: ${pharmacistId}`);
 
     if (!pharmacistId || isNaN(pharmacistId) || pharmacistId <= 0) {
       return res.status(400).json({ message: 'Invalid pharmacist ID' });
@@ -179,7 +168,6 @@ router.patch('/:pharmacistId', authorizeRoles('ADMIN', 'HOSPITAL'), async (req: 
       return res.status(404).json({ message: 'Pharmacist not found' });
     }
 
-    console.log(`✅ Pharmacist profile updated: ${pharmacistId}`);
     res.json(pharmacist);
   } catch (err: any) {
     console.error('❌ Update pharmacist error:', err);
@@ -200,14 +188,12 @@ router.patch('/:pharmacistId/availability', authorizeRoles('ADMIN', 'HOSPITAL'),
       return res.status(400).json({ message: 'isAvailable must be a boolean' });
     }
 
-    console.log(`💊 Updating pharmacist availability: ${pharmacistId} -> ${isAvailable}`);
     const pharmacist = await pharmacistsService.updatePharmacistAvailability(pharmacistId, isAvailable);
 
     if (!pharmacist) {
       return res.status(404).json({ message: 'Pharmacist not found' });
     }
 
-    console.log(`✅ Pharmacist availability updated`);
     res.json(pharmacist);
   } catch (err: any) {
     console.error('❌ Update pharmacist availability error:', err);
@@ -224,7 +210,6 @@ router.get('/search/:query', async (req: AuthenticatedRequest, res) => {
     const query = req.params.query;
     const { hospitalId } = req.query;
 
-    console.log(`🔍 Searching pharmacists: "${query}"`, hospitalId ? `in hospital ${hospitalId}` : '');
 
     if (!query || query.length < 2) {
       return res.status(400).json({ message: 'Search query must be at least 2 characters' });
@@ -235,7 +220,6 @@ router.get('/search/:query', async (req: AuthenticatedRequest, res) => {
       hospitalId ? +hospitalId : undefined
     );
 
-    console.log(`✅ Found ${pharmacists.length} pharmacists matching "${query}"`);
     res.json(pharmacists);
   } catch (err: any) {
     console.error('❌ Search pharmacists error:', err);

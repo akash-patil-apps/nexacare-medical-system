@@ -21,7 +21,6 @@ router.get('/available', async (_req, res) => {
 router.get('/hospital/:hospitalId', async (req, res) => {
   try {
     const hospitalId = +req.params.hospitalId;
-    console.log(`📋 Route: Fetching doctors for hospital ${hospitalId}`);
     
     if (!hospitalId || isNaN(hospitalId) || hospitalId <= 0) {
       console.error(`❌ Invalid hospitalId in route: ${req.params.hospitalId}`);
@@ -29,7 +28,6 @@ router.get('/hospital/:hospitalId', async (req, res) => {
     }
     
     const doctors = await doctorsService.getDoctorsByHospital(hospitalId);
-    console.log(`✅ Route: Returning ${doctors.length} doctors for hospital ${hospitalId}`);
     res.json(doctors);
   } catch (err: any) {
     console.error('❌ Get doctors by hospital error:', err);
@@ -55,22 +53,15 @@ router.get('/specialty/:specialty', async (req, res) => {
 // Get doctor profile (MUST be before /:doctorId route to avoid route conflict)
 // This route must come before any routes with /:doctorId parameter
 router.get('/profile', authenticateToken, async (req: AuthenticatedRequest, res) => {
-  console.log('🔍 /api/doctors/profile route hit');
   try {
     const user = req.user;
     if (!user) {
-      console.log('❌ No user in request');
       return res.status(401).json({ message: 'Unauthorized' });
     }
     
-    console.log(`📋 Fetching doctor profile for user ID: ${user.id}`);
-    
     const doctorProfile = await doctorsService.getDoctorByUserId(user.id);
     
-    console.log(`📋 Doctor profile result:`, doctorProfile ? { id: doctorProfile.id, hospitalId: doctorProfile.hospitalId, hospitalName: doctorProfile.hospitalName } : 'null');
-    
     if (!doctorProfile) {
-      console.log(`⚠️ No doctor profile found for user ID: ${user.id}`);
       return res.status(404).json({ message: 'Doctor profile not found' });
     }
     
@@ -235,13 +226,10 @@ router.get('/:doctorId', async (req, res) => {
       return res.status(400).json({ message: 'Invalid doctor id' });
     }
 
-    console.log(`📋 Route: Fetching doctor with ID: ${doctorId}`);
     const doctor = await doctorsService.getDoctorById(doctorId);
     if (!doctor) {
-      console.log(`⚠️ Route: Doctor ${doctorId} not found`);
       return res.status(404).json({ message: 'Doctor not found' });
     }
-    console.log(`✅ Route: Returning doctor ${doctorId}`);
     res.json(doctor);
   } catch (err: any) {
     console.error('❌ Get doctor error:', err);

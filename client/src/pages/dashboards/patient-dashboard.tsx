@@ -118,7 +118,6 @@ export default function PatientDashboard() {
         if (typeof appointmentDate === 'string') {
           appointmentDate = new Date(appointmentDate);
           if (isNaN(appointmentDate.getTime())) {
-            console.warn(`⚠️ Invalid date for appointment ${apt.id}:`, apt.appointmentDate);
             appointmentDate = null;
           }
         } else if (appointmentDate) {
@@ -160,7 +159,6 @@ export default function PatientDashboard() {
   useEffect(() => {
     const handleStorageChange = (e: StorageEvent) => {
       if (e.key === 'appointment-updated') {
-        console.log('🔄 Appointment update detected from storage event, invalidating and refetching patient appointments...');
         // Invalidate the query first, then refetch for more reliable updates
         queryClient.invalidateQueries({ queryKey: ['patient-appointments'] });
         refetchAppointments();
@@ -170,7 +168,6 @@ export default function PatientDashboard() {
     // Also listen for custom events (same-window updates)
     const handleCustomEvent = (e: Event) => {
       const customEvent = e as CustomEvent;
-      console.log('🔄 Custom appointment update event detected, invalidating and refetching patient appointments...', customEvent.detail);
       // Invalidate the query first, then refetch for more reliable updates
       queryClient.invalidateQueries({ queryKey: ['patient-appointments'] });
       refetchAppointments();
@@ -217,7 +214,6 @@ export default function PatientDashboard() {
         if (!start) return false;
         const isUpcoming = start.getTime() >= now.getTime();
         if (!isUpcoming) {
-          console.log(`⏭️ Skipping appointment ${apt.id} - start is in the past:`, start.toISOString());
         }
         return isUpcoming;
       })
@@ -314,7 +310,6 @@ export default function PatientDashboard() {
       try {
         medications = rx.medications ? JSON.parse(rx.medications) : [];
       } catch (error) {
-        console.warn('Failed to parse medications JSON', error);
       }
       const primary = medications[0] || {};
       const dosage = primary?.dosage

@@ -14,8 +14,6 @@ const db = drizzle(sql);
 // Get all states
 router.get('/states', async (req, res) => {
   try {
-    console.log('🏛️ Fetching all states...');
-    
     const allStates = await db
       .select({
         id: states.id,
@@ -25,8 +23,6 @@ router.get('/states', async (req, res) => {
       })
       .from(states)
       .orderBy(states.name);
-    
-    console.log(`✅ Found ${allStates.length} states`);
     res.json({
       success: true,
       data: allStates,
@@ -46,7 +42,6 @@ router.get('/states', async (req, res) => {
 router.get('/states/:stateId/cities', async (req, res) => {
   try {
     const { stateId } = req.params;
-    console.log(`🏙️ Fetching cities for state ID: ${stateId}`);
     
     if (!stateId || isNaN(Number(stateId))) {
       return res.status(400).json({
@@ -67,7 +62,6 @@ router.get('/states/:stateId/cities', async (req, res) => {
       .where(eq(cities.stateId, Number(stateId)))
       .orderBy(cities.name);
     
-    console.log(`✅ Found ${stateCities.length} cities for state ID: ${stateId}`);
     res.json({
       success: true,
       data: stateCities,
@@ -87,7 +81,6 @@ router.get('/states/:stateId/cities', async (req, res) => {
 router.get('/states/:stateName/cities', async (req, res) => {
   try {
     const { stateName } = req.params;
-    console.log(`🏙️ Fetching cities for state: ${stateName}`);
     
     if (!stateName) {
       return res.status(400).json({
@@ -110,7 +103,6 @@ router.get('/states/:stateName/cities', async (req, res) => {
       .where(ilike(states.name, `%${stateName}%`))
       .orderBy(cities.name);
     
-    console.log(`✅ Found ${stateCities.length} cities for state: ${stateName}`);
     res.json({
       success: true,
       data: stateCities,
@@ -130,7 +122,6 @@ router.get('/states/:stateName/cities', async (req, res) => {
 router.get('/cities/search', async (req, res) => {
   try {
     const { q, stateId } = req.query;
-    console.log(`🔍 Searching cities with query: ${q}, stateId: ${stateId}`);
     
     if (!q || typeof q !== 'string') {
       return res.status(400).json({
@@ -166,7 +157,6 @@ router.get('/cities/search', async (req, res) => {
     
     const searchResults = await query;
     
-    console.log(`✅ Found ${searchResults.length} cities matching "${q}"`);
     res.json({
       success: true,
       data: searchResults,
@@ -192,7 +182,6 @@ router.get('/cities', async (req, res) => {
     const limitNum = Math.min(100, Math.max(1, parseInt(limit as string)));
     const offset = (pageNum - 1) * limitNum;
     
-    console.log(`🏙️ Fetching cities - page: ${pageNum}, limit: ${limitNum}, stateId: ${stateId}`);
     
     let query = db
       .select({
@@ -227,7 +216,6 @@ router.get('/cities', async (req, res) => {
     
     const [{ count: totalCount }] = await countQuery;
     
-    console.log(`✅ Found ${citiesData.length} cities (total: ${totalCount})`);
     res.json({
       success: true,
       data: citiesData,
@@ -252,7 +240,6 @@ router.get('/cities', async (req, res) => {
 router.get('/cities/:cityId', async (req, res) => {
   try {
     const { cityId } = req.params;
-    console.log(`🏙️ Fetching city ID: ${cityId}`);
     
     if (!cityId || isNaN(Number(cityId))) {
       return res.status(400).json({
@@ -284,7 +271,6 @@ router.get('/cities/:cityId', async (req, res) => {
       });
     }
     
-    console.log(`✅ Found city: ${cityData[0].name}, ${cityData[0].stateName}`);
     res.json({
       success: true,
       data: cityData[0]

@@ -1,0 +1,538 @@
+[
+  {
+    "id": "TC001",
+    "title": "Password-based Authentication Success",
+    "description": "Verify that users with valid credentials can authenticate successfully using password login, receive a valid JWT token, and access the appropriate role-based dashboard.",
+    "category": "functional",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to login page"
+      },
+      {
+        "type": "action",
+        "description": "Input valid username/email and password"
+      },
+      {
+        "type": "action",
+        "description": "Submit login form"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify response contains valid JWT token"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify user is redirected to their role-specific dashboard"
+      }
+    ]
+  },
+  {
+    "id": "TC002",
+    "title": "OTP-based Authentication Success",
+    "description": "Ensure users can authenticate using OTP login flow and receive valid JWT tokens with correct role assignments.",
+    "category": "functional",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to OTP login page"
+      },
+      {
+        "type": "action",
+        "description": "Request OTP with valid registered phone/email"
+      },
+      {
+        "type": "action",
+        "description": "Input received OTP code"
+      },
+      {
+        "type": "action",
+        "description": "Submit OTP for verification"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify response contains valid JWT token"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify user accesses correct role-based dashboard"
+      }
+    ]
+  },
+  {
+    "id": "TC003",
+    "title": "Login Failure with Incorrect Credentials",
+    "description": "Validate system behavior when login attempts use invalid password or OTP, ensuring no token is granted and error messages appear.",
+    "category": "error handling",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to login page"
+      },
+      {
+        "type": "action",
+        "description": "Input invalid username/email and password"
+      },
+      {
+        "type": "action",
+        "description": "Submit login form"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify login attempt is rejected"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify error message displayed to user"
+      }
+    ]
+  },
+  {
+    "id": "TC004",
+    "title": "Role-based Route Protection",
+    "description": "Verify that users cannot navigate to dashboards or pages not permitted for their role, enforcing authorization.",
+    "category": "security",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Login as a user with a specific role (e.g., Patient)"
+      },
+      {
+        "type": "action",
+        "description": "Attempt to access a restricted dashboard URL (e.g., Doctor or Admin dashboard)"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify access is denied or redirected appropriately"
+      }
+    ]
+  },
+  {
+    "id": "TC005",
+    "title": "Patient Appointment Booking Flow",
+    "description": "Test full patient appointment workflow: searching hospital and doctor, selecting time slot, booking appointment, receiving confirmation, and viewing appointment status.",
+    "category": "functional",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Login as Patient"
+      },
+      {
+        "type": "action",
+        "description": "Search for hospitals and select one"
+      },
+      {
+        "type": "action",
+        "description": "Select a doctor from the hospital"
+      },
+      {
+        "type": "action",
+        "description": "Choose available date and time slot"
+      },
+      {
+        "type": "action",
+        "description": "Submit appointment booking request"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify appointment is created with status 'Pending Confirmation'"
+      },
+      {
+        "type": "action",
+        "description": "Login as Receptionist and confirm the appointment"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify patient receives real-time confirmation notification and appointment status updates to 'Confirmed'"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify doctor dashboard shows the confirmed appointment in schedule"
+      }
+    ]
+  },
+  {
+    "id": "TC006",
+    "title": "Appointment Time Slot Booking Edge Cases",
+    "description": "Verify system properly handles booking attempts on already occupied or invalid time slots and limits booking to allowed times.",
+    "category": "error handling",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Login as Patient"
+      },
+      {
+        "type": "action",
+        "description": "Select a doctor and attempt booking on an already booked time slot"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify booking is rejected with appropriate error message"
+      },
+      {
+        "type": "action",
+        "description": "Attempt booking on a time slot outside doctor's working hours"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify booking is rejected as invalid"
+      }
+    ]
+  },
+  {
+    "id": "TC007",
+    "title": "Digital Prescription Creation and Viewing",
+    "description": "Verify doctors can create and save prescriptions linked to appointments and that patients can view and download their prescriptions.",
+    "category": "functional",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Login as Doctor"
+      },
+      {
+        "type": "action",
+        "description": "Select patient's confirmed appointment"
+      },
+      {
+        "type": "action",
+        "description": "Create new prescription with medication details, dosages, and instructions"
+      },
+      {
+        "type": "action",
+        "description": "Save prescription"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify prescription appears in patient's medical records"
+      },
+      {
+        "type": "action",
+        "description": "Login as Patient"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify prescription is listed under prescriptions dashboard"
+      },
+      {
+        "type": "assertion",
+        "description": "Download prescription document and verify content correctness"
+      }
+    ]
+  },
+  {
+    "id": "TC008",
+    "title": "Lab Test Request and Report Upload Workflow",
+    "description": "Test lab technician and doctor interactions: lab test request creation by doctor, sample processing by lab technician, report upload, and status notifications to patient and doctor.",
+    "category": "functional",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Login as Doctor"
+      },
+      {
+        "type": "action",
+        "description": "Request lab test for patient during appointment"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify lab test request created with status 'Pending'"
+      },
+      {
+        "type": "action",
+        "description": "Login as Lab Technician"
+      },
+      {
+        "type": "action",
+        "description": "View pending lab test requests"
+      },
+      {
+        "type": "action",
+        "description": "Process sample and upload lab report"
+      },
+      {
+        "type": "action",
+        "description": "Update lab test status to 'Completed'"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify doctor and patient receive real-time notification of report availability"
+      },
+      {
+        "type": "action",
+        "description": "Login as Patient"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify lab report is viewable and downloadable"
+      }
+    ]
+  },
+  {
+    "id": "TC009",
+    "title": "OPD Queue Management and Patient Check-in",
+    "description": "Verify receptionist can manage OPD queue by confirming appointments, registering walk-ins, calling next patient, and updating queue status real-time to all dashboards.",
+    "category": "functional",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Login as Receptionist"
+      },
+      {
+        "type": "action",
+        "description": "Confirm patient appointments for the day"
+      },
+      {
+        "type": "action",
+        "description": "Register walk-in patients to the queue"
+      },
+      {
+        "type": "action",
+        "description": "Call next patient using queue token system"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify OPD queue display updates in real-time on receptionist and patient dashboards"
+      },
+      {
+        "type": "action",
+        "description": "Patient checks in upon being called"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify patient status updates to 'Checked-in' and real-time queue advances"
+      }
+    ]
+  },
+  {
+    "id": "TC010",
+    "title": "IPD Patient Management: Vitals Recording and Nursing Notes",
+    "description": "Ensure nurses can record patient vitals, input nursing notes, monitor patient status, and view documentation efficiently within IPD workflow.",
+    "category": "functional",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Login as Nurse"
+      },
+      {
+        "type": "action",
+        "description": "Select an admitted IPD patient"
+      },
+      {
+        "type": "action",
+        "description": "Record new vitals entry (temperature, blood pressure, pulse, etc.)"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify vitals data is saved and displayed in patient's chart"
+      },
+      {
+        "type": "action",
+        "description": "Add nursing notes related to patient care"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify nursing notes are saved and visible in clinical documentation"
+      }
+    ]
+  },
+  {
+    "id": "TC011",
+    "title": "Real-Time Notification System Functionality",
+    "description": "Verify that all notification types (appointments, lab reports, prescriptions, queue calls) trigger in-app alerts, sound notifications, visual indicators, and cross-tab synchronization.",
+    "category": "functional",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Trigger event generating a notification (e.g., appointment confirmation, lab report upload)"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify in-app notification displayed with correct message"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify audible notification is played"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify notification badge updates on UI elements (e.g., NotificationBell)"
+      },
+      {
+        "type": "action",
+        "description": "Open multiple tabs logged in as same user"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify notification state synchronizes across all tabs instantly"
+      }
+    ]
+  },
+  {
+    "id": "TC012",
+    "title": "Responsive UI Across Devices and Screen Sizes",
+    "description": "Test system UI responsiveness and usability on various screen sizes including desktop, tablet, and mobile devices ensuring consistent user experience using Ant Design system.",
+    "category": "ui",
+    "priority": "Medium",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Access application on desktop with large screen"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify layout displays full navigation menus and dashboards appropriately"
+      },
+      {
+        "type": "action",
+        "description": "Resize browser to tablet resolution"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify UI adapts with drawer navigation and touch-friendly controls"
+      },
+      {
+        "type": "action",
+        "description": "Access application on smartphone screen size"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify all functions accessible, forms usable, and no overflow or layout breakage occurs"
+      }
+    ]
+  },
+  {
+    "id": "TC013",
+    "title": "Database Schema Data Integrity and Relations Enforcement",
+    "description": "Validate that database constraints, relations (foreign keys), and validation schemas prevent invalid or corrupted data insertion across core entities like users, appointments, prescriptions, and lab reports.",
+    "category": "security",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Attempt to insert appointment without valid patient or doctor user IDs"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify database rejects insertion due to foreign key constraint"
+      },
+      {
+        "type": "action",
+        "description": "Attempt to save prescription with missing mandatory fields (e.g., medication name)"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify validation rejects record and error is returned"
+      },
+      {
+        "type": "action",
+        "description": "Attempt to save lab report file without associated lab test request"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify insertion fails as per schema rules"
+      }
+    ]
+  },
+  {
+    "id": "TC014",
+    "title": "Performance: API and UI Response Time within Operational Thresholds",
+    "description": "Ensure critical API endpoints and UI page loads meet defined maximum response times under normal load.",
+    "category": "performance",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Measure API response time for login, appointment booking, prescription retrieval, and notification endpoints under normal load"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify API response time is within defined limits (e.g., <500ms)"
+      },
+      {
+        "type": "action",
+        "description": "Measure page load time for dashboards on desktop and mobile devices"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify page rendering completes within acceptable thresholds (e.g., <1s)"
+      },
+      {
+        "type": "action",
+        "description": "Validate real-time data and notification update latency across tabs"
+      },
+      {
+        "type": "assertion",
+        "description": "Ensure updates propagate within 200ms"
+      }
+    ]
+  },
+  {
+    "id": "TC015",
+    "title": "User Onboarding Flow Completion for Each Role",
+    "description": "Validate the multi-step onboarding process for all user roles ensuring profile completion, verification, and role assignment before access to features.",
+    "category": "functional",
+    "priority": "Medium",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Register new user with role Patient"
+      },
+      {
+        "type": "action",
+        "description": "Complete onboarding steps: profile details, document upload, and verification"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify user status updates to 'active' after completion"
+      },
+      {
+        "type": "action",
+        "description": "Repeat for roles: Doctor, Receptionist, Nurse, Lab Technician, Pharmacist, Hospital Admin, Radiology Technician"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify respective onboarding UI and mandatory validations for each role"
+      }
+    ]
+  },
+  {
+    "id": "TC016",
+    "title": "Billing System: Invoice Generation and Payment Processing",
+    "description": "Test invoice creation for appointments and services, process payments, and verify billing records update correctly.",
+    "category": "functional",
+    "priority": "Medium",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Simulate completed appointment requiring billing"
+      },
+      {
+        "type": "action",
+        "description": "Generate invoice including service details and charges"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify invoice contains correct patient, service, and price info"
+      },
+      {
+        "type": "action",
+        "description": "Initiate payment through payment modal"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify payment is processed successfully and billing status updates to 'Paid'"
+      }
+    ]
+  }
+]

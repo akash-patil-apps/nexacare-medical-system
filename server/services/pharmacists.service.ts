@@ -8,7 +8,6 @@ import { eq, like, and } from 'drizzle-orm';
  * Create a new pharmacist profile.
  */
 export const createPharmacist = async (data: Omit<InsertPharmacist, 'id' | 'createdAt'>) => {
-  console.log(`💊 Creating pharmacist profile for user: ${data.userId}`);
 
   const pharmacistData = {
     ...data,
@@ -16,7 +15,6 @@ export const createPharmacist = async (data: Omit<InsertPharmacist, 'id' | 'crea
   };
 
   const result = await db.insert(pharmacists).values(pharmacistData).returning();
-  console.log(`✅ Pharmacist created: ${result[0]?.id}`);
 
   return result;
 };
@@ -25,13 +23,11 @@ export const createPharmacist = async (data: Omit<InsertPharmacist, 'id' | 'crea
  * Get all pharmacists.
  */
 export const getAllPharmacists = async () => {
-  console.log(`💊 Fetching all pharmacists`);
   const result = await db
     .select()
     .from(pharmacists)
     .where(() => true);
 
-  console.log(`📋 Found ${result.length} pharmacists`);
   return result;
 };
 
@@ -53,7 +49,6 @@ export const getPharmacistById = async (pharmacistId: number) => {
     return null;
   }
 
-  console.log(`💊 Fetching pharmacist by ID: ${pharmacistId}`);
 
   const result = await db
     .select({
@@ -68,11 +63,9 @@ export const getPharmacistById = async (pharmacistId: number) => {
     .limit(1);
 
   if (result.length === 0) {
-    console.log(`❌ Pharmacist not found: ${pharmacistId}`);
     return null;
   }
 
-  console.log(`✅ Pharmacist found: ${result[0].pharmacist.id}`);
   return result[0];
 };
 
@@ -94,7 +87,6 @@ export const getPharmacistsByHospital = async (hospitalId: number) => {
     return [];
   }
 
-  console.log(`🏥 Fetching pharmacists for hospital: ${hospitalId}`);
 
   const result = await db
     .select({
@@ -105,7 +97,6 @@ export const getPharmacistsByHospital = async (hospitalId: number) => {
     .leftJoin(users, eq(pharmacists.userId, users.id))
     .where(eq(pharmacists.hospitalId, hospitalId));
 
-  console.log(`📋 Found ${result.length} pharmacists for hospital ${hospitalId}`);
   return result;
 };
 
@@ -113,7 +104,6 @@ export const getPharmacistsByHospital = async (hospitalId: number) => {
  * Update pharmacist profile.
  */
 export const updatePharmacistProfile = async (pharmacistId: number, data: Partial<Omit<InsertPharmacist, 'id' | 'userId' | 'createdAt'>>) => {
-  console.log(`💊 Updating pharmacist profile: ${pharmacistId}`, data);
 
   const result = await db
     .update(pharmacists)
@@ -122,11 +112,9 @@ export const updatePharmacistProfile = async (pharmacistId: number, data: Partia
     .returning();
 
   if (result.length === 0) {
-    console.log(`❌ Pharmacist not found for update: ${pharmacistId}`);
     return null;
   }
 
-  console.log(`✅ Pharmacist updated: ${result[0].id}`);
   return result[0];
 };
 
@@ -134,7 +122,6 @@ export const updatePharmacistProfile = async (pharmacistId: number, data: Partia
  * Search pharmacists by name or specialization.
  */
 export const searchPharmacists = async (query: string, hospitalId?: number) => {
-  console.log(`🔍 Searching pharmacists: "${query}"`, hospitalId ? `in hospital ${hospitalId}` : '');
 
   const searchCondition = hospitalId
     ? and(
@@ -155,7 +142,6 @@ export const searchPharmacists = async (query: string, hospitalId?: number) => {
     .where(searchCondition)
     .limit(20);
 
-  console.log(`📋 Found ${result.length} pharmacists matching "${query}"`);
   return result;
 };
 
@@ -163,7 +149,6 @@ export const searchPharmacists = async (query: string, hospitalId?: number) => {
  * Get pharmacist by user ID.
  */
 export const getPharmacistByUserId = async (userId: number) => {
-  console.log(`💊 Fetching pharmacist by user ID: ${userId}`);
 
   const result = await db
     .select({

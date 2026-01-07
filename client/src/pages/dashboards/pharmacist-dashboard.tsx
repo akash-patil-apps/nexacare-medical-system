@@ -37,7 +37,6 @@ import {
   ShoppingCartOutlined,
   PlusOutlined,
   EditOutlined,
-  PillOutlined,
 } from '@ant-design/icons';
 import { useAuth } from '../../hooks/use-auth';
 import { useResponsive } from '../../hooks/use-responsive';
@@ -161,7 +160,7 @@ export default function PharmacistDashboard() {
       {
         title: 'Low Stock Alerts',
         value: lowStockAlerts,
-        icon: <PillOutlined />,
+        icon: <ExperimentOutlined />,
         color: '#EF4444',
         trend: 'Needs attention',
         trendLabel: '',

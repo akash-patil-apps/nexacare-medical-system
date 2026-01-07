@@ -440,14 +440,16 @@ export default function PrescriptionForm({
         onCancel={onClose}
         footer={null}
         width={800}
-        destroyOnClose
+        destroyOnHidden
         getContainer={() => document.body}
         zIndex={2000}
         maskClosable={false}
-        bodyStyle={{
-          maxHeight: '70vh',
-          overflowY: 'auto',
-          padding: '24px',
+        styles={{
+          body: {
+            maxHeight: '70vh',
+            overflowY: 'auto',
+            padding: '24px',
+          }
         }}
       >
         <Form

@@ -20,7 +20,7 @@ import {
   HomeOutlined,
   EnvironmentOutlined,
   SettingOutlined,
-  SafetyOutlined,
+  SecurityScanOutlined,
   PhoneOutlined,
   LockOutlined,
   MailOutlined,
@@ -85,6 +85,13 @@ export default function HospitalOnboarding() {
 
   const { data: statesResponse, isLoading: statesLoading } = useQuery<StateOption[]>({
     queryKey: ['/api/locations/states'],
+    queryFn: async () => {
+      const response = await fetch('/api/locations/states');
+      if (!response.ok) {
+        throw new Error('Failed to fetch states');
+      }
+      return response.json();
+    },
   });
 
   const stateOptions = useMemo(() => statesResponse ?? [], [statesResponse]);
@@ -303,7 +310,7 @@ export default function HospitalOnboarding() {
     },
     {
       title: 'Verify OTP',
-      icon: <SafetyOutlined />,
+      icon: <SecurityScanOutlined />,
       content: (
         <div>
           <Typography.Paragraph>

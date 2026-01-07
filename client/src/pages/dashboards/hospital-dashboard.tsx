@@ -148,7 +148,6 @@ export default function HospitalDashboard() {
         }
       });
       if (!response.ok) {
-        console.log('⚠️ Hospital stats API not ready yet');
         // Return default values if API fails
         return {
           totalDoctors: 0,
@@ -177,11 +176,9 @@ export default function HospitalDashboard() {
         }
       });
       if (!response.ok) {
-        console.log('⚠️ Hospital profile API not ready yet');
         return null;
       }
       const data = await response.json();
-      console.log('✅ Hospital profile fetched:', { id: data.id, name: data.name });
       return data;
     },
     enabled: !!user && user.role?.toUpperCase() === 'HOSPITAL',
@@ -206,7 +203,6 @@ export default function HospitalDashboard() {
         }
       });
       if (!response.ok) {
-        console.log('⚠️ Notifications API not ready yet');
         return [];
       }
       return response.json();
@@ -246,7 +242,6 @@ export default function HospitalDashboard() {
         if (typeof appointmentDate === 'string') {
           appointmentDate = new Date(appointmentDate);
           if (isNaN(appointmentDate.getTime())) {
-            console.warn(`⚠️ Invalid date for appointment ${apt.id}:`, apt.appointmentDate);
             appointmentDate = null;
           }
         } else if (appointmentDate) {
@@ -1435,7 +1430,6 @@ export default function HospitalDashboard() {
                                     }}>
                                       <BedOccupancyMap
                                         onBedClick={(bed) => {
-                                          console.log('Bed clicked:', bed);
                                         }}
                                       />
                                     </div>

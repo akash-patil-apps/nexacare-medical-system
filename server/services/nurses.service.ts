@@ -8,7 +8,6 @@ import { eq, like, and } from 'drizzle-orm';
  * Create a new nurse profile.
  */
 export const createNurse = async (data: Omit<InsertNurse, 'id' | 'createdAt'>) => {
-  console.log(`👩‍⚕️ Creating nurse profile for ${data.userId}`);
 
   const nurseData = {
     ...data,
@@ -16,7 +15,6 @@ export const createNurse = async (data: Omit<InsertNurse, 'id' | 'createdAt'>) =
   };
 
   const result = await db.insert(nurses).values(nurseData).returning();
-  console.log(`✅ Nurse created: ${result[0]?.id}`);
 
   return result;
 };
@@ -25,13 +23,11 @@ export const createNurse = async (data: Omit<InsertNurse, 'id' | 'createdAt'>) =
  * Get all nurses.
  */
 export const getAllNurses = async () => {
-  console.log(`👩‍⚕️ Fetching all nurses`);
   const result = await db
     .select()
     .from(nurses)
     .where(() => true);
 
-  console.log(`📋 Found ${result.length} nurses`);
   return result;
 };
 
@@ -53,7 +49,6 @@ export const getNurseById = async (nurseId: number) => {
     return null;
   }
 
-  console.log(`👩‍⚕️ Fetching nurse by ID: ${nurseId}`);
 
   const result = await db
     .select({
@@ -68,11 +63,9 @@ export const getNurseById = async (nurseId: number) => {
     .limit(1);
 
   if (result.length === 0) {
-    console.log(`❌ Nurse not found: ${nurseId}`);
     return null;
   }
 
-  console.log(`✅ Nurse found: ${result[0].nurse.id}`);
   return result[0];
 };
 
@@ -94,7 +87,6 @@ export const getNursesByHospital = async (hospitalId: number) => {
     return [];
   }
 
-  console.log(`🏥 Fetching nurses for hospital: ${hospitalId}`);
 
   const result = await db
     .select({
@@ -105,7 +97,6 @@ export const getNursesByHospital = async (hospitalId: number) => {
     .leftJoin(users, eq(nurses.userId, users.id))
     .where(eq(nurses.hospitalId, hospitalId));
 
-  console.log(`📋 Found ${result.length} nurses for hospital ${hospitalId}`);
   return result;
 };
 
@@ -113,7 +104,6 @@ export const getNursesByHospital = async (hospitalId: number) => {
  * Update nurse profile.
  */
 export const updateNurseProfile = async (nurseId: number, data: Partial<Omit<InsertNurse, 'id' | 'userId' | 'createdAt'>>) => {
-  console.log(`👩‍⚕️ Updating nurse profile: ${nurseId}`, data);
 
   const result = await db
     .update(nurses)
@@ -122,11 +112,9 @@ export const updateNurseProfile = async (nurseId: number, data: Partial<Omit<Ins
     .returning();
 
   if (result.length === 0) {
-    console.log(`❌ Nurse not found for update: ${nurseId}`);
     return null;
   }
 
-  console.log(`✅ Nurse updated: ${result[0].id}`);
   return result[0];
 };
 
@@ -134,7 +122,6 @@ export const updateNurseProfile = async (nurseId: number, data: Partial<Omit<Ins
  * Search nurses by name or specialty.
  */
 export const searchNurses = async (query: string, hospitalId?: number) => {
-  console.log(`🔍 Searching nurses: "${query}"`, hospitalId ? `in hospital ${hospitalId}` : '');
 
   const searchCondition = hospitalId
     ? and(
@@ -155,7 +142,6 @@ export const searchNurses = async (query: string, hospitalId?: number) => {
     .where(searchCondition)
     .limit(20);
 
-  console.log(`📋 Found ${result.length} nurses matching "${query}"`);
   return result;
 };
 
@@ -163,7 +149,6 @@ export const searchNurses = async (query: string, hospitalId?: number) => {
  * Get nurse by user ID.
  */
 export const getNurseByUserId = async (userId: number) => {
-  console.log(`👩‍⚕️ Fetching nurse by user ID: ${userId}`);
 
   const result = await db
     .select({

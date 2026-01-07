@@ -61,7 +61,6 @@ router.get(
   async (req: AuthenticatedRequest, res) => {
     try {
       const mobileNumber = String(req.query.mobile || '').trim();
-      console.log(`📱 Lookup request for mobile: ${mobileNumber}`);
       
       if (!mobileNumber) {
         return res.status(400).json({ message: 'Mobile number is required' });
@@ -73,7 +72,6 @@ router.get(
       }
 
       const result = await receptionService.lookupUserByMobile(mobileNumber);
-      console.log(`✅ Lookup result:`, result.user ? `User found: ${result.user.fullName}` : 'No user found');
       res.json(result);
     } catch (err: any) {
       console.error('❌ Lookup user error:', err);
@@ -97,26 +95,15 @@ router.get(
   authenticateToken,
   authorizeRoles('receptionist'),
   async (req: AuthenticatedRequest, res) => {
-    console.log('🔍 /api/reception/profile route hit');
     try {
       const user = req.user;
       if (!user) {
-        console.log('❌ No user in request');
         return res.status(401).json({ message: 'Unauthorized' });
       }
       
-      console.log(`📋 Fetching receptionist profile for user ID: ${user.id}`);
-      
       const receptionistProfile = await getReceptionistByUserId(user.id);
       
-      console.log(`📋 Receptionist profile result:`, receptionistProfile ? { 
-        id: receptionistProfile.id, 
-        hospitalId: receptionistProfile.hospitalId, 
-        hospitalName: receptionistProfile.hospitalName 
-      } : 'null');
-      
       if (!receptionistProfile) {
-        console.log(`⚠️ No receptionist profile found for user ID: ${user.id}`);
         return res.status(404).json({ message: 'Receptionist profile not found' });
       }
       

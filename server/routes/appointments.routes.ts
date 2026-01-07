@@ -19,8 +19,6 @@ router.post('/', authorizeRoles('PATIENT', 'ADMIN', 'RECEPTIONIST'), async (req:
       return res.status(401).json({ message: 'User not authenticated' });
     }
 
-    console.log('📅 Booking appointment for user:', user.id, 'Role:', user.role);
-    console.log('📅 Appointment data:', req.body);
 
     // Validate required fields
     const { doctorId, hospitalId, appointmentDate, appointmentTime, timeSlot, reason } = req.body;
@@ -55,14 +53,11 @@ router.post('/', authorizeRoles('PATIENT', 'ADMIN', 'RECEPTIONIST'), async (req:
       // For patients, use their own patient profile
       const patient = await db.select().from(patients).where(eq(patients.userId, user.id)).limit(1);
       
-      console.log('🔍 Patient lookup result:', patient);
       
       if (patient.length === 0) {
-        console.log('❌ No patient record found for user:', user.id);
         return res.status(400).json({ message: 'Patient profile not found. Please contact support.' });
       }
 
-      console.log('✅ Found patient record:', patient[0].id, 'for user:', user.id);
       patientId = patient[0].id;
     }
 
@@ -72,7 +67,6 @@ router.post('/', authorizeRoles('PATIENT', 'ADMIN', 'RECEPTIONIST'), async (req:
       patientId
     };
     
-    console.log('📤 Final appointment data:', appointmentData);
 
     const appointment = await appointmentService.bookAppointment(appointmentData, user);
     res.status(201).json(appointment);
@@ -140,7 +134,6 @@ router.get('/my', authorizeRoles('PATIENT', 'DOCTOR', 'RECEPTIONIST', 'HOSPITAL'
       return res.status(401).json({ message: 'User not authenticated' });
     }
 
-    console.log(`📋 Fetching appointments for user: ${user.id}, Role: ${user.role}, Name: ${user.fullName}`);
 
     let appointments: any[] = [];
     
@@ -149,59 +142,32 @@ router.get('/my', authorizeRoles('PATIENT', 'DOCTOR', 'RECEPTIONIST', 'HOSPITAL'
       // Get patient ID from user
       const patient = await db.select().from(patients).where(eq(patients.userId, user.id)).limit(1);
       if (patient.length > 0) {
-        console.log(`✅ Found patient ID: ${patient[0].id} for user ${user.id}`);
         appointments = await appointmentService.getAppointmentsByPatient(patient[0].id);
       } else {
-        console.log(`⚠️ No patient record found for user ${user.id}`);
       }
     } else if (user.role === 'DOCTOR') {
       // Get doctor ID from user
-      console.log(`🔍 Looking for doctor record with userId: ${user.id}, user name: ${user.fullName}`);
       const doctor = await db.select().from(doctors).where(eq(doctors.userId, user.id)).limit(1);
       if (doctor.length > 0) {
-        console.log(`✅ Found doctor ID: ${doctor[0].id} for user ${user.id} (${user.fullName})`);
-        console.log(`📋 Calling getAppointmentsByDoctor(${doctor[0].id})...`);
         appointments = await appointmentService.getAppointmentsByDoctor(doctor[0].id);
-        console.log(`📋 Returning ${appointments.length} appointments for doctor ${doctor[0].id}`);
-        if (appointments.length > 0) {
-          console.log(`📋 Sample appointment:`, {
-            id: appointments[0].id,
-            patient: appointments[0].patientName,
-            status: appointments[0].status,
-            date: appointments[0].appointmentDate
-          });
-        }
       } else {
-        console.log(`⚠️ No doctor record found for user ${user.id} (${user.fullName})`);
-        console.log(`🔍 Checking all doctors in database...`);
-        const allDoctors = await db.select().from(doctors).limit(10);
-        console.log(`📋 Found ${allDoctors.length} doctors in database`);
-        allDoctors.forEach(d => {
-          console.log(`  - Doctor ID: ${d.id}, User ID: ${d.userId}`);
-        });
       }
     } else if (user.role === 'RECEPTIONIST') {
       // Get receptionist's hospital ID
       const receptionist = await db.select().from(receptionists).where(eq(receptionists.userId, user.id)).limit(1);
       if (receptionist.length > 0) {
-        console.log(`📋 Receptionist ${user.fullName} (ID: ${user.id}) is associated with hospital ${receptionist[0].hospitalId}`);
         appointments = await appointmentService.getAppointmentsByHospital(receptionist[0].hospitalId);
-        console.log(`✅ Returning ${appointments.length} appointments for receptionist`);
       } else {
-        console.log(`⚠️ No receptionist record found for user ${user.id}`);
       }
     } else if (user.role === 'HOSPITAL') {
       // Get hospital ID from user (hospital admin is linked to hospital)
       const hospital = await db.select().from(hospitals).where(eq(hospitals.userId, user.id)).limit(1);
       if (hospital.length > 0) {
-        console.log(`✅ Found hospital ID: ${hospital[0].id} for user ${user.id}`);
         appointments = await appointmentService.getAppointmentsByHospital(hospital[0].id);
       } else {
-        console.log(`⚠️ No hospital record found for user ${user.id}`);
       }
     }
 
-    console.log(`📋 Total appointments to return: ${appointments.length}`);
     res.json(appointments);
   } catch (err) {
     console.error('❌ Get my appointments error:', err);
@@ -338,7 +304,6 @@ router.patch('/:appointmentId/complete', async (req: AuthenticatedRequest, res) 
 // Confirm appointment (for receptionist) - Approves pending appointments
 router.patch('/:appointmentId/confirm', authorizeRoles('RECEPTIONIST'), async (req: AuthenticatedRequest, res) => {
   try {
-    console.log(`📋 Confirm appointment request for appointment ${req.params.appointmentId} by receptionist ${req.user?.id}`);
     
     // Get receptionist ID from user
     const receptionist = await db.select().from(receptionists).where(eq(receptionists.userId, req.user?.id || 0)).limit(1);
@@ -347,18 +312,10 @@ router.patch('/:appointmentId/confirm', authorizeRoles('RECEPTIONIST'), async (r
       return res.status(403).json({ message: 'Receptionist not found' });
     }
     
-    console.log(`✅ Found receptionist ID: ${receptionist[0].id}`);
-    
     const appointment = await appointmentService.confirmAppointmentByReceptionist(
       +req.params.appointmentId,
       receptionist[0].id
     );
-    
-    console.log(`✅ Appointment confirmed successfully. Returning appointment:`, {
-      id: appointment.id,
-      status: appointment.status,
-      receptionistId: appointment.receptionistId
-    });
     
     res.json(appointment);
   } catch (err: any) {
@@ -373,27 +330,16 @@ router.patch('/:appointmentId/confirm', authorizeRoles('RECEPTIONIST'), async (r
 // Check-in appointment (for receptionist) - Records when patient physically arrives
 router.patch('/:appointmentId/check-in', authorizeRoles('RECEPTIONIST'), async (req: AuthenticatedRequest, res) => {
   try {
-    console.log(`📋 Check-in request for appointment ${req.params.appointmentId} by receptionist ${req.user?.id}`);
-    
     // Get receptionist ID from user
     const receptionist = await db.select().from(receptionists).where(eq(receptionists.userId, req.user?.id || 0)).limit(1);
     if (receptionist.length === 0) {
-      console.error(`❌ Receptionist not found for user ${req.user?.id}`);
       return res.status(403).json({ message: 'Receptionist not found' });
     }
-    
-    console.log(`✅ Found receptionist ID: ${receptionist[0].id}`);
     
     const appointment = await appointmentService.checkInAppointment(
       +req.params.appointmentId,
       receptionist[0].id
     );
-    
-    console.log(`✅ Patient checked in successfully. Returning appointment:`, {
-      id: appointment.id,
-      status: appointment.status,
-      receptionistId: appointment.receptionistId
-    });
     
     res.json(appointment);
   } catch (err: any) {

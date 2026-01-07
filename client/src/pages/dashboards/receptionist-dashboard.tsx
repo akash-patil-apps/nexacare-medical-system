@@ -137,6 +137,15 @@ export default function ReceptionistDashboard() {
   const appointmentStartTimeValue = Form.useWatch('appointmentStartTime', walkInForm);
   const durationMinutesValue = Form.useWatch('durationMinutes', walkInForm);
   
+  // Cancel with suggestion modal state
+  const [isCancelWithSuggestionModalOpen, setIsCancelWithSuggestionModalOpen] = useState(false);
+  const [appointmentForCancel, setAppointmentForCancel] = useState<any>(null);
+  const [cancelSuggestionForm] = Form.useForm();
+  const [cancelSuggestionSelectedDate, setCancelSuggestionSelectedDate] = useState<Dayjs | null>(null);
+  const [cancelSuggestionAvailableSlots, setCancelSuggestionAvailableSlots] = useState<string[]>([]);
+  const [cancelSuggestionSlotBookings, setCancelSuggestionSlotBookings] = useState<Record<string, number>>({});
+  const [suggestNewSlot, setSuggestNewSlot] = useState(false);
+  
   // Walk-in appointment booking state (matching patient dashboard flow)
   const [selectedDoctor, setSelectedDoctor] = useState<any>(null);
   const [selectedDate, setSelectedDate] = useState<dayjs.Dayjs | null>(null);
@@ -162,19 +171,13 @@ export default function ReceptionistDashboard() {
         throw new Error('Failed to fetch appointments');
       }
       const data = await response.json();
-      console.log('📋 Received appointments data:', data.length, 'appointments');
       // Transform API data to match table format with date object
       const transformed = data.map((apt: any) => {
-        // Log patient IDs for debugging
-        if (apt.patientId) {
-          console.log(`  Appointment ${apt.id}: patientId = ${apt.patientId} (type: ${typeof apt.patientId})`);
-        }
         // Handle different date formats
         let appointmentDate = apt.appointmentDate;
         if (typeof appointmentDate === 'string') {
           appointmentDate = new Date(appointmentDate);
           if (isNaN(appointmentDate.getTime())) {
-            console.warn(`⚠️ Invalid date for appointment ${apt.id}:`, apt.appointmentDate);
             appointmentDate = null;
           }
         } else if (appointmentDate) {
@@ -207,7 +210,6 @@ export default function ReceptionistDashboard() {
           dateObj: appointmentDate,
         };
       });
-      console.log('✅ Transformed appointments - statuses:', transformed.map((t: any) => `${t.patient}: ${t.status}`));
       return transformed;
     },
     enabled: !!user && user.role?.toUpperCase() === 'RECEPTIONIST',
@@ -268,7 +270,6 @@ export default function ReceptionistDashboard() {
   useEffect(() => {
     const fetchLabTestsForPatients = async () => {
       if (!appointments || appointments.length === 0) {
-        console.log('📋 No appointments, clearing lab tests');
         setPatientsWithLabTests(new Set());
         setLabTestsByPatient({});
         return;
@@ -283,10 +284,8 @@ export default function ReceptionistDashboard() {
         }
       });
 
-      console.log('📋 Fetching lab tests for patient IDs:', Array.from(uniquePatientIds));
 
       if (uniquePatientIds.size === 0) {
-        console.log('📋 No valid patient IDs found in appointments');
         setPatientsWithLabTests(new Set());
         setLabTestsByPatient({});
         return;
@@ -294,7 +293,6 @@ export default function ReceptionistDashboard() {
 
       const token = localStorage.getItem('auth-token');
       if (!token) {
-        console.warn('⚠️ No auth token available for fetching lab tests');
         return;
       }
 
@@ -305,7 +303,6 @@ export default function ReceptionistDashboard() {
       await Promise.all(
         Array.from(uniquePatientIds).map(async (patientId) => {
           try {
-            console.log(`🔬 Fetching lab tests for patient ${patientId}...`);
             const response = await fetch(`/api/reception/patients/${patientId}/lab-recommendations`, {
               headers: {
                 'Authorization': `Bearer ${token}`
@@ -314,34 +311,20 @@ export default function ReceptionistDashboard() {
             if (response.ok) {
               const labData = await response.json();
               const tests = Array.isArray(labData) ? labData : [];
-              console.log(`✅ Fetched ${tests.length} recommended lab tests for patient ${patientId}:`, tests);
               if (tests.length > 0) {
                 labTestsMap[patientId] = tests;
                 patientsWithTests.add(patientId);
-                console.log(`  ✅ Patient ${patientId} added to set with ${tests.length} tests`);
-              } else {
-                console.log(`  ⚠️ Patient ${patientId} has no recommended lab tests`);
               }
             } else {
               const errorText = await response.text().catch(() => 'Unknown error');
-              console.error(`❌ Failed to fetch lab tests for patient ${patientId}:`, response.status, errorText);
+              // Failed to fetch lab tests for patient
             }
           } catch (error) {
-            console.error(`❌ Error fetching lab tests for patient ${patientId}:`, error);
+            // Error fetching lab tests for patient
           }
         })
       );
 
-      console.log('📋 Final lab tests map:', labTestsMap);
-      console.log('📋 Final patients with tests set:', Array.from(patientsWithTests));
-      console.log('📋 Set size:', patientsWithTests.size);
-      console.log('📋 Map keys:', Object.keys(labTestsMap));
-      
-      // Log each patient's lab tests for debugging
-      Object.keys(labTestsMap).forEach(patientId => {
-        const pid = Number(patientId);
-        console.log(`  📋 Patient ${pid}: ${labTestsMap[pid].length} tests - ${patientsWithTests.has(pid) ? 'IN SET' : 'NOT IN SET'}`);
-      });
       
       setLabTestsByPatient(labTestsMap);
       setPatientsWithLabTests(patientsWithTests);
@@ -447,7 +430,6 @@ export default function ReceptionistDashboard() {
   // Listen for lab test creation events to refetch immediately
   useEffect(() => {
     const handleLabTestCreated = (event: CustomEvent) => {
-      console.log('🔔 Lab test created event received:', event.detail);
       // Refetch lab tests for all patients
       const fetchLabTestsForPatients = async () => {
         if (!appointments || appointments.length === 0) return;
@@ -563,7 +545,6 @@ export default function ReceptionistDashboard() {
     queryKey: ['/api/reception/profile'],
     queryFn: async () => {
       const token = localStorage.getItem('auth-token');
-      console.log('🔍 Fetching receptionist profile from /api/reception/profile');
       const response = await fetch('/api/reception/profile', {
         headers: {
           'Authorization': `Bearer ${token}`
@@ -575,11 +556,6 @@ export default function ReceptionistDashboard() {
         throw new Error('Failed to fetch receptionist profile');
       }
       const data = await response.json();
-      console.log('✅ Receptionist profile fetched:', { 
-        hospitalId: data.hospitalId, 
-        hospitalName: data.hospitalName,
-        fullData: data 
-      });
       if (data.hospitalId) {
         setHospitalId(data.hospitalId);
       }
@@ -592,23 +568,11 @@ export default function ReceptionistDashboard() {
 
   // Get hospital name from receptionist profile
   const hospitalName = useMemo(() => {
-    console.log('🔍 Computing hospitalName from receptionistProfile:', {
-      hasProfile: !!receptionistProfile,
-      hospitalName: receptionistProfile?.hospitalName,
-      hospitalId: receptionistProfile?.hospitalId,
-      profileLoading,
-    });
     if (receptionistProfile?.hospitalName) {
-      console.log('✅ Hospital name from receptionist profile:', receptionistProfile.hospitalName);
       return receptionistProfile.hospitalName;
     }
-    if (receptionistProfile && !receptionistProfile.hospitalName) {
-      console.log('⚠️ Receptionist profile exists but no hospitalName. Profile:', receptionistProfile);
-    } else if (!receptionistProfile) {
-      console.log('⚠️ No receptionist profile yet. Loading:', profileLoading);
-    }
     return null;
-  }, [receptionistProfile?.hospitalName, receptionistProfile, profileLoading]);
+  }, [receptionistProfile?.hospitalName]);
 
   // Filter appointments that are today or in the future (IST day-based)
   // Receptionists need to see pending (to confirm), confirmed (to check-in), and cancelled appointments.
@@ -907,28 +871,6 @@ export default function ReceptionistDashboard() {
 
     const unreadNotifications = notifications.filter((notif: any) => !notif.read).length;
 
-    console.log('📊 Receptionist Dashboard Stats:', {
-      totalAppointments: appointments.length,
-      todayAppointments: today.length,
-      pending,
-      confirmed,
-      completed,
-      cancelled,
-      checkedIn,
-      waiting,
-      todayIST: todayIST.toISOString(),
-      sampleStatuses: today.slice(0, 5).map((apt: any) => ({ 
-        id: apt.id, 
-        status: apt.status, 
-        normalized: normalizeStatus(apt.status),
-        date: apt.date,
-        dateObj: apt.dateObj?.toISOString(),
-        isToday: isSameDayIST(apt.dateObj || new Date(apt.date), todayIST)
-      })),
-      allAppointmentStatuses: [...new Set(appointments.map((apt: any) => apt.status))],
-      todayAppointmentStatuses: [...new Set(today.map((apt: any) => apt.status))],
-    });
-
     return {
       totalAppointments: appointments.length,
       todayAppointments: today.length,
@@ -993,7 +935,6 @@ export default function ReceptionistDashboard() {
 
   // NOW CHECK AUTHENTICATION AND ROLE (after all hooks)
   if (isLoading) {
-    console.log('⏳ Receptionist Dashboard - Auth loading...');
     return (
       <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', height: '100vh' }}>
         <Spin size="large" />
@@ -1003,17 +944,13 @@ export default function ReceptionistDashboard() {
   }
 
   if (!user) {
-    console.log('❌ Receptionist Dashboard - No user found, redirecting to login');
     return <Redirect to="/login" />;
   }
   
-  console.log('✅ Receptionist Dashboard - User found:', user);
 
   const userRole = user.role?.toUpperCase();
-  console.log('🔍 Receptionist Dashboard - User role:', userRole, 'Full user:', user);
   
   if (userRole !== 'RECEPTIONIST') {
-    console.warn('⚠️ User does not have RECEPTIONIST role. Current role:', userRole);
     message.warning('You do not have access to this dashboard');
     switch (userRole) {
       case 'PATIENT':
@@ -1029,12 +966,10 @@ export default function ReceptionistDashboard() {
     }
   }
   
-  console.log('✅ User has RECEPTIONIST role, rendering dashboard');
 
   // Handle confirm appointment (approve pending appointment)
   const handleConfirmAppointment = async (appointmentId: number) => {
     try {
-      console.log(`🔄 Confirming appointment ${appointmentId}`);
       const token = localStorage.getItem('auth-token');
       
       if (!token) {
@@ -1051,7 +986,6 @@ export default function ReceptionistDashboard() {
       });
 
       const responseData = await response.json();
-      console.log('📥 Check-in response:', responseData);
 
       if (response.ok) {
         playNotificationSound('confirmation');
@@ -1061,7 +995,6 @@ export default function ReceptionistDashboard() {
         // Also dispatch a custom event for same-window updates
         window.dispatchEvent(new CustomEvent('appointment-updated'));
         
-        console.log('✅ Appointment confirmed! Starting cache invalidation...');
         
         // Invalidate ALL appointment queries - use more aggressive invalidation
         // This invalidates ANY query that starts with '/api/appointments'
@@ -1078,11 +1011,9 @@ export default function ReceptionistDashboard() {
         
         // Force immediate refetch of receptionist appointments
         await refetchAppointments();
-        console.log('✅ Receptionist appointments refetched');
         
         // Trigger refetches after short delays to ensure all dashboards update
         setTimeout(() => {
-          console.log('🔄 Refetching all appointment queries (500ms delay)...');
           // Refetch ALL appointment queries aggressively
           queryClient.refetchQueries({ 
             predicate: (query) => {
@@ -1097,11 +1028,9 @@ export default function ReceptionistDashboard() {
           // Trigger another storage event to notify other tabs
           window.localStorage.setItem('appointment-updated', Date.now().toString());
           window.dispatchEvent(new CustomEvent('appointment-updated'));
-          console.log('✅ Storage event dispatched');
         }, 500);
         
         setTimeout(() => {
-          console.log('🔄 Second refetch (2000ms delay)...');
           // Second refetch to ensure updates are visible
           queryClient.refetchQueries({ 
             predicate: (query) => {
@@ -1115,7 +1044,6 @@ export default function ReceptionistDashboard() {
           });
           window.localStorage.setItem('appointment-updated', Date.now().toString());
           window.dispatchEvent(new CustomEvent('appointment-updated'));
-          console.log('✅ Second storage event dispatched');
         }, 2000);
       } else {
         console.error('❌ Confirm appointment failed:', responseData);
@@ -1130,7 +1058,6 @@ export default function ReceptionistDashboard() {
   // Handle check-in appointment (when patient arrives at hospital)
   const handleCheckIn = async (appointmentId: number) => {
     try {
-      console.log(`🔄 Checking in patient for appointment ${appointmentId}`);
       const token = localStorage.getItem('auth-token');
       
       if (!token) {
@@ -1147,7 +1074,6 @@ export default function ReceptionistDashboard() {
       });
 
       const responseData = await response.json();
-      console.log('📥 Check-in response:', responseData);
 
       if (response.ok) {
         const tokenNumber = (responseData as any)?.tokenNumber ?? (responseData as any)?.token_number;
@@ -1232,6 +1158,82 @@ export default function ReceptionistDashboard() {
     }
     
     setIsCancelWithSuggestionModalOpen(true);
+  };
+
+  // Handle cancel suggestion date change
+  const handleCancelSuggestionDateChange = async (date: Dayjs | null) => {
+    setCancelSuggestionSelectedDate(date);
+    if (date && appointmentForCancel?.doctorId) {
+      const dateStr = date.format('YYYY-MM-DD');
+      try {
+        const slots = await fetchDoctorSlots(appointmentForCancel.doctorId, dateStr);
+        const filteredSlots = slots.filter(slot => !isSlotInPast(slot, date));
+        setCancelSuggestionAvailableSlots(filteredSlots);
+        
+        const bookings = await fetchBookedAppointments(appointmentForCancel.doctorId, dateStr);
+        setCancelSuggestionSlotBookings(bookings);
+      } catch (error) {
+        console.error('Error fetching slots for date:', error);
+        setCancelSuggestionAvailableSlots([]);
+        setCancelSuggestionSlotBookings({});
+      }
+    } else {
+      setCancelSuggestionAvailableSlots([]);
+      setCancelSuggestionSlotBookings({});
+    }
+  };
+
+  // Handle cancel with suggestion submission
+  const handleCancelWithSuggestionSubmit = async (values: any) => {
+    if (!appointmentForCancel) return;
+    
+    try {
+      const token = localStorage.getItem('auth-token');
+      if (!token) {
+        message.error('Authentication required');
+        return;
+      }
+
+      const cancelData: any = {
+        cancellationReason: values.cancellationReason
+      };
+
+      if (suggestNewSlot && values.appointmentDate && values.timeSlot) {
+        cancelData.suggestedDate = dayjs(values.appointmentDate).format('YYYY-MM-DD');
+        cancelData.suggestedTimeSlot = values.timeSlot;
+        cancelData.suggestedReason = values.newReason || 'Rescheduled appointment';
+      }
+
+      const response = await fetch(`/api/appointments/${appointmentForCancel.id}/cancel`, {
+        method: 'PATCH',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(cancelData)
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ message: 'Failed to cancel appointment' }));
+        throw new Error(errorData.message || 'Failed to cancel appointment');
+      }
+
+      message.success(suggestNewSlot ? 'Appointment cancelled and new slot suggested to patient' : 'Appointment cancelled successfully');
+      
+      setIsCancelWithSuggestionModalOpen(false);
+      setAppointmentForCancel(null);
+      setSuggestNewSlot(false);
+      cancelSuggestionForm.resetFields();
+      setCancelSuggestionSelectedDate(null);
+      setCancelSuggestionAvailableSlots([]);
+      setCancelSuggestionSlotBookings({});
+      
+      // Refetch appointments
+      await refetchAppointments();
+    } catch (error: any) {
+      console.error('Cancel appointment error:', error);
+      message.error(error.message || 'Failed to cancel appointment');
+    }
   };
 
   // Handle rejection submission
@@ -1542,7 +1544,7 @@ export default function ReceptionistDashboard() {
           background: '#fff',
           boxShadow: '0 2px 8px rgba(0, 0, 0, 0.06)',
         }}
-        bodyStyle={{ padding: 14 }}
+        styles={{ body: { padding: 14 } }}
       >
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
           <div style={{ minWidth: 0, flex: 1 }}>
@@ -1679,22 +1681,7 @@ export default function ReceptionistDashboard() {
           ? labTestsByPatient[patientIdNum].length 
           : 0;
         
-        // Debug logging for all patients to see what's happening
-        if (patientIdNum) {
-          const inSet = patientsWithLabTests.has(patientIdNum);
-          const inMap = !!labTestsByPatient[patientIdNum];
-          if (inSet || inMap || hasLabTests) {
-            console.log(`🔬 Patient ${patientIdNum} (${text}) lab tests:`, {
-              hasLabTests,
-              labTestsCount,
-              inSet,
-              inMap,
-              setSize: patientsWithLabTests.size,
-              mapKeys: Object.keys(labTestsByPatient),
-              tests: labTestsByPatient[patientIdNum]
-            });
-          }
-        }
+        // Debug logging removed for production
 
         return (
           <Space direction="vertical" size={0} style={{ lineHeight: 1.2 }}>
@@ -2102,7 +2089,6 @@ export default function ReceptionistDashboard() {
         notes: trimmedNotes || undefined,
       };
 
-      console.log('📤 Sending appointment payload:', payload);
 
       const response = await fetch('/api/appointments', {
         method: 'POST',
@@ -2153,7 +2139,6 @@ export default function ReceptionistDashboard() {
   };
   // Check if user exists by mobile number
   const checkMobileNumber = async (mobileNumber: string) => {
-    console.log('🔍 checkMobileNumber called with:', mobileNumber);
     
     if (!mobileNumber || mobileNumber.length < 10) {
       message.warning('Please enter a valid mobile number');
@@ -2177,9 +2162,7 @@ export default function ReceptionistDashboard() {
         return;
       }
 
-      console.log(`📞 Looking up mobile number: ${mobileNumber}`);
       const url = `/api/reception/patients/lookup?mobile=${encodeURIComponent(mobileNumber)}`;
-      console.log(`🌐 Fetch URL: ${url}`);
 
       // Add timeout to the fetch request - increased to 30 seconds for database queries
       const controller = new AbortController();
@@ -2197,7 +2180,6 @@ export default function ReceptionistDashboard() {
 
       clearTimeout(timeoutId);
       const duration = Date.now() - startTime;
-      console.log(`⏱️ Lookup took ${duration}ms, status: ${response.status}`);
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
@@ -2215,7 +2197,6 @@ export default function ReceptionistDashboard() {
       }
 
       const data = await response.json();
-      console.log('✅ Lookup response:', data);
       
       if (data.user) {
         // User exists
@@ -2627,7 +2608,6 @@ export default function ReceptionistDashboard() {
     if (doctor) {
       // Auto-advance to date/time selection step and initialize date
       setTimeout(() => {
-        console.log('🚀 Auto-advancing to date & time selection step');
         setAppointmentBookingStep(1);
         // Always initialize date to today when auto-advancing from doctor selection
         const today = dayjs();
@@ -2641,13 +2621,11 @@ export default function ReceptionistDashboard() {
             if (slots.length > 0) {
               const filteredSlots = slots.filter(slot => !isSlotInPast(slot, today));
               setAvailableSlots(filteredSlots);
-              console.log(`📅 Availability API slots for date ${dateStr}: ${filteredSlots.length} available`);
             } else {
               // Fallback to doctor's availableSlots
               const allSlots = getDoctorSlots(doctor);
               const filteredSlots = allSlots.filter(slot => !isSlotInPast(slot, today));
               setAvailableSlots(filteredSlots);
-              console.log(`📅 Fallback slots for date ${dateStr}: ${filteredSlots.length} available`);
             }
             
             // Fetch booked appointments for this doctor and date
@@ -2655,7 +2633,6 @@ export default function ReceptionistDashboard() {
           })
           .then(bookings => {
             setSlotBookings(bookings);
-            console.log('📅 Booked appointments for', dateStr, ':', bookings);
           })
           .catch(error => {
             console.error('Error fetching slots/appointments:', error);
@@ -2684,19 +2661,16 @@ export default function ReceptionistDashboard() {
         if (slots.length > 0) {
           const filteredSlots = slots.filter(slot => !isSlotInPast(slot, date));
           setAvailableSlots(filteredSlots);
-          console.log(`📅 Availability API slots for date ${dateStr}: ${filteredSlots.length} available`);
         } else {
           // Fallback to doctor's availableSlots
           const allSlots = getDoctorSlots(selectedDoctor);
           const filteredSlots = allSlots.filter(slot => !isSlotInPast(slot, date));
           setAvailableSlots(filteredSlots);
-          console.log(`📅 Fallback slots for date ${dateStr}: ${filteredSlots.length} available`);
         }
         
         // Fetch booked appointments for this doctor and date
         const bookings = await fetchBookedAppointments(selectedDoctor.id, dateStr);
         setSlotBookings(bookings);
-        console.log('📅 Booked appointments for', dateStr, ':', bookings);
       } catch (error) {
         console.error('Error fetching slots/appointments:', error);
         // Fallback to doctor's availableSlots
@@ -3172,14 +3146,37 @@ export default function ReceptionistDashboard() {
                             </Button>
                   </Space>
                 }
-                extra={<Button type="link" onClick={() => message.info('View all appointments feature coming soon')}>View All</Button>}
-                bodyStyle={{ 
-                flex: 1, 
-                minHeight: 0, 
-                  display: 'flex', 
-                  flexDirection: 'column',
-                overflow: 'hidden',
-                padding: 0,
+                extra={<Button type="link" onClick={() => {
+                  // Show all appointments in a modal or navigate to appointments page
+                  const allAppointments = [...upcomingAppointments, ...pastAppointments];
+                  Modal.info({
+                    title: 'All Appointments',
+                    width: 800,
+                    content: (
+                      <Table
+                        dataSource={allAppointments}
+                        columns={[
+                          { title: 'Patient', dataIndex: ['patient', 'fullName'], key: 'patient' },
+                          { title: 'Doctor', dataIndex: ['doctor', 'fullName'], key: 'doctor' },
+                          { title: 'Date', dataIndex: 'appointmentDate', key: 'date', render: (date) => dayjs(date).format('DD/MM/YYYY') },
+                          { title: 'Time', dataIndex: 'appointmentTime', key: 'time' },
+                          { title: 'Status', dataIndex: 'status', key: 'status', render: (status) => <Tag color={status === 'confirmed' ? 'green' : status === 'pending' ? 'orange' : 'default'}>{status}</Tag> },
+                        ]}
+                        pagination={{ pageSize: 10 }}
+                        size="small"
+                      />
+                    ),
+                  });
+                }}>View All</Button>}
+                styles={{ 
+                  body: {
+                    flex: 1, 
+                    minHeight: 0, 
+                    display: 'flex', 
+                    flexDirection: 'column',
+                    overflow: 'hidden',
+                    padding: 0,
+                  }
                 }}
               >
                 <div style={{ 
@@ -3293,13 +3290,15 @@ export default function ReceptionistDashboard() {
                           minHeight: 0,
                         }}
                         title={<Text strong>Active IPD Patients</Text>}
-                        bodyStyle={{ 
-                          flex: 1, 
-                          minHeight: 0, 
-                          display: 'flex', 
-                          flexDirection: 'column',
-                          overflow: 'hidden',
-                          padding: isMobile ? 12 : 16,
+                        styles={{ 
+                          body: {
+                            flex: 1, 
+                            minHeight: 0, 
+                            display: 'flex', 
+                            flexDirection: 'column',
+                            overflow: 'hidden',
+                            padding: isMobile ? 12 : 16,
+                          }
                         }}
                       >
                         <div style={{ 
@@ -4713,14 +4712,12 @@ export default function ReceptionistDashboard() {
         {selectedPatientForLabTests && labTestsByPatient[selectedPatientForLabTests] ? (
           <>
             {(() => {
-              console.log(`📋 Displaying ${labTestsByPatient[selectedPatientForLabTests].length} tests for patient ${selectedPatientForLabTests}`);
               return null;
             })()}
             <List
               dataSource={labTestsByPatient[selectedPatientForLabTests]}
               itemLayout="vertical"
               renderItem={(test: any) => {
-                console.log('📋 Rendering lab test:', test);
                 return (
               <List.Item
                 actions={[

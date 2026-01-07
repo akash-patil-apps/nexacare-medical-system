@@ -245,15 +245,12 @@ export const getAvailableBeds = async (hospitalId: number) => {
  * Get complete bed structure for hospital (hierarchical view)
  */
 export const getBedStructure = async (hospitalId: number) => {
-  console.log(`🏥 Getting bed structure for hospital ${hospitalId}`);
   
   // Get all floors
   const floorsList = await getFloors(hospitalId);
-  console.log(`📊 Found ${floorsList.length} floors`);
   
   // Get all wards (with floor info)
   const wardsListRaw = await getWards(hospitalId);
-  console.log(`📊 Found ${wardsListRaw.length} wards`);
   
   // Flatten wards structure
   const wardsList = wardsListRaw.map((row: any) => {
@@ -267,7 +264,6 @@ export const getBedStructure = async (hospitalId: number) => {
       floor: row.floor || null,
     };
   }).filter((w: any) => w !== null);
-  console.log(`📊 Flattened ${wardsList.length} wards`);
   
   // Get all rooms - flatten the nested structure
   const roomsListRaw = await db
@@ -291,7 +287,6 @@ export const getBedStructure = async (hospitalId: number) => {
       wardId: row.ward?.id || row.room.wardId || null,
     };
   }).filter((r: any) => r !== null);
-  console.log(`📊 Found ${roomsList.length} rooms`);
   
   // Get all beds with occupancy info
   // First get all rooms for this hospital, then get beds for those rooms
@@ -305,7 +300,6 @@ export const getBedStructure = async (hospitalId: number) => {
     ));
   
   const roomIdList = hospitalRoomIds.map((r: any) => r.id);
-  console.log(`📊 Found ${roomIdList.length} rooms for hospital ${hospitalId}`);
   
   const bedsListRaw = roomIdList.length > 0 ? await db
     .select({
@@ -348,14 +342,6 @@ export const getBedStructure = async (hospitalId: number) => {
     
     // Log bed status determination for debugging
     if (bedsListRaw.length <= 3 || bedsListRaw.indexOf(row) < 3) {
-      console.log(`🛏️ Bed ${bed.id} (${bed.bedNumber}) status determination:`, {
-        bedId: bed.id,
-        bedNumber: bed.bedNumber,
-        bedStatusInDb: bed.status,
-        hasActiveAllocation: isOccupied,
-        allocationId: row.currentAllocation?.id || null,
-        determinedStatus: 'pending',
-      });
     }
     
     if (isOccupied) {
@@ -370,13 +356,11 @@ export const getBedStructure = async (hospitalId: number) => {
       } else if (bed.status === 'occupied') {
         // Bed status says occupied but no active allocation - fix inconsistency
         status = 'available';
-        console.log(`  ✅ Fixed bed ${bed.id}: bed.status was 'occupied' but no active allocation, setting to 'available'`);
       } else {
         // If no active allocation, bed should be available (even if status says 'cleaning')
         // Cleaning is a temporary state - if there's no active allocation, the bed is available for new patients
         status = 'available';
         if (bed.status && bed.status !== 'available' && bed.status !== 'blocked') {
-          console.log(`  ✅ Fixed bed ${bed.id}: bed.status was '${bed.status}' but no active allocation, setting to 'available'`);
         }
       }
     }
@@ -394,24 +378,6 @@ export const getBedStructure = async (hospitalId: number) => {
     };
   }).filter((b: any) => b !== null);
   
-  console.log(`📊 Found ${bedsList.length} beds`);
-  
-  // Log bed status breakdown
-  const statusBreakdown = bedsList.reduce((acc: any, bed: any) => {
-    acc[bed.status] = (acc[bed.status] || 0) + 1;
-    return acc;
-  }, {});
-  console.log('📊 Bed status breakdown:', statusBreakdown);
-  
-  if (bedsList.length > 0) {
-    console.log('📊 Sample beds:', bedsList.slice(0, 3).map((bed: any) => ({
-      id: bed.id,
-      bedNumber: bed.bedNumber,
-      status: bed.status,
-      roomId: bed.roomId,
-      hasCurrentPatient: !!bed.currentPatient,
-    })));
-  }
 
   const structure = {
     floors: floorsList,
@@ -419,13 +385,6 @@ export const getBedStructure = async (hospitalId: number) => {
     rooms: roomsList,
     beds: bedsList,
   };
-  
-  console.log(`✅ Bed structure prepared:`, {
-    floors: structure.floors.length,
-    wards: structure.wards.length,
-    rooms: structure.rooms.length,
-    beds: structure.beds.length,
-  });
   
   return structure;
 };
@@ -556,13 +515,6 @@ export const getIpdEncounters = async (filters: {
 
   const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
   
-  console.log(`🔍 getIpdEncounters filters:`, JSON.stringify(filters, null, 2));
-  console.log(`🔍 Conditions count: ${conditions.length}`);
-  if (filters.doctorId) {
-    const doctorIdNum = typeof filters.doctorId === 'string' ? parseInt(filters.doctorId, 10) : filters.doctorId;
-    console.log(`🔍 Doctor filter - doctorId: ${filters.doctorId}, parsed: ${doctorIdNum}, type: ${typeof filters.doctorId}`);
-    console.log(`🔍 Where clause structure:`, whereClause ? 'exists' : 'undefined');
-  }
 
   const encounters = await db
     .select({
@@ -577,33 +529,6 @@ export const getIpdEncounters = async (filters: {
     .leftJoin(hospitals, eq(ipdEncounters.hospitalId, hospitals.id))
     .where(whereClause);
   
-  console.log(`📋 Found ${encounters.length} raw encounters before enrichment`);
-  
-  // Debug: Log first few encounters to see doctor IDs
-  if (filters.doctorId && encounters.length > 0) {
-    console.log(`🔍 Sample encounters for doctor ${filters.doctorId}:`, encounters.slice(0, 3).map(enc => ({
-      id: enc.encounter.id,
-      patientId: enc.encounter.patientId,
-      admittingDoctorId: enc.encounter.admittingDoctorId,
-      attendingDoctorId: enc.encounter.attendingDoctorId,
-      status: enc.encounter.status,
-    })));
-  } else if (filters.doctorId && encounters.length === 0) {
-    console.log(`⚠️ No encounters found for doctor ${filters.doctorId}. Checking all encounters...`);
-    // Debug: Check if there are any encounters at all for this hospital
-    const allEncounters = await db
-      .select({
-        id: ipdEncounters.id,
-        patientId: ipdEncounters.patientId,
-        admittingDoctorId: ipdEncounters.admittingDoctorId,
-        attendingDoctorId: ipdEncounters.attendingDoctorId,
-        status: ipdEncounters.status,
-      })
-      .from(ipdEncounters)
-      .where(filters.hospitalId ? eq(ipdEncounters.hospitalId, filters.hospitalId) : undefined)
-      .limit(10);
-    console.log(`📋 All encounters in hospital (first 10):`, allEncounters);
-  }
 
   // Enrich with doctor info and current bed separately
   const enrichedEncounters = await Promise.all(
@@ -669,19 +594,12 @@ export const getIpdEncounters = async (filters: {
         admittingDoctorName: admittingDoctor[0]?.user?.fullName || 'N/A',
         attendingDoctorName: attendingDoctor[0]?.user?.fullName || 'N/A',
       };
-      console.log(`📋 Enriched encounter:`, logData);
       
       // Check if this encounter matches the doctor filter
       if (filters.doctorId) {
         const doctorIdNum = typeof filters.doctorId === 'string' ? parseInt(filters.doctorId, 10) : filters.doctorId;
         const matchesAdmitting = enc.encounter.admittingDoctorId === doctorIdNum;
         const matchesAttending = enc.encounter.attendingDoctorId === doctorIdNum;
-        console.log(`  🔍 Doctor match check for ${doctorIdNum}:`, {
-          matchesAdmitting,
-          matchesAttending,
-          admittingId: enc.encounter.admittingDoctorId,
-          attendingId: enc.encounter.attendingDoctorId,
-        });
       }
       
       // Format doctor objects with user info
@@ -1019,7 +937,6 @@ export const dischargePatient = async (data: {
       .update(bedAllocations)
       .set({ toAt: sql`NOW()` })
       .where(eq(bedAllocations.id, currentAllocation[0].id));
-    console.log(`✅ Bed allocation closed for bed ${bedId}`);
 
     // Release bed - set to available immediately (cleaning can be handled separately if needed)
     const [updatedBed] = await db
@@ -1027,13 +944,7 @@ export const dischargePatient = async (data: {
       .set({ status: 'available', updatedAt: sql`NOW()` })
       .where(eq(beds.id, bedId))
       .returning();
-    console.log(`✅ Bed ${bedId} status updated to 'available':`, {
-      bedId: updatedBed.id,
-      newStatus: updatedBed.status,
-      previousStatus: previousStatus,
-    });
   } else {
-    console.log(`⚠️ No active bed allocation found for encounter ${data.encounterId}`);
   }
 
   // Update encounter - use provided status or default to 'discharged'

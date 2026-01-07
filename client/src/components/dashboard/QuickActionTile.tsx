@@ -1,21 +1,29 @@
 import { Button } from 'antd';
-import { ReactNode } from 'react';
+import { ReactNode, CSSProperties } from 'react';
 
 interface QuickActionTileProps {
-  label: string;
+  title?: string;
+  label?: string; // For backward compatibility
+  description?: string;
   icon?: ReactNode;
   onClick?: () => void;
   variant?: 'primary' | 'secondary';
+  style?: CSSProperties;
 }
 
 export function QuickActionTile({
+  title,
   label,
+  description,
   icon,
   onClick,
   variant = 'secondary',
+  style,
 }: QuickActionTileProps) {
+  // Use title if provided, otherwise fall back to label
+  const displayLabel = title || label || '';
   const isPrimary = variant === 'primary';
-  const buttonId = `quick-action-${label.toLowerCase().replace(/\s+/g, '-')}`;
+  const buttonId = `quick-action-${displayLabel ? displayLabel.toLowerCase().replace(/\s+/g, '-') : 'action'}`;
   
   return (
     <>
@@ -46,6 +54,7 @@ export function QuickActionTile({
           padding: '8px 16px',
           flex: 1,
           minWidth: 0,
+          ...style,
         }}
       type={isPrimary ? 'primary' : 'default'}
       onMouseEnter={(e) => {
@@ -65,7 +74,7 @@ export function QuickActionTile({
         e.currentTarget.style.boxShadow = '0 1px 2px rgba(0, 0, 0, 0.05)';
       }}
     >
-      {label}
+      {displayLabel}
     </Button>
     </>
   );

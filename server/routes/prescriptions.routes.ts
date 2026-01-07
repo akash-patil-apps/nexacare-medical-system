@@ -17,8 +17,6 @@ router.post(
   authorizeRoles("DOCTOR"),
   async (req: AuthenticatedRequest, res) => {
     try {
-      console.log("📋 Creating prescription - Request body:", JSON.stringify(req.body, null, 2));
-      console.log("👨‍⚕️ User ID from token:", req.user!.id);
       
       // Get doctor ID from user ID
       const doctorProfile = await doctorsService.getDoctorByUserId(req.user!.id);
@@ -28,11 +26,9 @@ router.post(
       }
       
       const doctorId = doctorProfile.id;
-      console.log("✅ Doctor ID:", doctorId);
       
       // Parse with Zod schema
       const parsed = insertPrescriptionSchema.parse(req.body);
-      console.log("✅ Parsed prescription data:", JSON.stringify(parsed, null, 2));
       
       // Ensure required fields are present
       if (!parsed.patientId) {
@@ -50,10 +46,8 @@ router.post(
       
       // Build final prescription data with doctorId
       const prescriptionData = { ...parsed, doctorId };
-      console.log("📤 Final prescription data to insert:", JSON.stringify(prescriptionData, null, 2));
       
       const result = await prescriptionService.issuePrescription(prescriptionData);
-      console.log("✅ Prescription created successfully:", result.id);
       res.status(201).json(result);
     } catch (err) {
       console.error("❌ Issue prescription error:", err);
@@ -181,7 +175,6 @@ router.get(
       }
       
       const doctorId = doctorProfile.id;
-      console.log("📋 Fetching prescriptions for doctor ID:", doctorId, "(user ID:", req.user!.id, ")");
       
       const { search, hospitalId, from, to, status, limit } = req.query;
       const prescriptions = await prescriptionService.getPrescriptionsForDoctor({
@@ -193,8 +186,6 @@ router.get(
         status: status as string,
         limit: limit ? Number(limit) : undefined,
       });
-      
-      console.log(`✅ Found ${prescriptions.length} prescriptions for doctor ${doctorId}`);
       res.json(prescriptions);
     } catch (err) {
       console.error("❌ Fetch doctor prescriptions failed:", err);

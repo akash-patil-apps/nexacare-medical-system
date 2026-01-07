@@ -15,7 +15,7 @@ import {
   Alert
 } from 'antd';
 import { 
-  SafetyOutlined, 
+  SecurityScanOutlined, 
   LockOutlined, 
   MedicineBoxOutlined,
   ArrowLeftOutlined,
@@ -124,7 +124,7 @@ export default function OtpVerification() {
     {
       title: 'Verify OTP',
       description: 'Enter the code sent to your mobile',
-      icon: <SafetyOutlined />,
+      icon: <SecurityScanOutlined />,
     },
     {
       title: 'Set Password',
@@ -181,7 +181,7 @@ export default function OtpVerification() {
                     ]}
                   >
                 <Input
-                      prefix={<SafetyOutlined />}
+                      prefix={<SecurityScanOutlined />}
                       placeholder="Enter 6-digit OTP"
                       className="medical-input"
                   maxLength={6}

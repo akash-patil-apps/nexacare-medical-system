@@ -72,7 +72,6 @@ export default function DoctorAppointments() {
       });
       if (!response.ok) throw new Error('Failed to fetch appointments');
       const data = await response.json();
-      console.log('📅 Doctor appointments loaded:', data.length, 'appointments');
       // Transform API data to match expected format
       return data.map((apt: any) => ({
         id: apt.id,
@@ -103,14 +102,12 @@ export default function DoctorAppointments() {
   useEffect(() => {
     const handleStorageChange = (e: StorageEvent) => {
       if (e.key === 'appointment-updated') {
-        console.log('🔄 Appointment updated detected in doctor appointments, refreshing...');
         refetchAppointments();
       }
     };
     
     // Also listen for custom events (same-window updates)
     const handleCustomEvent = () => {
-      console.log('🔄 Custom appointment update event in doctor appointments');
       refetchAppointments();
     };
     

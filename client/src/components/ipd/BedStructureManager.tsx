@@ -701,7 +701,7 @@ export const BedStructureManager: React.FC = () => {
                       Add Floor
                     </Button>
                   }
-                  bodyStyle={{ padding: 0, display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}
+                  styles={{ body: { padding: 0, display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 } }}
                   style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, height: '100%' }}
                 >
                   <div style={{ flex: 1, minHeight: 0, overflow: 'auto' }}>
@@ -740,7 +740,7 @@ export const BedStructureManager: React.FC = () => {
                       Add Ward
                     </Button>
                   }
-                  bodyStyle={{ padding: 0, display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}
+                  styles={{ body: { padding: 0, display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 } }}
                   style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, height: '100%' }}
                 >
                   <div style={{ flex: 1, minHeight: 0, overflow: 'auto' }}>
@@ -780,7 +780,7 @@ export const BedStructureManager: React.FC = () => {
                       Add Room
                     </Button>
                   }
-                  bodyStyle={{ padding: 0, display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}
+                  styles={{ body: { padding: 0, display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 } }}
                   style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, height: '100%' }}
                 >
                   <div style={{ flex: 1, minHeight: 0, overflow: 'auto' }}>
@@ -820,7 +820,7 @@ export const BedStructureManager: React.FC = () => {
                       Add Bed
                     </Button>
                   }
-                  bodyStyle={{ padding: 0, display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}
+                  styles={{ body: { padding: 0, display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 } }}
                   style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, height: '100%' }}
                 >
                   <div style={{ flex: 1, minHeight: 0, overflow: 'auto' }}>

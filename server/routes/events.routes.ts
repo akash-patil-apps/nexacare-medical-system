@@ -86,10 +86,28 @@ router.get("/appointments", async (req, res) => {
     send(evt);
   });
 
-  req.on("close", () => {
+  // Send periodic keep-alive to prevent connection timeout
+  const keepAliveInterval = setInterval(() => {
+    if (!res.headersSent) {
+      try {
+        res.write(': keep-alive\n\n');
+      } catch (e) {
+        clearInterval(keepAliveInterval);
+        unsubscribe();
+      }
+    }
+  }, 30000); // Every 30 seconds
+
+  const cleanup = () => {
+    clearInterval(keepAliveInterval);
     unsubscribe();
-    res.end();
-  });
+    if (!res.headersSent) {
+      res.end();
+    }
+  };
+
+  req.on("close", cleanup);
+  req.on("aborted", cleanup);
 });
 
 export default router;

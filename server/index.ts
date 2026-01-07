@@ -7,6 +7,7 @@ import cors from "cors";
 import { createServer } from "http";
 import { registerRoutes } from "./routes";
 import { setupVite, serveStatic } from "./vite";
+import { errorHandler } from "./middleware/errorHandler";
 
 const app = express();
 const server = createServer(app);
@@ -16,6 +17,9 @@ app.use(express.json());
 
 // Register API routes
 registerRoutes(app);
+
+// Error handling middleware - must be after all routes
+app.use(errorHandler);
 
 const start = async () => {
   if (process.env.NODE_ENV === "production") {
