@@ -164,6 +164,87 @@ This document contains all the login credentials for testing the NexaCare Medica
 
 ---
 
+## 👩‍⚕️ **NURSE USERS** (20 users)
+
+### Sample Nurse Credentials:
+
+| Mobile Number | Nurse Name | Hospital | Specialization | Shift |
+|---------------|------------|----------|----------------|-------|
+| `9860000000` | Priya Sharma | Apollo Hospitals Mumbai | General Medicine | Day |
+| `9860000001` | Anita Sharma | Apollo Hospitals Mumbai | ICU | Night |
+| `9860000002` | Sunita Sharma | Fortis Healthcare Mumbai | Emergency | Day |
+| `9860000003` | Kavita Sharma | Fortis Healthcare Mumbai | Pediatrics | Night |
+| `9860000004` | Meera Sharma | Kokilaben Hospital Mumbai | Maternity | Day |
+| `9860000005` | Deepa Sharma | Kokilaben Hospital Mumbai | Surgical | Night |
+| `9860000006` | Uma Sharma | Manipal Hospital Mumbai | Cardiac | Day |
+| `9860000007` | Lakshmi Sharma | Manipal Hospital Mumbai | Oncology | Night |
+| `9860000008` | Priya Patel | Sahyadri Hospital Pune | General Medicine | Day |
+| `9860000009` | Anita Patel | Sahyadri Hospital Pune | ICU | Night |
+
+### Nurse Features:
+- Nurse station dashboard
+- IPD patient management
+- Vitals recording and monitoring
+- Nursing notes and documentation
+- Medication administration tracking
+- Shift handover notes
+- Critical patient alerts
+- Ward management
+
+---
+
+## 💊 **PHARMACIST USERS** (20 users)
+
+### Sample Pharmacist Credentials:
+
+| Mobile Number | Pharmacist Name | Hospital | Specialization | Pharmacy Type |
+|---------------|-----------------|----------|----------------|---------------|
+| `9870000000` | Priya Patel | Apollo Hospitals Mumbai | Clinical Pharmacy | Hospital Pharmacy |
+| `9870000001` | Anjali Patel | Apollo Hospitals Mumbai | Hospital Pharmacy | Hospital Pharmacy |
+| `9870000002` | Kavita Patel | Fortis Healthcare Mumbai | Oncology | Hospital Pharmacy |
+| `9870000003` | Sunita Patel | Fortis Healthcare Mumbai | Clinical Pharmacy | Hospital Pharmacy |
+| `9870000004` | Meera Patel | Kokilaben Hospital Mumbai | General Pharmacy | Hospital Pharmacy |
+| `9870000005` | Deepa Patel | Kokilaben Hospital Mumbai | Clinical Pharmacy | Hospital Pharmacy |
+| `9870000006` | Uma Patel | Manipal Hospital Mumbai | Hospital Pharmacy | Hospital Pharmacy |
+| `9870000007` | Lakshmi Patel | Manipal Hospital Mumbai | Oncology | Hospital Pharmacy |
+| `9870000008` | Priya Sharma | Sahyadri Hospital Pune | Clinical Pharmacy | Hospital Pharmacy |
+| `9870000009` | Anjali Sharma | Sahyadri Hospital Pune | General Pharmacy | Hospital Pharmacy |
+
+### Pharmacist Features:
+- Prescription Management: Dispense medications, track inventory
+- Patient Counseling: Record medication counseling sessions
+- Inventory Control: Monitor stock levels, manage reorder alerts
+- Billing Integration: Process medication charges
+- Reports: Daily dispensing reports, inventory analytics
+
+---
+
+## 🩻 **RADIOLOGY TECHNICIAN USERS** (20 users)
+
+### Sample Radiology Technician Credentials:
+
+| Mobile Number | Technician Name | Hospital | Specialization | Modalities |
+|---------------|-----------------|----------|----------------|------------|
+| `9880000000` | Raj Kumar | Apollo Hospitals Mumbai | X-Ray | X-Ray, CT Scan |
+| `9880000001` | Amit Kumar | Apollo Hospitals Mumbai | CT Scan | CT Scan, MRI |
+| `9880000002` | Vikram Kumar | Fortis Healthcare Mumbai | MRI | MRI, Ultrasound |
+| `9880000003` | Suresh Kumar | Fortis Healthcare Mumbai | Ultrasound | Ultrasound, X-Ray |
+| `9880000004` | Ravi Kumar | Kokilaben Hospital Mumbai | General Radiology | X-Ray, CT Scan, MRI |
+| `9880000005` | Arjun Kumar | Kokilaben Hospital Mumbai | X-Ray | X-Ray, Fluoroscopy |
+| `9880000006` | Karan Kumar | Manipal Hospital Mumbai | CT Scan | CT Scan, MRI |
+| `9880000007` | Mohan Kumar | Manipal Hospital Mumbai | Mammography | Mammography, X-Ray |
+| `9880000008` | Raj Singh | Sahyadri Hospital Pune | Ultrasound | Ultrasound, Doppler |
+| `9880000009` | Amit Singh | Sahyadri Hospital Pune | Interventional | X-Ray, Fluoroscopy |
+
+### Radiology Technician Features:
+- Imaging Orders: View and manage imaging requests
+- Equipment Management: Monitor machine status, schedule maintenance
+- Image Acquisition: Perform X-rays, CT scans, MRIs, ultrasounds
+- Patient Preparation: Prepare patients for procedures
+- Quality Control: Ensure image quality and radiation safety
+
+---
+
 ## 🌐 **System Information**
 
 ### Application URLs:
@@ -173,10 +254,13 @@ This document contains all the login credentials for testing the NexaCare Medica
 
 ### Database:
 - **Type**: PostgreSQL (Neon Cloud)
-- **Total Users**: 2,940
+- **Total Users**: 3,000
 - **Total Hospitals**: 109
 - **Total Doctors**: 2,180
 - **Total Patients**: 500
+- **Total Nurses**: 20
+- **Total Pharmacists**: 20
+- **Total Radiology Technicians**: 20
 - **Total Labs**: 50
 - **Total Receptionists**: 100
 
@@ -241,6 +325,6 @@ This will clear existing data and create fresh test data with the same structure
 
 ---
 
-**Last Updated**: October 2, 2025  
-**System Version**: NexaCare Medical System v1.0  
-**Total Test Users**: 2,940
+**Last Updated**: January 7, 2026
+**System Version**: NexaCare Medical System v1.0
+**Total Test Users**: 3,000

@@ -1,6 +1,6 @@
 // server/services/onboarding.service.ts
 import { db } from "../db";
-import { patients, users, hospitals, states } from "../../shared/schema";
+import { patients, users, hospitals, states, nurses, pharmacists, radiologyTechnicians } from "../../shared/schema";
 import { eq, ilike } from "drizzle-orm";
 
 /**
@@ -358,7 +358,302 @@ export const getHospitalOnboardingStatus = async (userId: number) => {
   }
 };
 
+/**
+ * Complete nurse onboarding by creating/updating nurse profile.
+ */
+export const completeNurseOnboarding = async (userId: number, data: any) => {
+  console.log(`👩‍⚕️ Completing nurse onboarding for user ${userId}`);
+  console.log(`📥 Received data:`, {
+    nursingDegree: data.nursingDegree,
+    licenseNumber: data.licenseNumber,
+    specialization: data.specialization,
+    experience: data.experience,
+  });
 
+  try {
+    // Get user's hospital association (nurses must be associated with a hospital)
+    // For now, we'll need to get this from the frontend or set it during registration
+    // In a real implementation, nurses would be invited by hospitals
+    const hospitalId = data.hospitalId || 1; // Default to first hospital for demo
+
+    // Check if nurse profile already exists
+    const existingNurse = await db
+      .select()
+      .from(nurses)
+      .where(eq(nurses.userId, userId))
+      .limit(1);
+
+    const nurseData = {
+      nursingDegree: data.nursingDegree,
+      licenseNumber: data.licenseNumber,
+      specialization: data.specialization,
+      experience: data.experience,
+      shiftType: data.shiftType || 'day',
+      workingHours: data.workingHours,
+      wardPreferences: data.wardPreferences ? JSON.stringify(data.wardPreferences) : null,
+      skills: data.skills ? JSON.stringify(data.skills) : null,
+      languages: data.languages,
+      certifications: data.certifications,
+      bio: data.bio,
+      hospitalId,
+    };
+
+    console.log(`💾 Saving nurse data:`, nurseData);
+
+    if (existingNurse.length > 0) {
+      // Update existing nurse profile
+      console.log(`📝 Updating existing nurse profile for user ${userId}`);
+      const result = await db
+        .update(nurses)
+        .set(nurseData)
+        .where(eq(nurses.userId, userId))
+        .returning();
+
+      console.log(`✅ Nurse profile updated for user ${userId}`);
+      return { success: true, nurse: result[0], isNew: false };
+    } else {
+      // Create new nurse profile
+      console.log(`🆕 Creating new nurse profile for user ${userId}`);
+      const result = await db
+        .insert(nurses)
+        .values({
+          userId,
+          ...nurseData,
+          createdAt: new Date(),
+        })
+        .returning();
+
+      console.log(`✅ Nurse profile created for user ${userId}`);
+      return { success: true, nurse: result[0], isNew: true };
+    }
+  } catch (error) {
+    console.error(`❌ Nurse onboarding error for user ${userId}:`, error);
+    throw error;
+  }
+};
+
+/**
+ * Get nurse onboarding status.
+ */
+export const getNurseOnboardingStatus = async (userId: number) => {
+  console.log(`👩‍⚕️ Checking nurse onboarding status for user ${userId}`);
+
+  try {
+    // Check if nurse profile exists
+    const nurseProfile = await db
+      .select()
+      .from(nurses)
+      .where(eq(nurses.userId, userId))
+      .limit(1);
+
+    if (nurseProfile.length > 0) {
+      console.log(`✅ Nurse onboarding completed for user ${userId}`);
+      return { isCompleted: true, nurse: nurseProfile[0] };
+    }
+
+    console.log(`⏳ Nurse onboarding not completed for user ${userId}`);
+    return { isCompleted: false };
+  } catch (error) {
+    console.error(`❌ Error checking nurse onboarding status for user ${userId}:`, error);
+    return { isCompleted: false };
+  }
+};
+
+/**
+ * Complete pharmacist onboarding by creating/updating pharmacist profile.
+ */
+export const completePharmacistOnboarding = async (userId: number, data: any) => {
+  console.log(`💊 Completing pharmacist onboarding for user ${userId}`);
+  console.log(`📥 Received data:`, {
+    pharmacyDegree: data.pharmacyDegree,
+    licenseNumber: data.licenseNumber,
+    specialization: data.specialization,
+    experience: data.experience,
+  });
+
+  try {
+    // Get user's hospital association
+    const hospitalId = data.hospitalId || 1; // Default to first hospital for demo
+
+    // Check if pharmacist profile already exists
+    const existingPharmacist = await db
+      .select()
+      .from(pharmacists)
+      .where(eq(pharmacists.userId, userId))
+      .limit(1);
+
+    const pharmacistData = {
+      pharmacyDegree: data.pharmacyDegree,
+      licenseNumber: data.licenseNumber,
+      specialization: data.specialization,
+      experience: data.experience,
+      shiftType: data.shiftType || 'day',
+      workingHours: data.workingHours,
+      pharmacyType: data.pharmacyType || 'hospital',
+      languages: data.languages,
+      certifications: data.certifications,
+      bio: data.bio,
+      hospitalId,
+    };
+
+    console.log(`💾 Saving pharmacist data:`, pharmacistData);
+
+    if (existingPharmacist.length > 0) {
+      // Update existing pharmacist profile
+      console.log(`📝 Updating existing pharmacist profile for user ${userId}`);
+      const result = await db
+        .update(pharmacists)
+        .set(pharmacistData)
+        .where(eq(pharmacists.userId, userId))
+        .returning();
+
+      console.log(`✅ Pharmacist profile updated for user ${userId}`);
+      return { success: true, pharmacist: result[0], isNew: false };
+    } else {
+      // Create new pharmacist profile
+      console.log(`🆕 Creating new pharmacist profile for user ${userId}`);
+      const result = await db
+        .insert(pharmacists)
+        .values({
+          userId,
+          ...pharmacistData,
+          createdAt: new Date(),
+        })
+        .returning();
+
+      console.log(`✅ Pharmacist profile created for user ${userId}`);
+      return { success: true, pharmacist: result[0], isNew: true };
+    }
+  } catch (error) {
+    console.error(`❌ Pharmacist onboarding error for user ${userId}:`, error);
+    throw error;
+  }
+};
+
+/**
+ * Get pharmacist onboarding status.
+ */
+export const getPharmacistOnboardingStatus = async (userId: number) => {
+  console.log(`💊 Checking pharmacist onboarding status for user ${userId}`);
+
+  try {
+    // Check if pharmacist profile exists
+    const pharmacistProfile = await db
+      .select()
+      .from(pharmacists)
+      .where(eq(pharmacists.userId, userId))
+      .limit(1);
+
+    if (pharmacistProfile.length > 0) {
+      console.log(`✅ Pharmacist onboarding completed for user ${userId}`);
+      return { isCompleted: true, pharmacist: pharmacistProfile[0] };
+    }
+
+    console.log(`⏳ Pharmacist onboarding not completed for user ${userId}`);
+    return { isCompleted: false };
+  } catch (error) {
+    console.error(`❌ Error checking pharmacist onboarding status for user ${userId}:`, error);
+    return { isCompleted: false };
+  }
+};
+
+/**
+ * Complete radiology technician onboarding by creating/updating radiology technician profile.
+ */
+export const completeRadiologyTechnicianOnboarding = async (userId: number, data: any) => {
+  console.log(`🩻 Completing radiology technician onboarding for user ${userId}`);
+  console.log(`📥 Received data:`, {
+    radiologyDegree: data.radiologyDegree,
+    licenseNumber: data.licenseNumber,
+    specialization: data.specialization,
+    experience: data.experience,
+  });
+
+  try {
+    // Get user's hospital association
+    const hospitalId = data.hospitalId || 1; // Default to first hospital for demo
+
+    // Check if radiology technician profile already exists
+    const existingTechnician = await db
+      .select()
+      .from(radiologyTechnicians)
+      .where(eq(radiologyTechnicians.userId, userId))
+      .limit(1);
+
+    const technicianData = {
+      radiologyDegree: data.radiologyDegree,
+      licenseNumber: data.licenseNumber,
+      specialization: data.specialization,
+      experience: data.experience,
+      shiftType: data.shiftType || 'day',
+      workingHours: data.workingHours,
+      modalities: data.modalities,
+      languages: data.languages,
+      certifications: data.certifications,
+      bio: data.bio,
+      hospitalId,
+    };
+
+    console.log(`💾 Saving radiology technician data:`, technicianData);
+
+    if (existingTechnician.length > 0) {
+      // Update existing radiology technician profile
+      console.log(`📝 Updating existing radiology technician profile for user ${userId}`);
+      const result = await db
+        .update(radiologyTechnicians)
+        .set(technicianData)
+        .where(eq(radiologyTechnicians.userId, userId))
+        .returning();
+
+      console.log(`✅ Radiology technician profile updated for user ${userId}`);
+      return { success: true, technician: result[0], isNew: false };
+    } else {
+      // Create new radiology technician profile
+      console.log(`🆕 Creating new radiology technician profile for user ${userId}`);
+      const result = await db
+        .insert(radiologyTechnicians)
+        .values({
+          userId,
+          ...technicianData,
+          createdAt: new Date(),
+        })
+        .returning();
+
+      console.log(`✅ Radiology technician profile created for user ${userId}`);
+      return { success: true, technician: result[0], isNew: true };
+    }
+  } catch (error) {
+    console.error(`❌ Radiology technician onboarding error for user ${userId}:`, error);
+    throw error;
+  }
+};
+
+/**
+ * Get radiology technician onboarding status.
+ */
+export const getRadiologyTechnicianOnboardingStatus = async (userId: number) => {
+  console.log(`🩻 Checking radiology technician onboarding status for user ${userId}`);
+
+  try {
+    // Check if radiology technician profile exists
+    const technicianProfile = await db
+      .select()
+      .from(radiologyTechnicians)
+      .where(eq(radiologyTechnicians.userId, userId))
+      .limit(1);
+
+    if (technicianProfile.length > 0) {
+      console.log(`✅ Radiology technician onboarding completed for user ${userId}`);
+      return { isCompleted: true, technician: technicianProfile[0] };
+    }
+
+    console.log(`⏳ Radiology technician onboarding not completed for user ${userId}`);
+    return { isCompleted: false };
+  } catch (error) {
+    console.error(`❌ Error checking radiology technician onboarding status for user ${userId}:`, error);
+    return { isCompleted: false };
+  }
+};
 
 
 

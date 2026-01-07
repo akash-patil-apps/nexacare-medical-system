@@ -91,6 +91,70 @@ export const doctors = pgTable("doctors", {
   approvalStatus: text("approval_status").default("pending"),
 });
 
+// Nurses
+export const nurses = pgTable("nurses", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").references(() => users.id).notNull(),
+  hospitalId: integer("hospital_id").references(() => hospitals.id).notNull(),
+  nursingDegree: text("nursing_degree").notNull(), // BSc Nursing, GNM, etc.
+  licenseNumber: text("license_number").notNull(),
+  specialization: text("specialization"), // ICU, Pediatrics, Oncology, etc.
+  experience: integer("experience"),
+  shiftType: text("shift_type").default("day"), // day, night, rotation
+  workingHours: text("working_hours"),
+  wardPreferences: text("ward_preferences"), // JSON array of preferred wards
+  skills: text("skills"), // JSON array of nursing skills
+  languages: text("languages"),
+  certifications: text("certifications"),
+  bio: text("bio"),
+  isAvailable: boolean("is_available").default(true),
+  createdAt: timestamp("created_at").defaultNow(),
+  isVerified: boolean("is_verified").default(false),
+  approvalStatus: text("approval_status").default("pending"),
+});
+
+// Pharmacists
+export const pharmacists = pgTable("pharmacists", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").references(() => users.id).notNull(),
+  hospitalId: integer("hospital_id").references(() => hospitals.id).notNull(),
+  pharmacyDegree: text("pharmacy_degree").notNull(), // BPharm, MPharm, PharmD, etc.
+  licenseNumber: text("license_number").notNull(),
+  specialization: text("specialization"), // Clinical Pharmacy, Oncology, Pediatrics, etc.
+  experience: integer("experience"),
+  shiftType: text("shift_type").default("day"), // day, night, rotation
+  workingHours: text("working_hours"),
+  pharmacyType: text("pharmacy_type").default("hospital"), // hospital, retail, clinical
+  languages: text("languages"),
+  certifications: text("certifications"), // Additional certifications
+  bio: text("bio"),
+  isAvailable: boolean("is_available").default(true),
+  createdAt: timestamp("created_at").defaultNow(),
+  isVerified: boolean("is_verified").default(false),
+  approvalStatus: text("approval_status").default("pending"),
+});
+
+// Radiology Technicians
+export const radiologyTechnicians = pgTable("radiology_technicians", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").references(() => users.id).notNull(),
+  hospitalId: integer("hospital_id").references(() => hospitals.id).notNull(),
+  radiologyDegree: text("radiology_degree").notNull(), // B.Sc Radiology, Diploma, etc.
+  licenseNumber: text("license_number").notNull(),
+  specialization: text("specialization"), // X-Ray, CT, MRI, Ultrasound, etc.
+  experience: integer("experience"),
+  shiftType: text("shift_type").default("day"), // day, night, rotation
+  workingHours: text("working_hours"),
+  modalities: text("modalities"), // JSON array of imaging modalities
+  languages: text("languages"),
+  certifications: text("certifications"),
+  bio: text("bio"),
+  isAvailable: boolean("is_available").default(true),
+  createdAt: timestamp("created_at").defaultNow(),
+  isVerified: boolean("is_verified").default(false),
+  approvalStatus: text("approval_status").default("pending"),
+});
+
 // Patients
 export const patients = pgTable("patients", {
   id: serial("id").primaryKey(),
@@ -260,6 +324,9 @@ export const usersRelations = relations(users, ({ one, many }) => ({
   patient: one(patients, { fields: [users.id], references: [patients.userId] }),
   lab: one(labs, { fields: [users.id], references: [labs.userId] }),
   receptionist: one(receptionists, { fields: [users.id], references: [receptionists.userId] }),
+  nurse: one(nurses, { fields: [users.id], references: [nurses.userId] }),
+  pharmacist: one(pharmacists, { fields: [users.id], references: [pharmacists.userId] }),
+  radiologyTechnician: one(radiologyTechnicians, { fields: [users.id], references: [radiologyTechnicians.userId] }),
   notifications: many(notifications),
 }));
 
@@ -267,6 +334,9 @@ export const hospitalsRelations = relations(hospitals, ({ one, many }) => ({
   user: one(users, { fields: [hospitals.userId], references: [users.id] }),
   doctors: many(doctors),
   receptionists: many(receptionists),
+  nurses: many(nurses),
+  pharmacists: many(pharmacists),
+  radiologyTechnicians: many(radiologyTechnicians),
   appointments: many(appointments),
 }));
 
@@ -276,6 +346,21 @@ export const doctorsRelations = relations(doctors, ({ one, many }) => ({
   appointments: many(appointments),
   prescriptions: many(prescriptions),
   labReports: many(labReports),
+}));
+
+export const nursesRelations = relations(nurses, ({ one }) => ({
+  user: one(users, { fields: [nurses.userId], references: [users.id] }),
+  hospital: one(hospitals, { fields: [nurses.hospitalId], references: [hospitals.id] }),
+}));
+
+export const pharmacistsRelations = relations(pharmacists, ({ one }) => ({
+  user: one(users, { fields: [pharmacists.userId], references: [users.id] }),
+  hospital: one(hospitals, { fields: [pharmacists.hospitalId], references: [hospitals.id] }),
+}));
+
+export const radiologyTechniciansRelations = relations(radiologyTechnicians, ({ one }) => ({
+  user: one(users, { fields: [radiologyTechnicians.userId], references: [users.id] }),
+  hospital: one(hospitals, { fields: [radiologyTechnicians.hospitalId], references: [hospitals.id] }),
 }));
 
 export const patientsRelations = relations(patients, ({ one, many }) => ({
@@ -720,7 +805,7 @@ export const registrationSchema = z.object({
   fullName: z.string().min(2),
   email: z.string().email(),
   password: z.string().min(6),
-  role: z.enum(['hospital', 'doctor', 'patient', 'lab']),
+  role: z.enum(['hospital', 'doctor', 'patient', 'lab', 'nurse', 'pharmacist', 'radiology_technician']),
 });
 
 
@@ -744,6 +829,21 @@ export const insertOtpSchema = createInsertSchema(otpVerifications).omit({
   isUsed: true,
 });
 export const insertPatientSchema = createInsertSchema(patients).omit({
+  id: true,
+  createdAt: true,
+});
+
+export const insertNurseSchema = createInsertSchema(nurses).omit({
+  id: true,
+  createdAt: true,
+});
+
+export const insertPharmacistSchema = createInsertSchema(pharmacists).omit({
+  id: true,
+  createdAt: true,
+});
+
+export const insertRadiologyTechnicianSchema = createInsertSchema(radiologyTechnicians).omit({
   id: true,
   createdAt: true,
 });
@@ -787,6 +887,15 @@ export type Hospital = InferSelectModel<typeof hospitals>;
 
 export type InsertDoctor = InferInsertModel<typeof doctors>;
 export type Doctor = InferSelectModel<typeof doctors>;
+
+export type InsertNurse = InferInsertModel<typeof nurses>;
+export type Nurse = InferSelectModel<typeof nurses>;
+
+export type InsertPharmacist = InferInsertModel<typeof pharmacists>;
+export type Pharmacist = InferSelectModel<typeof pharmacists>;
+
+export type InsertRadiologyTechnician = InferInsertModel<typeof radiologyTechnicians>;
+export type RadiologyTechnician = InferSelectModel<typeof radiologyTechnicians>;
 
 export type InsertPatient = InferInsertModel<typeof patients>;
 export type Patient = InferSelectModel<typeof patients>;

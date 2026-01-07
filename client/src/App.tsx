@@ -18,8 +18,14 @@ import DoctorAppointments from './pages/dashboards/doctor-appointments';
 import HospitalDashboard from './pages/dashboards/hospital-dashboard';
 import LabDashboard from './pages/dashboards/lab-dashboard';
 import ReceptionistDashboard from './pages/dashboards/receptionist-dashboard';
+import NurseDashboard from './pages/dashboards/nurse-dashboard';
+import PharmacistDashboard from './pages/dashboards/pharmacist-dashboard';
+import RadiologyTechnicianDashboard from './pages/dashboards/radiology-technician-dashboard';
 import PatientOnboarding from './pages/onboarding/patient-onboarding';
 import HospitalOnboarding from './pages/onboarding/hospital-onboarding';
+import NurseOnboarding from './pages/onboarding/nurse-onboarding';
+import PharmacistOnboarding from './pages/onboarding/pharmacist-onboarding';
+import RadiologyTechnicianOnboarding from './pages/onboarding/radiology-technician-onboarding';
 import NotFound from './pages/not-found';
 
 // Create a client
@@ -50,6 +56,12 @@ function DashboardRedirect() {
       return <Redirect to="/dashboard/lab" />;
     case 'RECEPTIONIST':
       return <Redirect to="/dashboard/receptionist" />;
+    case 'NURSE':
+      return <Redirect to="/dashboard/nurse" />;
+    case 'PHARMACIST':
+      return <Redirect to="/dashboard/pharmacist" />;
+    case 'RADIOLOGY_TECHNICIAN':
+      return <Redirect to="/dashboard/radiology-technician" />;
     case 'ADMIN':
       return <Redirect to="/dashboard/hospital" />; // Admin can access hospital dashboard
     default:
@@ -75,6 +87,9 @@ function App() {
                   {/* Onboarding Routes */}
                   <Route path="/onboarding/patient" component={PatientOnboarding} />
                   <Route path="/onboarding/hospital" component={HospitalOnboarding} />
+                  <Route path="/onboarding/nurse" component={NurseOnboarding} />
+                  <Route path="/onboarding/pharmacist" component={PharmacistOnboarding} />
+                  <Route path="/onboarding/radiology-technician" component={RadiologyTechnicianOnboarding} />
                   
                   {/* Dashboard Routes */}
                   <Route path="/dashboard" component={DashboardRedirect} />
@@ -86,6 +101,9 @@ function App() {
                   <Route path="/dashboard/hospital" component={HospitalDashboard} />
                   <Route path="/dashboard/lab" component={LabDashboard} />
                   <Route path="/dashboard/receptionist" component={ReceptionistDashboard} />
+                  <Route path="/dashboard/nurse" component={NurseDashboard} />
+                  <Route path="/dashboard/pharmacist" component={PharmacistDashboard} />
+                  <Route path="/dashboard/radiology-technician" component={RadiologyTechnicianDashboard} />
                   
                   {/* Appointment Booking */}
                   <Route path="/book-appointment" component={BookAppointment} />

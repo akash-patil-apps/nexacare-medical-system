@@ -71,6 +71,20 @@
       "when": 1767707604036,
       "tag": "0009_mean_veda",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1767768922402,
+      "tag": "0010_crazy_omega_sentinel",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1767770829487,
+      "tag": "0011_opposite_kronos",
+      "breakpoints": true
     }
   ]
 }

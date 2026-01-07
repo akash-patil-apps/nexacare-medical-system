@@ -47,13 +47,16 @@ git push origin feature/appointment-management
 - ⚙️ Dashboard style guide, patient spec, and implementation docs published for all roles.
 - ⏳ Hospital Admin, Receptionist, and Lab dashboards pending migration to new design system.
 
-## 🔑 **Demo Credentials (186+ Users Available)**
-- **Patient**: `9830000000` / `patient123` (Meera Jain)
-- **Doctor**: `9820000000` / `doctor123` (Dr. Kavita Gaikwad)
-- **Hospital**: `9810000000` / `hospital123` (Hospital Admin 1)
-- **Lab**: `9840000000` / `lab123` (Lab Admin 1)
-- **Receptionist**: `9850000000` / `receptionist123` (Rajesh Gaikwad)
-- **Admin**: `9876543210` / `admin123` (System Administrator)
+## 🔑 **Demo Credentials (300+ Users Available)**
+- **Patient**: `9830000000` / `password123` (Meera Jain)
+- **Doctor**: `9820000000` / `password123` (Dr. Kavita Gaikwad)
+- **Hospital**: `9810000000` / `password123` (Hospital Admin 1)
+- **Lab**: `9840000000` / `password123` (Lab Admin 1)
+- **Receptionist**: `9850000000` / `password123` (Rajesh Gaikwad)
+- **Nurse**: `9860000000` / `password123` (Priya Sharma)
+- **Pharmacist**: `9870000000` / `password123` (Priya Patel)
+- **Radiology Technician**: `9880000000` / `password123` (Raj Kumar)
+- **Admin**: `9876543210` / `password123` (System Administrator)
 
 **Note**: All users have sequential mobile numbers for easy testing:
 - Hospitals: `9810000000` to `9810000014` (15 users)
@@ -61,6 +64,9 @@ git push origin feature/appointment-management
 - Patients: `9830000000` to `9830000099` (100 users)
 - Labs: `9840000000` to `9840000009` (10 users)
 - Receptionists: `9850000000` to `9850000019` (20 users)
+- Nurses: `9860000000` to `9860000019` (20 users)
+- Pharmacists: `9870000000` to `9870000019` (20 users)
+- Radiology Technicians: `9880000000` to `9880000019` (20 users)
 
 ## 🔥 **Next Priority Tasks**
 See `docs/PROJECT_PLAN.md` for comprehensive development plan.

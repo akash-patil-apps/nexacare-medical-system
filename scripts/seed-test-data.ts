@@ -1,6 +1,6 @@
 // Comprehensive seed script to populate database with test data
 import { db } from '../server/db';
-import { users, hospitals, doctors, patients, receptionists, labs } from '../shared/schema';
+import { users, hospitals, doctors, patients, receptionists, labs, nurses } from '../shared/schema';
 import { hashPassword } from '../server/utils/password';
 import { eq } from 'drizzle-orm';
 
@@ -288,7 +288,53 @@ async function seedDatabase() {
     }
     console.log(`\n✅ Created ${receptionistCount} receptionists\n`);
 
-    // 6. Create Labs (10 labs)
+    // 6. Create Nurses (2 per hospital)
+    console.log('👩‍⚕️ Creating nurses...');
+    let nurseCount = 0;
+    for (const hospital of hospitals) {
+      // Create 2 nurses per hospital
+      for (let j = 0; j < 2; j++) {
+        const firstName = randomElement(FIRST_NAMES);
+        const lastName = randomElement(LAST_NAMES);
+        const fullName = `${firstName} ${lastName}`;
+        const mobileNumber = generateMobileNumber('986000', nurseCount);
+
+        // Create nurse user
+        const [nurseUser] = await db.insert(users).values({
+          mobileNumber,
+          email: generateEmail(fullName, mobileNumber),
+          password: hashedPassword,
+          fullName,
+          role: 'NURSE',
+          isVerified: true,
+        }).returning();
+
+        // Create nurse record
+        await db.insert(nurses).values({
+          userId: nurseUser.id,
+          hospitalId: hospital.id,
+          nursingDegree: randomElement(['BSc Nursing', 'GNM', 'Post Basic BSc', 'MSc Nursing']),
+          licenseNumber: `NUR${String(nurseCount + 1).padStart(4, '0')}`,
+          specialization: randomElement(['General Medicine', 'ICU', 'Emergency', 'Pediatrics', 'Maternity', 'Surgical', 'Cardiac', 'Oncology']),
+          experience: randomNumber(1, 15),
+          shiftType: randomElement(['day', 'night', 'rotation']),
+          workingHours: randomElement(['8 hours/day', '12 hours/day', 'Rotating shifts']),
+          wardPreferences: JSON.stringify([randomElement(['General', 'ICU', 'Emergency', 'Pediatrics', 'Maternity', 'Surgical'])]),
+          skills: JSON.stringify([
+            randomElement(['Vital Signs Monitoring', 'IV Cannulation', 'Medication Administration']),
+            randomElement(['Wound Care', 'Patient Assessment', 'Emergency Response'])
+          ]),
+          languages: 'English,Hindi',
+          certifications: JSON.stringify([randomElement(['BLS', 'ACLS', 'PALS', 'TNCC'])]),
+          bio: `Experienced nurse with ${randomNumber(1, 15)} years in healthcare providing compassionate patient care.`,
+        });
+
+        nurseCount++;
+      }
+    }
+    console.log(`\n✅ Created ${nurseCount} nurses\n`);
+
+    // 7. Create Labs (10 labs)
     console.log('🔬 Creating labs...');
     for (let i = 0; i < 10; i++) {
       const labName = `${randomElement(['City', 'Central', 'Advanced', 'Metro', 'Prime'])} Lab ${i + 1}`;
@@ -338,6 +384,7 @@ async function seedDatabase() {
     console.log(`✅ Doctors: ${doctorCount}`);
     console.log(`✅ Patients: ${createdPatients.length}`);
     console.log(`✅ Receptionists: ${receptionistCount}`);
+    console.log(`✅ Nurses: ${nurseCount}`);
     console.log(`✅ Labs: 10`);
     console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
     console.log('🔑 Login Credentials:');
@@ -347,6 +394,7 @@ async function seedDatabase() {
     console.log(`   Doctors: 9820000000 - 982000${String(doctorCount - 1).padStart(4, '0')}`);
     console.log(`   Patients: 9830000000 - 9830000099`);
     console.log(`   Receptionists: 9850000000 - 985000${String(receptionistCount - 1).padStart(4, '0')}`);
+    console.log(`   Nurses: 9860000000 - 986000${String(nurseCount - 1).padStart(4, '0')}`);
     console.log(`   Labs: 9840000000 - 9840000009\n`);
 
   } catch (error) {

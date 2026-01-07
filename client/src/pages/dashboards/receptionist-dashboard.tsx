@@ -1200,11 +1200,38 @@ export default function ReceptionistDashboard() {
     }
   };
 
-  // Handle reject appointment
-  const handleRejectAppointment = (appointmentId: number) => {
-    setSelectedAppointmentForRejection(appointmentId);
-    setIsRejectModalOpen(true);
-    rejectionForm.resetFields();
+  // Handle reject appointment - now opens cancel with suggestion modal
+  const handleRejectAppointment = async (appointment: any) => {
+    setAppointmentForCancel(appointment);
+    setSuggestNewSlot(false);
+    cancelSuggestionForm.resetFields();
+    setCancelSuggestionSelectedDate(null);
+    setCancelSuggestionAvailableSlots([]);
+    setCancelSuggestionSlotBookings({});
+    
+    // If appointment has a doctor, fetch available slots for today and next few days
+    if (appointment.doctorId) {
+      const today = dayjs();
+      const dateStr = today.format('YYYY-MM-DD');
+      
+      try {
+        const slots = await fetchDoctorSlots(appointment.doctorId, dateStr);
+        if (slots.length > 0) {
+          const filteredSlots = slots.filter(slot => !isSlotInPast(slot, today));
+          setCancelSuggestionAvailableSlots(filteredSlots);
+          
+          // Fetch booked appointments
+          const bookings = await fetchBookedAppointments(appointment.doctorId, dateStr);
+          setCancelSuggestionSlotBookings(bookings);
+        }
+        setCancelSuggestionSelectedDate(today);
+        cancelSuggestionForm.setFieldsValue({ appointmentDate: today });
+      } catch (error) {
+        console.error('Error fetching slots for cancellation suggestion:', error);
+      }
+    }
+    
+    setIsCancelWithSuggestionModalOpen(true);
   };
 
   // Handle rejection submission
@@ -1847,8 +1874,8 @@ export default function ReceptionistDashboard() {
               />
             )}
 
-            {/* Reschedule - for pending/confirmed/checked-in/attended (not in consultation / not completed / not cancelled) */}
-            {['pending', 'confirmed', 'checked-in', 'attended'].includes(String(record.status || '').toLowerCase()) && (
+            {/* Reschedule - for pending/confirmed/attended (NOT checked-in, as patient has already arrived) */}
+            {['pending', 'confirmed', 'attended'].includes(String(record.status || '').toLowerCase()) && (
               <Button
                 size="small"
                 type="default"
@@ -4439,26 +4466,31 @@ export default function ReceptionistDashboard() {
             )}
           </Drawer>
 
-          {/* Rejection Modal */}
+          {/* Cancel with Suggestion Modal */}
           <Modal
-            title="Reject Appointment"
-            open={isRejectModalOpen}
+            title="Cancel Appointment"
+            open={isCancelWithSuggestionModalOpen}
             onCancel={() => {
-              setIsRejectModalOpen(false);
-              setSelectedAppointmentForRejection(null);
-              rejectionForm.resetFields();
+              setIsCancelWithSuggestionModalOpen(false);
+              setAppointmentForCancel(null);
+              setSuggestNewSlot(false);
+              cancelSuggestionForm.resetFields();
+              setCancelSuggestionSelectedDate(null);
+              setCancelSuggestionAvailableSlots([]);
+              setCancelSuggestionSlotBookings({});
             }}
             footer={null}
-            width={500}
+            width={600}
+            destroyOnClose
           >
             <Form
-              form={rejectionForm}
+              form={cancelSuggestionForm}
               layout="vertical"
-              onFinish={handleRejectSubmit}
+              onFinish={handleCancelWithSuggestionSubmit}
             >
               <Alert
-                message="Reject Appointment"
-                description="Please select a reason for rejecting this appointment. The patient will be notified of this cancellation reason."
+                message="Cancel Appointment"
+                description="You can cancel this appointment and optionally suggest a new available slot to the patient. The patient will be notified and can confirm the new appointment."
                 type="warning"
                 showIcon
                 style={{ marginBottom: 24 }}
@@ -4470,7 +4502,7 @@ export default function ReceptionistDashboard() {
                 rules={[{ required: true, message: 'Please select a cancellation reason' }]}
               >
                 <Select
-                  placeholder="Select a reason for rejection"
+                  placeholder="Select a reason for cancellation"
                   size="large"
                 >
                   <Select.Option value="Doctor is not available">Doctor is not available</Select.Option>
@@ -4484,16 +4516,82 @@ export default function ReceptionistDashboard() {
               </Form.Item>
 
               <Form.Item>
+                <Space direction="vertical" style={{ width: '100%' }}>
+                  <div>
+                    <input
+                      type="checkbox"
+                      id="suggestNewSlot"
+                      checked={suggestNewSlot}
+                      onChange={(e) => {
+                        setSuggestNewSlot(e.target.checked);
+                        if (!e.target.checked) {
+                          cancelSuggestionForm.setFieldsValue({ appointmentDate: undefined, timeSlot: undefined });
+                        }
+                      }}
+                      style={{ marginRight: 8 }}
+                    />
+                    <label htmlFor="suggestNewSlot" style={{ cursor: 'pointer' }}>
+                      <Text strong>Suggest next available slot to patient</Text>
+                    </label>
+                  </div>
+                  {suggestNewSlot && (
+                    <div style={{ marginTop: 16, padding: 16, background: '#f5f5f5', borderRadius: 8 }}>
+                      <Form.Item
+                        name="appointmentDate"
+                        label="Suggested Date"
+                        rules={suggestNewSlot ? [{ required: true, message: 'Please select a date' }] : []}
+                      >
+                        <DatePicker
+                          style={{ width: '100%' }}
+                          onChange={handleCancelSuggestionDateChange}
+                          disabledDate={(d) => !!d && d.startOf('day').isBefore(dayjs().startOf('day'))}
+                        />
+                      </Form.Item>
+
+                      <Form.Item
+                        name="timeSlot"
+                        label="Suggested Time Slot"
+                        rules={suggestNewSlot ? [{ required: true, message: 'Please select a time slot' }] : []}
+                      >
+                        <Select placeholder="Select a slot" disabled={!cancelSuggestionSelectedDate || cancelSuggestionAvailableSlots.length === 0}>
+                          {cancelSuggestionAvailableSlots.map((slot) => {
+                            const booked = cancelSuggestionSlotBookings[slot] || 0;
+                            const isAvailable = booked === 0;
+                            return (
+                              <Select.Option key={slot} value={slot} disabled={!isAvailable}>
+                                {formatTimeSlot12h(slot)} {booked > 0 ? `• ${booked} booked` : '• Available'}
+                              </Select.Option>
+                            );
+                          })}
+                        </Select>
+                      </Form.Item>
+
+                      <Form.Item
+                        name="newReason"
+                        label="Reason for New Appointment (Optional)"
+                      >
+                        <Input.TextArea rows={2} placeholder="e.g., Follow-up consultation" />
+                      </Form.Item>
+                    </div>
+                  )}
+                </Space>
+              </Form.Item>
+
+              <Form.Item style={{ marginBottom: 0 }}>
                 <Space style={{ width: '100%', justifyContent: 'flex-end' }}>
                   <Button onClick={() => {
-                    setIsRejectModalOpen(false);
-                    setSelectedAppointmentForRejection(null);
-                    rejectionForm.resetFields();
+                    setIsCancelWithSuggestionModalOpen(false);
+                    setAppointmentForCancel(null);
+                    setSuggestNewSlot(false);
+                    cancelSuggestionForm.resetFields();
+                    setCancelSuggestionSelectedDate(null);
+                    setCancelSuggestionAvailableSlots([]);
+                    setCancelSuggestionSlotBookings({});
                   }}>
                     Cancel
                   </Button>
                   <Button type="primary" danger htmlType="submit">
-                    Reject Appointment
+                    {suggestNewSlot ? 'Cancel & Suggest New Slot' : 'Cancel Appointment'}
                   </Button>
                 </Space>
               </Form.Item>

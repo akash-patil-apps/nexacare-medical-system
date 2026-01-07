@@ -55,34 +55,62 @@ export const getDoctorById = async (doctorId: number) => {
 
   console.log(`👨‍⚕️ Fetching doctor ${doctorId}`);
   
-  // Explicitly select all doctor fields to avoid drizzle ORM issues
-  const [doctor] = await db
-    .select({
-      id: doctors.id,
-      userId: doctors.userId,
-      hospitalId: doctors.hospitalId,
-      specialty: doctors.specialty,
-      consultationFee: doctors.consultationFee,
-      qualification: doctors.qualification,
-      experience: doctors.experience,
-      licenseNumber: doctors.licenseNumber,
-      workingHours: doctors.workingHours,
-      availableSlots: doctors.availableSlots,
-      status: doctors.status,
-      languages: doctors.languages,
-      awards: doctors.awards,
-      bio: doctors.bio,
-      isAvailable: doctors.isAvailable,
-      isVerified: doctors.isVerified,
-      approvalStatus: doctors.approvalStatus,
-      createdAt: doctors.createdAt,
-    })
-    .from(doctors)
-    .where(eq(doctors.id, doctorId))
-    .limit(1);
-  
-  if (!doctor) {
-    return null;
+  let doctor;
+  try {
+    // Try using raw SQL query as fallback if drizzle select fails
+    // First attempt: use drizzle select with minimal fields
+    try {
+      const doctorResult = await db
+        .select({
+          id: doctors.id,
+          userId: doctors.userId,
+          hospitalId: doctors.hospitalId,
+          specialty: doctors.specialty,
+          consultationFee: doctors.consultationFee,
+          qualification: doctors.qualification,
+          licenseNumber: doctors.licenseNumber,
+          isAvailable: doctors.isAvailable,
+          isVerified: doctors.isVerified,
+        })
+        .from(doctors)
+        .where(eq(doctors.id, doctorId))
+        .limit(1);
+      
+      doctor = doctorResult[0];
+    } catch (drizzleError: any) {
+      console.warn(`⚠️ Drizzle select failed, trying raw SQL:`, drizzleError?.message);
+      // Fallback to raw SQL
+      const rawResult = await db.execute(
+        sql`SELECT id, user_id, hospital_id, specialty, consultation_fee, qualification, license_number, is_available, is_verified, created_at FROM doctors WHERE id = ${doctorId} LIMIT 1`
+      );
+      if (rawResult.rows && rawResult.rows.length > 0) {
+        const row = rawResult.rows[0] as any;
+        doctor = {
+          id: row.id,
+          userId: row.user_id,
+          hospitalId: row.hospital_id,
+          specialty: row.specialty,
+          consultationFee: row.consultation_fee,
+          qualification: row.qualification,
+          licenseNumber: row.license_number,
+          isAvailable: row.is_available,
+          isVerified: row.is_verified,
+          createdAt: row.created_at,
+        };
+      }
+    }
+    
+    if (!doctor) {
+      console.log(`⚠️ No doctor found with id ${doctorId}`);
+      return null;
+    }
+    
+    console.log(`✅ Doctor found:`, { id: doctor.id, userId: doctor.userId, specialty: doctor.specialty });
+  } catch (error: any) {
+    console.error(`❌ Error in getDoctorById for doctor ${doctorId}:`, error);
+    console.error(`❌ Error message:`, error?.message);
+    console.error(`❌ Error stack:`, error?.stack);
+    throw error;
   }
 
   // Get user information

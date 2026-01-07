@@ -51,6 +51,30 @@ const ROLE_OPTIONS: RoleOption[] = [
     emoji: '💼',
     available: false,
   },
+  {
+    key: 'nurse',
+    label: "I'm a Nurse",
+    caption: 'Provide patient care & monitor vitals',
+    emoji: '👩‍⚕️',
+    route: '/onboarding/nurse',
+    available: true,
+  },
+  {
+    key: 'pharmacist',
+    label: "I'm a Pharmacist",
+    caption: 'Manage medications & prescriptions',
+    emoji: '💊',
+    route: '/onboarding/pharmacist',
+    available: true,
+  },
+  {
+    key: 'radiology_technician',
+    label: 'I am a Radiology Technician',
+    caption: 'Perform imaging & manage equipment',
+    emoji: '🩻',
+    route: '/onboarding/radiology-technician',
+    available: true,
+  },
 ];
 
 export default function Register() {

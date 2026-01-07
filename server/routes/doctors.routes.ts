@@ -235,14 +235,22 @@ router.get('/:doctorId', async (req, res) => {
       return res.status(400).json({ message: 'Invalid doctor id' });
     }
 
+    console.log(`📋 Route: Fetching doctor with ID: ${doctorId}`);
     const doctor = await doctorsService.getDoctorById(doctorId);
     if (!doctor) {
+      console.log(`⚠️ Route: Doctor ${doctorId} not found`);
       return res.status(404).json({ message: 'Doctor not found' });
     }
+    console.log(`✅ Route: Returning doctor ${doctorId}`);
     res.json(doctor);
-  } catch (err) {
-    console.error('Get doctor error:', err);
-    res.status(500).json({ message: 'Failed to fetch doctor' });
+  } catch (err: any) {
+    console.error('❌ Get doctor error:', err);
+    console.error('❌ Error message:', err?.message);
+    console.error('❌ Error stack:', err?.stack);
+    res.status(500).json({ 
+      message: 'Failed to fetch doctor',
+      error: err?.message || 'Unknown error'
+    });
   }
 });
 
