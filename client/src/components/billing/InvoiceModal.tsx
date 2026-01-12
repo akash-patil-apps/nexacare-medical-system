@@ -225,17 +225,23 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({
       });
 
       // Record payment - automatically for online payments, or from form for walk-in
-      const paymentMethod = isOnlinePayment ? 'online' : values.paymentMethod;
-      
-      if (paymentMethod) {
+      // For online payments, automatically record payment with details from appointment
+      if (isOnlinePayment && paymentDetails) {
         try {
-          const paymentReference = isOnlinePayment && paymentDetails 
-            ? paymentDetails.transactionId 
-            : (values.paymentReference || null);
+          // Extract amount from payment details or use invoice total
+          let paymentAmount = totals.total;
+          if (paymentDetails.amount) {
+            // Remove currency symbols and parse
+            const amountStr = String(paymentDetails.amount).replace(/[₹,\s]/g, '');
+            const parsedAmount = parseFloat(amountStr);
+            if (!isNaN(parsedAmount) && parsedAmount > 0) {
+              paymentAmount = parsedAmount;
+            }
+          }
+
+          const paymentReference = paymentDetails.transactionId || `TXN-${appointmentId}`;
           
-          const paymentNotes = isOnlinePayment && paymentDetails
-            ? `Online payment completed during booking. Transaction: ${paymentDetails.transactionId}, Method: ${paymentDetails.method}, Amount: ${paymentDetails.amount || totals.total}`
-            : (values.paymentNotes || null);
+          const paymentNotes = `Online payment completed during booking. Transaction: ${paymentReference}, Method: ${paymentDetails.method || 'online'}, Amount: ₹${paymentAmount}`;
 
           const paymentResponse = await fetch(`/api/billing/opd/invoices/${invoice.id}/payments`, {
             method: 'POST',
@@ -244,8 +250,8 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({
               'Content-Type': 'application/json',
             },
             body: JSON.stringify({
-              method: paymentMethod,
-              amount: totals.total,
+              method: paymentDetails.method || 'online',
+              amount: paymentAmount,
               reference: paymentReference,
               notes: paymentNotes,
             }),
@@ -259,6 +265,34 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({
             message.success(isOnlinePayment 
               ? 'Invoice created and online payment recorded successfully' 
               : 'Invoice created and payment recorded successfully');
+          }
+        } catch (paymentError: any) {
+          console.error('Payment recording error:', paymentError);
+          message.warning('Invoice created but payment recording failed: ' + paymentError.message);
+        }
+      } else if (values.paymentMethod) {
+        // For walk-in or manual payments
+        try {
+          const paymentResponse = await fetch(`/api/billing/opd/invoices/${invoice.id}/payments`, {
+            method: 'POST',
+            headers: {
+              Authorization: `Bearer ${token}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              method: values.paymentMethod,
+              amount: totals.total,
+              reference: values.paymentReference || null,
+              notes: values.paymentNotes || null,
+            }),
+          });
+
+          if (!paymentResponse.ok) {
+            const error = await paymentResponse.json();
+            console.error('Payment recording error:', error);
+            message.warning('Invoice created but payment recording failed: ' + (error.message || 'Unknown error'));
+          } else {
+            message.success('Invoice created and payment recorded successfully');
           }
         } catch (paymentError: any) {
           console.error('Payment recording error:', paymentError);

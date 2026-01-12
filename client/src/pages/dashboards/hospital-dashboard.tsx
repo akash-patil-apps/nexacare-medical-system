@@ -111,6 +111,11 @@ export default function HospitalDashboard() {
 
   // Handle view patient info
   const handleViewPatientInfo = async (patientId: number, encounter?: IpdEncounter) => {
+    if (!patientId) {
+      message.warning('Patient ID not available');
+      return;
+    }
+    
     try {
       const token = localStorage.getItem('auth-token');
       const response = await fetch(`/api/reception/patients/${patientId}/info`, {
@@ -118,11 +123,28 @@ export default function HospitalDashboard() {
       });
       
       if (!response.ok) {
-        message.error('Failed to fetch patient information');
-        return;
+        const errorData = await response.json().catch(() => ({}));
+        if (response.status === 404) {
+          message.error('Patient not found');
+          return;
+        }
+        if (response.status === 403) {
+          message.error('You do not have permission to view this patient');
+          return;
+        }
+        if (response.status === 500 || response.status === 503) {
+          message.error('Database connection issue. Please try again in a moment.');
+          return;
+        }
+        throw new Error(errorData.message || 'Failed to fetch patient information');
       }
       
       const data = await response.json();
+      if (!data || !data.patient) {
+        message.warning('Patient information not available');
+        return;
+      }
+      
       setPatientInfo({
         ...data,
         encounter: encounter,
@@ -132,8 +154,12 @@ export default function HospitalDashboard() {
       // Fetch clinical notes and vitals
       await fetchClinicalData(patientId);
     } catch (error: any) {
-      console.error('Error loading patient info:', error);
-      message.error('Failed to load patient information');
+      console.error('❌ Error loading patient info:', error);
+      if (error.message?.includes('timeout') || error.message?.includes('CONNECT_TIMEOUT')) {
+        message.error('Database connection timeout. Please check your connection and try again.');
+      } else {
+        message.error(error.message || 'Failed to load patient information. Please try again.');
+      }
     }
   };
 

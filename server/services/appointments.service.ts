@@ -1,9 +1,9 @@
 // server/services/appointments.service.ts
 import { db } from '../db';
-import { appointments, patients, doctors, hospitals, users, receptionists } from '../../drizzle/schema';
+import { appointments, patients, doctors, hospitals, users, receptionists } from '../../shared/schema';
 import { eq, and, desc, ne } from 'drizzle-orm';
 import { sql } from 'drizzle-orm';
-import type { InsertAppointment } from '../../shared/schema-types';
+import type { InsertAppointment } from '../../shared/schema';
 import { emitAppointmentChanged } from '../events/appointments.events';
 import { createNotification } from './notifications.service';
 
@@ -55,14 +55,35 @@ export const bookAppointment = async (
     });
 
     const appointment = await db.transaction(async (tx) => {
+      // Convert appointmentDate to Date object if it's a string
+      // Drizzle timestamp columns require Date objects, not strings
+      let appointmentDateValue: Date;
+      if (data.appointmentDate instanceof Date) {
+        appointmentDateValue = data.appointmentDate;
+      } else if (typeof data.appointmentDate === 'string') {
+        // Handle different date string formats
+        const dateStr = data.appointmentDate.trim();
+        // If it's just a date (YYYY-MM-DD), add time to make it a valid Date
+        if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+          appointmentDateValue = new Date(dateStr + 'T00:00:00');
+        } else {
+          appointmentDateValue = new Date(dateStr);
+        }
+        if (isNaN(appointmentDateValue.getTime())) {
+          throw new Error(`Invalid appointment date format: ${data.appointmentDate}`);
+        }
+      } else {
+        throw new Error(`appointmentDate must be a Date object or valid date string, got: ${typeof data.appointmentDate}`);
+      }
+
       const appointmentValues: any = {
       patientId: data.patientId,
       doctorId: data.doctorId,
       hospitalId: data.hospitalId,
-      appointmentDate: data.appointmentDate,
-      appointmentTime: data.appointmentTime,
-      timeSlot: data.timeSlot,
-      reason: data.reason,
+      appointmentDate: appointmentDateValue,
+      appointmentTime: data.appointmentTime || null,
+      timeSlot: data.timeSlot || null,
+      reason: data.reason || null,
         status: initialStatus,
         type: appointmentType,
       priority: data.priority || 'normal',
@@ -340,7 +361,8 @@ export const getAppointmentsByDoctor = async (doctorId: number) => {
         let patientDateOfBirth = null;
         let patientBloodGroup: string | null = null;
         let patientPhone: string | null = null;
-        if (patient) {
+        
+        if (patient && patient.userId) {
           patientDateOfBirth = patient.dateOfBirth;
           patientBloodGroup = patient.bloodGroup ?? null;
           const [patientUser] = await db
@@ -348,10 +370,14 @@ export const getAppointmentsByDoctor = async (doctorId: number) => {
             .from(users)
             .where(eq(users.id, patient.userId))
             .limit(1);
-          if (patientUser) {
+          if (patientUser && patientUser.fullName) {
             patientName = patientUser.fullName;
-            patientPhone = patientUser.mobileNumber;
+            patientPhone = patientUser.mobileNumber || null;
+          } else {
+            console.warn(`⚠️ Patient user not found for patientId ${apt.patientId}, userId ${patient.userId}`);
           }
+        } else {
+          console.warn(`⚠️ Patient not found for appointment ${apt.id}, patientId ${apt.patientId}`);
         }
 
         // Get hospital name
@@ -664,6 +690,16 @@ export const updateAppointmentStatus = async (
       // If doctor starts consultation (or someone sets checked-in) and token is missing, allocate token.
       const shouldAllocateToken = (status === 'in_consultation' || status === 'checked-in') && !(existing as any).tokenNumber;
       if (shouldAllocateToken) {
+        // Convert appointmentDate to a proper date string for SQL comparison
+        let appointmentDateStr: string;
+        if (existing.appointmentDate instanceof Date) {
+          appointmentDateStr = existing.appointmentDate.toISOString().slice(0, 10);
+        } else if (typeof existing.appointmentDate === 'string') {
+          appointmentDateStr = existing.appointmentDate.slice(0, 10);
+        } else {
+          appointmentDateStr = new Date(existing.appointmentDate).toISOString().slice(0, 10);
+        }
+
         const maxTokenRow = await tx
           .select({
             maxToken: sql<number>`COALESCE(MAX(${appointments.tokenNumber}), 0)`,
@@ -672,7 +708,7 @@ export const updateAppointmentStatus = async (
           .where(
             and(
               eq(appointments.doctorId, existing.doctorId),
-              sql`DATE(${appointments.appointmentDate}) = DATE(${existing.appointmentDate})`,
+              sql`DATE(${appointments.appointmentDate}) = DATE(${sql.raw(`'${appointmentDateStr}'`)})`,
             ),
           );
 
@@ -1031,7 +1067,29 @@ export const checkInAppointment = async (appointmentId: number, receptionistId: 
       const existingStatus = (existingAppointment.status || '').toString();
       const existingNotes = (existingAppointment as any).notes || '';
 
+      // Convert appointmentDate to a proper date string for SQL comparison
+      let appointmentDateStr: string;
+      const rawDate = existingAppointment.appointmentDate;
+      console.log('🔍 Raw appointmentDate type:', typeof rawDate, 'value:', rawDate);
+      
+      if (rawDate instanceof Date) {
+        appointmentDateStr = rawDate.toISOString().slice(0, 10);
+      } else if (typeof rawDate === 'string') {
+        appointmentDateStr = rawDate.slice(0, 10);
+      } else {
+        // Handle other types (might be a Drizzle date object)
+        const dateObj = new Date(rawDate);
+        if (isNaN(dateObj.getTime())) {
+          throw new Error(`Invalid appointment date: ${rawDate}`);
+        }
+        appointmentDateStr = dateObj.toISOString().slice(0, 10);
+      }
+      
+      console.log('🔍 Converted appointmentDateStr:', appointmentDateStr);
+
       for (let attempt = 0; attempt < 5; attempt++) {
+        // Use a parameterized query with proper date string
+        // Format: YYYY-MM-DD for PostgreSQL DATE comparison
         const maxTokenRow = await tx
           .select({
             maxToken: sql<number>`COALESCE(MAX(${appointments.tokenNumber}), 0)`,
@@ -1040,7 +1098,8 @@ export const checkInAppointment = async (appointmentId: number, receptionistId: 
           .where(
             and(
               eq(appointments.doctorId, existingAppointment.doctorId),
-              sql`DATE(${appointments.appointmentDate}) = DATE(${existingAppointment.appointmentDate})`,
+              // Use CAST with raw SQL string to ensure proper date handling
+              sql`DATE(${appointments.appointmentDate}) = ${sql.raw(`'${appointmentDateStr}'::date`)}`,
             ),
           );
 
@@ -1164,8 +1223,26 @@ export const rescheduleAppointment = async (
     const newDateStr = String(appointmentDate).slice(0, 10);
     const sameDay = oldDateStr && newDateStr && oldDateStr === newDateStr;
 
+    // Convert appointmentDate string to Date object for timestamp column
+    let appointmentDateValue: Date;
+    if (typeof appointmentDate === 'string') {
+      const dateStr = appointmentDate.trim();
+      if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+        appointmentDateValue = new Date(dateStr + 'T00:00:00');
+      } else {
+        appointmentDateValue = new Date(dateStr);
+      }
+      if (isNaN(appointmentDateValue.getTime())) {
+        throw new Error(`Invalid appointment date format: ${appointmentDate}`);
+      }
+    } else if (appointmentDate instanceof Date) {
+      appointmentDateValue = appointmentDate;
+    } else {
+      throw new Error(`appointmentDate must be a Date object or valid date string`);
+    }
+
     const updateData: any = {
-      appointmentDate,
+      appointmentDate: appointmentDateValue,
       appointmentTime,
       timeSlot,
       rescheduledAt: sql`NOW()`,

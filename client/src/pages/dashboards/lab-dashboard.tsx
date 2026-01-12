@@ -40,6 +40,7 @@ import { useResponsive } from '../../hooks/use-responsive';
 import { KpiCard } from '../../components/dashboard/KpiCard';
 import LabReportUploadModal from '../../components/modals/lab-report-upload-modal';
 import { NotificationBell } from '../../components/notifications/NotificationBell';
+import { LabTechnicianSidebar } from '../../components/layout/LabTechnicianSidebar';
 import { subscribeToAppointmentEvents } from '../../lib/appointments-events';
 import { getISTStartOfDay, isSameDayIST } from '../../lib/timezone';
 
@@ -58,18 +59,11 @@ export default function LabDashboard() {
   const { user, logout } = useAuth();
   const { isMobile, isTablet } = useResponsive();
   const queryClient = useQueryClient();
-  const [collapsed, setCollapsed] = useState(false);
   const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false);
   const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
   const [selectedReport, setSelectedReport] = useState<any>(null);
   const [statusFilter, setStatusFilter] = useState<string>('all');
-
-  // Auto-collapse sidebar on mobile/tablet
-  useEffect(() => {
-    if (isMobile || isTablet) {
-      setCollapsed(true);
-    }
-  }, [isMobile, isTablet]);
+  const [selectedMenuKey, setSelectedMenuKey] = useState<string>('dashboard');
 
   // Get lab reports from API
   const { data: labReportsData = [], isLoading: labReportsLoading } = useQuery({
@@ -524,208 +518,7 @@ export default function LabDashboard() {
     );
   };
 
-  const [selectedMenuKey] = useState<string>('dashboard');
-
-  const sidebarMenu = useMemo(() => [
-    {
-      key: 'dashboard',
-      icon: <ExperimentOutlined style={{ fontSize: 18, color: selectedMenuKey === 'dashboard' ? labTheme.primary : '#8C8C8C' }} />, 
-      label: 'Dashboard' 
-    },
-    {
-      key: 'reports',
-      icon: <FileTextOutlined style={{ fontSize: 18, color: selectedMenuKey === 'reports' ? labTheme.primary : '#8C8C8C' }} />, 
-      label: 'Test Reports' 
-    },
-    {
-      key: 'patients',
-      icon: <UserOutlined style={{ fontSize: 18, color: selectedMenuKey === 'patients' ? labTheme.primary : '#8C8C8C' }} />, 
-      label: 'Patients' 
-    },
-    {
-      key: 'upload',
-      icon: <UploadOutlined style={{ fontSize: 18, color: selectedMenuKey === 'upload' ? labTheme.primary : '#8C8C8C' }} />, 
-      label: 'Upload Results' 
-    },
-    {
-      key: 'analytics',
-      icon: <BarChartOutlined style={{ fontSize: 18, color: selectedMenuKey === 'analytics' ? labTheme.primary : '#8C8C8C' }} />, 
-      label: 'Analytics' 
-    },
-  ], [selectedMenuKey]);
-
-  const siderWidth = isMobile ? 0 : (collapsed ? 80 : 260);
-
-  // Generate lab technician ID (LAB-YYYY-XXX format)
-  const labTechnicianId = useMemo(() => {
-    if (user?.id) {
-      const year = new Date().getFullYear();
-      const idNum = String(user.id).padStart(3, '0');
-      return `LAB-${year}-${idNum}`;
-    }
-    return 'LAB-2024-001';
-  }, [user?.id]);
-
-  // Get initials for avatar
-  const userInitials = useMemo(() => {
-    if (user?.fullName) {
-      const names = user.fullName.split(' ');
-      if (names.length >= 2) {
-        return `${names[0][0]}${names[1][0]}`.toUpperCase();
-      }
-      return user.fullName.substring(0, 2).toUpperCase();
-    }
-    return 'LT';
-  }, [user?.fullName]);
-
-  // Sidebar content component (reusable for drawer and sider)
-  const SidebarContent = ({ onMenuClick }: { onMenuClick?: () => void }) => (
-      <div style={{ 
-      display: 'flex', 
-      flexDirection: 'column', 
-      height: '100%',
-      background: '#fff',
-    }}>
-      {/* NexaCare Lab Logo/Name Section */}
-      <div style={{
-        padding: '20px 16px',
-        borderBottom: '1px solid #E5E7EB',
-        display: 'flex',
-        flexDirection: 'column',
-        alignItems: 'center',
-        gap: '8px',
-      }}>
-        <div style={{
-          width: '48px',
-          height: '48px',
-          borderRadius: '12px',
-          background: labTheme.primary,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          color: '#fff',
-          fontSize: '24px',
-        }}>
-          <ExperimentOutlined />
-        </div>
-        <div style={{ textAlign: 'center' }}>
-          <Text strong style={{ display: 'block', fontSize: '14px', fontWeight: 600, color: '#111827', lineHeight: 1.4 }}>
-            NexaCare Lab
-          </Text>
-      </div>
-      </div>
-
-      {/* Navigation Menu */}
-      <Menu
-        className="lab-dashboard-menu"
-        mode="inline"
-        selectedKeys={[selectedMenuKey]}
-        items={sidebarMenu}
-        style={{ 
-          border: 'none', 
-          flex: 1,
-          background: 'transparent',
-          padding: '8px',
-          overflowY: 'auto',
-        }}
-        onClick={(e) => {
-          if (onMenuClick) onMenuClick();
-          message.info(`${e.key} page coming soon.`);
-        }}
-        theme="light"
-      />
-
-      {/* User Profile Footer - Light Grey Rounded Card */}
-      <div style={{
-        marginTop: 'auto',
-        padding: '16px',
-        background: '#fff',
-        flexShrink: 0,
-      }}>
-        <div style={{
-          background: '#F3F4F6',
-          borderRadius: '12px',
-          padding: '16px',
-        }}>
-          {/* Layer 1: Profile Photo + (Name + ID) */}
-          <div style={{
-            display: 'flex',
-            alignItems: 'flex-start',
-            gap: '12px',
-            marginBottom: '12px',
-          }}>
-            {/* Avatar */}
-            <div style={{
-              width: '40px',
-              height: '40px',
-              borderRadius: '50%',
-              background: labTheme.primary,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              color: '#fff',
-              fontWeight: 600,
-              fontSize: '14px',
-              flexShrink: 0,
-            }}>
-              {userInitials}
-            </div>
-            
-            {/* Name (top) and ID (below) - stacked vertically */}
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <Text strong style={{ display: 'block', fontSize: '14px', fontWeight: 600, color: '#262626', lineHeight: 1.5, marginBottom: '4px' }}>
-                {user?.fullName || 'Lab Technician'}
-              </Text>
-              <Text style={{ display: 'block', fontSize: '12px', color: '#8C8C8C' }}>
-                ID: {labTechnicianId}
-              </Text>
-            </div>
-          </div>
-          
-          {/* Layer 2: Lab Name */}
-          {labProfile?.name && (
-            <div style={{
-              marginBottom: '12px',
-              paddingBottom: '12px',
-              borderBottom: '1px solid #E5E7EB',
-            }}>
-              <Text style={{ display: 'block', fontSize: '12px', color: '#8C8C8C', lineHeight: 1.4 }}>
-                {labProfile.name}
-              </Text>
-            </div>
-          )}
-          
-          {/* Layer 3: Active Lab Technician Text + Settings Icon */}
-          <div style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-          }}>
-            {/* Active Lab Technician on left */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <div style={{
-                width: '8px',
-                height: '8px',
-                borderRadius: '50%',
-                background: '#10B981',
-              }} />
-              <Text style={{ fontSize: '12px', color: '#10B981', fontWeight: 500 }}>
-                Active Lab Technician
-              </Text>
-            </div>
-            
-            {/* Settings Icon on right */}
-            <Button 
-              type="text" 
-              icon={<SettingOutlined style={{ color: '#8C8C8C', fontSize: '18px' }} />} 
-              onClick={() => message.info('Settings coming soon.')}
-              style={{ flexShrink: 0, padding: 0, width: '32px', height: '32px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-            />
-          </div>
-        </div>
-      </div>
-    </div>
-  );
+  const siderWidth = isMobile ? 0 : 260;
 
   return (
     <>
@@ -776,79 +569,88 @@ export default function LabDashboard() {
           box-shadow: -2px 0 8px rgba(0, 0, 0, 0.08);
         }
 
+        /* Figma Design - Menu Styling for Lab Dashboard */
         .lab-dashboard-menu .ant-menu-item {
-          border-radius: 12px !important;
-          margin: 4px 8px !important;
-          height: 48px !important;
-          line-height: 48px !important;
-          transition: all 0.3s ease !important;
-          padding-left: 16px !important;
+          border-radius: 8px !important;
+          margin: 2px 0 !important;
+          height: auto !important;
+          line-height: 1.5 !important;
+          transition: all 0.2s ease !important;
+          padding: 10px 12px !important;
           background: transparent !important;
           border: none !important;
         }
         .lab-dashboard-menu .ant-menu-item:hover {
-          background: transparent !important;
+          background: #F9FAFB !important;
         }
         .lab-dashboard-menu .ant-menu-item:hover,
         .lab-dashboard-menu .ant-menu-item:hover .ant-menu-title-content {
-          color: #595959 !important;
+          color: #111827 !important;
+        }
+        .lab-dashboard-menu .ant-menu-item:hover .ant-menu-item-icon,
+        .lab-dashboard-menu .ant-menu-item:hover .anticon {
+          color: #111827 !important;
         }
         .lab-dashboard-menu .ant-menu-item-selected {
-          background: ${labTheme.primary} !important;
+          background: #EFF6FF !important;
           font-weight: 500 !important;
           border: none !important;
-          padding-left: 16px !important;
+          padding: 10px 12px !important;
         }
         .lab-dashboard-menu .ant-menu-item-selected,
         .lab-dashboard-menu .ant-menu-item-selected .ant-menu-title-content {
-          color: #fff !important;
+          color: #0EA5E9 !important;
         }
         .lab-dashboard-menu .ant-menu-item-selected .ant-menu-item-icon,
         .lab-dashboard-menu .ant-menu-item-selected .anticon {
-          color: #fff !important;
+          color: #0EA5E9 !important;
         }
         .lab-dashboard-menu .ant-menu-item:not(.ant-menu-item-selected) {
-          color: #8C8C8C !important;
+          color: #374151 !important;
           background: transparent !important;
         }
         .lab-dashboard-menu .ant-menu-item:not(.ant-menu-item-selected) .ant-menu-title-content {
-          color: #8C8C8C !important;
+          color: #374151 !important;
+        }
+        .lab-dashboard-menu .ant-menu-item:not(.ant-menu-item-selected) .ant-menu-item-icon,
+        .lab-dashboard-menu .ant-menu-item:not(.ant-menu-item-selected) .anticon {
+          color: #374151 !important;
         }
         .lab-dashboard-menu .ant-menu-item-selected::after {
           display: none !important;
         }
         .lab-dashboard-menu .ant-menu-item-icon,
         .lab-dashboard-menu .anticon {
-          font-size: 18px !important;
-          width: 18px !important;
-          height: 18px !important;
+          font-size: 20px !important;
+          width: 20px !important;
+          height: 20px !important;
         }
       `}</style>
       <Layout className="lab-dashboard-wrapper" style={{ minHeight: '100vh', background: labTheme.background }}>
       {/* Desktop/Tablet Sidebar */}
       {!isMobile && (
       <Sider 
-          trigger={null}
-        collapsible 
-        collapsed={collapsed}
-        onCollapse={setCollapsed}
         width={260}
-        collapsedWidth={80}
         style={{
           position: 'fixed',
           top: 0,
           left: 0,
           height: '100vh',
-          width: siderWidth,
           background: '#fff',
-          boxShadow: '2px 0 8px rgba(0,0,0,0.1)',
+            boxShadow: '0 2px 16px rgba(14, 165, 233, 0.08)',
           display: 'flex',
           flexDirection: 'column',
-          transition: 'width 0.2s ease',
           zIndex: 10,
+            borderRight: '1px solid #E5E7EB',
         }}
       >
-          <SidebarContent />
+          <LabTechnicianSidebar 
+            selectedMenuKey={selectedMenuKey}
+            onMenuClick={(key) => {
+              if (key) setSelectedMenuKey(key);
+            }}
+            hospitalName={labProfile?.name}
+          />
         </Sider>
       )}
 
@@ -862,7 +664,14 @@ export default function LabDashboard() {
           bodyStyle={{ padding: 0 }}
           width={260}
         >
-          <SidebarContent onMenuClick={() => setMobileDrawerOpen(false)} />
+          <LabTechnicianSidebar 
+            selectedMenuKey={selectedMenuKey}
+            onMenuClick={(key) => {
+              if (key) setSelectedMenuKey(key);
+              setMobileDrawerOpen(false);
+            }}
+            hospitalName={labProfile?.name}
+          />
         </Drawer>
       )}
 
@@ -963,10 +772,10 @@ export default function LabDashboard() {
                 WebkitOverflowScrolling: 'touch',
               }}>
                 {[
-                  { label: "Samples Pending", value: stats?.pendingTests || 0, icon: <FileSearchOutlined style={{ fontSize: '24px', color: labTheme.primary }} />, trendLabel: "Awaiting Analysis", trendColor: labTheme.primary, trendBg: labTheme.highlight, onView: () => message.info('View pending tests') },
-                  { label: "Reports Ready", value: stats?.completedTests || 0, icon: <CheckCircleOutlined style={{ fontSize: '24px', color: labTheme.secondary }} />, trendLabel: "Completed Today", trendColor: labTheme.secondary, trendBg: "#D1FAE5", onView: () => message.info('View completed tests') },
-                  { label: "Critical Alerts", value: stats?.criticalResults || 0, icon: <AlertOutlined style={{ fontSize: '24px', color: labTheme.accent }} />, trendLabel: "Requires Attention", trendColor: stats?.criticalResults > 0 ? labTheme.accent : "#6B7280", trendBg: stats?.criticalResults > 0 ? "#FEE2E2" : "#F3F4F6", onView: () => message.info('View critical alerts') },
-                  { label: "Total Tests", value: stats?.totalTests || 0, icon: <ExperimentOutlined style={{ fontSize: '24px', color: labTheme.primary }} />, trendLabel: "All Time", trendColor: "#6B7280", trendBg: "#F3F4F6", onView: () => message.info('View all tests') },
+                  { label: "Samples Pending", value: stats?.pendingTests || 0, icon: <FileSearchOutlined style={{ fontSize: 24, color: '#0EA5E9' }} />, badgeText: "Awaiting Analysis", color: "blue" as const, onView: () => message.info('View pending tests') },
+                  { label: "Reports Ready", value: stats?.completedTests || 0, icon: <CheckCircleOutlined style={{ fontSize: 24, color: '#22C55E' }} />, badgeText: "Completed Today", color: "green" as const, onView: () => message.info('View completed tests') },
+                  { label: "Critical Alerts", value: stats?.criticalResults || 0, icon: <AlertOutlined style={{ fontSize: 24, color: '#F87171' }} />, badgeText: "Requires Attention", color: "orange" as const, onView: () => message.info('View critical alerts') },
+                  { label: "Total Tests", value: stats?.totalTests || 0, icon: <ExperimentOutlined style={{ fontSize: 24, color: '#0EA5E9' }} />, badgeText: "All Time", color: "blue" as const, onView: () => message.info('View all tests') },
                 ].map((kpi, idx) => (
                   <div key={idx} style={{ minWidth: 220, scrollSnapAlign: 'start' }}>
                     <KpiCard {...kpi} />
@@ -979,11 +788,9 @@ export default function LabDashboard() {
               <KpiCard
                 label="Samples Pending"
                 value={stats?.pendingTests || 0}
-                icon={<FileSearchOutlined style={{ fontSize: '24px', color: labTheme.primary }} />}
-                trendLabel="Awaiting Analysis"
-                trendType="neutral"
-                    trendColor={labTheme.primary}
-                    trendBg={labTheme.highlight}
+                    icon={<FileSearchOutlined style={{ fontSize: 24, color: '#0EA5E9' }} />}
+                    badgeText="Awaiting Analysis"
+                    color="blue"
                     onView={() => message.info('View pending tests')}
               />
                 </div>
@@ -991,11 +798,9 @@ export default function LabDashboard() {
               <KpiCard
                 label="Reports Ready"
                 value={stats?.completedTests || 0}
-                icon={<CheckCircleOutlined style={{ fontSize: '24px', color: labTheme.secondary }} />}
-                trendLabel="Completed Today"
-                trendType="positive"
-                    trendColor={labTheme.secondary}
-                    trendBg="#D1FAE5"
+                    icon={<CheckCircleOutlined style={{ fontSize: 24, color: '#22C55E' }} />}
+                    badgeText="Completed Today"
+                    color="green"
                     onView={() => message.info('View completed tests')}
               />
                 </div>
@@ -1003,11 +808,9 @@ export default function LabDashboard() {
               <KpiCard
                 label="Critical Alerts"
                 value={stats?.criticalResults || 0}
-                icon={<AlertOutlined style={{ fontSize: '24px', color: labTheme.accent }} />}
-                trendLabel="Requires Attention"
-                trendType={stats?.criticalResults > 0 ? 'negative' : 'positive'}
-                    trendColor={stats?.criticalResults > 0 ? labTheme.accent : "#6B7280"}
-                    trendBg={stats?.criticalResults > 0 ? "#FEE2E2" : "#F3F4F6"}
+                    icon={<AlertOutlined style={{ fontSize: 24, color: '#F87171' }} />}
+                    badgeText="Requires Attention"
+                    color="orange"
                     onView={() => message.info('View critical alerts')}
               />
                 </div>
@@ -1015,11 +818,9 @@ export default function LabDashboard() {
               <KpiCard
                 label="Total Tests"
                 value={stats?.totalTests || 0}
-                icon={<ExperimentOutlined style={{ fontSize: '24px', color: labTheme.primary }} />}
-                trendLabel="All Time"
-                trendType="neutral"
-                    trendColor="#6B7280"
-                    trendBg="#F3F4F6"
+                    icon={<ExperimentOutlined style={{ fontSize: 24, color: '#0EA5E9' }} />}
+                    badgeText="All Time"
+                    color="blue"
                     onView={() => message.info('View all tests')}
               />
                 </div>

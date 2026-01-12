@@ -84,6 +84,27 @@ router.get('/:technicianId', async (req: AuthenticatedRequest, res) => {
   }
 });
 
+// Get radiology reports for technician (similar to lab reports)
+router.get('/me/reports', authorizeRoles('RADIOLOGY_TECHNICIAN'), async (req: AuthenticatedRequest, res) => {
+  try {
+    if (!req.user?.id) {
+      return res.status(401).json({ message: 'User not authenticated' });
+    }
+
+    const technician = await radiologyTechniciansService.getRadiologyTechnicianByUserId(req.user.id);
+    if (!technician) {
+      return res.status(404).json({ message: 'Radiology technician profile not found' });
+    }
+
+    // For now, return empty array - will be implemented when imaging orders are added
+    // This matches the lab reports endpoint structure
+    res.json([]);
+  } catch (err: any) {
+    console.error('❌ Get radiology reports error:', err);
+    res.status(500).json({ message: 'Failed to fetch radiology reports' });
+  }
+});
+
 // Create radiology technician profile
 router.post('/', authorizeRoles('ADMIN', 'HOSPITAL'), async (req: AuthenticatedRequest, res) => {
   try {

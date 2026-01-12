@@ -522,6 +522,9 @@ export const ipdEncounters = pgTable("ipd_encounters", {
   patientId: integer("patient_id").references(() => patients.id).notNull(),
   admittingDoctorId: integer("admitting_doctor_id").references(() => doctors.id),
   attendingDoctorId: integer("attending_doctor_id").references(() => doctors.id),
+  assignedNurseId: integer("assigned_nurse_id").references(() => nurses.id), // Primary assigned nurse
+  assignedAt: timestamp("assigned_at"),
+  assignedByUserId: integer("assigned_by_user_id").references(() => users.id), // User who assigned
   admissionType: text("admission_type").notNull(), // elective, emergency, daycare, observation
   status: text("status").default("admitted").notNull(), // admitted, transferred, discharged
   admittedAt: timestamp("admitted_at").defaultNow(),
@@ -658,6 +661,76 @@ export const diagnosisCodes = pgTable("diagnosis_codes", {
   isActive: boolean("is_active").default(true),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at"),
+});
+
+// Medication Orders - Doctor orders for IPD patients
+export const medicationOrders = pgTable("medication_orders", {
+  id: serial("id").primaryKey(),
+  encounterId: integer("encounter_id").references(() => ipdEncounters.id).notNull(),
+  patientId: integer("patient_id").references(() => patients.id).notNull(),
+  orderedByDoctorId: integer("ordered_by_doctor_id").references(() => doctors.id).notNull(),
+  medicationName: text("medication_name").notNull(),
+  dosage: text("dosage").notNull(),
+  unit: text("unit").notNull(),
+  route: text("route").notNull(), // oral, IV, IM, SC, topical, etc.
+  frequency: text("frequency").notNull(), // QID, TID, BID, Q8H, Q12H, QD, PRN, etc.
+  startDate: timestamp("start_date").notNull(),
+  endDate: timestamp("end_date"),
+  isPrn: boolean("is_prn").default(false),
+  prnIndication: text("prn_indication"), // For PRN medications
+  status: text("status").default("active").notNull(), // active, stopped, completed
+  notes: text("notes"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at"),
+});
+
+// Medication Administrations - eMAR records
+export const medicationAdministrations = pgTable("medication_administrations", {
+  id: serial("id").primaryKey(),
+  medicationOrderId: integer("medication_order_id").references(() => medicationOrders.id).notNull(),
+  encounterId: integer("encounter_id").references(() => ipdEncounters.id).notNull(),
+  patientId: integer("patient_id").references(() => patients.id).notNull(),
+  scheduledAt: timestamp("scheduled_at").notNull(),
+  administeredAt: timestamp("administered_at"),
+  administeredByUserId: integer("administered_by_user_id").references(() => users.id),
+  status: text("status").default("scheduled").notNull(), // scheduled, given, missed, held, refused
+  doseGiven: text("dose_given"), // Actual dose given
+  routeUsed: text("route_used"), // Route used
+  notes: text("notes"),
+  reason: text("reason"), // For held/refused/missed
+  reminderSentAt: timestamp("reminder_sent_at"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at"),
+});
+
+// Nurse Activity Logs - Comprehensive activity tracking
+export const nurseActivityLogs = pgTable("nurse_activity_logs", {
+  id: serial("id").primaryKey(),
+  encounterId: integer("encounter_id").references(() => ipdEncounters.id).notNull(),
+  patientId: integer("patient_id").references(() => patients.id).notNull(),
+  nurseId: integer("nurse_id").references(() => nurses.id).notNull(),
+  activityType: text("activity_type").notNull(), // vitals, medication, note, assessment, etc.
+  activitySubtype: text("activity_subtype"), // medication_given, vitals_recorded, etc.
+  entityType: text("entity_type"), // vitals_chart, medication_administration, etc.
+  entityId: integer("entity_id"), // ID of related entity
+  description: text("description").notNull(),
+  metadata: text("metadata"), // JSON string for additional details
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+// Nurse Assignments - Assignment history (supports multiple nurses per patient)
+export const nurseAssignments = pgTable("nurse_assignments", {
+  id: serial("id").primaryKey(),
+  encounterId: integer("encounter_id").references(() => ipdEncounters.id).notNull(),
+  patientId: integer("patient_id").references(() => patients.id).notNull(),
+  nurseId: integer("nurse_id").references(() => nurses.id).notNull(),
+  assignedByUserId: integer("assigned_by_user_id").references(() => users.id).notNull(),
+  assignedAt: timestamp("assigned_at").defaultNow(),
+  unassignedAt: timestamp("unassigned_at"), // null if currently assigned
+  unassignedByUserId: integer("unassigned_by_user_id").references(() => users.id),
+  reason: text("reason"), // Assignment or unassignment reason
+  shiftType: text("shift_type"), // day, night, rotation
+  createdAt: timestamp("created_at").defaultNow(),
 });
 
 // OPD Billing - Invoices
@@ -950,6 +1023,30 @@ export type VitalsChart = InferSelectModel<typeof vitalsChart>;
 
 export type InsertNursingNote = InferInsertModel<typeof nursingNotes>;
 export type NursingNote = InferSelectModel<typeof nursingNotes>;
+
+export type InsertMedicationOrder = InferInsertModel<typeof medicationOrders>;
+export type MedicationOrder = InferSelectModel<typeof medicationOrders>;
+
+export type InsertMedicationAdministration = InferInsertModel<typeof medicationAdministrations>;
+export type MedicationAdministration = InferSelectModel<typeof medicationAdministrations>;
+
+export type InsertNurseActivityLog = InferInsertModel<typeof nurseActivityLogs>;
+export type NurseActivityLog = InferSelectModel<typeof nurseActivityLogs>;
+
+export type InsertNurseAssignment = InferInsertModel<typeof nurseAssignments>;
+export type NurseAssignment = InferSelectModel<typeof nurseAssignments>;
+
+export type InsertMedicationOrder = InferInsertModel<typeof medicationOrders>;
+export type MedicationOrder = InferSelectModel<typeof medicationOrders>;
+
+export type InsertMedicationAdministration = InferInsertModel<typeof medicationAdministrations>;
+export type MedicationAdministration = InferSelectModel<typeof medicationAdministrations>;
+
+export type InsertNurseActivityLog = InferInsertModel<typeof nurseActivityLogs>;
+export type NurseActivityLog = InferSelectModel<typeof nurseActivityLogs>;
+
+export type InsertNurseAssignment = InferInsertModel<typeof nurseAssignments>;
+export type NurseAssignment = InferSelectModel<typeof nurseAssignments>;
 
 export type InsertDiagnosisCode = InferInsertModel<typeof diagnosisCodes>;
 export type DiagnosisCode = InferSelectModel<typeof diagnosisCodes>;

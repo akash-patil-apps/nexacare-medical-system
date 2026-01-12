@@ -515,6 +515,7 @@ export const getIpdEncounters = async (filters: {
 
   const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
   
+  console.log(`🔍 Fetching IPD encounters with ${conditions.length} conditions`);
 
   const encounters = await db
     .select({
@@ -529,48 +530,72 @@ export const getIpdEncounters = async (filters: {
     .leftJoin(hospitals, eq(ipdEncounters.hospitalId, hospitals.id))
     .where(whereClause);
   
+  console.log(`📋 Found ${encounters.length} raw encounters from database`);
+  
 
-  // Enrich with doctor info and current bed separately
-  const enrichedEncounters = await Promise.all(
-    encounters.map(async (enc) => {
-      // Get admitting doctor with user info
-      const admittingDoctor = enc.encounter.admittingDoctorId
-        ? await db
-            .select({
-              doctor: doctors,
-              user: users,
-            })
-            .from(doctors)
-            .leftJoin(users, eq(doctors.userId, users.id))
-            .where(eq(doctors.id, enc.encounter.admittingDoctorId))
-            .limit(1)
-        : [];
-      
-      // Get attending doctor with user info
-      const attendingDoctor = enc.encounter.attendingDoctorId
-        ? await db
-            .select({
-              doctor: doctors,
-              user: users,
-            })
-            .from(doctors)
-            .leftJoin(users, eq(doctors.userId, users.id))
-            .where(eq(doctors.id, enc.encounter.attendingDoctorId))
-            .limit(1)
-        : [];
-      
-      // Get current bed allocation
-      const currentAllocation = await db
+  // Batch fetch all unique doctor IDs
+  const allDoctorIds = new Set<number>();
+  encounters.forEach(enc => {
+    if (enc.encounter.admittingDoctorId) allDoctorIds.add(enc.encounter.admittingDoctorId);
+    if (enc.encounter.attendingDoctorId) allDoctorIds.add(enc.encounter.attendingDoctorId);
+  });
+  
+  // Fetch all doctors with user info in one query
+  const allDoctors = allDoctorIds.size > 0
+    ? await db
+        .select({
+          doctor: doctors,
+          user: users,
+        })
+        .from(doctors)
+        .leftJoin(users, eq(doctors.userId, users.id))
+        .where(inArray(doctors.id, Array.from(allDoctorIds)))
+    : [];
+  
+  // Create a map for quick lookup
+  const doctorMap = new Map<number, { doctor: any; user: any }>();
+  allDoctors.forEach(d => {
+    doctorMap.set(d.doctor.id, d);
+  });
+  
+  // Batch fetch all bed allocations
+  const encounterIds = encounters.map(enc => enc.encounter.id);
+  const allBedAllocations = encounterIds.length > 0
+    ? await db
         .select({
           allocation: bedAllocations,
           bed: beds,
         })
         .from(bedAllocations)
         .leftJoin(beds, eq(bedAllocations.bedId, beds.id))
-        .where(and(eq(bedAllocations.encounterId, enc.encounter.id), isNull(bedAllocations.toAt)))
-        .limit(1);
+        .where(and(
+          inArray(bedAllocations.encounterId, encounterIds),
+          isNull(bedAllocations.toAt)
+        ))
+    : [];
+  
+  // Create a map for quick lookup
+  const bedMap = new Map<number, any>();
+  allBedAllocations.forEach(alloc => {
+    if (alloc.allocation.encounterId) {
+      bedMap.set(alloc.allocation.encounterId, alloc.bed);
+    }
+  });
+
+  // Enrich with doctor info and current bed separately
+  const enrichedEncounters = encounters.map((enc) => {
+      // Get admitting doctor from map
+      const admittingDoctorData = enc.encounter.admittingDoctorId
+        ? doctorMap.get(enc.encounter.admittingDoctorId)
+        : null;
       
-      const currentBed = currentAllocation[0]?.bed || null;
+      // Get attending doctor from map
+      const attendingDoctorData = enc.encounter.attendingDoctorId
+        ? doctorMap.get(enc.encounter.attendingDoctorId)
+        : null;
+      
+      // Get current bed from map (already fetched in batch)
+      const currentBed = bedMap.get(enc.encounter.id) || null;
       
       // Enrich patient with user info
       const enrichedPatient = enc.patient ? {
@@ -591,8 +616,8 @@ export const getIpdEncounters = async (filters: {
         attendingDoctorId: enc.encounter.attendingDoctorId,
         status: enc.encounter.status,
         patientName: enc.patientUser?.fullName || 'Unknown',
-        admittingDoctorName: admittingDoctor[0]?.user?.fullName || 'N/A',
-        attendingDoctorName: attendingDoctor[0]?.user?.fullName || 'N/A',
+        admittingDoctorName: admittingDoctorData?.user?.fullName || 'N/A',
+        attendingDoctorName: attendingDoctorData?.user?.fullName || 'N/A',
       };
       
       // Check if this encounter matches the doctor filter
@@ -603,16 +628,16 @@ export const getIpdEncounters = async (filters: {
       }
       
       // Format doctor objects with user info
-      const formattedAdmittingDoctor = admittingDoctor[0] ? {
-        id: admittingDoctor[0].doctor.id,
-        fullName: admittingDoctor[0].user?.fullName || null,
-        userId: admittingDoctor[0].doctor.userId,
+      const formattedAdmittingDoctor = admittingDoctorData ? {
+        id: admittingDoctorData.doctor.id,
+        fullName: admittingDoctorData.user?.fullName || null,
+        userId: admittingDoctorData.doctor.userId,
       } : null;
       
-      const formattedAttendingDoctor = attendingDoctor[0] ? {
-        id: attendingDoctor[0].doctor.id,
-        fullName: attendingDoctor[0].user?.fullName || null,
-        userId: attendingDoctor[0].doctor.userId,
+      const formattedAttendingDoctor = attendingDoctorData ? {
+        id: attendingDoctorData.doctor.id,
+        fullName: attendingDoctorData.user?.fullName || null,
+        userId: attendingDoctorData.doctor.userId,
       } : null;
       
       return {
@@ -624,8 +649,7 @@ export const getIpdEncounters = async (filters: {
         currentBed: currentBed,
         currentBedId: currentBed?.id || null,
       };
-    }),
-  );
+    });
 
   return enrichedEncounters;
 };

@@ -296,8 +296,14 @@ router.post('/encounters', authorizeRoles('ADMIN', 'HOSPITAL', 'RECEPTIONIST'), 
 
 router.get('/encounters', authenticateToken, async (req: AuthenticatedRequest, res) => {
   try {
+    console.log('📋 Fetching IPD encounters...');
+    const startTime = Date.now();
+    
     const hospitalId = await getHospitalId(req.user);
+    console.log('🏥 Hospital ID:', hospitalId);
+    
     const { patientId, doctorId, status, nurse } = req.query;
+    console.log('🔍 Query params:', { patientId, doctorId, status, nurse });
 
     // For nurse queries, return all encounters for the hospital
     // The frontend can filter by ward preferences if needed
@@ -308,10 +314,13 @@ router.get('/encounters', authenticateToken, async (req: AuthenticatedRequest, r
       status: status as string | undefined,
     });
 
+    const duration = Date.now() - startTime;
+    console.log(`✅ Fetched ${encounters.length} encounters in ${duration}ms`);
 
     res.json(encounters);
   } catch (err: any) {
     console.error('❌ Get encounters error:', err);
+    console.error('❌ Error stack:', err.stack);
     res.status(400).json({ message: err.message || 'Failed to get encounters' });
   }
 });
@@ -448,6 +457,179 @@ router.delete('/beds/:bedId', authorizeRoles('ADMIN', 'HOSPITAL'), async (req: A
   } catch (err: any) {
     console.error('❌ Delete bed error:', err);
     res.status(400).json({ message: err.message || 'Failed to delete bed' });
+  }
+});
+
+// ===== NURSE ASSIGNMENT ENDPOINTS =====
+import * as nurseAssignmentService from '../services/nurse-assignment.service';
+
+// Assign nurse to encounter
+router.post('/encounters/:encounterId/assign-nurse', authorizeRoles('DOCTOR', 'ADMIN', 'HOSPITAL'), async (req: AuthenticatedRequest, res) => {
+  try {
+    const { encounterId } = req.params;
+    const { nurseId, reason, shiftType } = req.body;
+
+    if (!nurseId) {
+      return res.status(400).json({ message: 'Nurse ID is required' });
+    }
+
+    if (!req.user?.id) {
+      return res.status(401).json({ message: 'User not authenticated' });
+    }
+
+    const assignment = await nurseAssignmentService.assignNurseToEncounter({
+      encounterId: +encounterId,
+      nurseId: +nurseId,
+      assignedByUserId: req.user.id,
+      reason,
+      shiftType,
+    });
+
+    res.json(assignment);
+  } catch (err: any) {
+    console.error('❌ Assign nurse error:', err);
+    res.status(400).json({ message: err.message || 'Failed to assign nurse' });
+  }
+});
+
+// Unassign nurse from encounter
+router.post('/encounters/:encounterId/unassign-nurse', authorizeRoles('DOCTOR', 'ADMIN', 'HOSPITAL'), async (req: AuthenticatedRequest, res) => {
+  try {
+    const { encounterId } = req.params;
+    const { nurseId, reason } = req.body;
+
+    if (!nurseId) {
+      return res.status(400).json({ message: 'Nurse ID is required' });
+    }
+
+    if (!req.user?.id) {
+      return res.status(401).json({ message: 'User not authenticated' });
+    }
+
+    const result = await nurseAssignmentService.unassignNurseFromEncounter({
+      encounterId: +encounterId,
+      nurseId: +nurseId,
+      unassignedByUserId: req.user.id,
+      reason,
+    });
+
+    res.json(result);
+  } catch (err: any) {
+    console.error('❌ Unassign nurse error:', err);
+    res.status(400).json({ message: err.message || 'Failed to unassign nurse' });
+  }
+});
+
+// Get assignment history for encounter
+router.get('/encounters/:encounterId/assignments', authenticateToken, async (req: AuthenticatedRequest, res) => {
+  try {
+    const { encounterId } = req.params;
+    const history = await nurseAssignmentService.getEncounterAssignmentHistory(+encounterId);
+    res.json(history);
+  } catch (err: any) {
+    console.error('❌ Get assignment history error:', err);
+    res.status(400).json({ message: err.message || 'Failed to fetch assignment history' });
+  }
+});
+
+// ===== MEDICATION ORDER ENDPOINTS =====
+import * as medicationOrderService from '../services/medication-order.service';
+
+// Create medication order
+router.post('/encounters/:encounterId/medication-orders', authorizeRoles('DOCTOR', 'ADMIN'), async (req: AuthenticatedRequest, res) => {
+  try {
+    const { encounterId } = req.params;
+    const {
+      medicationName,
+      dosage,
+      unit,
+      route,
+      frequency,
+      startDate,
+      endDate,
+      isPrn,
+      prnIndication,
+      notes,
+    } = req.body;
+
+    if (!medicationName || !dosage || !unit || !route || !frequency || !startDate) {
+      return res.status(400).json({ message: 'Missing required fields' });
+    }
+
+    // Get encounter to get patientId
+    const [encounter] = await db
+      .select()
+      .from(ipdEncounters)
+      .where(eq(ipdEncounters.id, +encounterId))
+      .limit(1);
+
+    if (!encounter) {
+      return res.status(404).json({ message: 'Encounter not found' });
+    }
+
+    // Get doctor ID from user
+    const [doctor] = await db
+      .select()
+      .from(doctors)
+      .where(eq(doctors.userId, req.user!.id))
+      .limit(1);
+
+    if (!doctor) {
+      return res.status(404).json({ message: 'Doctor profile not found' });
+    }
+
+    const order = await medicationOrderService.createMedicationOrder({
+      encounterId: +encounterId,
+      patientId: encounter.patientId,
+      orderedByDoctorId: doctor.id,
+      medicationName,
+      dosage,
+      unit,
+      route,
+      frequency,
+      startDate: new Date(startDate),
+      endDate: endDate ? new Date(endDate) : undefined,
+      isPrn: isPrn || false,
+      prnIndication,
+      notes,
+    });
+
+    // Generate schedule for non-PRN medications
+    if (!isPrn) {
+      const medicationAdminService = await import('../services/medication-administration.service');
+      await medicationAdminService.generateMedicationSchedule(order.id);
+    }
+
+    res.json(order);
+  } catch (err: any) {
+    console.error('❌ Create medication order error:', err);
+    res.status(400).json({ message: err.message || 'Failed to create medication order' });
+  }
+});
+
+// Get medication orders for encounter
+router.get('/encounters/:encounterId/medication-orders', authenticateToken, async (req: AuthenticatedRequest, res) => {
+  try {
+    const { encounterId } = req.params;
+    const includeInactive = req.query.includeInactive === 'true';
+    const orders = await medicationOrderService.getMedicationOrdersForEncounter(+encounterId, includeInactive);
+    res.json(orders);
+  } catch (err: any) {
+    console.error('❌ Get medication orders error:', err);
+    res.status(400).json({ message: err.message || 'Failed to fetch medication orders' });
+  }
+});
+
+// Stop medication order
+router.patch('/medication-orders/:orderId/stop', authorizeRoles('DOCTOR', 'ADMIN'), async (req: AuthenticatedRequest, res) => {
+  try {
+    const { orderId } = req.params;
+    const { reason } = req.body;
+    const stopped = await medicationOrderService.stopMedicationOrder(+orderId, reason);
+    res.json(stopped);
+  } catch (err: any) {
+    console.error('❌ Stop medication order error:', err);
+    res.status(400).json({ message: err.message || 'Failed to stop medication order' });
   }
 });
 

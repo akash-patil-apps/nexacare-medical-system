@@ -25,6 +25,8 @@ import queueRoutes from "./queue.routes";
 import ipdRoutes from "./ipd.routes";
 import billingRoutes from "./billing.routes";
 import clinicalRoutes from "./clinical.routes";
+import medicationRoutes from "./medication.routes";
+import medicinesRoutes from "./medicines.routes";
 
 
 const router = Router();
@@ -58,6 +60,8 @@ export async function registerRoutes(app: Express) {
   app.use("/api/ipd", ipdRoutes);
   app.use("/api/billing", billingRoutes);
   app.use("/api/clinical", clinicalRoutes);
+  app.use("/api/medications", medicationRoutes);
+  app.use("/api/medicines", medicinesRoutes);
   
   // NOTE: /api/prescriptions/my should use /api/prescriptions/patient for patients
   // The prescriptions router handles all prescription endpoints

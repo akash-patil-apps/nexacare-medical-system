@@ -1,6 +1,7 @@
 import React from 'react';
-import { Table, Tag, Button, Space, Typography, Empty, Spin } from 'antd';
-import { UserOutlined, SwapOutlined, CheckCircleOutlined, TeamOutlined } from '@ant-design/icons';
+import { Table, Tag, Button, Space, Typography, Empty, Spin, Dropdown } from 'antd';
+import { UserOutlined, SwapOutlined, CheckCircleOutlined, TeamOutlined, UsergroupAddOutlined, HeartOutlined, FileTextOutlined, MedicineBoxOutlined, CheckOutlined, MoreOutlined } from '@ant-design/icons';
+import type { MenuProps } from 'antd';
 import { useQuery } from '@tanstack/react-query';
 import type { IpdEncounter } from '../../types/ipd';
 
@@ -13,7 +14,14 @@ interface IpdEncountersListProps {
   onTransferDoctor?: (encounter: IpdEncounter) => void; // Transfer to another doctor
   onDischarge?: (encounter: IpdEncounter) => void;
   onViewPatient?: (encounter: IpdEncounter) => void; // View patient details with clinical docs
+  onAssignNurse?: (encounter: IpdEncounter) => void; // Assign nurse to patient
+  // Nurse-specific actions
+  onRecordVitals?: (encounterId: number, patientId: number, patientName: string) => void;
+  onAddNote?: (encounter: IpdEncounter) => void;
+  onViewMedications?: (encounter: IpdEncounter) => void;
+  onAdministerMedication?: (encounter: IpdEncounter) => void;
   showDoctorInfo?: boolean; // Show doctor information in table
+  isNurseView?: boolean; // If true, shows nurse action buttons
 }
 
 export const IpdEncountersList: React.FC<IpdEncountersListProps> = ({
@@ -23,7 +31,13 @@ export const IpdEncountersList: React.FC<IpdEncountersListProps> = ({
   onTransferDoctor,
   onDischarge,
   onViewPatient,
+  onAssignNurse,
+  onRecordVitals,
+  onAddNote,
+  onViewMedications,
+  onAdministerMedication,
   showDoctorInfo = false,
+  isNurseView = false,
 }) => {
   // Fetch IPD encounters
   const { data: encountersRaw = [], isLoading } = useQuery<any[]>({
@@ -130,17 +144,16 @@ export const IpdEncountersList: React.FC<IpdEncountersListProps> = ({
       title: 'Patient',
       dataIndex: 'patient',
       key: 'patient',
+      width: 180,
       render: (_: any, record: IpdEncounter) => {
-        // Handle both nested and flattened patient structures
-        console.log('Rendering patient for encounter:', record.id, 'Patient data:', record.patient);
         const patientName = record.patient?.user?.fullName 
           || (record.patient as any)?.fullName 
           || (record.patient as any)?.user?.fullName
           || 'Unknown';
         return (
-          <Space>
-            <UserOutlined />
-            <Text strong>{patientName}</Text>
+          <Space size="small">
+            <UserOutlined style={{ color: '#1890ff' }} />
+            <Text strong style={{ fontSize: '13px' }}>{patientName}</Text>
           </Space>
         );
       },
@@ -149,93 +162,168 @@ export const IpdEncountersList: React.FC<IpdEncountersListProps> = ({
       title: 'Admission Type',
       dataIndex: 'admissionType',
       key: 'admissionType',
-      render: (type: string) => <Tag>{type}</Tag>,
+      width: 120,
+      render: (type: string) => <Tag style={{ margin: 0 }}>{type || 'N/A'}</Tag>,
     },
     {
       title: 'Current Bed',
       dataIndex: 'currentBed',
       key: 'currentBed',
+      width: 100,
       render: (_: any, record: IpdEncounter) =>
         record.currentBed ? (
-          <Text>
+          <Text style={{ fontSize: '13px' }}>
             {record.currentBed.bedName || `Bed ${record.currentBed.bedNumber}`}
           </Text>
         ) : (
-          <Text type="secondary">N/A</Text>
+          <Text type="secondary" style={{ fontSize: '13px' }}>N/A</Text>
         ),
     },
     {
       title: 'Attending Doctor',
       key: 'attendingDoctor',
-      render: (_: any, record: IpdEncounter) => (
-        <Space>
-          <TeamOutlined />
-          <Text>
-            {record.attendingDoctor?.fullName || record.admittingDoctor?.fullName || 'N/A'}
-          </Text>
-        </Space>
-      ),
+      width: 180,
+      render: (_: any, record: IpdEncounter) => {
+        const doctorName = record.attendingDoctor?.fullName || record.admittingDoctor?.fullName || 'N/A';
+        return (
+          <Space size="small">
+            <TeamOutlined style={{ color: '#52c41a' }} />
+            <Text style={{ fontSize: '13px' }}>{doctorName}</Text>
+          </Space>
+        );
+      },
     },
     {
       title: 'Admitted',
       dataIndex: 'admittedAt',
       key: 'admittedAt',
-      render: (date: string) => new Date(date).toLocaleDateString(),
+      width: 110,
+      render: (date: string) => (
+        <Text style={{ fontSize: '13px' }}>
+          {date ? new Date(date).toLocaleDateString('en-GB') : 'N/A'}
+        </Text>
+      ),
     },
     {
       title: 'Status',
       dataIndex: 'status',
       key: 'status',
+      width: 110,
       render: (status: string) => (
-        <Tag color={getStatusColor(status)}>{status.toUpperCase()}</Tag>
+        <Tag color={getStatusColor(status)} style={{ margin: 0 }}>
+          {status?.toUpperCase() || 'N/A'}
+        </Tag>
       ),
     },
     {
       title: 'Actions',
       key: 'actions',
-      render: (_: any, record: IpdEncounter) => (
-        <Space>
-          {onViewPatient && (
-            <Button
-              size="small"
-              type="primary"
-              icon={<UserOutlined />}
-              onClick={() => onViewPatient(record)}
-            >
-              View Patient
+      width: 120,
+      fixed: 'right' as const,
+      render: (_: any, record: IpdEncounter) => {
+        const menuItems: MenuProps['items'] = [];
+        
+        // View Patient (always available)
+        if (onViewPatient) {
+          menuItems.push({
+            key: 'view',
+            label: 'View Patient',
+            icon: <UserOutlined />,
+            onClick: () => onViewPatient(record),
+          });
+        }
+
+        // Nurse-specific actions
+        if (isNurseView && (record.status === 'admitted' || record.status === 'transferred')) {
+          if (onRecordVitals) {
+            menuItems.push({
+              key: 'vitals',
+              label: 'Record Vitals',
+              icon: <HeartOutlined />,
+              onClick: () => {
+                const patientName = record.patient?.user?.fullName 
+                  || (record.patient as any)?.fullName 
+                  || (record.patient as any)?.user?.fullName
+                  || 'Unknown';
+                onRecordVitals(record.id, record.patientId, patientName);
+              },
+            });
+          }
+          if (onAddNote) {
+            menuItems.push({
+              key: 'note',
+              label: 'Add Note',
+              icon: <FileTextOutlined />,
+              onClick: () => onAddNote(record),
+            });
+          }
+          if (onViewMedications) {
+            menuItems.push({
+              key: 'medications',
+              label: 'View Medications',
+              icon: <MedicineBoxOutlined />,
+              onClick: () => onViewMedications(record),
+            });
+          }
+          if (onAdministerMedication) {
+            menuItems.push({
+              key: 'administer',
+              label: 'Give Medication',
+              icon: <CheckOutlined />,
+              onClick: () => onAdministerMedication(record),
+            });
+          }
+        }
+
+        // Doctor/Admin actions
+        if (!isNurseView) {
+          if (onAssignNurse && (record.status === 'admitted' || record.status === 'transferred')) {
+            menuItems.push({
+              key: 'assign-nurse',
+              label: 'Assign Nurse',
+              icon: <UsergroupAddOutlined />,
+              onClick: () => onAssignNurse(record),
+            });
+          }
+          if (onTransferDoctor && (record.status === 'admitted' || record.status === 'transferred')) {
+            menuItems.push({
+              key: 'transfer-doctor',
+              label: 'Transfer Doctor',
+              icon: <TeamOutlined />,
+              onClick: () => onTransferDoctor(record),
+            });
+          }
+          if (onTransfer && (record.status === 'admitted' || record.status === 'transferred')) {
+            menuItems.push({
+              key: 'transfer',
+              label: 'Transfer Bed',
+              icon: <SwapOutlined />,
+              onClick: () => onTransfer(record),
+            });
+          }
+          if (onDischarge && (record.status === 'admitted' || record.status === 'transferred')) {
+            menuItems.push({
+              key: 'discharge',
+              label: 'Discharge',
+              icon: <CheckCircleOutlined />,
+              danger: true,
+              onClick: () => onDischarge(record),
+            });
+          }
+        }
+
+        if (menuItems.length === 0) {
+          return null;
+        }
+
+        return (
+          <Dropdown menu={{ items: menuItems }} trigger={['click']} placement="bottomRight">
+            <Button size="small" icon={<MoreOutlined />}>
+              Actions
             </Button>
-          )}
-          {onTransferDoctor && (record.status === 'admitted' || record.status === 'transferred') && (
-            <Button
-              size="small"
-              icon={<TeamOutlined />}
-              onClick={() => onTransferDoctor(record)}
-            >
-              Transfer Doctor
-            </Button>
-          )}
-          {onTransfer && (record.status === 'admitted' || record.status === 'transferred') && (
-            <Button
-              size="small"
-              icon={<SwapOutlined />}
-              onClick={() => onTransfer(record)}
-            >
-              Transfer
-            </Button>
-          )}
-          {onDischarge && (record.status === 'admitted' || record.status === 'transferred') && (
-            <Button
-              size="small"
-              type="primary"
-              danger
-              icon={<CheckCircleOutlined />}
-              onClick={() => onDischarge(record)}
-            >
-              Discharge
-            </Button>
-          )}
-        </Space>
-      ),
+          </Dropdown>
+        );
+      },
     },
   ];
 
@@ -256,7 +344,15 @@ export const IpdEncountersList: React.FC<IpdEncountersListProps> = ({
       columns={columns}
       dataSource={activeEncounters}
       rowKey="id"
-      pagination={{ pageSize: 10 }}
+      pagination={{ 
+        pageSize: 10,
+        showSizeChanger: false,
+        showTotal: (total) => `Total ${total} patients`,
+        size: 'small'
+      }}
+      size="small"
+      scroll={{ x: 'max-content' }}
+      style={{ fontSize: '13px' }}
     />
   );
 };

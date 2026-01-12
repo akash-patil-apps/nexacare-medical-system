@@ -33,6 +33,7 @@ import {
   MessageOutlined
 } from '@ant-design/icons';
 import { useAuth } from '../../hooks/use-auth';
+import { getAuthToken } from '../../lib/auth';
 import { useResponsive } from '../../hooks/use-responsive';
 import PrescriptionForm from '../../components/prescription-form';
 import { KpiCard } from '../../components/dashboard/KpiCard';
@@ -54,11 +55,12 @@ import {
 import { getISTNow, toIST, getISTStartOfDay, isSameDayIST } from '../../lib/timezone';
 import { playNotificationSound } from '../../lib/notification-sounds';
 import { NotificationBell } from '../../components/notifications/NotificationBell';
-import { NowServingWidget } from '../../components/queue/NowServingWidget';
 import { AvailabilityManager } from '../../components/availability/AvailabilityManager';
 import { ClinicalNotesEditor } from '../../components/clinical/ClinicalNotesEditor';
 import { VitalsEntryForm } from '../../components/clinical/VitalsEntryForm';
 import { IpdEncountersList } from '../../components/ipd/IpdEncountersList';
+import { NurseAssignmentModal } from '../../components/ipd/NurseAssignmentModal';
+import type { IpdEncounter } from '../../types/ipd';
 
 const { Content, Sider } = Layout;
 const { Title, Text } = Typography;
@@ -88,6 +90,8 @@ export default function DoctorDashboard() {
   const [selectedAppointmentForClinical, setSelectedAppointmentForClinical] = useState<any>(null);
   const [clinicalNotes, setClinicalNotes] = useState<any[]>([]);
   const [vitalsHistory, setVitalsHistory] = useState<any[]>([]);
+  const [isNurseAssignmentModalOpen, setIsNurseAssignmentModalOpen] = useState(false);
+  const [selectedEncounterForNurse, setSelectedEncounterForNurse] = useState<IpdEncounter | null>(null);
 
 
   // ALL HOOKS MUST BE CALLED BEFORE ANY CONDITIONAL RETURNS
@@ -95,7 +99,7 @@ export default function DoctorDashboard() {
   const { data: doctorProfile } = useQuery({
     queryKey: ['/api/doctors/profile'],
     queryFn: async () => {
-      const token = localStorage.getItem('auth-token');
+      const token = getAuthToken();
       const response = await fetch('/api/doctors/profile', {
         headers: {
           'Authorization': `Bearer ${token}`
@@ -125,7 +129,7 @@ export default function DoctorDashboard() {
   const { data: labReports = [] } = useQuery({
     queryKey: ['/api/labs/doctor/reports'],
     queryFn: async () => {
-      const token = localStorage.getItem('auth-token');
+      const token = getAuthToken();
       const response = await fetch('/api/labs/doctor/reports', {
         headers: {
           'Authorization': `Bearer ${token}`
@@ -144,7 +148,7 @@ export default function DoctorDashboard() {
   const { data: prescriptions = [], refetch: refetchPrescriptions } = useQuery({
     queryKey: ['/api/prescriptions/doctor'],
     queryFn: async () => {
-      const token = localStorage.getItem('auth-token');
+      const token = getAuthToken();
       const response = await fetch('/api/prescriptions/doctor', {
         headers: {
           'Authorization': `Bearer ${token}`
@@ -208,7 +212,7 @@ export default function DoctorDashboard() {
   // Fetch clinical notes and vitals
   const fetchClinicalData = async (patientId: number) => {
     try {
-      const token = localStorage.getItem('auth-token');
+      const token = getAuthToken();
       
       // Fetch clinical notes
       const notesResponse = await fetch(`/api/clinical/notes?patientId=${patientId}`, {
@@ -240,7 +244,7 @@ export default function DoctorDashboard() {
     }
     setPatientInfoLoading(true);
     try {
-      const token = localStorage.getItem('auth-token');
+      const token = getAuthToken();
       const response = await fetch(`/api/reception/patients/${patientId}/info`, {
         headers: {
           'Authorization': `Bearer ${token}`
@@ -289,7 +293,7 @@ export default function DoctorDashboard() {
   const { data: notifications = [] } = useQuery({
     queryKey: ['/api/notifications/me'],
     queryFn: async () => {
-      const token = localStorage.getItem('auth-token');
+      const token = getAuthToken();
       const response = await fetch('/api/notifications/me', {
         headers: {
           'Authorization': `Bearer ${token}`
@@ -327,7 +331,7 @@ export default function DoctorDashboard() {
   const { data: allAppointments = [], isLoading: appointmentsLoading, refetch: refetchAppointments } = useQuery({
     queryKey: ['/api/appointments/my'],
     queryFn: async () => {
-      const token = localStorage.getItem('auth-token');
+      const token = getAuthToken();
       const response = await fetch('/api/appointments/my', {
         headers: {
           'Authorization': `Bearer ${token}`
@@ -363,7 +367,8 @@ export default function DoctorDashboard() {
         return {
           id: apt.id,
           patientId: apt.patientId,
-          patient: apt.patientName || 'Unknown Patient',
+          patient: apt.patientName || apt.patient || 'Unknown Patient', // Fallback to patient field if patientName not available
+          patientName: apt.patientName || apt.patient || 'Unknown Patient', // Also set patientName for consistency
           patientDateOfBirth: apt.patientDateOfBirth || null,
           patientBloodGroup: apt.patientBloodGroup || null,
           patientMobile: apt.patientPhone || apt.patientMobile || null,
@@ -737,7 +742,7 @@ export default function DoctorDashboard() {
           key: `notif-${notifId}`, // Unique key for each notification
           onClick: () => {
             // Mark as read when clicked
-            const token = localStorage.getItem('auth-token');
+            const token = getAuthToken();
             if (token) {
               fetch(`/api/notifications/read/${notifId}`, {
                 method: 'POST',
@@ -892,7 +897,7 @@ export default function DoctorDashboard() {
     // If appointment status is "checked-in", automatically start consultation
     if (appointment?.id && normalizeStatus(appointment.status) === APPOINTMENT_STATUS.CHECKED_IN) {
       try {
-        const token = localStorage.getItem('auth-token');
+        const token = getAuthToken();
         if (token) {
           const res = await fetch(`/api/appointments/${appointment.id}/status`, {
             method: 'PATCH',
@@ -998,7 +1003,7 @@ export default function DoctorDashboard() {
       if (!record.id || !hasPrescription) return;
       try {
         setMarkingCheckedId(record.id);
-        const token = localStorage.getItem('auth-token');
+        const token = getAuthToken();
         if (!token) {
           message.error('Authentication required');
           return;
@@ -1269,7 +1274,7 @@ export default function DoctorDashboard() {
           if (!record.id || !hasPrescription) return;
           try {
             setMarkingCheckedId(record.id);
-            const token = localStorage.getItem('auth-token');
+            const token = getAuthToken();
             if (!token) {
               message.error('Authentication required');
               return;
@@ -1933,6 +1938,10 @@ export default function DoctorDashboard() {
                     onDischarge={(encounter) => {
                       message.info('Discharge functionality available in admin dashboard');
                     }}
+                    onAssignNurse={(encounter) => {
+                      setSelectedEncounterForNurse(encounter);
+                      setIsNurseAssignmentModalOpen(true);
+                    }}
                   />
                 ) : (
                   <Text>Loading doctor profile...</Text>
@@ -1970,13 +1979,6 @@ export default function DoctorDashboard() {
                     onClick={() => handleQuickAction('availability')}
                   />
                 </div>
-
-                {/* Queue Management Widget - Now Serving */}
-                {doctorId && (
-                  <div style={{ marginBottom: 24 }}>
-                    <NowServingWidget doctorId={doctorId} />
-                  </div>
-                )}
 
                 {/* Upcoming Appointments - Full width, matching receptionist dashboard */}
             <Card
@@ -2601,6 +2603,7 @@ export default function DoctorDashboard() {
           encounterId={patientInfo?.encounter?.id}
           appointmentId={selectedAppointmentForClinical?.id}
           noteType="consultation"
+          hospitalId={doctorProfile?.hospitalId}
         />
       )}
 
@@ -2617,6 +2620,26 @@ export default function DoctorDashboard() {
           patientId={patientInfo.patient.id}
           encounterId={patientInfo?.encounter?.id}
           appointmentId={selectedAppointmentForClinical?.id}
+          hospitalId={doctorProfile?.hospitalId}
+        />
+      )}
+
+      {/* Nurse Assignment Modal */}
+      {selectedEncounterForNurse && doctorProfile?.hospitalId && (
+        <NurseAssignmentModal
+          open={isNurseAssignmentModalOpen}
+          onCancel={() => {
+            setIsNurseAssignmentModalOpen(false);
+            setSelectedEncounterForNurse(null);
+          }}
+          onSuccess={() => {
+            queryClient.invalidateQueries({ queryKey: ['/api/ipd/encounters'] });
+            message.success('Nurse assigned successfully');
+          }}
+          encounterId={selectedEncounterForNurse.id}
+          patientId={selectedEncounterForNurse.patientId}
+          hospitalId={doctorProfile.hospitalId}
+          currentNurseId={selectedEncounterForNurse.assignedNurseId}
         />
       )}
     </Layout>

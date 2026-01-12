@@ -43,9 +43,13 @@ import { useResponsive } from '../../hooks/use-responsive';
 import { KpiCard } from '../../components/dashboard/KpiCard';
 import { QuickActionTile } from '../../components/dashboard/QuickActionTile';
 import { NotificationBell } from '../../components/notifications/NotificationBell';
+import { PharmacistSidebar } from '../../components/layout/PharmacistSidebar';
 import dayjs from 'dayjs';
+import relativeTime from 'dayjs/plugin/relativeTime';
 import { getISTNow } from '../../lib/timezone';
 import { playNotificationSound } from '../../lib/notification-sounds';
+
+dayjs.extend(relativeTime);
 
 const { Content, Sider } = Layout;
 const { Title, Text } = Typography;
@@ -95,75 +99,90 @@ export default function PharmacistDashboard() {
     enabled: !!user && user.role?.toUpperCase() === 'PHARMACIST',
   });
 
-  // Get prescriptions for dispensing (mock data for now)
+  // Get hospital name from pharmacist profile
+  const hospitalName = useMemo(() => {
+    if (pharmacistProfile?.hospitalName) {
+      return pharmacistProfile.hospitalName;
+    }
+    if (pharmacistProfile?.hospital?.name) {
+      return pharmacistProfile.hospital.name;
+    }
+    return null;
+  }, [pharmacistProfile?.hospitalName, pharmacistProfile?.hospital?.name]);
+
+  // Get prescriptions for dispensing (real data)
   const { data: prescriptions = [], isLoading: isLoadingPrescriptions } = useQuery({
     queryKey: ['/api/prescriptions', 'pharmacist'],
     queryFn: async () => {
-      // For now, return mock prescriptions that need dispensing
-      // In a real implementation, this would fetch prescriptions ready for dispensing
-      return [
-        {
-          id: 1,
-          patientName: 'Rajesh Kumar',
-          doctorName: 'Dr. Priya Sharma',
-          medicines: ['Paracetamol 500mg', 'Amoxicillin 250mg'],
-          status: 'pending',
-          createdAt: new Date().toISOString(),
+      const token = localStorage.getItem('auth-token');
+      const response = await fetch('/api/prescriptions/pharmacist', {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
         },
-        {
-          id: 2,
-          patientName: 'Meera Jain',
-          doctorName: 'Dr. Amit Patel',
-          medicines: ['Ibuprofen 200mg', 'Cetirizine 10mg'],
-          status: 'pending',
-          createdAt: new Date().toISOString(),
-        },
-      ];
+      });
+
+      if (!response.ok) {
+        // If API not ready, return empty array
+        return [];
+      }
+
+      return response.json();
     },
     enabled: !!pharmacistProfile,
   });
 
-  // Calculate KPIs
+  // Calculate KPIs from real data
   const kpis = useMemo(() => {
     const totalPrescriptions = prescriptions.length;
-    const pendingPrescriptions = prescriptions.filter((p: any) => p.status === 'pending').length;
-    const dispensedToday = prescriptions.filter((p: any) =>
-      dayjs(p.createdAt).isSame(dayjs(), 'day') && p.status === 'dispensed'
+    const pendingPrescriptions = prescriptions.filter((p: any) => 
+      p.status === 'pending' || p.status === 'ready_for_dispensing'
     ).length;
-    const lowStockAlerts = 3; // Mock low stock alerts
+    
+    const today = dayjs().startOf('day');
+    const dispensedToday = prescriptions.filter((p: any) =>
+      p.status === 'dispensed' && dayjs(p.dispensedAt || p.updatedAt).isSame(today, 'day')
+    ).length;
+    
+    const yesterday = dayjs().subtract(1, 'day').startOf('day');
+    const dispensedYesterday = prescriptions.filter((p: any) =>
+      p.status === 'dispensed' && dayjs(p.dispensedAt || p.updatedAt).isSame(yesterday, 'day')
+    ).length;
+    
+    const dispensedDiff = dispensedToday - dispensedYesterday;
+    const dispensedBadgeText = dispensedDiff > 0 ? `+${dispensedDiff} vs yesterday` : dispensedDiff < 0 ? `${dispensedDiff} vs yesterday` : 'Same as yesterday';
+    
+    // Get low stock alerts from inventory (if available)
+    const lowStockAlerts = 0; // TODO: Fetch from inventory API when available
 
     return [
       {
-        title: 'Pending Prescriptions',
+        label: 'Pending Prescriptions',
         value: pendingPrescriptions,
-        icon: <MedicineBoxOutlined />,
-        color: pharmacistTheme.primary,
-        trend: '+2',
-        trendLabel: 'new today',
+        icon: <MedicineBoxOutlined style={{ fontSize: 24, color: '#10B981' }} />,
+        badgeText: pendingPrescriptions > 0 ? `${pendingPrescriptions} waiting` : 'All clear',
+        color: 'green' as const,
       },
       {
-        title: 'Dispensed Today',
+        label: 'Dispensed Today',
         value: dispensedToday,
-        icon: <CheckCircleOutlined />,
-        color: '#059669',
-        trend: '+5',
-        trendLabel: 'vs yesterday',
+        icon: <CheckCircleOutlined style={{ fontSize: 24, color: '#059669' }} />,
+        badgeText: dispensedBadgeText,
+        color: 'green' as const,
       },
       {
-        title: 'Total Prescriptions',
+        label: 'Total Prescriptions',
         value: totalPrescriptions,
-        icon: <ShoppingCartOutlined />,
-        color: pharmacistTheme.accent,
-        trend: '+12',
-        trendLabel: 'this week',
+        icon: <ShoppingCartOutlined style={{ fontSize: 24, color: '#10B981' }} />,
+        badgeText: totalPrescriptions > 0 ? `${totalPrescriptions} total` : 'No prescriptions',
+        color: 'green' as const,
       },
       {
-        title: 'Low Stock Alerts',
+        label: 'Low Stock Alerts',
         value: lowStockAlerts,
-        icon: <ExperimentOutlined />,
-        color: '#EF4444',
-        trend: 'Needs attention',
-        trendLabel: '',
+        icon: <ExperimentOutlined style={{ fontSize: 24, color: '#EF4444' }} />,
+        badgeText: lowStockAlerts > 0 ? 'Needs attention' : 'Stock OK',
+        color: 'orange' as const,
       },
     ];
   }, [prescriptions]);
@@ -225,38 +244,18 @@ export default function PharmacistDashboard() {
 
   const renderDashboard = () => (
     <Space direction="vertical" size="large" style={{ width: '100%' }}>
-      {/* Welcome Section */}
-      <Card
-        style={{
-          background: `linear-gradient(135deg, ${pharmacistTheme.primary} 0%, ${pharmacistTheme.accent} 100%)`,
-          color: 'white',
-        }}
-      >
-        <Space direction="vertical" size="small">
-          <Title level={3} style={{ color: 'white', margin: 0 }}>
-            Welcome back, {pharmacistProfile?.user?.fullName?.split(' ')[0] || 'Pharmacist'}
-          </Title>
-          <Text style={{ color: 'rgba(255,255,255,0.9)' }}>
-            {pharmacistProfile?.hospital?.name} • {pharmacistProfile?.pharmacyType || 'Hospital'} Pharmacy
-          </Text>
-          <Text style={{ color: 'rgba(255,255,255,0.8)', fontSize: '14px' }}>
-            {prescriptions.filter((p: any) => p.status === 'pending').length} prescriptions waiting for dispensing
-          </Text>
-        </Space>
-      </Card>
-
       {/* KPIs */}
-      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : isTablet ? 'repeat(2, 1fr)' : 'repeat(4, 1fr)', gap: '16px' }}>
+      <div style={{ display: 'flex', gap: 16, marginBottom: 24, flexWrap: isMobile ? 'wrap' : 'nowrap' }}>
         {kpis.map((kpi, index) => (
+          <div key={index} style={{ flex: 1, minWidth: isMobile ? '100%' : 0 }}>
           <KpiCard
-            key={index}
-            title={kpi.title}
+              label={kpi.label}
             value={kpi.value}
             icon={kpi.icon}
+              badgeText={kpi.badgeText}
             color={kpi.color}
-            trend={kpi.trend}
-            trendLabel={kpi.trendLabel}
           />
+          </div>
         ))}
       </div>
 
@@ -276,31 +275,46 @@ export default function PharmacistDashboard() {
         </div>
       </Card>
 
-      {/* Recent Activity */}
+      {/* Recent Activity - Real Data */}
       <Card title="Recent Dispensing Activity" size="small">
-        <List
-          size="small"
-          dataSource={[
-            { time: '2 hours ago', action: 'Dispensed Paracetamol to Rajesh Kumar', type: 'dispensed' },
-            { time: '4 hours ago', action: 'Checked inventory for Amoxicillin', type: 'inventory' },
-            { time: '6 hours ago', action: 'Counseled patient on medication usage', type: 'counseling' },
-          ]}
-          renderItem={(item: any) => (
-            <List.Item>
-              <Space>
-                <Tag color={
-                  item.type === 'dispensed' ? 'green' :
-                  item.type === 'inventory' ? 'blue' :
-                  item.type === 'counseling' ? 'purple' : 'default'
-                }>
-                  {item.type}
-                </Tag>
-                <Text>{item.action}</Text>
-                <Text type="secondary" style={{ fontSize: '12px' }}>{item.time}</Text>
-              </Space>
-            </List.Item>
-          )}
-        />
+        {prescriptions.filter((p: any) => p.status === 'dispensed').length === 0 ? (
+          <Alert
+            message="No recent activity"
+            description="Your recent prescription dispensing activities will appear here."
+            type="info"
+            showIcon
+          />
+        ) : (
+          <List
+            size="small"
+            dataSource={prescriptions
+              .filter((p: any) => p.status === 'dispensed')
+              .slice(0, 5)
+              .map((prescription: any) => ({
+                time: dayjs(prescription.dispensedAt || prescription.updatedAt).fromNow(),
+                action: `Dispensed ${prescription.medicines?.join(', ') || 'medication'} to ${prescription.patientName || 'Patient'}`,
+                type: 'dispensed',
+                date: prescription.dispensedAt || prescription.updatedAt,
+              }))
+              .sort((a: any, b: any) => new Date(b.date).getTime() - new Date(a.date).getTime())
+            }
+            renderItem={(item: any) => (
+              <List.Item>
+                <Space>
+                  <Tag color={
+                    item.type === 'dispensed' ? 'green' :
+                    item.type === 'inventory' ? 'blue' :
+                    item.type === 'counseling' ? 'purple' : 'default'
+                  }>
+                    {item.type}
+                  </Tag>
+                  <Text>{item.action}</Text>
+                  <Text type="secondary" style={{ fontSize: '12px' }}>{item.time}</Text>
+                </Space>
+              </List.Item>
+            )}
+          />
+        )}
       </Card>
     </Space>
   );
@@ -483,147 +497,151 @@ export default function PharmacistDashboard() {
   }
 
   return (
-    <Layout style={{ minHeight: '100vh', backgroundColor: pharmacistTheme.background }}>
+    <>
+      <style>{`
+        /* Figma Design - Menu Styling for Pharmacist Dashboard */
+        .pharmacist-dashboard-menu .ant-menu-item {
+          border-radius: 8px !important;
+          margin: 2px 0 !important;
+          height: auto !important;
+          line-height: 1.5 !important;
+          transition: all 0.2s ease !important;
+          padding: 10px 12px !important;
+          background: transparent !important;
+          border: none !important;
+        }
+        .pharmacist-dashboard-menu .ant-menu-item:hover {
+          background: #F9FAFB !important;
+        }
+        .pharmacist-dashboard-menu .ant-menu-item:hover,
+        .pharmacist-dashboard-menu .ant-menu-item:hover .ant-menu-title-content {
+          color: #111827 !important;
+        }
+        .pharmacist-dashboard-menu .ant-menu-item:hover .ant-menu-item-icon,
+        .pharmacist-dashboard-menu .ant-menu-item:hover .anticon {
+          color: #111827 !important;
+        }
+        .pharmacist-dashboard-menu .ant-menu-item-selected {
+          background: #ECFDF5 !important;
+          font-weight: 500 !important;
+          border: none !important;
+          padding: 10px 12px !important;
+        }
+        .pharmacist-dashboard-menu .ant-menu-item-selected,
+        .pharmacist-dashboard-menu .ant-menu-item-selected .ant-menu-title-content {
+          color: #10B981 !important;
+        }
+        .pharmacist-dashboard-menu .ant-menu-item-selected .ant-menu-item-icon,
+        .pharmacist-dashboard-menu .ant-menu-item-selected .anticon {
+          color: #10B981 !important;
+        }
+        .pharmacist-dashboard-menu .ant-menu-item:not(.ant-menu-item-selected) {
+          color: #374151 !important;
+          background: transparent !important;
+        }
+        .pharmacist-dashboard-menu .ant-menu-item:not(.ant-menu-item-selected) .ant-menu-title-content {
+          color: #374151 !important;
+        }
+        .pharmacist-dashboard-menu .ant-menu-item:not(.ant-menu-item-selected) .ant-menu-item-icon,
+        .pharmacist-dashboard-menu .ant-menu-item:not(.ant-menu-item-selected) .anticon {
+          color: #374151 !important;
+        }
+        .pharmacist-dashboard-menu .ant-menu-item-selected::after {
+          display: none !important;
+        }
+        .pharmacist-dashboard-menu .ant-menu-item-icon,
+        .pharmacist-dashboard-menu .anticon {
+          font-size: 20px !important;
+          width: 20px !important;
+          height: 20px !important;
+        }
+      `}</style>
+      <Layout style={{ minHeight: '100vh', backgroundColor: pharmacistTheme.background }}>
       {/* Sidebar */}
       {!isMobile ? (
         <Sider
-          width={280}
+          width={260}
           style={{
-            background: 'white',
-            borderRight: '1px solid #e5e7eb',
             position: 'fixed',
-            height: '100vh',
-            left: 0,
             top: 0,
-            zIndex: 1000,
+            left: 0,
+            height: '100vh',
+            background: '#fff',
+            boxShadow: '0 2px 16px rgba(16, 185, 129, 0.08)',
+            display: 'flex',
+            flexDirection: 'column',
+            zIndex: 10,
+            borderRight: '1px solid #E5E7EB',
           }}
         >
-          <div style={{ padding: '24px 16px', borderBottom: '1px solid #e5e7eb' }}>
-            <Space direction="vertical" size="small" style={{ width: '100%' }}>
-              <div style={{
-                width: 48,
-                height: 48,
-                borderRadius: '50%',
-                backgroundColor: pharmacistTheme.primary,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                color: 'white',
-                fontSize: '20px',
-              }}>
-                💊
-              </div>
-              <div>
-                <Text strong style={{ fontSize: '16px' }}>
-                  {pharmacistProfile?.user?.fullName || 'Pharmacist'}
-                </Text>
-                <br />
-                <Text type="secondary" style={{ fontSize: '12px' }}>
-                  {pharmacistProfile?.hospital?.name || 'Hospital'}
-                </Text>
-              </div>
-            </Space>
-          </div>
-
-          <Menu
-            mode="inline"
-            selectedKeys={[selectedMenuKey]}
-            onClick={({ key }) => setSelectedMenuKey(key)}
-            style={{ border: 'none', marginTop: 8 }}
-            items={menuItems}
+          <PharmacistSidebar 
+            selectedMenuKey={selectedMenuKey}
+            onMenuClick={(key) => {
+              if (key) setSelectedMenuKey(key);
+            }}
+            hospitalName={hospitalName}
           />
         </Sider>
       ) : (
         <Drawer
-          title={
-            <Space>
-              <div style={{
-                width: 32,
-                height: 32,
-                borderRadius: '50%',
-                backgroundColor: pharmacistTheme.primary,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                color: 'white',
-                fontSize: '16px',
-              }}>
-                💊
-              </div>
-              <div>
-                <Text strong>{pharmacistProfile?.user?.fullName || 'Pharmacist'}</Text>
-                <br />
-                <Text type="secondary" style={{ fontSize: '12px' }}>
-                  {pharmacistProfile?.hospital?.name || 'Hospital'}
-                </Text>
-              </div>
-            </Space>
-          }
+          title="Navigation"
           placement="left"
-          open={mobileDrawerOpen}
           onClose={() => setMobileDrawerOpen(false)}
-          style={{ zIndex: 1000 }}
+          open={mobileDrawerOpen}
+          bodyStyle={{ padding: 0 }}
+          width={260}
         >
-          <Menu
-            mode="inline"
-            selectedKeys={[selectedMenuKey]}
-            onClick={({ key }) => {
-              setSelectedMenuKey(key);
+          <PharmacistSidebar 
+            selectedMenuKey={selectedMenuKey}
+            onMenuClick={(key) => {
+              if (key) setSelectedMenuKey(key);
               setMobileDrawerOpen(false);
             }}
-            items={menuItems}
+            hospitalName={hospitalName}
           />
         </Drawer>
       )}
 
       {/* Main Content */}
       <Layout style={{
-        marginLeft: isMobile ? 0 : 280,
-        backgroundColor: pharmacistTheme.background,
+        marginLeft: isMobile ? 0 : 260,
+        minHeight: '100vh',
+        background: pharmacistTheme.background,
       }}>
-        {/* Header */}
-        <div style={{
-          padding: isMobile ? '16px' : '24px',
-          background: 'white',
-          borderBottom: '1px solid #e5e7eb',
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          position: 'sticky',
-          top: 0,
-          zIndex: 999,
-        }}>
-          <Space>
-            {isMobile && (
-              <Button
-                type="text"
-                icon={<MenuUnfoldOutlined />}
-                onClick={() => setMobileDrawerOpen(true)}
-              />
-            )}
-            <Title level={4} style={{ margin: 0, color: pharmacistTheme.primary }}>
-              Pharmacy Dashboard
-            </Title>
-          </Space>
-
-          <Space>
-            <NotificationBell />
-            <Button
-              type="text"
-              icon={<SettingOutlined />}
-              onClick={() => message.info('Settings coming soon')}
-            />
-          </Space>
-        </div>
-
-        {/* Content */}
         <Content style={{
-          padding: isMobile ? '16px' : '24px',
-          minHeight: 'calc(100vh - 80px)',
+          background: pharmacistTheme.background,
+          height: '100vh',
+          overflowY: 'auto',
         }}>
-          {renderContent()}
+          <div style={{
+            padding: isMobile ? '24px 16px 16px' : isTablet ? '24px 20px 20px' : '24px 32px 24px',
+          }}>
+            {/* Mobile Menu Button and Header */}
+            {isMobile && (
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+                <Button
+                  type="text"
+                  icon={<MenuUnfoldOutlined />}
+                  onClick={() => setMobileDrawerOpen(true)}
+                  style={{ fontSize: '18px' }}
+                />
+                <Title level={4} style={{ margin: 0 }}>Pharmacy Dashboard</Title>
+                <NotificationBell />
+              </div>
+            )}
+
+            {/* Desktop Header */}
+            {!isMobile && (
+              <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 8 }}>
+                <NotificationBell />
+              </div>
+            )}
+
+            {renderContent()}
+          </div>
         </Content>
       </Layout>
     </Layout>
+    </>
   );
 }

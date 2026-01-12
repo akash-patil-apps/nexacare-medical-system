@@ -18,14 +18,22 @@ router.get('/profile', async (req: AuthenticatedRequest, res) => {
       return res.status(401).json({ message: 'User not authenticated' });
     }
 
-    const nurse = await nursesService.getNurseByUserId(req.user.id);
+    const nurseData = await nursesService.getNurseByUserId(req.user.id);
 
-    if (!nurse) {
+    if (!nurseData) {
       return res.status(404).json({
         message: 'Nurse profile not found. Please complete your registration.',
         needsOnboarding: true
       });
     }
+
+    // Transform to match doctor profile structure (include hospitalName)
+    const nurse = {
+      ...nurseData.nurse,
+      user: nurseData.user,
+      hospital: nurseData.hospital,
+      hospitalName: nurseData.hospital?.name || null,
+    };
 
     res.json(nurse);
   } catch (err: any) {
@@ -214,6 +222,28 @@ router.patch('/:nurseId/availability', authorizeRoles('ADMIN', 'HOSPITAL', 'DOCT
       message: 'Failed to update nurse availability',
       error: err.message
     });
+  }
+});
+
+// Get assigned patients for current nurse
+router.get('/my-patients', authorizeRoles('NURSE'), async (req: AuthenticatedRequest, res) => {
+  try {
+    if (!req.user?.id) {
+      return res.status(401).json({ message: 'User not authenticated' });
+    }
+
+    // Get nurse ID from user ID
+    const nurseData = await nursesService.getNurseByUserId(req.user.id);
+    if (!nurseData) {
+      return res.status(404).json({ message: 'Nurse profile not found' });
+    }
+
+    const nurseAssignmentService = await import('../services/nurse-assignment.service');
+    const patients = await nurseAssignmentService.getAssignedPatients(nurseData.nurse.id);
+    res.json(patients);
+  } catch (err: any) {
+    console.error('❌ Get assigned patients error:', err);
+    res.status(400).json({ message: err.message || 'Failed to fetch assigned patients' });
   }
 });
 

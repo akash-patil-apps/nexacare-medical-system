@@ -197,7 +197,7 @@ router.post(
 router.get(
   '/patients/:patientId/info',
   authenticateToken,
-  authorizeRoles('receptionist', 'doctor'),
+  authorizeRoles('RECEPTIONIST', 'receptionist', 'DOCTOR', 'doctor', 'HOSPITAL', 'ADMIN'),
   async (req: AuthenticatedRequest, res) => {
     try {
       const patientId = Number(req.params.patientId);

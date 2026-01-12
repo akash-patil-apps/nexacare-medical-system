@@ -68,21 +68,49 @@ export const BedStructureManager: React.FC = () => {
   // Floor operations
   const handleCreateFloor = async (values: any) => {
     try {
+      // Ensure floorNumber is a number
+      if (values.floorNumber === null || values.floorNumber === undefined) {
+        message.error('Floor number is required');
+        return;
+      }
+
       const token = localStorage.getItem('auth-token');
+      if (!token) {
+        message.error('Authentication token not found. Please log in again.');
+        return;
+      }
+
+      const payload = {
+        floorNumber: Number(values.floorNumber),
+        floorName: values.floorName || null,
+        description: values.description || null,
+      };
+
+      console.log('Creating floor with payload:', payload);
+
       const response = await fetch('/api/ipd/floors', {
         method: 'POST',
         headers: {
           Authorization: `Bearer ${token}`,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify(values),
+        body: JSON.stringify(payload),
       });
-      if (!response.ok) throw new Error('Failed to create floor');
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        console.error('Failed to create floor:', data);
+        throw new Error(data.message || 'Failed to create floor');
+      }
+
       message.success('Floor created successfully');
       queryClient.invalidateQueries({ queryKey: ['/api/ipd/structure'] });
       setIsFloorModalOpen(false);
       floorForm.resetFields();
+      setEditingFloor(null);
     } catch (error: any) {
+      console.error('Error creating floor:', error);
       message.error(error.message || 'Failed to create floor');
     }
   };
@@ -854,9 +882,42 @@ export const BedStructureManager: React.FC = () => {
           form={floorForm}
           layout="vertical"
           onFinish={editingFloor ? handleUpdateFloor : handleCreateFloor}
+          onFinishFailed={(errorInfo) => {
+            console.error('Form validation failed:', errorInfo);
+            message.error('Please fill in all required fields correctly');
+          }}
         >
-          <Form.Item name="floorNumber" label="Floor Number" rules={[{ required: true }]}>
-            <InputNumber style={{ width: '100%' }} placeholder="0 = Ground, 1 = First, -1 = Basement" />
+          <Form.Item 
+            name="floorNumber" 
+            label="Floor Number" 
+            rules={[
+              { required: true, message: 'Floor number is required' },
+              { 
+                validator: (_, value) => {
+                  if (value === null || value === undefined) {
+                    return Promise.reject(new Error('Floor number is required'));
+                  }
+                  if (typeof value !== 'number' && isNaN(Number(value))) {
+                    return Promise.reject(new Error('Floor number must be a number'));
+                  }
+                  return Promise.resolve();
+                }
+              }
+            ]}
+            normalize={(value) => {
+              if (value === null || value === undefined || value === '') {
+                return undefined;
+              }
+              const num = Number(value);
+              return isNaN(num) ? value : num;
+            }}
+          >
+            <InputNumber 
+              style={{ width: '100%' }} 
+              placeholder="0 = Ground, 1 = First, -1 = Basement"
+              min={-10}
+              max={100}
+            />
           </Form.Item>
           <Form.Item name="floorName" label="Floor Name">
             <Input placeholder="e.g., First Floor, Ground Floor" />

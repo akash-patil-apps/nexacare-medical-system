@@ -4,7 +4,7 @@ import * as appointmentService from '../services/appointments.service';
 import { db } from '../db';
 import { eq } from 'drizzle-orm';
 import { authenticateToken, authorizeRoles, type AuthenticatedRequest } from '../middleware/auth';
-import { patients, doctors, hospitals, receptionists } from '../../drizzle/schema';
+import { patients, doctors, hospitals, receptionists } from '../../shared/schema';
 
 const router = Router();
 

@@ -15,14 +15,22 @@ router.get('/profile', async (req: AuthenticatedRequest, res) => {
       return res.status(401).json({ message: 'User not authenticated' });
     }
 
-    const pharmacist = await pharmacistsService.getPharmacistByUserId(req.user.id);
+    const pharmacistData = await pharmacistsService.getPharmacistByUserId(req.user.id);
 
-    if (!pharmacist) {
+    if (!pharmacistData) {
       return res.status(404).json({
         message: 'Pharmacist profile not found. Please complete your registration.',
         needsOnboarding: true
       });
     }
+
+    // Transform to match doctor profile structure (include hospitalName)
+    const pharmacist = {
+      ...pharmacistData.pharmacist,
+      user: pharmacistData.user,
+      hospital: pharmacistData.hospital,
+      hospitalName: pharmacistData.hospital?.name || null,
+    };
 
     res.json(pharmacist);
   } catch (err: any) {

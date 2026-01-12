@@ -28,6 +28,7 @@ interface ClinicalNotesEditorProps {
   noteType?: 'admission' | 'progress' | 'discharge' | 'consultation';
   initialNote?: any;
   mode?: 'create' | 'edit';
+  hospitalId?: number; // Optional: if provided, will use this instead of fetching
 }
 
 export const ClinicalNotesEditor: React.FC<ClinicalNotesEditorProps> = ({
@@ -40,23 +41,54 @@ export const ClinicalNotesEditor: React.FC<ClinicalNotesEditorProps> = ({
   noteType = 'consultation',
   initialNote,
   mode = 'create',
+  hospitalId: propHospitalId,
 }) => {
   const [form] = Form.useForm();
   const queryClient = useQueryClient();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [activeTab, setActiveTab] = useState('soap');
 
-  // Get hospital ID from user context
+  // Get hospital ID - use prop if provided, otherwise fetch
   const { data: hospitalData } = useQuery({
-    queryKey: ['/api/hospitals/my'],
+    queryKey: ['/api/hospitals/my', propHospitalId],
     queryFn: async () => {
+      // If hospitalId is provided as prop, return it directly
+      if (propHospitalId) {
+        return { id: propHospitalId };
+      }
+
       const token = localStorage.getItem('auth-token');
+      
+      // Try doctor profile first (for doctors)
+      const doctorResponse = await fetch('/api/doctors/profile', {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (doctorResponse.ok) {
+        const doctorData = await doctorResponse.json();
+        if (doctorData.hospitalId) {
+          return { id: doctorData.hospitalId };
+        }
+      }
+
+      // Try nurse profile (for nurses)
+      const nurseResponse = await fetch('/api/nurses/profile', {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (nurseResponse.ok) {
+        const nurseData = await nurseResponse.json();
+        if (nurseData.hospitalId) {
+          return { id: nurseData.hospitalId };
+        }
+      }
+
+      // Fallback to hospitals/my endpoint
       const response = await fetch('/api/hospitals/my', {
         headers: { Authorization: `Bearer ${token}` },
       });
       if (!response.ok) throw new Error('Failed to fetch hospital');
       return response.json();
     },
+    enabled: open, // Only fetch when modal is open
   });
 
   // Get diagnosis codes for autocomplete
@@ -403,6 +435,7 @@ export const ClinicalNotesEditor: React.FC<ClinicalNotesEditorProps> = ({
     </Modal>
   );
 };
+
 
 
 

@@ -39,17 +39,24 @@ import {
   ClockCircleOutlined,
   PlusOutlined,
   EditOutlined,
+  AlertOutlined,
 } from '@ant-design/icons';
 import { useAuth } from '../../hooks/use-auth';
+import { getAuthToken } from '../../lib/auth';
 import { useResponsive } from '../../hooks/use-responsive';
 import { KpiCard } from '../../components/dashboard/KpiCard';
 import { QuickActionTile } from '../../components/dashboard/QuickActionTile';
 import { NotificationBell } from '../../components/notifications/NotificationBell';
 import { VitalsEntryForm } from '../../components/clinical/VitalsEntryForm';
+import { NursingNotesForm } from '../../components/clinical/NursingNotesForm';
 import { IpdEncountersList } from '../../components/ipd/IpdEncountersList';
+import { NurseSidebar } from '../../components/layout/NurseSidebar';
 import dayjs from 'dayjs';
+import relativeTime from 'dayjs/plugin/relativeTime';
 import { getISTNow } from '../../lib/timezone';
 import { playNotificationSound } from '../../lib/notification-sounds';
+
+dayjs.extend(relativeTime);
 
 const { Content, Sider } = Layout;
 const { Title, Text } = Typography;
@@ -70,9 +77,13 @@ export default function NurseDashboard() {
   const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false);
   const [selectedMenuKey, setSelectedMenuKey] = useState<string>('dashboard');
   const [isVitalsModalOpen, setIsVitalsModalOpen] = useState(false);
+  const [isNotesModalOpen, setIsNotesModalOpen] = useState(false);
+  const [isMedicationsModalOpen, setIsMedicationsModalOpen] = useState(false);
+  const [isAdministerModalOpen, setIsAdministerModalOpen] = useState(false);
   const [selectedEncounterId, setSelectedEncounterId] = useState<number | undefined>(undefined);
   const [selectedPatientId, setSelectedPatientId] = useState<number | undefined>(undefined);
   const [selectedPatientName, setSelectedPatientName] = useState<string | undefined>(undefined);
+  const [selectedEncounter, setSelectedEncounter] = useState<any>(null);
 
   // Redirect if not authenticated or not a nurse
   if (!isLoading && (!user || user.role?.toUpperCase() !== 'NURSE')) {
@@ -83,7 +94,7 @@ export default function NurseDashboard() {
   const { data: nurseProfile, isLoading: isLoadingProfile } = useQuery({
     queryKey: ['/api/nurses/profile'],
     queryFn: async () => {
-      const token = localStorage.getItem('auth-token');
+      const token = getAuthToken();
       const response = await fetch('/api/nurses/profile', {
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -107,7 +118,7 @@ export default function NurseDashboard() {
   const { data: ipdEncounters = [], isLoading: isLoadingEncounters } = useQuery({
     queryKey: ['/api/ipd/encounters', 'nurse'],
     queryFn: async () => {
-      const token = localStorage.getItem('auth-token');
+      const token = getAuthToken();
       const response = await fetch('/api/ipd/encounters?nurse=true', {
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -128,7 +139,7 @@ export default function NurseDashboard() {
   const { data: vitalsHistory = [], isLoading: isLoadingVitals } = useQuery({
     queryKey: ['/api/clinical/vitals', 'nurse'],
     queryFn: async () => {
-      const token = localStorage.getItem('auth-token');
+      const token = getAuthToken();
       const response = await fetch('/api/clinical/vitals?nurse=true', {
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -149,7 +160,7 @@ export default function NurseDashboard() {
   const { data: nursingNotes = [], isLoading: isLoadingNotes } = useQuery({
     queryKey: ['/api/clinical/nursing-notes', 'nurse'],
     queryFn: async () => {
-      const token = localStorage.getItem('auth-token');
+      const token = getAuthToken();
       const response = await fetch('/api/clinical/nursing-notes?nurse=true', {
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -166,55 +177,83 @@ export default function NurseDashboard() {
     enabled: !!nurseProfile,
   });
 
-  // Calculate KPIs
+  // Get hospital name from nurse profile (similar to doctor dashboard)
+  const hospitalName = useMemo(() => {
+    if (nurseProfile?.hospitalName) {
+      return nurseProfile.hospitalName;
+    }
+    if (nurseProfile?.hospital?.name) {
+      return nurseProfile.hospital.name;
+    }
+    return null;
+  }, [nurseProfile?.hospitalName, nurseProfile?.hospital?.name]);
+
+  // Calculate KPIs from real data
   const kpis = useMemo(() => {
     const totalPatients = ipdEncounters.length;
-    const criticalPatients = ipdEncounters.filter((encounter: any) =>
-      vitalsHistory.some((vital: any) =>
-        vital.patientId === encounter.patientId &&
-        (vital.temperature > 38.5 || vital.temperature < 35 ||
-         vital.bpSystolic > 180 || vital.bpSystolic < 90 ||
-         vital.pulse > 120 || vital.pulse < 50 ||
-         vital.respirationRate > 30 || vital.respirationRate < 8)
-      )
-    ).length;
+    
+    // Calculate critical patients based on latest vitals
+    const criticalPatients = ipdEncounters.filter((encounter: any) => {
+      const latestVitals = vitalsHistory
+        .filter((v: any) => v.patientId === encounter.patientId)
+        .sort((a: any, b: any) => new Date(b.recordedAt).getTime() - new Date(a.recordedAt).getTime())[0];
+      
+      if (!latestVitals) return false;
+      
+      return (
+        latestVitals.temperature > 38.5 || latestVitals.temperature < 35 ||
+        latestVitals.bpSystolic > 180 || latestVitals.bpSystolic < 90 ||
+        latestVitals.pulse > 120 || latestVitals.pulse < 50 ||
+        latestVitals.respirationRate > 30 || latestVitals.respirationRate < 8
+      );
+    }).length;
+    
+    // Calculate vitals recorded today
+    const today = dayjs().startOf('day');
     const todayVitals = vitalsHistory.filter((vital: any) =>
-      dayjs(vital.recordedAt).isSame(dayjs(), 'day')
+      dayjs(vital.recordedAt).isSame(today, 'day')
     ).length;
-    const pendingTasks = ipdEncounters.length * 3; // Rough estimate: vitals, meds, notes per patient
+    
+    // Calculate yesterday vitals for comparison
+    const yesterday = dayjs().subtract(1, 'day').startOf('day');
+    const yesterdayVitals = vitalsHistory.filter((vital: any) =>
+      dayjs(vital.recordedAt).isSame(yesterday, 'day')
+    ).length;
+    
+    const vitalsDiff = todayVitals - yesterdayVitals;
+    const vitalsBadgeText = vitalsDiff > 0 ? `+${vitalsDiff} vs yesterday` : vitalsDiff < 0 ? `${vitalsDiff} vs yesterday` : 'Same as yesterday';
+    
+    // Calculate pending tasks (vitals due, medications due, notes pending)
+    const pendingTasks = ipdEncounters.length * 3; // Estimate: vitals, meds, notes per patient
 
     return [
       {
-        title: 'My Patients',
+        label: 'My Patients',
         value: totalPatients,
-        icon: <TeamOutlined />,
-        color: nurseTheme.primary,
-        trend: '+2',
-        trendLabel: 'this week',
+        icon: <TeamOutlined style={{ fontSize: 24, color: '#059669' }} />,
+        badgeText: totalPatients > 0 ? `${totalPatients} under care` : 'No patients',
+        color: 'green' as const,
       },
       {
-        title: 'Critical Patients',
+        label: 'Critical Patients',
         value: criticalPatients,
-        icon: <HeartOutlined />,
-        color: '#EF4444',
-        trend: criticalPatients > 0 ? 'Needs attention' : 'All stable',
-        trendLabel: '',
+        icon: <AlertOutlined style={{ fontSize: 24, color: '#EF4444' }} />,
+        badgeText: criticalPatients > 0 ? 'Needs attention' : 'All stable',
+        color: 'orange' as const,
       },
       {
-        title: 'Vitals Recorded Today',
+        label: 'Vitals Recorded Today',
         value: todayVitals,
-        icon: <HeartOutlined />,
-        color: nurseTheme.accent,
-        trend: '+5',
-        trendLabel: 'vs yesterday',
+        icon: <HeartOutlined style={{ fontSize: 24, color: '#10B981' }} />,
+        badgeText: vitalsBadgeText,
+        color: 'green' as const,
       },
       {
-        title: 'Pending Tasks',
+        label: 'Pending Tasks',
         value: pendingTasks,
-        icon: <ClockCircleOutlined />,
-        color: '#F59E0B',
-        trend: 'Update soon',
-        trendLabel: '',
+        icon: <ClockCircleOutlined style={{ fontSize: 24, color: '#F59E0B' }} />,
+        badgeText: pendingTasks > 0 ? 'Update soon' : 'All done',
+        color: 'orange' as const,
       },
     ];
   }, [ipdEncounters, vitalsHistory]);
@@ -276,38 +315,18 @@ export default function NurseDashboard() {
 
   const renderDashboard = () => (
     <Space direction="vertical" size="large" style={{ width: '100%' }}>
-      {/* Welcome Section */}
-      <Card
-        style={{
-          background: `linear-gradient(135deg, ${nurseTheme.primary} 0%, ${nurseTheme.accent} 100%)`,
-          color: 'white',
-        }}
-      >
-        <Space direction="vertical" size="small">
-          <Title level={3} style={{ color: 'white', margin: 0 }}>
-            Welcome back, {nurseProfile?.user?.fullName?.split(' ')[0] || 'Nurse'}
-          </Title>
-          <Text style={{ color: 'rgba(255,255,255,0.9)' }}>
-            {nurseProfile?.hospital?.name} • {nurseProfile?.shiftType || 'Day'} Shift
-          </Text>
-          <Text style={{ color: 'rgba(255,255,255,0.8)', fontSize: '14px' }}>
-            {ipdEncounters.length} patients under your care
-          </Text>
-        </Space>
-      </Card>
-
       {/* KPIs */}
-      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : isTablet ? 'repeat(2, 1fr)' : 'repeat(4, 1fr)', gap: '16px' }}>
+      <div style={{ display: 'flex', gap: 16, marginBottom: 16, flexWrap: isMobile ? 'wrap' : 'nowrap' }}>
         {kpis.map((kpi, index) => (
+          <div key={index} style={{ flex: 1, minWidth: isMobile ? '100%' : 0 }}>
           <KpiCard
-            key={index}
-            title={kpi.title}
+              label={kpi.label}
             value={kpi.value}
             icon={kpi.icon}
+              badgeText={kpi.badgeText}
             color={kpi.color}
-            trend={kpi.trend}
-            trendLabel={kpi.trendLabel}
           />
+          </div>
         ))}
       </div>
 
@@ -327,15 +346,38 @@ export default function NurseDashboard() {
         </div>
       </Card>
 
-      {/* Recent Activity */}
+      {/* Recent Activity - Real Data */}
       <Card title="Recent Activity" size="small">
+        {vitalsHistory.length === 0 && nursingNotes.length === 0 ? (
+          <Alert
+            message="No recent activity"
+            description="Your recent vitals recordings and nursing notes will appear here."
+            type="info"
+            showIcon
+          />
+        ) : (
         <List
           size="small"
           dataSource={[
-            { time: '2 hours ago', action: 'Recorded vitals for John Doe', type: 'vitals' },
-            { time: '4 hours ago', action: 'Administered medication to Jane Smith', type: 'medication' },
-            { time: '6 hours ago', action: 'Added assessment note for Bob Johnson', type: 'notes' },
-          ]}
+              // Recent vitals - get patient name from IPD encounters
+              ...vitalsHistory.slice(0, 5).map((vital: any) => {
+                const encounter = ipdEncounters.find((e: any) => e.patientId === vital.patientId);
+                const patientName = encounter?.patientName || encounter?.patient?.fullName || 'Patient';
+                return {
+                  time: dayjs(vital.recordedAt).fromNow(),
+                  action: `Recorded vitals for ${patientName}`,
+                  type: 'vitals',
+                  date: vital.recordedAt,
+                };
+              }),
+              // Recent nursing notes
+              ...nursingNotes.slice(0, 3).map((note: any) => ({
+                time: dayjs(note.createdAt).fromNow(),
+                action: `Added ${note.noteType || 'assessment'} note`,
+                type: 'notes',
+                date: note.createdAt,
+              })),
+            ].sort((a: any, b: any) => new Date(b.date).getTime() - new Date(a.date).getTime()).slice(0, 5)}
           renderItem={(item: any) => (
             <List.Item>
               <Space>
@@ -352,25 +394,46 @@ export default function NurseDashboard() {
             </List.Item>
           )}
         />
+        )}
       </Card>
     </Space>
   );
 
   const renderPatients = () => (
-    <Card title="My Ward Patients" size="small">
+    <Card 
+      title="My Ward Patients" 
+      size="small"
+      style={{ marginBottom: 0 }}
+      bodyStyle={{ padding: '16px' }}
+    >
       <IpdEncountersList
         encounters={ipdEncounters}
         loading={isLoadingEncounters}
         showDoctorInfo={true}
+        isNurseView={true}
+        onViewPatient={(encounter) => {
+          // Handle patient details view
+          message.info('Patient details view coming soon');
+        }}
         onRecordVitals={(encounterId, patientId, patientName) => {
           setSelectedEncounterId(encounterId);
           setSelectedPatientId(patientId);
           setSelectedPatientName(patientName);
           setIsVitalsModalOpen(true);
         }}
-        onViewDetails={(encounter) => {
-          // Handle patient details view
-          message.info('Patient details view coming soon');
+        onAddNote={(encounter) => {
+          setSelectedEncounter(encounter);
+          setSelectedEncounterId(encounter.id);
+          setSelectedPatientId(encounter.patientId);
+          setIsNotesModalOpen(true);
+        }}
+        onViewMedications={(encounter) => {
+          setSelectedEncounter(encounter);
+          setIsMedicationsModalOpen(true);
+        }}
+        onAdministerMedication={(encounter) => {
+          setSelectedEncounter(encounter);
+          setIsAdministerModalOpen(true);
         }}
       />
     </Card>
@@ -383,9 +446,12 @@ export default function NurseDashboard() {
         columns={[
           {
             title: 'Patient',
-            dataIndex: 'patientName',
             key: 'patientName',
-            render: (name: string) => <Text strong>{name}</Text>,
+            render: (_: any, record: any) => {
+              const encounter = ipdEncounters.find((e: any) => e.patientId === record.patientId);
+              const patientName = encounter?.patientName || encounter?.patient?.fullName || 'Unknown';
+              return <Text strong>{patientName}</Text>;
+            },
           },
           {
             title: 'Recorded At',
@@ -483,175 +549,178 @@ export default function NurseDashboard() {
   }
 
   return (
-    <Layout style={{ minHeight: '100vh', backgroundColor: nurseTheme.background }}>
-      {/* Sidebar */}
-      {!isMobile ? (
+    <>
+      <style>{`
+        /* Override medical-container padding for nurse dashboard */
+        body:has(.nurse-dashboard-wrapper) .medical-container {
+          padding: 0 !important;
+          margin: 0 !important;
+        }
+        
+        /* Figma Design - Menu Styling for Nurse Dashboard */
+        .nurse-dashboard-menu .ant-menu-item {
+          border-radius: 8px !important;
+          margin: 2px 0 !important;
+          height: auto !important;
+          line-height: 1.5 !important;
+          transition: all 0.2s ease !important;
+          padding: 10px 12px !important;
+          background: transparent !important;
+          border: none !important;
+        }
+        .nurse-dashboard-menu .ant-menu-item:hover {
+          background: #F9FAFB !important;
+        }
+        .nurse-dashboard-menu .ant-menu-item:hover,
+        .nurse-dashboard-menu .ant-menu-item:hover .ant-menu-title-content {
+          color: #111827 !important;
+        }
+        .nurse-dashboard-menu .ant-menu-item:hover .ant-menu-item-icon,
+        .nurse-dashboard-menu .ant-menu-item:hover .anticon {
+          color: #111827 !important;
+        }
+        .nurse-dashboard-menu .ant-menu-item-selected {
+          background: #ECFDF5 !important;
+          font-weight: 500 !important;
+          border: none !important;
+          padding: 10px 12px !important;
+        }
+        .nurse-dashboard-menu .ant-menu-item-selected,
+        .nurse-dashboard-menu .ant-menu-item-selected .ant-menu-title-content {
+          color: #059669 !important;
+        }
+        .nurse-dashboard-menu .ant-menu-item-selected .ant-menu-item-icon,
+        .nurse-dashboard-menu .ant-menu-item-selected .anticon {
+          color: #059669 !important;
+        }
+        .nurse-dashboard-menu .ant-menu-item:not(.ant-menu-item-selected) {
+          color: #374151 !important;
+          background: transparent !important;
+        }
+        .nurse-dashboard-menu .ant-menu-item:not(.ant-menu-item-selected) .ant-menu-title-content {
+          color: #374151 !important;
+        }
+        .nurse-dashboard-menu .ant-menu-item:not(.ant-menu-item-selected) .ant-menu-item-icon,
+        .nurse-dashboard-menu .ant-menu-item:not(.ant-menu-item-selected) .anticon {
+          color: #374151 !important;
+        }
+        .nurse-dashboard-menu .ant-menu-item-selected::after {
+          display: none !important;
+        }
+        .nurse-dashboard-menu .ant-menu-item-icon,
+        .nurse-dashboard-menu .anticon {
+          font-size: 20px !important;
+          width: 20px !important;
+          height: 20px !important;
+        }
+      `}</style>
+      <Layout className="nurse-dashboard-wrapper" style={{ minHeight: '100vh', background: nurseTheme.background }}>
+        {/* Desktop/Tablet Sidebar */}
+        {!isMobile && (
         <Sider
-          width={280}
+            width={260}
           style={{
-            background: 'white',
-            borderRight: '1px solid #e5e7eb',
             position: 'fixed',
+              top: 0,
+              left: 0,
             height: '100vh',
-            left: 0,
-            top: 0,
-            zIndex: 1000,
-          }}
-        >
-          <div style={{ padding: '24px 16px', borderBottom: '1px solid #e5e7eb' }}>
-            <Space direction="vertical" size="small" style={{ width: '100%' }}>
-              <div style={{
-                width: 48,
-                height: 48,
-                borderRadius: '50%',
-                backgroundColor: nurseTheme.primary,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                color: 'white',
-                fontSize: '20px',
-              }}>
-                👩‍⚕️
-              </div>
-              <div>
-                <Text strong style={{ fontSize: '16px' }}>
-                  {nurseProfile?.user?.fullName || 'Nurse'}
-                </Text>
-                <br />
-                <Text type="secondary" style={{ fontSize: '12px' }}>
-                  {nurseProfile?.hospital?.name || 'Hospital'}
-                </Text>
-              </div>
-            </Space>
-          </div>
-
-          <Menu
-            mode="inline"
-            selectedKeys={[selectedMenuKey]}
-            onClick={({ key }) => setSelectedMenuKey(key)}
-            style={{ border: 'none', marginTop: 8 }}
-            items={menuItems}
+              background: '#fff',
+              boxShadow: '0 2px 16px rgba(5, 150, 105, 0.08)',
+              display: 'flex',
+              flexDirection: 'column',
+              zIndex: 10,
+              borderRight: '1px solid #E5E7EB',
+            }}
+          >
+            <NurseSidebar 
+              selectedMenuKey={selectedMenuKey}
+              onMenuClick={(key) => {
+                if (key) setSelectedMenuKey(key);
+              }}
+              hospitalName={hospitalName}
           />
         </Sider>
-      ) : (
+        )}
+
+        {/* Mobile Drawer */}
+        {isMobile && (
         <Drawer
-          title={
-            <Space>
-              <div style={{
-                width: 32,
-                height: 32,
-                borderRadius: '50%',
-                backgroundColor: nurseTheme.primary,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                color: 'white',
-                fontSize: '16px',
-              }}>
-                👩‍⚕️
-              </div>
-              <div>
-                <Text strong>{nurseProfile?.user?.fullName || 'Nurse'}</Text>
-                <br />
-                <Text type="secondary" style={{ fontSize: '12px' }}>
-                  {nurseProfile?.hospital?.name || 'Hospital'}
-                </Text>
-              </div>
-            </Space>
-          }
+            title="Navigation"
           placement="left"
+            onClose={() => setMobileDrawerOpen(false)}
           open={mobileDrawerOpen}
-          onClose={() => setMobileDrawerOpen(false)}
-          style={{ zIndex: 1000 }}
-        >
-          <Menu
-            mode="inline"
-            selectedKeys={[selectedMenuKey]}
-            onClick={({ key }) => {
-              setSelectedMenuKey(key);
+            bodyStyle={{ padding: 0 }}
+            width={260}
+          >
+            <NurseSidebar 
+              selectedMenuKey={selectedMenuKey}
+              onMenuClick={(key) => {
+                if (key) setSelectedMenuKey(key);
               setMobileDrawerOpen(false);
             }}
-            items={menuItems}
+              hospitalName={hospitalName}
           />
         </Drawer>
       )}
 
-      {/* Main Content */}
-      <Layout style={{
-        marginLeft: isMobile ? 0 : 280,
-        backgroundColor: nurseTheme.background,
-      }}>
-        {/* Header */}
-        <div style={{
-          padding: isMobile ? '16px' : '24px',
-          background: 'white',
-          borderBottom: '1px solid #e5e7eb',
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          position: 'sticky',
-          top: 0,
-          zIndex: 999,
-        }}>
-          <Space>
+        <Layout
+          style={{
+            marginLeft: isMobile ? 0 : 260,
+            minHeight: '100vh',
+            background: nurseTheme.background,
+            overflow: 'hidden',
+          }}
+        >
+          <Content
+            style={{
+              background: nurseTheme.background,
+              height: '100vh',
+              overflowY: 'auto',
+              padding: isMobile ? '24px 16px 16px' : isTablet ? '24px 20px 20px' : '24px 32px 24px',
+            }}
+          >
+            <div style={{ paddingBottom: 24 }}>
+              {/* Notifications Bell (top-right) */}
+              {!isMobile && (
+                <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 8 }}>
+                  <NotificationBell />
+                </div>
+              )}
+
+              {/* Mobile Menu Button */}
             {isMobile && (
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
               <Button
                 type="text"
                 icon={<MenuUnfoldOutlined />}
                 onClick={() => setMobileDrawerOpen(true)}
-              />
-            )}
-            <Title level={4} style={{ margin: 0, color: nurseTheme.primary }}>
-              Nurse Station
-            </Title>
-          </Space>
-
-          <Space>
+                    style={{ fontSize: '18px' }}
+                  />
+                  <Title level={4} style={{ margin: 0 }}>Nurse Station</Title>
             <NotificationBell />
-            <Button
-              type="text"
-              icon={<SettingOutlined />}
-              onClick={() => message.info('Settings coming soon')}
-            />
-          </Space>
         </div>
+              )}
 
-        {/* Content */}
-        <Content style={{
-          padding: isMobile ? '16px' : '24px',
-          minHeight: 'calc(100vh - 80px)',
-        }}>
           {renderContent()}
+            </div>
         </Content>
+        </Layout>
       </Layout>
 
       {/* Vitals Modal */}
-      <Modal
-        title={
-          <Space>
-            <HeartOutlined />
-            <span>Record Vitals - {selectedPatientName}</span>
-          </Space>
-        }
-        open={isVitalsModalOpen}
-        onCancel={() => {
-          setIsVitalsModalOpen(false);
-          setSelectedEncounterId(undefined);
-          setSelectedPatientId(undefined);
-          setSelectedPatientName(undefined);
-        }}
-        footer={null}
-        width={700}
-      >
+      {selectedPatientId && (
         <VitalsEntryForm
+          open={isVitalsModalOpen}
           patientId={selectedPatientId}
           encounterId={selectedEncounterId}
+          hospitalId={nurseProfile?.hospitalId}
           onSuccess={() => {
             setIsVitalsModalOpen(false);
             setSelectedEncounterId(undefined);
             setSelectedPatientId(undefined);
             setSelectedPatientName(undefined);
             queryClient.invalidateQueries({ queryKey: ['/api/clinical/vitals'] });
+            queryClient.invalidateQueries({ queryKey: ['/api/ipd/encounters'] });
             message.success('Vitals recorded successfully');
           }}
           onCancel={() => {
@@ -661,7 +730,74 @@ export default function NurseDashboard() {
             setSelectedPatientName(undefined);
           }}
         />
+      )}
+
+      {/* Nursing Notes Modal */}
+      {selectedPatientId && selectedEncounterId && (
+        <NursingNotesForm
+          open={isNotesModalOpen}
+          patientId={selectedPatientId}
+          encounterId={selectedEncounterId}
+          hospitalId={nurseProfile?.hospitalId}
+          onSuccess={() => {
+            setIsNotesModalOpen(false);
+            setSelectedEncounter(null);
+            setSelectedEncounterId(undefined);
+            setSelectedPatientId(undefined);
+            queryClient.invalidateQueries({ queryKey: ['/api/clinical/nursing-notes'] });
+            queryClient.invalidateQueries({ queryKey: ['/api/ipd/encounters'] });
+            message.success('Nursing note added successfully');
+          }}
+          onCancel={() => {
+            setIsNotesModalOpen(false);
+            setSelectedEncounter(null);
+            setSelectedEncounterId(undefined);
+            setSelectedPatientId(undefined);
+          }}
+        />
+      )}
+
+      {/* Medications View Modal */}
+      <Modal
+        title="Patient Medications"
+        open={isMedicationsModalOpen}
+        onCancel={() => {
+          setIsMedicationsModalOpen(false);
+          setSelectedEncounter(null);
+        }}
+        footer={null}
+        width={900}
+      >
+        {selectedEncounter && (
+          <div>
+            <p>Medication orders for this patient will be displayed here.</p>
+            <p>Patient: {selectedEncounter.patientName || 'Unknown'}</p>
+            <p>Encounter ID: {selectedEncounter.id}</p>
+            {/* TODO: Add medication list component */}
+          </div>
+        )}
       </Modal>
-    </Layout>
+
+      {/* Administer Medication Modal */}
+      <Modal
+        title="Administer Medication"
+        open={isAdministerModalOpen}
+        onCancel={() => {
+          setIsAdministerModalOpen(false);
+          setSelectedEncounter(null);
+        }}
+        footer={null}
+        width={800}
+      >
+        {selectedEncounter && (
+          <div>
+            <p>Medication administration form will be displayed here.</p>
+            <p>Patient: {selectedEncounter.patientName || 'Unknown'}</p>
+            <p>Encounter ID: {selectedEncounter.id}</p>
+            {/* TODO: Add medication administration component */}
+          </div>
+        )}
+      </Modal>
+    </>
   );
 }

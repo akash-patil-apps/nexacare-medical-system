@@ -12,6 +12,7 @@ import {
 } from 'antd';
 import { TeamOutlined, SaveOutlined } from '@ant-design/icons';
 import { useQueryClient } from '@tanstack/react-query';
+import { getAuthToken } from '../../lib/auth';
 
 const { TextArea } = Input;
 const { Option } = Select;
@@ -25,6 +26,7 @@ interface NursingNotesFormProps {
   encounterId: number;
   initialNote?: any;
   mode?: 'create' | 'edit';
+  hospitalId?: number; // Optional: if provided, will use this instead of fetching
 }
 
 export const NursingNotesForm: React.FC<NursingNotesFormProps> = ({
@@ -35,17 +37,50 @@ export const NursingNotesForm: React.FC<NursingNotesFormProps> = ({
   encounterId,
   initialNote,
   mode = 'create',
+  hospitalId: propHospitalId,
 }) => {
   const [form] = Form.useForm();
   const queryClient = useQueryClient();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [activeTab, setActiveTab] = useState('general');
-  const [hospitalId, setHospitalId] = useState<number | null>(null);
+  const [hospitalId, setHospitalId] = useState<number | null>(propHospitalId || null);
 
   useEffect(() => {
+    // If hospitalId is provided as prop, use it
+    if (propHospitalId) {
+      setHospitalId(propHospitalId);
+      return;
+    }
+
+    // Otherwise, try to fetch from API
     const fetchHospital = async () => {
       try {
-        const token = localStorage.getItem('auth-token');
+        const token = getAuthToken();
+        // Try doctor profile first (for doctors)
+        const doctorResponse = await fetch('/api/doctors/profile', {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (doctorResponse.ok) {
+          const doctorData = await doctorResponse.json();
+          if (doctorData.hospitalId) {
+            setHospitalId(doctorData.hospitalId);
+            return;
+          }
+        }
+
+        // Try nurse profile (for nurses)
+        const nurseResponse = await fetch('/api/nurses/profile', {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (nurseResponse.ok) {
+          const nurseData = await nurseResponse.json();
+          if (nurseData.hospitalId) {
+            setHospitalId(nurseData.hospitalId);
+            return;
+          }
+        }
+
+        // Fallback to hospitals/my endpoint
         const response = await fetch('/api/hospitals/my', {
           headers: { Authorization: `Bearer ${token}` },
         });
@@ -58,7 +93,7 @@ export const NursingNotesForm: React.FC<NursingNotesFormProps> = ({
       }
     };
     fetchHospital();
-  }, []);
+  }, [propHospitalId]);
 
   useEffect(() => {
     if (initialNote && mode === 'edit') {
@@ -155,29 +190,33 @@ export const NursingNotesForm: React.FC<NursingNotesFormProps> = ({
       <Form.Item
         name="nursingAssessment"
         label="Nursing Assessment"
+        style={{ marginBottom: 8 }}
       >
-        <TextArea rows={6} placeholder="Patient assessment findings..." />
+        <TextArea rows={3} placeholder="Patient assessment findings..." size="small" />
       </Form.Item>
 
       <Form.Item
         name="carePlan"
         label="Care Plan"
+        style={{ marginBottom: 8 }}
       >
-        <TextArea rows={6} placeholder="Nursing care plan..." />
+        <TextArea rows={3} placeholder="Nursing care plan..." size="small" />
       </Form.Item>
 
       <Form.Item
         name="interventions"
         label="Interventions"
+        style={{ marginBottom: 8 }}
       >
-        <TextArea rows={4} placeholder="Nursing interventions performed..." />
+        <TextArea rows={2} placeholder="Nursing interventions performed..." size="small" />
       </Form.Item>
 
       <Form.Item
         name="evaluation"
         label="Evaluation"
+        style={{ marginBottom: 0 }}
       >
-        <TextArea rows={4} placeholder="Evaluation of care effectiveness..." />
+        <TextArea rows={2} placeholder="Evaluation of care effectiveness..." size="small" />
       </Form.Item>
     </>
   );
@@ -187,8 +226,9 @@ export const NursingNotesForm: React.FC<NursingNotesFormProps> = ({
       <Form.Item
         name="shiftType"
         label="Shift Type"
+        style={{ marginBottom: 8 }}
       >
-        <Select placeholder="Select shift">
+        <Select placeholder="Select shift" size="small">
           <Option value="morning">Morning</Option>
           <Option value="afternoon">Afternoon</Option>
           <Option value="night">Night</Option>
@@ -198,22 +238,25 @@ export const NursingNotesForm: React.FC<NursingNotesFormProps> = ({
       <Form.Item
         name="handoverNotes"
         label="Handover Notes"
+        style={{ marginBottom: 8 }}
       >
-        <TextArea rows={6} placeholder="Shift handover information..." />
+        <TextArea rows={3} placeholder="Shift handover information..." size="small" />
       </Form.Item>
 
       <Form.Item
         name="criticalInformation"
         label="Critical Information"
+        style={{ marginBottom: 8 }}
       >
-        <TextArea rows={4} placeholder="Critical patient information for next shift..." />
+        <TextArea rows={2} placeholder="Critical patient information for next shift..." size="small" />
       </Form.Item>
 
       <Form.Item
         name="outstandingTasks"
         label="Outstanding Tasks"
+        style={{ marginBottom: 0 }}
       >
-        <TextArea rows={4} placeholder="Tasks pending for next shift..." />
+        <TextArea rows={2} placeholder="Tasks pending for next shift..." size="small" />
       </Form.Item>
     </>
   );
@@ -228,8 +271,27 @@ export const NursingNotesForm: React.FC<NursingNotesFormProps> = ({
       }
       open={open}
       onCancel={handleClose}
-      footer={null}
-      width={800}
+      width={750}
+      style={{ top: 20 }}
+      bodyStyle={{ 
+        padding: '12px 16px',
+        maxHeight: 'calc(100vh - 180px)',
+        overflowY: 'auto'
+      }}
+      footer={[
+        <Button key="cancel" onClick={handleClose}>
+          Cancel
+        </Button>,
+        <Button
+          key="submit"
+          type="primary"
+          onClick={() => form.submit()}
+          loading={isSubmitting}
+          icon={<SaveOutlined />}
+        >
+          {mode === 'edit' ? 'Update' : 'Save'} Note
+        </Button>,
+      ]}
     >
       <Form
         form={form}
@@ -238,11 +300,13 @@ export const NursingNotesForm: React.FC<NursingNotesFormProps> = ({
         initialValues={{
           noteType: 'general',
         }}
+        style={{ marginBottom: 0 }}
       >
         <Form.Item
           name="noteType"
           label="Note Type"
           rules={[{ required: true }]}
+          style={{ marginBottom: 12 }}
         >
           <Select onChange={(value) => {
             if (value === 'shift_handover') {
@@ -263,6 +327,7 @@ export const NursingNotesForm: React.FC<NursingNotesFormProps> = ({
         <Tabs
           activeKey={activeTab}
           onChange={setActiveTab}
+          size="small"
           items={[
             {
               key: 'general',
@@ -281,24 +346,11 @@ export const NursingNotesForm: React.FC<NursingNotesFormProps> = ({
             },
           ]}
         />
-
-        <Form.Item>
-          <Space>
-            <Button onClick={handleClose}>Cancel</Button>
-            <Button
-              type="primary"
-              htmlType="submit"
-              loading={isSubmitting}
-              icon={<SaveOutlined />}
-            >
-              {mode === 'edit' ? 'Update' : 'Save'} Note
-            </Button>
-          </Space>
-        </Form.Item>
       </Form>
     </Modal>
   );
 };
+
 
 
 

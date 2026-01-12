@@ -95,47 +95,32 @@ export default function RadiologyTechnicianDashboard() {
     enabled: !!user && user.role?.toUpperCase() === 'RADIOLOGY_TECHNICIAN',
   });
 
-  // Get imaging orders (mock data for now)
-  const { data: imagingOrders = [], isLoading: isLoadingOrders } = useQuery({
-    queryKey: ['/api/imaging-orders', 'radiology'],
+  // Get radiology reports (similar to lab reports API)
+  const { data: radiologyReports = [], isLoading: isLoadingReports } = useQuery({
+    queryKey: ['/api/radiology-technicians/me/reports'],
     queryFn: async () => {
-      // For now, return mock imaging orders
-      // In a real implementation, this would fetch pending imaging orders
-      return [
-        {
-          id: 1,
-          patientName: 'Rajesh Kumar',
-          doctorName: 'Dr. Priya Sharma',
-          modality: 'X-Ray',
-          bodyPart: 'Chest',
-          priority: 'routine',
-          status: 'scheduled',
-          scheduledDate: new Date().toISOString(),
-        },
-        {
-          id: 2,
-          patientName: 'Meera Jain',
-          doctorName: 'Dr. Amit Patel',
-          modality: 'Ultrasound',
-          bodyPart: 'Abdomen',
-          priority: 'urgent',
-          status: 'pending',
-          scheduledDate: new Date().toISOString(),
-        },
-        {
-          id: 3,
-          patientName: 'Anita Singh',
-          doctorName: 'Dr. Kavita Gaikwad',
-          modality: 'CT Scan',
-          bodyPart: 'Head',
-          priority: 'routine',
-          status: 'completed',
-          scheduledDate: new Date().toISOString(),
-        },
-      ];
+      const token = localStorage.getItem('auth-token');
+      const response = await fetch('/api/radiology-technicians/me/reports', {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+      if (!response.ok) {
+        // If API not ready, return empty array (like lab dashboard)
+        return [];
+      }
+      const data = await response.json();
+      return data;
     },
     enabled: !!technicianProfile,
+    refetchInterval: 5000,
+    refetchOnWindowFocus: true,
+    refetchOnMount: true,
   });
+
+  // Use radiology reports as imaging orders for now (same structure as lab)
+  const imagingOrders = radiologyReports;
+  const isLoadingOrders = isLoadingReports;
 
   // Calculate KPIs
   const kpis = useMemo(() => {
