@@ -66,9 +66,35 @@ export default function RadiologyTechnicianDashboard() {
   const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false);
   const [selectedMenuKey, setSelectedMenuKey] = useState<string>('dashboard');
 
-  // Redirect if not authenticated or not a radiology technician
-  if (!isLoading && (!user || user.role?.toUpperCase() !== 'RADIOLOGY_TECHNICIAN')) {
+  // Redirect if not authenticated
+  if (!isLoading && !user) {
     return <Redirect to="/login" />;
+  }
+
+  // Redirect if user doesn't have RADIOLOGY_TECHNICIAN role
+  if (!isLoading && user) {
+    const userRole = user.role?.toUpperCase();
+    if (userRole !== 'RADIOLOGY_TECHNICIAN') {
+      message.warning('You do not have access to this dashboard');
+      switch (userRole) {
+        case 'PATIENT':
+          return <Redirect to="/dashboard/patient" />;
+        case 'DOCTOR':
+          return <Redirect to="/dashboard/doctor" />;
+        case 'RECEPTIONIST':
+          return <Redirect to="/dashboard/receptionist" />;
+        case 'HOSPITAL':
+          return <Redirect to="/dashboard/hospital" />;
+        case 'LAB':
+          return <Redirect to="/dashboard/lab" />;
+        case 'NURSE':
+          return <Redirect to="/dashboard/nurse" />;
+        case 'PHARMACIST':
+          return <Redirect to="/dashboard/pharmacist" />;
+        default:
+          return <Redirect to="/login" />;
+      }
+    }
   }
 
   // Get radiology technician profile

@@ -3,7 +3,7 @@ import jwt from "jsonwebtoken";
 import { onAppointmentEvent } from "../events/appointments.events";
 import { db } from "../db";
 import { eq } from "drizzle-orm";
-import { hospitals, receptionists } from "../../drizzle/schema";
+import { hospitals, receptionists } from "../../shared/schema";
 
 const router = Router();
 
@@ -27,7 +27,7 @@ router.get("/appointments", async (req, res) => {
     return res.status(401).json({ message: "Access token required" });
   }
 
-  // Resolve hospital context once for hospital/receptionist roles.
+  // Resolve hospital context once for hospital/receptionist/nurse roles.
   let hospitalId: number | null = null;
   const role = (user.role || "").toUpperCase();
 
@@ -59,6 +59,21 @@ router.get("/appointments", async (req, res) => {
     }
   }
 
+  if (role === "NURSE") {
+    try {
+      const { nurses } = await import('../../shared/schema');
+      const nurse = await db
+        .select({ hospitalId: nurses.hospitalId })
+        .from(nurses)
+        .where(eq(nurses.userId, user.id))
+        .limit(1);
+      hospitalId = nurse[0]?.hospitalId ?? null;
+    } catch (e) {
+      console.error("❌ SSE: Failed to resolve nurse hospital context:", e);
+      return res.status(503).json({ message: "Database unavailable. Please retry shortly." });
+    }
+  }
+
   res.setHeader("Content-Type", "text/event-stream");
   res.setHeader("Cache-Control", "no-cache");
   res.setHeader("Connection", "keep-alive");
@@ -77,7 +92,7 @@ router.get("/appointments", async (req, res) => {
       if (evt.patientUserId !== user.id) return;
     } else if (role === "DOCTOR") {
       if (evt.doctorUserId !== user.id) return;
-    } else if (role === "RECEPTIONIST" || role === "HOSPITAL") {
+    } else if (role === "RECEPTIONIST" || role === "HOSPITAL" || role === "NURSE") {
       if (!hospitalId || evt.hospitalId !== hospitalId) return;
     } else {
       return;

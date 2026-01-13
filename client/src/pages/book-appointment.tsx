@@ -678,7 +678,10 @@ export default function BookAppointment() {
 
       // Add payment details to notes if online payment
       if (paymentMethod === 'online' && paymentDetails) {
-        const paymentNote = `Payment: ${paymentDetails.transactionId} | Method: ${paymentDetails.paymentMethod} | Amount: ₹${paymentDetails.amount} | Status: ${paymentDetails.status}`;
+        const now = new Date();
+        const paymentDate = now.toLocaleDateString('en-IN');
+        const paymentTime = now.toLocaleTimeString('en-IN');
+        const paymentNote = `Payment: ${paymentDetails.transactionId} | Method: ${paymentDetails.paymentMethod} | Amount: ₹${paymentDetails.amount} | Status: ${paymentDetails.status} | Date: ${paymentDate} | Time: ${paymentTime}`;
         updateData.notes = paymentNote;
         updateData.paymentStatus = 'paid';
       } else {

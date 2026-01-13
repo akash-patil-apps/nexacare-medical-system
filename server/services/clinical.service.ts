@@ -204,15 +204,19 @@ export const createVitalsEntry = async (data: {
 };
 
 export const getVitalsForPatient = async (filters: {
-  patientId: number;
+  patientId?: number; // Made optional for nurse queries
   encounterId?: number;
   appointmentId?: number;
   hospitalId?: number;
   dateFrom?: Date;
   dateTo?: Date;
+  recordedByUserId?: number; // Filter by recorder (for nurse-specific queries)
 }) => {
-  const conditions = [eq(vitalsChart.patientId, filters.patientId)];
+  const conditions = [];
 
+  if (filters.patientId) {
+    conditions.push(eq(vitalsChart.patientId, filters.patientId));
+  }
   if (filters.encounterId) {
     conditions.push(eq(vitalsChart.encounterId, filters.encounterId));
   }
@@ -222,11 +226,14 @@ export const getVitalsForPatient = async (filters: {
   if (filters.hospitalId) {
     conditions.push(eq(vitalsChart.hospitalId, filters.hospitalId));
   }
+  if (filters.recordedByUserId) {
+    conditions.push(eq(vitalsChart.recordedByUserId, filters.recordedByUserId));
+  }
 
   const vitals = await db
     .select()
     .from(vitalsChart)
-    .where(and(...conditions))
+    .where(conditions.length > 0 ? and(...conditions) : undefined)
     .orderBy(desc(vitalsChart.recordedAt));
 
   // Filter by date range if provided
@@ -317,6 +324,7 @@ export const getNursingNotes = async (filters: {
   patientId?: number;
   noteType?: string;
   hospitalId?: number;
+  createdByUserId?: number; // Filter by creator (for nurse-specific queries)
 }) => {
   const conditions = [];
 
@@ -331,6 +339,9 @@ export const getNursingNotes = async (filters: {
   }
   if (filters.hospitalId) {
     conditions.push(eq(nursingNotes.hospitalId, filters.hospitalId));
+  }
+  if (filters.createdByUserId) {
+    conditions.push(eq(nursingNotes.createdByUserId, filters.createdByUserId));
   }
 
   const notes = await db

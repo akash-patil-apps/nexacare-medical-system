@@ -33,6 +33,35 @@ const { Title, Text } = Typography;
 const { Option } = Select;
 const { TextArea } = Input;
 
+/**
+ * Fuzzy matching function: checks if all characters in search term
+ * appear in order in the target string (case-insensitive)
+ * Examples:
+ * - "prctm" matches "paracetamol" (p-r-c-t-m appear in order)
+ * - "para" matches "paracetamol" (p-a-r-a appear in order)
+ * - "amox" matches "amoxicillin" (a-m-o-x appear in order)
+ */
+function fuzzyMatch(searchTerm: string, target: string): boolean {
+  if (!searchTerm || !target) return false;
+  
+  const search = searchTerm.toLowerCase();
+  const text = target.toLowerCase();
+  
+  let searchIndex = 0;
+  let textIndex = 0;
+  
+  // Check if all characters in search term appear in order in target
+  while (searchIndex < search.length && textIndex < text.length) {
+    if (search[searchIndex] === text[textIndex]) {
+      searchIndex++; // Found a match, move to next character in search term
+    }
+    textIndex++; // Always move forward in target
+  }
+  
+  // If we've matched all characters in search term, it's a match
+  return searchIndex === search.length;
+}
+
 interface PrescriptionFormProps {
   isOpen: boolean;
   onClose: () => void;
@@ -88,6 +117,47 @@ export default function PrescriptionForm({
     },
     enabled: !!doctorId && !hideHospitalSelect,
   });
+
+  // Fetch medicines catalog for selection - Pre-load when component mounts
+  const { data: medicinesData, isLoading: isLoadingMedicines, error: medicinesError } = useQuery({
+    queryKey: ['/api/medicines'],
+    queryFn: async () => {
+      try {
+        const response = await apiRequest('GET', '/api/medicines');
+        const data = await response.json();
+        // API returns array directly, not wrapped in { medicines: [...] }
+        const medicines = Array.isArray(data) ? data : (data?.medicines || []);
+        // Sort alphabetically by name
+        const sorted = medicines.sort((a: any, b: any) => 
+          (a.name || '').localeCompare(b.name || '')
+        );
+        console.log('✅ Medicines loaded:', sorted.length, 'items');
+        if (sorted.length > 0) {
+          console.log('📦 Sample medicines:', sorted.slice(0, 3).map((m: any) => m.name));
+        }
+        return sorted;
+      } catch (error: any) {
+        console.error('❌ Error fetching medicines:', error);
+        throw error;
+      }
+    },
+    staleTime: 5 * 60 * 1000, // Cache for 5 minutes
+    gcTime: 10 * 60 * 1000, // Keep in cache for 10 minutes
+  });
+
+  const medicines = Array.isArray(medicinesData) ? medicinesData : [];
+  
+  // Debug logging
+  useEffect(() => {
+    if (isMedicationModalOpen) {
+      console.log('💊 Medicine modal opened:', {
+        isLoading: isLoadingMedicines,
+        error: medicinesError,
+        count: medicines.length,
+        sample: medicines.slice(0, 3),
+      });
+    }
+  }, [isMedicationModalOpen, isLoadingMedicines, medicinesError, medicines.length]);
 
   const resolvedPatients =
     patientsOverride ??
@@ -664,15 +734,78 @@ export default function PrescriptionForm({
           onFinish={handleAddMedication}
         >
           <Row gutter={16}>
-            <Col span={12}>
+            <Col span={24}>
               <Form.Item
                 name="name"
                 label="Medicine Name"
-                rules={[{ required: true, message: 'Please enter medicine name' }]}
+                rules={[{ required: true, message: 'Please select medicine' }]}
               >
-                <Input placeholder="e.g., Paracetamol" />
+                <Select
+                  showSearch
+                  placeholder="Search or select medicine... (try: prctm for Paracetamol)"
+                  loading={isLoadingMedicines}
+                  optionFilterProp="label"
+                  filterOption={(input, option) => {
+                    const label = String(option?.label || '').toLowerCase();
+                    const value = String(option?.value || '').toLowerCase();
+                    const searchTerm = input.toLowerCase().trim();
+                    
+                    // Show all when no search term
+                    if (!searchTerm) return true;
+                    
+                    // Exact match (fast path)
+                    if (label.includes(searchTerm) || value.includes(searchTerm)) {
+                      return true;
+                    }
+                    
+                    // Fuzzy matching: check if all characters in search term appear in order in the medicine name
+                    // Example: "prctm" matches "paracetamol" because p-r-c-t-m appear in order
+                    return fuzzyMatch(searchTerm, label) || fuzzyMatch(searchTerm, value);
+                  }}
+                  popupMatchSelectWidth={true}
+                  notFoundContent={
+                    isLoadingMedicines 
+                      ? <span>Loading medicines...</span> 
+                      : medicines.length === 0
+                        ? <span>No medicines available. Please contact administrator.</span>
+                        : <span>No medicines found matching your search</span>
+                  }
+                  onChange={(value) => {
+                    // Auto-fill fields from selected medicine
+                    const selectedMedicine = medicines.find((m: any) => m.name === value);
+                    if (selectedMedicine) {
+                      // Extract numeric value from strength (e.g., "500mg" -> "500")
+                      const strengthMatch = selectedMedicine.strength?.match(/(\d+)/);
+                      const dosageValue = strengthMatch ? strengthMatch[1] : selectedMedicine.strength || '';
+                      
+                      // Determine unit from strength or dosageForm
+                      let unitValue = selectedMedicine.unit || '';
+                      if (!unitValue && selectedMedicine.strength) {
+                        // Extract unit from strength (e.g., "500mg" -> "mg")
+                        const unitMatch = selectedMedicine.strength.match(/([a-zA-Z]+)/);
+                        unitValue = unitMatch ? unitMatch[1] : selectedMedicine.dosageForm || '';
+                      }
+                      if (!unitValue) {
+                        unitValue = selectedMedicine.dosageForm || '';
+                      }
+                      
+                      medicationForm.setFieldsValue({
+                        dosage: dosageValue,
+                        unit: unitValue,
+                        name: selectedMedicine.name,
+                      });
+                    }
+                  }}
+                  options={medicines.map((medicine: any) => ({
+                    value: medicine.name,
+                    label: `${medicine.name}${medicine.strength ? ` (${medicine.strength})` : ''}${medicine.brandName ? ` - ${medicine.brandName}` : ''}`,
+                  }))}
+                />
               </Form.Item>
             </Col>
+          </Row>
+
+          <Row gutter={16}>
             <Col span={12}>
               <Form.Item
                 name="dosage"
@@ -682,16 +815,13 @@ export default function PrescriptionForm({
                 <Input placeholder="e.g., 500" />
               </Form.Item>
             </Col>
-          </Row>
-
-          <Row gutter={16}>
             <Col span={12}>
               <Form.Item
                 name="unit"
                 label="Unit"
                 rules={[{ required: true, message: 'Please select unit' }]}
               >
-                <Select placeholder="Select unit">
+                <Select placeholder="Select unit" showSearch>
                   <Option value="mg">mg</Option>
                   <Option value="g">g</Option>
                   <Option value="ml">ml</Option>
@@ -699,9 +829,17 @@ export default function PrescriptionForm({
                   <Option value="capsules">capsules</Option>
                   <Option value="drops">drops</Option>
                   <Option value="spoonful">spoonful</Option>
+                  <Option value="tablet">tablet</Option>
+                  <Option value="capsule">capsule</Option>
+                  <Option value="injection">injection</Option>
+                  <Option value="vial">vial</Option>
+                  <Option value="ampoule">ampoule</Option>
                 </Select>
               </Form.Item>
             </Col>
+          </Row>
+
+          <Row gutter={16}>
             <Col span={12}>
               <Form.Item
                 name="quantity"

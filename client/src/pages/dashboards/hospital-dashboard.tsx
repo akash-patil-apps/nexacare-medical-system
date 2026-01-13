@@ -1,5 +1,6 @@
 import { useState, useMemo, useEffect } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { Redirect } from "wouter";
 import { formatTimeSlot12h } from "../../lib/time";
 import { 
   Layout, 
@@ -56,7 +57,7 @@ const hospitalTheme = {
 };
 
 export default function HospitalDashboard() {
-  const { user } = useAuth();
+  const { user, isLoading } = useAuth();
   const { isMobile, isTablet } = useResponsive();
   const queryClient = useQueryClient();
   const [collapsed, setCollapsed] = useState(false);
@@ -74,6 +75,37 @@ export default function HospitalDashboard() {
   const [vitalsHistory, setVitalsHistory] = useState<any[]>([]);
   const [isClinicalNoteModalOpen, setIsClinicalNoteModalOpen] = useState(false);
   const [isVitalsModalOpen, setIsVitalsModalOpen] = useState(false);
+
+  // Redirect if not authenticated
+  if (!isLoading && !user) {
+    return <Redirect to="/login" />;
+  }
+
+  // Redirect if user doesn't have HOSPITAL or ADMIN role
+  if (!isLoading && user) {
+    const userRole = user.role?.toUpperCase();
+    if (userRole !== 'HOSPITAL' && userRole !== 'ADMIN') {
+      message.warning('You do not have access to this dashboard');
+      switch (userRole) {
+        case 'PATIENT':
+          return <Redirect to="/dashboard/patient" />;
+        case 'DOCTOR':
+          return <Redirect to="/dashboard/doctor" />;
+        case 'RECEPTIONIST':
+          return <Redirect to="/dashboard/receptionist" />;
+        case 'LAB':
+          return <Redirect to="/dashboard/lab" />;
+        case 'NURSE':
+          return <Redirect to="/dashboard/nurse" />;
+        case 'PHARMACIST':
+          return <Redirect to="/dashboard/pharmacist" />;
+        case 'RADIOLOGY_TECHNICIAN':
+          return <Redirect to="/dashboard/radiology-technician" />;
+        default:
+          return <Redirect to="/login" />;
+      }
+    }
+  }
 
   // Auto-collapse sidebar on mobile/tablet
   useEffect(() => {
@@ -182,7 +214,10 @@ export default function HospitalDashboard() {
           todayAppointments: 0,
           completedAppointments: 0,
           pendingAppointments: 0,
-          totalRevenue: 0
+          totalRevenue: 0,
+          monthlyRevenue: 0,
+          dailyRevenue: 0,
+          weeklyRevenue: 0,
         };
       }
       return response.json();
@@ -1151,8 +1186,9 @@ export default function HospitalDashboard() {
                 {[
                   { label: "Total Doctors", value: statsLoading ? '...' : (stats?.totalDoctors || 0), icon: <TeamOutlined style={{ fontSize: '24px', color: hospitalTheme.primary }} />, trendLabel: "Active", trendColor: hospitalTheme.primary, trendBg: hospitalTheme.highlight, onView: () => message.info('View doctors') },
                   { label: "Total Patients", value: statsLoading ? '...' : (stats?.totalPatients || 0), icon: <UserOutlined style={{ fontSize: '24px', color: hospitalTheme.secondary }} />, trendLabel: "Registered", trendColor: hospitalTheme.secondary, trendBg: "#E0F2FE", onView: () => message.info('View patients') },
-                  { label: "Upcoming Appointments", value: statsLoading ? '...' : (stats?.upcomingAppointments || stats?.todayAppointments || 0), icon: <CalendarOutlined style={{ fontSize: '24px', color: hospitalTheme.accent }} />, trendLabel: "Scheduled", trendColor: hospitalTheme.accent, trendBg: "#FEF3C7", onView: () => message.info('View appointments') },
-                  { label: "Monthly Revenue", value: statsLoading ? '...' : `₹${(stats?.totalRevenue || 0).toLocaleString()}`, icon: <BarChartOutlined style={{ fontSize: '24px', color: hospitalTheme.primary }} />, trendLabel: "This Month", trendColor: hospitalTheme.primary, trendBg: hospitalTheme.highlight, onView: () => message.info('View revenue') },
+                  { label: "Daily Revenue", value: statsLoading ? '...' : `₹${(stats?.dailyRevenue || 0).toLocaleString()}`, icon: <BarChartOutlined style={{ fontSize: '24px', color: '#22C55E' }} />, trendLabel: "Today", trendColor: '#22C55E', trendBg: "#D1FAE5", onView: () => message.info('View revenue') },
+                  { label: "Weekly Revenue", value: statsLoading ? '...' : `₹${(stats?.weeklyRevenue || 0).toLocaleString()}`, icon: <BarChartOutlined style={{ fontSize: '24px', color: '#3B82F6' }} />, trendLabel: "This Week", trendColor: '#3B82F6', trendBg: "#DBEAFE", onView: () => message.info('View revenue') },
+                  { label: "Monthly Revenue", value: statsLoading ? '...' : `₹${(stats?.monthlyRevenue || stats?.totalRevenue || 0).toLocaleString()}`, icon: <BarChartOutlined style={{ fontSize: '24px', color: hospitalTheme.primary }} />, trendLabel: "This Month", trendColor: hospitalTheme.primary, trendBg: hospitalTheme.highlight, onView: () => message.info('View revenue') },
                 ].map((kpi, idx) => (
                   <div key={idx} style={{ minWidth: 220, scrollSnapAlign: 'start' }}>
                     <KpiCard {...kpi} />
@@ -1160,8 +1196,8 @@ export default function HospitalDashboard() {
                 ))}
               </div>
             ) : (
-              <div style={{ display: 'flex', gap: 16, marginBottom: 24, width: '100%' }}>
-                <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ display: 'flex', gap: 16, marginBottom: 24, width: '100%', flexWrap: 'wrap' }}>
+                <div style={{ flex: 1, minWidth: 200 }}>
               <KpiCard
                 label="Total Doctors"
                     value={statsLoading ? '...' : (stats?.totalDoctors || 0)}
@@ -1173,7 +1209,7 @@ export default function HospitalDashboard() {
                     onView={() => message.info('View doctors')}
               />
                 </div>
-                <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ flex: 1, minWidth: 200 }}>
               <KpiCard
                 label="Total Patients"
                     value={statsLoading ? '...' : (stats?.totalPatients || 0)}
@@ -1185,22 +1221,34 @@ export default function HospitalDashboard() {
                     onView={() => message.info('View patients')}
               />
                 </div>
-                <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ flex: 1, minWidth: 200 }}>
               <KpiCard
-                    label="Upcoming Appointments"
-                    value={statsLoading ? '...' : (stats?.upcomingAppointments || stats?.todayAppointments || 0)}
-                icon={<CalendarOutlined style={{ fontSize: '24px', color: hospitalTheme.accent }} />}
-                trendLabel="Scheduled"
-                trendType="neutral"
-                    trendColor={hospitalTheme.accent}
-                    trendBg="#FEF3C7"
-                    onView={() => message.info('View appointments')}
+                label="Daily Revenue"
+                    value={statsLoading ? '...' : `₹${(stats?.dailyRevenue || 0).toLocaleString()}`}
+                icon={<BarChartOutlined style={{ fontSize: '24px', color: '#22C55E' }} />}
+                trendLabel="Today"
+                trendType="positive"
+                    trendColor="#22C55E"
+                    trendBg="#D1FAE5"
+                    onView={() => message.info('View revenue')}
               />
                 </div>
-                <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ flex: 1, minWidth: 200 }}>
+              <KpiCard
+                label="Weekly Revenue"
+                    value={statsLoading ? '...' : `₹${(stats?.weeklyRevenue || 0).toLocaleString()}`}
+                icon={<BarChartOutlined style={{ fontSize: '24px', color: '#3B82F6' }} />}
+                trendLabel="This Week"
+                trendType="positive"
+                    trendColor="#3B82F6"
+                    trendBg="#DBEAFE"
+                    onView={() => message.info('View revenue')}
+              />
+                </div>
+                <div style={{ flex: 1, minWidth: 200 }}>
               <KpiCard
                 label="Monthly Revenue"
-                    value={statsLoading ? '...' : `₹${(stats?.totalRevenue || 0).toLocaleString()}`}
+                    value={statsLoading ? '...' : `₹${(stats?.monthlyRevenue || stats?.totalRevenue || 0).toLocaleString()}`}
                 icon={<BarChartOutlined style={{ fontSize: '24px', color: hospitalTheme.primary }} />}
                 trendLabel="This Month"
                 trendType="positive"

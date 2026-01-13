@@ -1,5 +1,6 @@
 import { useMemo, useState, useEffect } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { Redirect, useLocation } from 'wouter';
 import { 
   Layout, 
   Card, 
@@ -28,7 +29,7 @@ import {
   UploadOutlined,
   HistoryOutlined,
 } from '@ant-design/icons';
-import { useLocation } from 'wouter';
+import { useAuth } from '../../hooks/use-auth';
 import { useOnboardingCheck } from '../../hooks/use-onboarding-check';
 import { useResponsive } from '../../hooks/use-responsive';
 import { KpiCard } from '../../components/dashboard/KpiCard';
@@ -75,6 +76,7 @@ const fetchWithAuth = async <T,>(url: string, init?: RequestInit): Promise<T> =>
 
 
 export default function PatientDashboard() {
+  const { user, isLoading } = useAuth();
   const queryClient = useQueryClient();
   const [, setLocation] = useLocation();
   const { isMobile, isTablet } = useResponsive();
@@ -83,6 +85,37 @@ export default function PatientDashboard() {
   const [selectedLabReport, setSelectedLabReport] = useState<any>(null);
   const [isLabReportModalOpen, setIsLabReportModalOpen] = useState(false);
   const [selectedMenuKey] = useState<string>('dashboard');
+  
+  // Redirect if not authenticated
+  if (!isLoading && !user) {
+    return <Redirect to="/login" />;
+  }
+
+  // Redirect if user doesn't have PATIENT role
+  if (!isLoading && user) {
+    const userRole = user.role?.toUpperCase();
+    if (userRole !== 'PATIENT') {
+      message.warning('You do not have access to this dashboard');
+      switch (userRole) {
+        case 'DOCTOR':
+          return <Redirect to="/dashboard/doctor" />;
+        case 'RECEPTIONIST':
+          return <Redirect to="/dashboard/receptionist" />;
+        case 'HOSPITAL':
+          return <Redirect to="/dashboard/hospital" />;
+        case 'LAB':
+          return <Redirect to="/dashboard/lab" />;
+        case 'NURSE':
+          return <Redirect to="/dashboard/nurse" />;
+        case 'PHARMACIST':
+          return <Redirect to="/dashboard/pharmacist" />;
+        case 'RADIOLOGY_TECHNICIAN':
+          return <Redirect to="/dashboard/radiology-technician" />;
+        default:
+          return <Redirect to="/login" />;
+      }
+    }
+  }
   
   useOnboardingCheck();
 

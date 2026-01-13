@@ -3,7 +3,7 @@ import * as ipdService from '../services/ipd.service';
 import { authenticateToken, authorizeRoles, type AuthenticatedRequest } from '../middleware/auth';
 import { db } from '../db';
 import { eq } from 'drizzle-orm';
-import { receptionists, hospitals, doctors } from '../../shared/schema';
+import { receptionists, hospitals, doctors, nurses } from '../../shared/schema';
 
 const router = Router();
 
@@ -47,6 +47,19 @@ const getHospitalId = async (user: any): Promise<number> => {
       throw new Error('Doctor not associated with a hospital');
     }
     return doctor[0].hospitalId;
+  } else if (userRole === 'NURSE') {
+    const nurse = await db
+      .select()
+      .from(nurses)
+      .where(eq(nurses.userId, user.id))
+      .limit(1);
+    if (nurse.length === 0) {
+      throw new Error('Nurse not found');
+    }
+    if (!nurse[0].hospitalId) {
+      throw new Error('Nurse not associated with a hospital');
+    }
+    return nurse[0].hospitalId;
   }
   throw new Error('Unauthorized');
 };
@@ -265,7 +278,7 @@ router.get('/structure', authenticateToken, authorizeRoles('ADMIN', 'HOSPITAL', 
 });
 
 // IPD Encounters
-router.post('/encounters', authorizeRoles('ADMIN', 'HOSPITAL', 'RECEPTIONIST'), async (req: AuthenticatedRequest, res) => {
+router.post('/encounters', authorizeRoles('ADMIN', 'HOSPITAL', 'RECEPTIONIST', 'DOCTOR'), async (req: AuthenticatedRequest, res) => {
   try {
     const hospitalId = await getHospitalId(req.user);
     const { patientId, admittingDoctorId, attendingDoctorId, admissionType, bedId } = req.body;
@@ -305,12 +318,28 @@ router.get('/encounters', authenticateToken, async (req: AuthenticatedRequest, r
     const { patientId, doctorId, status, nurse } = req.query;
     console.log('🔍 Query params:', { patientId, doctorId, status, nurse });
 
-    // For nurse queries, return all encounters for the hospital
-    // The frontend can filter by ward preferences if needed
+    // If nurse=true and user is a nurse, filter by assigned nurse
+    let nurseId: number | undefined;
+    if (nurse === 'true' && req.user?.role?.toUpperCase() === 'NURSE') {
+      const nurseData = await db
+        .select()
+        .from(nurses)
+        .where(eq(nurses.userId, req.user.id))
+        .limit(1);
+      
+      if (nurseData.length > 0) {
+        nurseId = nurseData[0].id;
+        console.log('👩‍⚕️ Filtering encounters for nurse ID:', nurseId);
+      } else {
+        console.log('⚠️ Nurse profile not found for user:', req.user.id);
+      }
+    }
+
     const encounters = await ipdService.getIpdEncounters({
       hospitalId,
       patientId: patientId ? +patientId : undefined,
       doctorId: doctorId ? +doctorId : undefined,
+      nurseId: nurseId,
       status: status as string | undefined,
     });
 

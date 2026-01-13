@@ -791,6 +791,63 @@ export const refunds = pgTable("refunds", {
   createdAt: timestamp("created_at").defaultNow(),
 });
 
+// Medicine Catalog - Master list of medicines available in the system
+export const medicineCatalog = pgTable("medicine_catalog", {
+  id: serial("id").primaryKey(),
+  name: text("name").notNull().unique(),
+  genericName: text("generic_name"),
+  brandName: text("brand_name"),
+  category: text("category").notNull(), // tablet, injection, syrup, capsule, ointment, etc.
+  type: text("type").notNull(), // medicine, injection, vaccine, etc.
+  dosageForm: text("dosage_form"), // tablet, capsule, injection, syrup, etc.
+  strength: text("strength"), // 500mg, 10ml, etc.
+  unit: text("unit"), // mg, ml, tablet, etc.
+  manufacturer: text("manufacturer"),
+  description: text("description"),
+  indications: text("indications"), // What it's used for
+  contraindications: text("contraindications"),
+  sideEffects: text("side_effects"),
+  storageConditions: text("storage_conditions"),
+  isActive: boolean("is_active").default(true),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at"),
+});
+
+// Lab Test Catalog - Master list of lab tests available
+export const labTestCatalog = pgTable("lab_test_catalog", {
+  id: serial("id").primaryKey(),
+  name: text("name").notNull().unique(),
+  code: text("code").unique(), // Test code like CBC, LFT, etc.
+  category: text("category").notNull(), // Blood Test, Urine Test, Stool Test, etc.
+  subCategory: text("sub_category"), // Hematology, Biochemistry, Microbiology, etc.
+  description: text("description"),
+  preparationInstructions: text("preparation_instructions"), // Fasting required, etc.
+  sampleType: text("sample_type"), // Blood, Urine, Stool, Sputum, etc.
+  normalRange: text("normal_range"), // Normal values
+  turnaroundTime: text("turnaround_time"), // Hours or days
+  isActive: boolean("is_active").default(true),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at"),
+});
+
+// Radiology/Imaging Test Catalog - Master list of imaging tests
+export const radiologyTestCatalog = pgTable("radiology_test_catalog", {
+  id: serial("id").primaryKey(),
+  name: text("name").notNull().unique(),
+  code: text("code").unique(), // Test code like XRAY, CT, MRI, etc.
+  category: text("category").notNull(), // X-Ray, CT Scan, MRI, Ultrasound, etc.
+  subCategory: text("sub_category"), // Chest X-Ray, Abdominal CT, etc.
+  description: text("description"),
+  preparationInstructions: text("preparation_instructions"), // Fasting, contrast, etc.
+  bodyPart: text("body_part"), // Chest, Abdomen, Head, etc.
+  contrastRequired: boolean("contrast_required").default(false),
+  radiationDose: text("radiation_dose"), // For X-Ray/CT
+  turnaroundTime: text("turnaround_time"), // Hours or days
+  isActive: boolean("is_active").default(true),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at"),
+});
+
 export const statesRelations = relations(states, ({ many }) => ({
   cities: many(cities),
 }));
@@ -1047,6 +1104,15 @@ export type NurseActivityLog = InferSelectModel<typeof nurseActivityLogs>;
 
 export type InsertNurseAssignment = InferInsertModel<typeof nurseAssignments>;
 export type NurseAssignment = InferSelectModel<typeof nurseAssignments>;
+
+export type InsertMedicineCatalog = InferInsertModel<typeof medicineCatalog>;
+export type MedicineCatalog = InferSelectModel<typeof medicineCatalog>;
+
+export type InsertLabTestCatalog = InferInsertModel<typeof labTestCatalog>;
+export type LabTestCatalog = InferSelectModel<typeof labTestCatalog>;
+
+export type InsertRadiologyTestCatalog = InferInsertModel<typeof radiologyTestCatalog>;
+export type RadiologyTestCatalog = InferSelectModel<typeof radiologyTestCatalog>;
 
 export type InsertDiagnosisCode = InferInsertModel<typeof diagnosisCodes>;
 export type DiagnosisCode = InferSelectModel<typeof diagnosisCodes>;

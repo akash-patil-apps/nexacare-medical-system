@@ -3,11 +3,14 @@ import { Table, Tag, Button, Space, Typography, Empty, Spin, Dropdown } from 'an
 import { UserOutlined, SwapOutlined, CheckCircleOutlined, TeamOutlined, UsergroupAddOutlined, HeartOutlined, FileTextOutlined, MedicineBoxOutlined, CheckOutlined, MoreOutlined } from '@ant-design/icons';
 import type { MenuProps } from 'antd';
 import { useQuery } from '@tanstack/react-query';
+import { getAuthToken } from '../../lib/auth';
 import type { IpdEncounter } from '../../types/ipd';
 
 const { Text } = Typography;
 
 interface IpdEncountersListProps {
+  encounters?: IpdEncounter[]; // Optional: pre-fetched encounters (if provided, won't fetch internally)
+  loading?: boolean; // Loading state when using pre-fetched encounters
   hospitalId?: number;
   doctorId?: number; // Filter by attending doctor
   onTransfer?: (encounter: IpdEncounter) => void;
@@ -25,6 +28,8 @@ interface IpdEncountersListProps {
 }
 
 export const IpdEncountersList: React.FC<IpdEncountersListProps> = ({
+  encounters: providedEncounters,
+  loading: providedLoading,
   hospitalId,
   doctorId,
   onTransfer,
@@ -39,17 +44,20 @@ export const IpdEncountersList: React.FC<IpdEncountersListProps> = ({
   showDoctorInfo = false,
   isNurseView = false,
 }) => {
-  // Fetch IPD encounters
-  const { data: encountersRaw = [], isLoading } = useQuery<any[]>({
+  // Fetch IPD encounters only if not provided as prop
+  const { data: encountersRaw = [], isLoading: isFetching } = useQuery<any[]>({
     queryKey: ['/api/ipd/encounters', hospitalId, doctorId],
     queryFn: async () => {
-      const token = localStorage.getItem('auth-token');
+      const token = getAuthToken();
       let url = '/api/ipd/encounters?';
       const params = new URLSearchParams();
       if (hospitalId) params.append('hospitalId', String(hospitalId));
       if (doctorId) {
         params.append('doctorId', String(doctorId));
-        console.log('🔍 Fetching IPD encounters for doctorId:', doctorId, 'type:', typeof doctorId);
+      }
+      // Add nurse=true if this is a nurse view
+      if (isNurseView) {
+        params.append('nurse', 'true');
       }
       url += params.toString();
       
@@ -62,27 +70,18 @@ export const IpdEncountersList: React.FC<IpdEncountersListProps> = ({
         throw new Error('Failed to fetch encounters');
       }
       const data = await response.json();
-      console.log('📋 Fetched encounters:', data.length, 'total');
-      console.log('🔍 Filter params:', { hospitalId, doctorId });
-      if (data.length > 0) {
-        console.log('📋 First encounter:', {
-          id: data[0].id,
-          patientId: data[0].patientId,
-          admittingDoctorId: data[0].admittingDoctorId,
-          attendingDoctorId: data[0].attendingDoctorId,
-          status: data[0].status,
-          patient: data[0].patient?.user?.fullName || 'Unknown',
-        });
-      } else {
-        console.log('⚠️ No encounters found. Checking if doctorId filter is correct:', doctorId);
-      }
       return data;
     },
-    refetchInterval: 10000, // Auto-refresh every 10 seconds
+    enabled: !providedEncounters, // Only fetch if encounters not provided
+    refetchInterval: providedEncounters ? false : 10000, // Auto-refresh only if fetching
   });
 
+  // Use provided encounters or fetched encounters
+  const encountersToProcess = providedEncounters || encountersRaw;
+  const isLoading = providedLoading !== undefined ? providedLoading : isFetching;
+
   // Flatten encounters if they come in nested structure
-  const encounters: IpdEncounter[] = encountersRaw.map((enc: any) => {
+  const encounters: IpdEncounter[] = encountersToProcess.map((enc: any) => {
     // If already flattened, return as is
     if (enc.id && !enc.encounter) {
       return enc;

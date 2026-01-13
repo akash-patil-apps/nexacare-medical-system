@@ -483,6 +483,7 @@ export const getIpdEncounters = async (filters: {
   hospitalId?: number;
   patientId?: number;
   doctorId?: number;
+  nurseId?: number;
   status?: string;
 }) => {
   const conditions = [];
@@ -511,6 +512,9 @@ export const getIpdEncounters = async (filters: {
   }
   if (filters.status) {
     conditions.push(eq(ipdEncounters.status, filters.status));
+  }
+  if (filters.nurseId) {
+    conditions.push(eq(ipdEncounters.assignedNurseId, filters.nurseId));
   }
 
   const whereClause = conditions.length > 0 ? and(...conditions) : undefined;

@@ -3,7 +3,7 @@ import { authenticateToken, authorizeRoles, type AuthenticatedRequest } from '..
 import * as availabilityService from '../services/availability.service';
 import { db } from '../db';
 import { eq } from 'drizzle-orm';
-import { receptionists, hospitals, doctors } from '../../shared/schema';
+import { receptionists, hospitals, doctors, nurses } from '../../shared/schema';
 
 const router = Router();
 
@@ -12,7 +12,9 @@ router.use(authenticateToken);
 
 // Helper to get hospital ID
 const getHospitalId = async (user: any): Promise<number> => {
-  if (user.role === 'RECEPTIONIST') {
+  const userRole = user.role?.toUpperCase();
+  
+  if (userRole === 'RECEPTIONIST') {
     const receptionist = await db
       .select()
       .from(receptionists)
@@ -22,7 +24,7 @@ const getHospitalId = async (user: any): Promise<number> => {
       throw new Error('Receptionist not found');
     }
     return receptionist[0].hospitalId;
-  } else if (user.role === 'ADMIN' || user.role === 'HOSPITAL') {
+  } else if (userRole === 'ADMIN' || userRole === 'HOSPITAL') {
     const hospital = await db
       .select()
       .from(hospitals)
@@ -32,7 +34,7 @@ const getHospitalId = async (user: any): Promise<number> => {
       throw new Error('Hospital not found');
     }
     return hospital[0].id;
-  } else if (user.role === 'DOCTOR') {
+  } else if (userRole === 'DOCTOR') {
     const doctor = await db
       .select()
       .from(doctors)
@@ -45,6 +47,19 @@ const getHospitalId = async (user: any): Promise<number> => {
       throw new Error('Doctor not associated with a hospital');
     }
     return doctor[0].hospitalId;
+  } else if (userRole === 'NURSE') {
+    const nurse = await db
+      .select()
+      .from(nurses)
+      .where(eq(nurses.userId, user.id))
+      .limit(1);
+    if (nurse.length === 0) {
+      throw new Error('Nurse not found');
+    }
+    if (!nurse[0].hospitalId) {
+      throw new Error('Nurse not associated with a hospital');
+    }
+    return nurse[0].hospitalId;
   }
   throw new Error('Unauthorized');
 };

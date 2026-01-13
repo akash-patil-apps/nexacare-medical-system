@@ -29,6 +29,7 @@ interface AdmissionModalProps {
   onSuccess: (encounter: IpdEncounter) => void;
   patientId?: number;
   hospitalId?: number;
+  defaultAdmittingDoctorId?: number; // Optional: auto-set admitting doctor (for doctor dashboard)
 }
 
 export const AdmissionModal: React.FC<AdmissionModalProps> = ({
@@ -37,6 +38,7 @@ export const AdmissionModal: React.FC<AdmissionModalProps> = ({
   onSuccess,
   patientId,
   hospitalId,
+  defaultAdmittingDoctorId,
 }) => {
   const [form] = Form.useForm();
   const queryClient = useQueryClient();
@@ -362,7 +364,8 @@ export const AdmissionModal: React.FC<AdmissionModalProps> = ({
         <Form.Item name="admittingDoctorId" label="Admitting Doctor">
           <Select 
             placeholder="Select admitting doctor" 
-            allowClear
+            allowClear={!defaultAdmittingDoctorId} // Disable clear if default is set
+            disabled={!!defaultAdmittingDoctorId} // Disable if default is provided (doctor dashboard)
             loading={doctorsLoading}
             notFoundContent={doctorsLoading ? <Spin size="small" /> : 'No doctors available'}
             showSearch
@@ -382,6 +385,11 @@ export const AdmissionModal: React.FC<AdmissionModalProps> = ({
               ))
             )}
           </Select>
+          {defaultAdmittingDoctorId && (
+            <Text type="secondary" style={{ fontSize: 12, display: 'block', marginTop: 4 }}>
+              You are the admitting doctor
+            </Text>
+          )}
         </Form.Item>
 
         <Form.Item name="attendingDoctorId" label="Attending Doctor">

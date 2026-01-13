@@ -3,7 +3,7 @@ import * as clinicalService from '../services/clinical.service';
 import { authenticateToken, authorizeRoles, type AuthenticatedRequest } from '../middleware/auth';
 import { db } from '../db';
 import { eq } from 'drizzle-orm';
-import { receptionists, hospitals, doctors } from '../../shared/schema';
+import { receptionists, hospitals, doctors, nurses } from '../../shared/schema';
 
 const router = Router();
 
@@ -12,7 +12,9 @@ router.use(authenticateToken);
 
 // Helper to get hospital ID
 const getHospitalId = async (user: any): Promise<number> => {
-  if (user.role === 'RECEPTIONIST') {
+  const userRole = user.role?.toUpperCase();
+  
+  if (userRole === 'RECEPTIONIST') {
     const receptionist = await db
       .select()
       .from(receptionists)
@@ -22,7 +24,7 @@ const getHospitalId = async (user: any): Promise<number> => {
       throw new Error('Receptionist not found');
     }
     return receptionist[0].hospitalId;
-  } else if (user.role === 'ADMIN' || user.role === 'HOSPITAL') {
+  } else if (userRole === 'ADMIN' || userRole === 'HOSPITAL') {
     const hospital = await db
       .select()
       .from(hospitals)
@@ -32,7 +34,7 @@ const getHospitalId = async (user: any): Promise<number> => {
       throw new Error('Hospital not found');
     }
     return hospital[0].id;
-  } else if (user.role === 'DOCTOR') {
+  } else if (userRole === 'DOCTOR') {
     const doctor = await db
       .select()
       .from(doctors)
@@ -45,6 +47,19 @@ const getHospitalId = async (user: any): Promise<number> => {
       throw new Error('Doctor not associated with a hospital');
     }
     return doctor[0].hospitalId;
+  } else if (userRole === 'NURSE') {
+    const nurse = await db
+      .select()
+      .from(nurses)
+      .where(eq(nurses.userId, user.id))
+      .limit(1);
+    if (nurse.length === 0) {
+      throw new Error('Nurse not found');
+    }
+    if (!nurse[0].hospitalId) {
+      throw new Error('Nurse not associated with a hospital');
+    }
+    return nurse[0].hospitalId;
   }
   throw new Error('Unauthorized');
 };
@@ -281,20 +296,29 @@ router.post('/vitals', authorizeRoles('DOCTOR', 'NURSE', 'ADMIN', 'HOSPITAL'), a
 // Get vitals for patient
 router.get('/vitals', authenticateToken, async (req: AuthenticatedRequest, res) => {
   try {
-    const { patientId, encounterId, appointmentId, dateFrom, dateTo } = req.query;
+    const { patientId, encounterId, appointmentId, dateFrom, dateTo, nurse } = req.query;
     const hospitalId = await getHospitalId(req.user);
 
-    if (!patientId) {
+    // If nurse=true, don't require patientId (nurse can see all their vitals)
+    // Otherwise, patientId is required
+    if (!nurse && !patientId) {
       return res.status(400).json({ message: 'patientId is required' });
     }
 
+    // If nurse=true and user is a nurse, filter by the nurse's user ID
+    let recordedByUserId: number | undefined;
+    if (nurse === 'true' && req.user?.role?.toUpperCase() === 'NURSE') {
+      recordedByUserId = req.user.id;
+    }
+
     const vitals = await clinicalService.getVitalsForPatient({
-      patientId: +patientId,
+      patientId: patientId ? +patientId : undefined,
       encounterId: encounterId ? +encounterId : undefined,
       appointmentId: appointmentId ? +appointmentId : undefined,
       hospitalId,
       dateFrom: dateFrom ? new Date(dateFrom as string) : undefined,
       dateTo: dateTo ? new Date(dateTo as string) : undefined,
+      recordedByUserId,
     });
 
     res.json(vitals);
@@ -383,14 +407,21 @@ router.post('/nursing-notes', authorizeRoles('NURSE', 'DOCTOR', 'ADMIN', 'HOSPIT
 // Get nursing notes
 router.get('/nursing-notes', authenticateToken, async (req: AuthenticatedRequest, res) => {
   try {
-    const { encounterId, patientId, noteType } = req.query;
+    const { encounterId, patientId, noteType, nurse } = req.query;
     const hospitalId = await getHospitalId(req.user);
+
+    // If nurse=true and user is a nurse, filter by the nurse's user ID
+    let createdByUserId: number | undefined;
+    if (nurse === 'true' && req.user?.role?.toUpperCase() === 'NURSE') {
+      createdByUserId = req.user.id;
+    }
 
     const nursingNotes = await clinicalService.getNursingNotes({
       encounterId: encounterId ? +encounterId : undefined,
       patientId: patientId ? +patientId : undefined,
       noteType: noteType as string | undefined,
       hospitalId,
+      createdByUserId,
     });
 
     res.json(nursingNotes);

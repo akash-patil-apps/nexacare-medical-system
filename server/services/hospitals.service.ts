@@ -1,7 +1,7 @@
 // server/services/hospitals.service.ts
 import { db } from '../db';
-import { hospitals, doctors, appointments, patients } from '../../shared/schema';
-import { eq } from 'drizzle-orm';
+import { hospitals, doctors, appointments, patients, payments, invoices } from '../../shared/schema';
+import { eq, and, gte, sql } from 'drizzle-orm';
 import type { InsertHospital } from '../../shared/schema-types';
 import { labs } from '../../shared/schema';
 
@@ -124,32 +124,62 @@ export const getHospitalStats = async (hospitalId: number) => {
     const pendingAppointments = allAppointments.filter(apt => apt.status === 'pending').length;
     const confirmedAppointments = allAppointments.filter(apt => apt.status === 'confirmed').length;
     
-    // Calculate revenue (mock calculation - can be enhanced with actual payment data)
-    // For now, estimate: completed appointments * average consultation fee
-    const doctorsWithFees = await db
-      .select({ consultationFee: doctors.consultationFee })
-      .from(doctors)
-      .where(eq(doctors.hospitalId, hospitalId));
+    // Calculate revenue from actual payments
+    // Get all payments for this hospital's invoices
+    const allPayments = await db
+      .select({
+        amount: payments.amount,
+        receivedAt: payments.receivedAt,
+      })
+      .from(payments)
+      .innerJoin(invoices, eq(payments.invoiceId, invoices.id))
+      .where(eq(invoices.hospitalId, hospitalId));
     
-    const avgFee = doctorsWithFees.length > 0
-      ? doctorsWithFees.reduce((sum, d) => {
-          const fee = d.consultationFee ? parseFloat(d.consultationFee.toString()) : 500;
-          return sum + fee;
-        }, 0) / doctorsWithFees.length
-      : 500; // Default average fee
+    console.log(`💰 Found ${allPayments.length} total payments for hospital ${hospitalId}`);
     
-    // Monthly revenue (completed appointments this month * average fee)
+    // Calculate daily revenue (today) - reuse existing 'today' variable
+    const tomorrow = new Date(today);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    
+    const dailyRevenue = allPayments
+      .filter(p => {
+        if (!p.receivedAt) return false;
+        const paymentDate = new Date(p.receivedAt);
+        paymentDate.setHours(0, 0, 0, 0);
+        const isToday = paymentDate.getTime() >= today.getTime() && paymentDate.getTime() < tomorrow.getTime();
+        if (isToday) {
+          console.log(`✅ Daily payment: ₹${p.amount} on ${paymentDate.toISOString()}`);
+        }
+        return isToday;
+      })
+      .reduce((sum, p) => sum + parseFloat(p.amount.toString()), 0);
+    
+    console.log(`💰 Daily revenue: ₹${dailyRevenue}`);
+    
+    // Calculate weekly revenue (this week, Sunday to Saturday) - reuse existing 'now' variable
+    const dayOfWeek = now.getDay(); // 0 = Sunday, 6 = Saturday
+    const weekStart = new Date(now);
+    weekStart.setDate(now.getDate() - dayOfWeek);
+    weekStart.setHours(0, 0, 0, 0);
+    
+    const weeklyRevenue = allPayments
+      .filter(p => {
+        const paymentDate = new Date(p.receivedAt);
+        return paymentDate >= weekStart;
+      })
+      .reduce((sum, p) => sum + parseFloat(p.amount.toString()), 0);
+    
+    // Calculate monthly revenue (this month)
     const thisMonth = new Date();
     thisMonth.setDate(1);
     thisMonth.setHours(0, 0, 0, 0);
     
-    const monthlyCompleted = allAppointments.filter(apt => {
-      if (apt.status !== 'completed') return false;
-      const aptDate = new Date(apt.appointmentDate);
-      return aptDate >= thisMonth;
-    }).length;
-    
-    const monthlyRevenue = Math.round(monthlyCompleted * avgFee);
+    const monthlyRevenue = allPayments
+      .filter(p => {
+        const paymentDate = new Date(p.receivedAt);
+        return paymentDate >= thisMonth;
+      })
+      .reduce((sum, p) => sum + parseFloat(p.amount.toString()), 0);
     
     const stats = {
       totalDoctors,
@@ -160,7 +190,10 @@ export const getHospitalStats = async (hospitalId: number) => {
       completedAppointments,
       pendingAppointments,
       confirmedAppointments,
-      totalRevenue: monthlyRevenue,
+      totalRevenue: monthlyRevenue, // Keep for backward compatibility
+      monthlyRevenue,
+      dailyRevenue,
+      weeklyRevenue,
     };
     
     console.log(`✅ Hospital stats calculated:`, stats);

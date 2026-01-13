@@ -27,6 +27,8 @@ import billingRoutes from "./billing.routes";
 import clinicalRoutes from "./clinical.routes";
 import medicationRoutes from "./medication.routes";
 import medicinesRoutes from "./medicines.routes";
+import labTestsRoutes from "./lab-tests.routes";
+import radiologyTestsRoutes from "./radiology-tests.routes";
 
 
 const router = Router();
@@ -62,6 +64,8 @@ export async function registerRoutes(app: Express) {
   app.use("/api/clinical", clinicalRoutes);
   app.use("/api/medications", medicationRoutes);
   app.use("/api/medicines", medicinesRoutes);
+  app.use("/api/lab-tests", labTestsRoutes);
+  app.use("/api/radiology-tests", radiologyTestsRoutes);
   
   // NOTE: /api/prescriptions/my should use /api/prescriptions/patient for patients
   // The prescriptions router handles all prescription endpoints

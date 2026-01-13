@@ -3,8 +3,8 @@
 import { Router } from 'express';
 import { authenticateToken, type AuthenticatedRequest } from '../middleware/auth';
 import { db } from '../db';
-import { prescriptions, medicationOrders } from '../../shared/schema';
-import { eq, and, sql, desc, gte, lte, or, isNull } from 'drizzle-orm';
+import { prescriptions, medicationOrders, medicineCatalog } from '../../shared/schema';
+import { eq, and, sql, desc, gte, lte, or, isNull, like, ilike } from 'drizzle-orm';
 
 const router = Router();
 
@@ -12,48 +12,45 @@ const router = Router();
 router.use(authenticateToken);
 
 /**
- * Get all medicines from prescriptions and medication orders
+ * Get all medicines from catalog
  * This provides a unified medicine list for all dashboards
  */
 router.get('/', async (req: AuthenticatedRequest, res) => {
   try {
-    const { search, limit = 100 } = req.query;
+    const { search, category, type, limit = 500 } = req.query; // Increased default limit
 
-    // Get unique medicines from prescriptions
-    const prescriptionMedicines = await db
-      .selectDistinct({
-        name: prescriptions.medicationName,
-      })
-      .from(prescriptions)
-      .where(
-        search
-          ? sql`LOWER(${prescriptions.medicationName}) LIKE LOWER(${'%' + search + '%'})`
-          : undefined
-      )
-      .limit(+(limit as number));
+    const conditions = [eq(medicineCatalog.isActive, true)];
 
-    // Get unique medicines from medication orders
-    const orderMedicines = await db
-      .selectDistinct({
-        name: medicationOrders.medicationName,
-      })
-      .from(medicationOrders)
-      .where(
-        search
-          ? sql`LOWER(${medicationOrders.medicationName}) LIKE LOWER(${'%' + search + '%'})`
-          : undefined
-      )
-      .limit(+(limit as number));
+    // Apply search filter (only if search term provided)
+    if (search && typeof search === 'string' && search.trim()) {
+      conditions.push(
+        or(
+          ilike(medicineCatalog.name, `%${search}%`),
+          ilike(medicineCatalog.genericName, `%${search}%`),
+          ilike(medicineCatalog.brandName, `%${search}%`)
+        )!
+      );
+    }
 
-    // Combine and deduplicate
-    const allMedicines = new Set<string>();
-    prescriptionMedicines.forEach(m => allMedicines.add(m.name));
-    orderMedicines.forEach(m => allMedicines.add(m.name));
+    // Apply category filter
+    if (category && typeof category === 'string') {
+      conditions.push(eq(medicineCatalog.category, category));
+    }
 
-    const medicines = Array.from(allMedicines)
-      .map(name => ({ name }))
-      .sort((a, b) => a.name.localeCompare(b.name));
+    // Apply type filter
+    if (type && typeof type === 'string') {
+      conditions.push(eq(medicineCatalog.type, type));
+    }
 
+    const medicines = await db
+      .select()
+      .from(medicineCatalog)
+      .where(and(...conditions))
+      .limit(+(limit as number))
+      .orderBy(medicineCatalog.name); // Already sorted alphabetically
+
+    // Set cache headers for better performance
+    res.set('Cache-Control', 'public, max-age=300'); // Cache for 5 minutes
     res.json(medicines);
   } catch (err: any) {
     console.error('❌ Get medicines error:', err);
@@ -110,49 +107,63 @@ router.get('/stats', async (req: AuthenticatedRequest, res) => {
 });
 
 /**
- * Search medicines
+ * Get medicine by ID
  */
-router.get('/search', async (req: AuthenticatedRequest, res) => {
+router.get('/:id', async (req: AuthenticatedRequest, res) => {
   try {
-    const { q } = req.query;
+    const { id } = req.params;
+    const [medicine] = await db
+      .select()
+      .from(medicineCatalog)
+      .where(eq(medicineCatalog.id, +id))
+      .limit(1);
 
-    if (!q || typeof q !== 'string' || q.length < 2) {
-      return res.status(400).json({ message: 'Search query must be at least 2 characters' });
+    if (!medicine) {
+      return res.status(404).json({ message: 'Medicine not found' });
     }
 
-    const searchTerm = `%${q}%`;
-
-    // Search in prescriptions
-    const prescriptionResults = await db
-      .selectDistinct({
-        name: prescriptions.medicationName,
-      })
-      .from(prescriptions)
-      .where(sql`LOWER(${prescriptions.medicationName}) LIKE LOWER(${searchTerm})`)
-      .limit(50);
-
-    // Search in medication orders
-    const orderResults = await db
-      .selectDistinct({
-        name: medicationOrders.medicationName,
-      })
-      .from(medicationOrders)
-      .where(sql`LOWER(${medicationOrders.medicationName}) LIKE LOWER(${searchTerm})`)
-      .limit(50);
-
-    // Combine and deduplicate
-    const allResults = new Set<string>();
-    prescriptionResults.forEach(m => allResults.add(m.name));
-    orderResults.forEach(m => allResults.add(m.name));
-
-    const results = Array.from(allResults)
-      .map(name => ({ name }))
-      .sort((a, b) => a.name.localeCompare(b.name));
-
-    res.json(results);
+    res.json(medicine);
   } catch (err: any) {
-    console.error('❌ Search medicines error:', err);
-    res.status(500).json({ message: 'Failed to search medicines' });
+    console.error('❌ Get medicine error:', err);
+    res.status(500).json({ message: 'Failed to fetch medicine' });
+  }
+});
+
+/**
+ * Get medicine categories
+ */
+router.get('/categories/list', async (req: AuthenticatedRequest, res) => {
+  try {
+    const categories = await db
+      .selectDistinct({
+        category: medicineCatalog.category,
+      })
+      .from(medicineCatalog)
+      .where(eq(medicineCatalog.isActive, true));
+
+    res.json(categories.map(c => c.category).filter(Boolean));
+  } catch (err: any) {
+    console.error('❌ Get medicine categories error:', err);
+    res.status(500).json({ message: 'Failed to fetch categories' });
+  }
+});
+
+/**
+ * Get medicine types
+ */
+router.get('/types/list', async (req: AuthenticatedRequest, res) => {
+  try {
+    const types = await db
+      .selectDistinct({
+        type: medicineCatalog.type,
+      })
+      .from(medicineCatalog)
+      .where(eq(medicineCatalog.isActive, true));
+
+    res.json(types.map(t => t.type).filter(Boolean));
+  } catch (err: any) {
+    console.error('❌ Get medicine types error:', err);
+    res.status(500).json({ message: 'Failed to fetch types' });
   }
 });
 

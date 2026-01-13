@@ -241,6 +241,42 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({
 
           const paymentReference = paymentDetails.transactionId || `TXN-${appointmentId}`;
           
+          // Extract payment date from appointment notes or use appointment confirmedAt date
+          let paymentDate: string | undefined;
+          
+          // First, try to extract date/time from appointment notes
+          if (appointmentDetails?.notes) {
+            const notes = appointmentDetails.notes;
+            const dateMatch = notes.match(/Date:\s*([^\n|]+)/i);
+            const timeMatch = notes.match(/Time:\s*([^\n|]+)/i);
+            
+            if (dateMatch && timeMatch) {
+              try {
+                // Parse date and time from notes (format: "Date: 13/01/2026 | Time: 3:30:00 PM")
+                const dateStr = dateMatch[1].trim();
+                const timeStr = timeMatch[1].trim();
+                const dateTimeStr = `${dateStr} ${timeStr}`;
+                const parsedDate = new Date(dateTimeStr);
+                if (!isNaN(parsedDate.getTime())) {
+                  paymentDate = parsedDate.toISOString();
+                }
+              } catch (e) {
+                console.warn('Failed to parse date/time from notes:', e);
+              }
+            }
+          }
+          
+          // Fallback to appointment confirmedAt or appointmentDate
+          if (!paymentDate) {
+            if (appointmentDetails?.confirmedAt) {
+              paymentDate = new Date(appointmentDetails.confirmedAt).toISOString();
+            } else if (appointmentDetails?.appointmentDate) {
+              paymentDate = new Date(appointmentDetails.appointmentDate).toISOString();
+            }
+          }
+          
+          console.log('📅 Payment date for online payment:', paymentDate);
+          
           const paymentNotes = `Online payment completed during booking. Transaction: ${paymentReference}, Method: ${paymentDetails.method || 'online'}, Amount: ₹${paymentAmount}`;
 
           const paymentResponse = await fetch(`/api/billing/opd/invoices/${invoice.id}/payments`, {
@@ -254,6 +290,7 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({
               amount: paymentAmount,
               reference: paymentReference,
               notes: paymentNotes,
+              receivedAt: paymentDate, // Pass the actual payment date
             }),
           });
 

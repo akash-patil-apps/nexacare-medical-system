@@ -60,6 +60,7 @@ import { ClinicalNotesEditor } from '../../components/clinical/ClinicalNotesEdit
 import { VitalsEntryForm } from '../../components/clinical/VitalsEntryForm';
 import { IpdEncountersList } from '../../components/ipd/IpdEncountersList';
 import { NurseAssignmentModal } from '../../components/ipd/NurseAssignmentModal';
+import { AdmissionModal } from '../../components/ipd/AdmissionModal';
 import type { IpdEncounter } from '../../types/ipd';
 
 const { Content, Sider } = Layout;
@@ -92,6 +93,8 @@ export default function DoctorDashboard() {
   const [vitalsHistory, setVitalsHistory] = useState<any[]>([]);
   const [isNurseAssignmentModalOpen, setIsNurseAssignmentModalOpen] = useState(false);
   const [selectedEncounterForNurse, setSelectedEncounterForNurse] = useState<IpdEncounter | null>(null);
+  const [isAdmissionModalOpen, setIsAdmissionModalOpen] = useState(false);
+  const [selectedPatientForAdmission, setSelectedPatientForAdmission] = useState<number | undefined>(undefined);
 
 
   // ALL HOOKS MUST BE CALLED BEFORE ANY CONDITIONAL RETURNS
@@ -887,6 +890,12 @@ export default function DoctorDashboard() {
         return <Redirect to="/dashboard/hospital" />;
       case 'LAB':
         return <Redirect to="/dashboard/lab" />;
+      case 'NURSE':
+        return <Redirect to="/dashboard/nurse" />;
+      case 'PHARMACIST':
+        return <Redirect to="/dashboard/pharmacist" />;
+      case 'RADIOLOGY_TECHNICIAN':
+        return <Redirect to="/dashboard/radiology-technician" />;
       default:
         return <Redirect to="/dashboard" />;
     }
@@ -2147,6 +2156,23 @@ export default function DoctorDashboard() {
                   </Text>
                 </div>
                 
+                {/* Admit to IPD Button - Show if patient is not already admitted */}
+                {!patientInfo.ipdStatus?.isAdmitted && patientInfo?.patient?.id && doctorProfile?.id && (
+                  <div style={{ marginBottom: 16 }}>
+                    <Button
+                      type="primary"
+                      icon={<UserOutlined />}
+                      onClick={() => {
+                        setSelectedPatientForAdmission(patientInfo.patient.id);
+                        setIsAdmissionModalOpen(true);
+                      }}
+                      style={{ width: '100%' }}
+                    >
+                      Admit Patient to IPD
+                    </Button>
+                  </div>
+                )}
+                
                 {/* IPD Admission Status */}
                 {patientInfo.ipdStatus?.isAdmitted && (
                   <>
@@ -2642,6 +2668,29 @@ export default function DoctorDashboard() {
           currentNurseId={selectedEncounterForNurse.assignedNurseId}
         />
       )}
+
+      {/* IPD Admission Modal */}
+      <AdmissionModal
+        open={isAdmissionModalOpen}
+        onCancel={() => {
+          setIsAdmissionModalOpen(false);
+          setSelectedPatientForAdmission(undefined);
+        }}
+        onSuccess={(encounter) => {
+          message.success('Patient admitted to IPD successfully');
+          queryClient.invalidateQueries({ queryKey: ['/api/ipd/encounters'] });
+          queryClient.invalidateQueries({ queryKey: ['/api/ipd/beds/available'] });
+          setIsAdmissionModalOpen(false);
+          setSelectedPatientForAdmission(undefined);
+          // Refresh patient info to show IPD status
+          if (selectedPatientForAdmission) {
+            handleViewPatientInfo(selectedPatientForAdmission);
+          }
+        }}
+        patientId={selectedPatientForAdmission}
+        hospitalId={doctorProfile?.hospitalId}
+        defaultAdmittingDoctorId={doctorProfile?.id} // Auto-set admitting doctor to logged-in doctor
+      />
     </Layout>
     </>
   );

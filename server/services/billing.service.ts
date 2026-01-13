@@ -10,6 +10,7 @@ import {
 } from '../../shared/schema';
 import { eq, and, sql, desc } from 'drizzle-orm';
 import * as auditService from './audit.service';
+import { retryDbOperation } from '../utils/db-retry';
 
 /**
  * Generate unique invoice number for hospital
@@ -260,6 +261,7 @@ export const recordPayment = async (data: {
   actorRole?: string;
   ipAddress?: string;
   userAgent?: string;
+  receivedAt?: Date | string; // Optional: for online payments, use actual payment date
 }) => {
   // Get invoice
   const [invoice] = await db
@@ -289,6 +291,14 @@ export const recordPayment = async (data: {
     newStatus = 'partially_paid';
   }
   
+  // Determine payment date: use provided date for online payments, otherwise use current time
+  let paymentDate: Date;
+  if (data.receivedAt) {
+    paymentDate = typeof data.receivedAt === 'string' ? new Date(data.receivedAt) : data.receivedAt;
+  } else {
+    paymentDate = new Date(); // For counter payments, use current time
+  }
+  
   // Create payment record
   const [payment] = await db
     .insert(payments)
@@ -298,7 +308,7 @@ export const recordPayment = async (data: {
       amount: data.amount.toString(),
       reference: data.reference || null,
       receivedByUserId: data.receivedByUserId,
-      receivedAt: sql`NOW()`,
+      receivedAt: paymentDate,
       notes: data.notes || null,
       createdAt: sql`NOW()`,
     })
@@ -354,26 +364,54 @@ export const recordPayment = async (data: {
  * Get invoice by ID with items and payments
  */
 export const getInvoiceById = async (invoiceId: number) => {
-  const [invoice] = await db
-    .select()
-    .from(invoices)
-    .where(eq(invoices.id, invoiceId))
-    .limit(1);
+  // Retry database operation with exponential backoff for transient network errors
+  const [invoice] = await retryDbOperation(
+    async () => {
+      return await db
+        .select()
+        .from(invoices)
+        .where(eq(invoices.id, invoiceId))
+        .limit(1);
+    },
+    {
+      maxRetries: 3,
+      initialDelay: 200,
+      maxDelay: 2000,
+    }
+  );
   
   if (!invoice) {
     throw new Error('Invoice not found');
   }
   
-  const items = await db
-    .select()
-    .from(invoiceItems)
-    .where(eq(invoiceItems.invoiceId, invoiceId));
+  const items = await retryDbOperation(
+    async () => {
+      return await db
+        .select()
+        .from(invoiceItems)
+        .where(eq(invoiceItems.invoiceId, invoiceId));
+    },
+    {
+      maxRetries: 3,
+      initialDelay: 200,
+      maxDelay: 2000,
+    }
+  );
   
-  const paymentRecords = await db
-    .select()
-    .from(payments)
-    .where(eq(payments.invoiceId, invoiceId))
-    .orderBy(desc(payments.receivedAt));
+  const paymentRecords = await retryDbOperation(
+    async () => {
+      return await db
+        .select()
+        .from(payments)
+        .where(eq(payments.invoiceId, invoiceId))
+        .orderBy(desc(payments.receivedAt));
+    },
+    {
+      maxRetries: 3,
+      initialDelay: 200,
+      maxDelay: 2000,
+    }
+  );
   
   return {
     ...invoice,
@@ -414,11 +452,21 @@ export const getInvoices = async (filters: {
     conditions.push(sql`${invoices.createdAt} <= ${filters.dateTo}`);
   }
   
-  const invoiceList = await db
-    .select()
-    .from(invoices)
-    .where(conditions.length > 0 ? and(...conditions) : undefined)
-    .orderBy(desc(invoices.createdAt));
+  // Retry database operation with exponential backoff for transient network errors
+  const invoiceList = await retryDbOperation(
+    async () => {
+      return await db
+        .select()
+        .from(invoices)
+        .where(conditions.length > 0 ? and(...conditions) : undefined)
+        .orderBy(desc(invoices.createdAt));
+    },
+    {
+      maxRetries: 3,
+      initialDelay: 200,
+      maxDelay: 2000,
+    }
+  );
   
   return invoiceList;
 };

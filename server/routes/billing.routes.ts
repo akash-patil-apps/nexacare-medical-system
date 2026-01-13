@@ -6,7 +6,7 @@ const router = express.Router();
 
 // Helper to get hospital ID from user
 const getHospitalId = async (user: any): Promise<number> => {
-  const { hospitals, receptionists, doctors } = await import('../../shared/schema');
+  const { hospitals, receptionists, doctors, nurses } = await import('../../shared/schema');
   const { db } = await import('../db');
   const { eq } = await import('drizzle-orm');
   
@@ -31,6 +31,13 @@ const getHospitalId = async (user: any): Promise<number> => {
       .where(eq(doctors.userId, user.id))
       .limit(1);
     if (doctor?.hospitalId) return doctor.hospitalId;
+  } else if (user.role?.toUpperCase() === 'NURSE') {
+    const [nurse] = await db
+      .select()
+      .from(nurses)
+      .where(eq(nurses.userId, user.id))
+      .limit(1);
+    if (nurse?.hospitalId) return nurse.hospitalId;
   }
   throw new Error('Hospital ID not found');
 };
@@ -100,7 +107,27 @@ router.get('/opd/invoices/:invoiceId', authenticateToken, async (req: Authentica
     res.json(invoice);
   } catch (err: any) {
     console.error('❌ Get invoice error:', err);
-    res.status(404).json({ message: err.message || 'Invoice not found' });
+    
+    // Check for network/database connection errors
+    const errorCode = err?.code || err?.cause?.code || '';
+    const isNetworkError = ['ENETDOWN', 'ETIMEDOUT', 'ECONNRESET', 'ECONNREFUSED', 'ENOTFOUND'].some(
+      code => errorCode.includes(code)
+    );
+    
+    if (isNetworkError) {
+      return res.status(503).json({ 
+        message: 'Database connection issue. Please try again in a moment.',
+        error: 'NETWORK_ERROR',
+        retryable: true
+      });
+    }
+    
+    // Check if it's a "not found" error
+    if (err.message?.includes('not found') || err.message?.includes('Invoice not found')) {
+      return res.status(404).json({ message: err.message || 'Invoice not found' });
+    }
+    
+    res.status(400).json({ message: err.message || 'Failed to get invoice' });
   }
 });
 
@@ -122,6 +149,21 @@ router.get('/opd/invoices', authenticateToken, async (req: AuthenticatedRequest,
     res.json(invoices);
   } catch (err: any) {
     console.error('❌ Get invoices error:', err);
+    
+    // Check for network/database connection errors
+    const errorCode = err?.code || err?.cause?.code || '';
+    const isNetworkError = ['ENETDOWN', 'ETIMEDOUT', 'ECONNRESET', 'ECONNREFUSED', 'ENOTFOUND'].some(
+      code => errorCode.includes(code)
+    );
+    
+    if (isNetworkError) {
+      return res.status(503).json({ 
+        message: 'Database connection issue. Please try again in a moment.',
+        error: 'NETWORK_ERROR',
+        retryable: true
+      });
+    }
+    
     res.status(400).json({ message: err.message || 'Failed to get invoices' });
   }
 });
@@ -146,7 +188,7 @@ router.patch('/opd/invoices/:invoiceId/issue', authenticateToken, authorizeRoles
 router.post('/opd/invoices/:invoiceId/payments', authenticateToken, authorizeRoles('ADMIN', 'HOSPITAL', 'RECEPTIONIST'), async (req: AuthenticatedRequest, res) => {
   try {
     const { invoiceId } = req.params;
-    const { method, amount, reference, notes } = req.body;
+    const { method, amount, reference, notes, receivedAt } = req.body;
     
     if (!method || !amount) {
       return res.status(400).json({ message: 'method and amount are required' });
@@ -171,6 +213,7 @@ router.post('/opd/invoices/:invoiceId/payments', authenticateToken, authorizeRol
       actorRole: req.user.role || 'UNKNOWN',
       ipAddress: req.ip || req.socket.remoteAddress || undefined,
       userAgent: req.get('user-agent') || undefined,
+      receivedAt: receivedAt ? new Date(receivedAt) : undefined, // Use provided date for online payments, undefined for counter payments
     });
     
     res.json(result);

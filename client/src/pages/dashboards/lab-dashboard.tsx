@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { Redirect } from "wouter";
 import { 
   Layout, 
   Card, 
@@ -56,7 +57,7 @@ const labTheme = {
 };
 
 export default function LabDashboard() {
-  const { user, logout } = useAuth();
+  const { user, logout, isLoading } = useAuth();
   const { isMobile, isTablet } = useResponsive();
   const queryClient = useQueryClient();
   const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false);
@@ -64,6 +65,37 @@ export default function LabDashboard() {
   const [selectedReport, setSelectedReport] = useState<any>(null);
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [selectedMenuKey, setSelectedMenuKey] = useState<string>('dashboard');
+
+  // Redirect if not authenticated
+  if (!isLoading && !user) {
+    return <Redirect to="/login" />;
+  }
+
+  // Redirect if user doesn't have LAB role
+  if (!isLoading && user) {
+    const userRole = user.role?.toUpperCase();
+    if (userRole !== 'LAB') {
+      message.warning('You do not have access to this dashboard');
+      switch (userRole) {
+        case 'PATIENT':
+          return <Redirect to="/dashboard/patient" />;
+        case 'DOCTOR':
+          return <Redirect to="/dashboard/doctor" />;
+        case 'RECEPTIONIST':
+          return <Redirect to="/dashboard/receptionist" />;
+        case 'HOSPITAL':
+          return <Redirect to="/dashboard/hospital" />;
+        case 'NURSE':
+          return <Redirect to="/dashboard/nurse" />;
+        case 'PHARMACIST':
+          return <Redirect to="/dashboard/pharmacist" />;
+        case 'RADIOLOGY_TECHNICIAN':
+          return <Redirect to="/dashboard/radiology-technician" />;
+        default:
+          return <Redirect to="/login" />;
+      }
+    }
+  }
 
   // Get lab reports from API
   const { data: labReportsData = [], isLoading: labReportsLoading } = useQuery({

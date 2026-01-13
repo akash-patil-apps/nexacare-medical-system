@@ -961,6 +961,12 @@ export default function ReceptionistDashboard() {
         return <Redirect to="/dashboard/hospital" />;
       case 'LAB':
         return <Redirect to="/dashboard/lab" />;
+      case 'NURSE':
+        return <Redirect to="/dashboard/nurse" />;
+      case 'PHARMACIST':
+        return <Redirect to="/dashboard/pharmacist" />;
+      case 'RADIOLOGY_TECHNICIAN':
+        return <Redirect to="/dashboard/radiology-technician" />;
       default:
         return <Redirect to="/dashboard" />;
     }

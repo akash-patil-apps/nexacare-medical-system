@@ -85,9 +85,35 @@ export default function NurseDashboard() {
   const [selectedPatientName, setSelectedPatientName] = useState<string | undefined>(undefined);
   const [selectedEncounter, setSelectedEncounter] = useState<any>(null);
 
-  // Redirect if not authenticated or not a nurse
-  if (!isLoading && (!user || user.role?.toUpperCase() !== 'NURSE')) {
+  // Redirect if not authenticated
+  if (!isLoading && !user) {
     return <Redirect to="/login" />;
+  }
+
+  // Redirect if user doesn't have NURSE role
+  if (!isLoading && user) {
+    const userRole = user.role?.toUpperCase();
+    if (userRole !== 'NURSE') {
+      message.warning('You do not have access to this dashboard');
+      switch (userRole) {
+        case 'PATIENT':
+          return <Redirect to="/dashboard/patient" />;
+        case 'DOCTOR':
+          return <Redirect to="/dashboard/doctor" />;
+        case 'RECEPTIONIST':
+          return <Redirect to="/dashboard/receptionist" />;
+        case 'HOSPITAL':
+          return <Redirect to="/dashboard/hospital" />;
+        case 'LAB':
+          return <Redirect to="/dashboard/lab" />;
+        case 'PHARMACIST':
+          return <Redirect to="/dashboard/pharmacist" />;
+        case 'RADIOLOGY_TECHNICIAN':
+          return <Redirect to="/dashboard/radiology-technician" />;
+        default:
+          return <Redirect to="/login" />;
+      }
+    }
   }
 
   // Get nurse profile
@@ -346,6 +372,39 @@ export default function NurseDashboard() {
         </div>
       </Card>
 
+      {/* My Ward Patients - Always show on Dashboard */}
+      <Card title="My Ward Patients" size="small">
+        <IpdEncountersList
+          encounters={ipdEncounters}
+          loading={isLoadingEncounters}
+          showDoctorInfo={true}
+          isNurseView={true}
+          onViewPatient={(encounter) => {
+            message.info('Patient details view coming soon');
+          }}
+          onRecordVitals={(encounterId, patientId, patientName) => {
+            setSelectedEncounterId(encounterId);
+            setSelectedPatientId(patientId);
+            setSelectedPatientName(patientName);
+            setIsVitalsModalOpen(true);
+          }}
+          onAddNote={(encounter) => {
+            setSelectedEncounter(encounter);
+            setSelectedEncounterId(encounter.id);
+            setSelectedPatientId(encounter.patientId);
+            setIsNotesModalOpen(true);
+          }}
+          onViewMedications={(encounter) => {
+            setSelectedEncounter(encounter);
+            setIsMedicationsModalOpen(true);
+          }}
+          onAdministerMedication={(encounter) => {
+            setSelectedEncounter(encounter);
+            setIsAdministerModalOpen(true);
+          }}
+        />
+      </Card>
+
       {/* Recent Activity - Real Data */}
       <Card title="Recent Activity" size="small">
         {vitalsHistory.length === 0 && nursingNotes.length === 0 ? (
@@ -362,7 +421,7 @@ export default function NurseDashboard() {
               // Recent vitals - get patient name from IPD encounters
               ...vitalsHistory.slice(0, 5).map((vital: any) => {
                 const encounter = ipdEncounters.find((e: any) => e.patientId === vital.patientId);
-                const patientName = encounter?.patientName || encounter?.patient?.fullName || 'Patient';
+                const patientName = encounter?.patientName || encounter?.patient?.fullName || encounter?.patient?.user?.fullName || 'Patient';
                 return {
                   time: dayjs(vital.recordedAt).fromNow(),
                   action: `Recorded vitals for ${patientName}`,

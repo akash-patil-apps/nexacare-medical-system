@@ -12,14 +12,18 @@ const connectionString = process.env.DATABASE_URL || "postgresql://neondb_owner:
 
 // Configure postgres with timeout and connection settings
 const sql = postgres(connectionString, {
-  connect_timeout: 15, // 15 seconds connection timeout
-  idle_timeout: 20, // 20 seconds idle timeout
+  connect_timeout: 30, // 30 seconds connection timeout (increased)
+  idle_timeout: 30, // 30 seconds idle timeout (increased)
   max_lifetime: 60 * 30, // 30 minutes max connection lifetime
-  max: 10, // Maximum number of connections in the pool
-  statement_timeout: 15000, // Fail fast if any statement takes > 15s
+  max: 20, // Maximum number of connections in the pool (increased)
+  statement_timeout: 30000, // 30 seconds statement timeout (increased)
   prepare: false, // Disable prepared statements for faster queries (can help with connection issues)
   connection: {
     application_name: 'nexacare-medical-system',
+  },
+  onnotice: () => {}, // Suppress notices
+  transform: {
+    undefined: null, // Transform undefined to null
   },
 });
 

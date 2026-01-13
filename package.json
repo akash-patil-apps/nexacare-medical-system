@@ -14,6 +14,7 @@
     "db:migrate": "drizzle-kit migrate",
     "seed": "tsx scripts/seed-test-data.ts",
     "seed:test": "tsx scripts/seed-test-data.ts",
+    "seed:catalog": "tsx scripts/seed-catalog-data.ts",
     "seed:cities": "tsx scripts/seed-cities.ts",
     "seed:maharashtra": "tsx scripts/seed-maharashtra-data.ts",
     "check-user": "tsx scripts/check-user.ts",
