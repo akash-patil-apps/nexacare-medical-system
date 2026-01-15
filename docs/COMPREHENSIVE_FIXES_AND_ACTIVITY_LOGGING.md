@@ -246,3 +246,5 @@ router.get('/encounters/:encounterId/activity', authenticateToken, async (req, r
 - Activity log UI components
 - Testing and validation
 
+
+

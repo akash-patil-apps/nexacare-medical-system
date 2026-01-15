@@ -114,3 +114,5 @@ COMMENT ON TABLE nurse_activity_logs IS 'Comprehensive activity log for all nurs
 COMMENT ON TABLE nurse_assignments IS 'History of nurse assignments to IPD patients (supports multiple nurses per patient)';
 
 
+
+

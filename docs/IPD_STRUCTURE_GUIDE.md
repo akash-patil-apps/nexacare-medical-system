@@ -244,3 +244,5 @@ Now you can admit patients to these beds!
 
 
 
+
+
