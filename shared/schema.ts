@@ -277,19 +277,22 @@ export const prescriptionAudits = pgTable("prescription_audits", {
   createdAt: timestamp("created_at").defaultNow(),
 });
 
-// Lab Reports
+// Lab Reports - Final reports (linked to orders)
 export const labReports = pgTable("lab_reports", {
   id: serial("id").primaryKey(),
+  labOrderId: integer("lab_order_id").references(() => labOrders.id), // Link to order
   patientId: integer("patient_id").references(() => patients.id).notNull(),
   doctorId: integer("doctor_id").references(() => doctors.id),
   labId: integer("lab_id").references(() => labs.id).notNull(),
   testName: text("test_name").notNull(),
   testType: text("test_type").notNull(),
-  results: text("results").notNull(),
+  results: text("results").notNull(), // JSON string with all results
   normalRanges: text("normal_ranges"),
   reportDate: timestamp("report_date").notNull(),
-  reportUrl: text("report_url"),
-  status: text("status").default("pending"),
+  reportUrl: text("report_url"), // Mock URL for now
+  status: text("status").default("pending"), // pending, completed, released
+  releasedByUserId: integer("released_by_user_id").references(() => users.id),
+  releasedAt: timestamp("released_at"),
   notes: text("notes"),
   createdAt: timestamp("created_at").defaultNow(),
 });
@@ -396,6 +399,7 @@ export const prescriptionsRelations = relations(prescriptions, ({ one }) => ({
 }));
 
 export const labReportsRelations = relations(labReports, ({ one }) => ({
+  labOrder: one(labOrders, { fields: [labReports.labOrderId], references: [labOrders.id] }),
   patient: one(patients, { fields: [labReports.patientId], references: [patients.id] }),
   doctor: one(doctors, { fields: [labReports.doctorId], references: [doctors.id] }),
   lab: one(labs, { fields: [labReports.labId], references: [labs.id] }),
@@ -699,6 +703,56 @@ export const medicationAdministrations = pgTable("medication_administrations", {
   notes: text("notes"),
   reason: text("reason"), // For held/refused/missed
   reminderSentAt: timestamp("reminder_sent_at"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at"),
+});
+
+// IV Fluid Orders - Doctor orders for IV fluids
+export const ivFluidOrders = pgTable("iv_fluid_orders", {
+  id: serial("id").primaryKey(),
+  encounterId: integer("encounter_id").references(() => ipdEncounters.id).notNull(),
+  patientId: integer("patient_id").references(() => patients.id).notNull(),
+  orderedByDoctorId: integer("ordered_by_doctor_id").references(() => doctors.id).notNull(),
+  fluidName: text("fluid_name").notNull(), // e.g., Normal Saline, Ringer's Lactate
+  volume: text("volume").notNull(), // e.g., 500ml, 1000ml
+  rate: text("rate").notNull(), // e.g., 100ml/hr, 50 drops/min
+  startDate: timestamp("start_date").notNull(),
+  endDate: timestamp("end_date"),
+  status: text("status").default("active").notNull(), // active, stopped, completed
+  notes: text("notes"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at"),
+});
+
+// Diet Orders - Doctor orders for patient diet
+export const dietOrders = pgTable("diet_orders", {
+  id: serial("id").primaryKey(),
+  encounterId: integer("encounter_id").references(() => ipdEncounters.id).notNull(),
+  patientId: integer("patient_id").references(() => patients.id).notNull(),
+  orderedByDoctorId: integer("ordered_by_doctor_id").references(() => doctors.id).notNull(),
+  dietType: text("diet_type").notNull(), // e.g., Normal, Soft, Liquid, Diabetic, Cardiac, Renal
+  specialInstructions: text("special_instructions"), // Additional dietary requirements
+  startDate: timestamp("start_date").notNull(),
+  endDate: timestamp("end_date"),
+  status: text("status").default("active").notNull(), // active, stopped, completed
+  notes: text("notes"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at"),
+});
+
+// Nursing Orders - Doctor orders for nursing care
+export const nursingOrders = pgTable("nursing_orders", {
+  id: serial("id").primaryKey(),
+  encounterId: integer("encounter_id").references(() => ipdEncounters.id).notNull(),
+  patientId: integer("patient_id").references(() => patients.id).notNull(),
+  orderedByDoctorId: integer("ordered_by_doctor_id").references(() => doctors.id).notNull(),
+  orderType: text("order_type").notNull(), // e.g., vitals_monitoring, wound_care, positioning, isolation
+  orderDescription: text("order_description").notNull(),
+  frequency: text("frequency"), // e.g., Q4H, Q8H, QID, TID, BID, QD
+  startDate: timestamp("start_date").notNull(),
+  endDate: timestamp("end_date"),
+  status: text("status").default("active").notNull(), // active, stopped, completed
+  notes: text("notes"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at"),
 });
@@ -1116,3 +1170,418 @@ export type RadiologyTestCatalog = InferSelectModel<typeof radiologyTestCatalog>
 
 export type InsertDiagnosisCode = InferInsertModel<typeof diagnosisCodes>;
 export type DiagnosisCode = InferSelectModel<typeof diagnosisCodes>;
+
+// ============================================
+// PHARMACY INVENTORY MANAGEMENT
+// ============================================
+
+// Suppliers - Supplier master data
+export const suppliers = pgTable("suppliers", {
+  id: serial("id").primaryKey(),
+  hospitalId: integer("hospital_id").references(() => hospitals.id).notNull(),
+  name: text("name").notNull(),
+  contactPerson: text("contact_person"),
+  email: text("email"),
+  phone: text("phone"),
+  address: text("address"),
+  city: text("city"),
+  state: text("state"),
+  zipCode: text("zip_code"),
+  gstNumber: text("gst_number"),
+  isActive: boolean("is_active").default(true),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at"),
+});
+
+// Pharmacy Inventory - Stock management
+export const pharmacyInventory = pgTable("pharmacy_inventory", {
+  id: serial("id").primaryKey(),
+  hospitalId: integer("hospital_id").references(() => hospitals.id).notNull(),
+  medicineCatalogId: integer("medicine_catalog_id").references(() => medicineCatalog.id).notNull(),
+  batchNumber: text("batch_number").notNull(),
+  expiryDate: timestamp("expiry_date").notNull(),
+  quantity: integer("quantity").notNull().default(0), // Current stock quantity
+  unit: text("unit").notNull(), // tablet, ml, vial, etc.
+  purchasePrice: decimal("purchase_price", { precision: 10, scale: 2 }),
+  sellingPrice: decimal("selling_price", { precision: 10, scale: 2 }),
+  mrp: decimal("mrp", { precision: 10, scale: 2 }), // Maximum Retail Price
+  location: text("location"), // Storage location/rack
+  reorderLevel: integer("reorder_level").default(10), // Alert when stock falls below this
+  minStockLevel: integer("min_stock_level").default(5), // Critical stock level
+  maxStockLevel: integer("max_stock_level"), // Maximum stock to maintain
+  isActive: boolean("is_active").default(true),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at"),
+});
+
+// Pharmacy Stock Movements - In/Out transactions
+export const pharmacyStockMovements = pgTable("pharmacy_stock_movements", {
+  id: serial("id").primaryKey(),
+  hospitalId: integer("hospital_id").references(() => hospitals.id).notNull(),
+  inventoryId: integer("inventory_id").references(() => pharmacyInventory.id).notNull(),
+  movementType: text("movement_type").notNull(), // purchase, sale, return, adjustment, transfer, expiry, damage
+  quantity: integer("quantity").notNull(), // Positive for in, negative for out
+  unit: text("unit").notNull(),
+  referenceType: text("reference_type"), // purchase_order, dispensation, adjustment, etc.
+  referenceId: integer("reference_id"), // ID of the reference (PO, dispensation, etc.)
+  reason: text("reason"), // Reason for movement
+  performedByUserId: integer("performed_by_user_id").references(() => users.id).notNull(),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+// Purchase Orders - PO management
+export const purchaseOrders = pgTable("purchase_orders", {
+  id: serial("id").primaryKey(),
+  hospitalId: integer("hospital_id").references(() => hospitals.id).notNull(),
+  supplierId: integer("supplier_id").references(() => suppliers.id).notNull(),
+  poNumber: text("po_number").notNull().unique(), // Purchase order number
+  orderDate: timestamp("order_date").defaultNow().notNull(),
+  expectedDeliveryDate: timestamp("expected_delivery_date"),
+  status: text("status").default("pending").notNull(), // pending, approved, ordered, received, cancelled
+  totalAmount: decimal("total_amount", { precision: 10, scale: 2 }).default("0"),
+  taxAmount: decimal("tax_amount", { precision: 10, scale: 2 }).default("0"),
+  finalAmount: decimal("final_amount", { precision: 10, scale: 2 }).default("0"),
+  notes: text("notes"),
+  createdByUserId: integer("created_by_user_id").references(() => users.id).notNull(),
+  approvedByUserId: integer("approved_by_user_id").references(() => users.id),
+  approvedAt: timestamp("approved_at"),
+  receivedByUserId: integer("received_by_user_id").references(() => users.id),
+  receivedAt: timestamp("received_at"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at"),
+});
+
+// Purchase Order Items - Items in a PO
+export const purchaseOrderItems = pgTable("purchase_order_items", {
+  id: serial("id").primaryKey(),
+  purchaseOrderId: integer("purchase_order_id").references(() => purchaseOrders.id).notNull(),
+  medicineCatalogId: integer("medicine_catalog_id").references(() => medicineCatalog.id).notNull(),
+  batchNumber: text("batch_number"),
+  expiryDate: timestamp("expiry_date"),
+  quantity: integer("quantity").notNull(),
+  unit: text("unit").notNull(),
+  unitPrice: decimal("unit_price", { precision: 10, scale: 2 }).notNull(),
+  totalPrice: decimal("total_price", { precision: 10, scale: 2 }).notNull(),
+  receivedQuantity: integer("received_quantity").default(0), // Quantity received
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+// Dispensations - Medicine dispensing records
+export const dispensations = pgTable("dispensations", {
+  id: serial("id").primaryKey(),
+  hospitalId: integer("hospital_id").references(() => hospitals.id).notNull(),
+  prescriptionId: integer("prescription_id").references(() => prescriptions.id),
+  patientId: integer("patient_id").references(() => patients.id).notNull(),
+  encounterId: integer("encounter_id").references(() => ipdEncounters.id), // For IPD
+  appointmentId: integer("appointment_id").references(() => appointments.id), // For OPD
+  dispensationType: text("dispensation_type").notNull(), // opd, ipd
+  status: text("status").default("pending").notNull(), // pending, dispensed, partial, cancelled
+  totalAmount: decimal("total_amount", { precision: 10, scale: 2 }).default("0"),
+  notes: text("notes"),
+  dispensedByUserId: integer("dispensed_by_user_id").references(() => users.id),
+  dispensedAt: timestamp("dispensed_at"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at"),
+});
+
+// Dispensation Items - Individual medicines dispensed
+export const dispensationItems = pgTable("dispensation_items", {
+  id: serial("id").primaryKey(),
+  dispensationId: integer("dispensation_id").references(() => dispensations.id).notNull(),
+  prescriptionItemId: integer("prescription_item_id"), // Optional - prescriptions store items as JSON
+  inventoryId: integer("inventory_id").references(() => pharmacyInventory.id).notNull(),
+  medicineName: text("medicine_name").notNull(),
+  quantity: integer("quantity").notNull(),
+  unit: text("unit").notNull(),
+  batchNumber: text("batch_number"),
+  expiryDate: timestamp("expiry_date"),
+  unitPrice: decimal("unit_price", { precision: 10, scale: 2 }),
+  totalPrice: decimal("total_price", { precision: 10, scale: 2 }),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+// Type exports for pharmacy
+export type InsertSupplier = InferInsertModel<typeof suppliers>;
+export type Supplier = InferSelectModel<typeof suppliers>;
+
+export type InsertPharmacyInventory = InferInsertModel<typeof pharmacyInventory>;
+export type PharmacyInventory = InferSelectModel<typeof pharmacyInventory>;
+
+export type InsertPharmacyStockMovement = InferInsertModel<typeof pharmacyStockMovements>;
+export type PharmacyStockMovement = InferSelectModel<typeof pharmacyStockMovements>;
+
+export type InsertPurchaseOrder = InferInsertModel<typeof purchaseOrders>;
+export type PurchaseOrder = InferSelectModel<typeof purchaseOrders>;
+
+export type InsertPurchaseOrderItem = InferInsertModel<typeof purchaseOrderItems>;
+export type PurchaseOrderItem = InferSelectModel<typeof purchaseOrderItems>;
+
+export type InsertDispensation = InferInsertModel<typeof dispensations>;
+export type Dispensation = InferSelectModel<typeof dispensations>;
+
+export type InsertDispensationItem = InferInsertModel<typeof dispensationItems>;
+export type DispensationItem = InferSelectModel<typeof dispensationItems>;
+
+// ============================================
+// LAB (LIS) WORKFLOW MANAGEMENT
+// ============================================
+
+// Lab Orders - Orders placed by doctors for lab tests
+export const labOrders = pgTable("lab_orders", {
+  id: serial("id").primaryKey(),
+  hospitalId: integer("hospital_id").references(() => hospitals.id).notNull(),
+  patientId: integer("patient_id").references(() => patients.id).notNull(),
+  doctorId: integer("doctor_id").references(() => doctors.id).notNull(),
+  appointmentId: integer("appointment_id").references(() => appointments.id),
+  encounterId: integer("encounter_id").references(() => ipdEncounters.id), // For IPD
+  orderNumber: text("order_number").notNull().unique(), // Lab order number
+  orderDate: timestamp("order_date").defaultNow().notNull(),
+  priority: text("priority").default("routine"), // routine, urgent, stat
+  status: text("status").default("ordered").notNull(), // ordered, sample_collected, processing, completed, cancelled
+  clinicalNotes: text("clinical_notes"), // Doctor's clinical notes
+  orderedByUserId: integer("ordered_by_user_id").references(() => users.id).notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at"),
+});
+
+// Lab Order Items - Individual tests in an order
+export const labOrderItems = pgTable("lab_order_items", {
+  id: serial("id").primaryKey(),
+  labOrderId: integer("lab_order_id").references(() => labOrders.id).notNull(),
+  labTestCatalogId: integer("lab_test_catalog_id").references(() => labTestCatalog.id).notNull(),
+  testName: text("test_name").notNull(),
+  status: text("status").default("ordered").notNull(), // ordered, sample_collected, processing, completed, cancelled
+  notes: text("notes"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+// Lab Samples - Sample collection tracking
+export const labSamples = pgTable("lab_samples", {
+  id: serial("id").primaryKey(),
+  labOrderItemId: integer("lab_order_item_id").references(() => labOrderItems.id).notNull(),
+  labOrderId: integer("lab_order_id").references(() => labOrders.id).notNull(),
+  sampleNumber: text("sample_number").notNull().unique(), // Sample barcode/number
+  sampleType: text("sample_type").notNull(), // Blood, Urine, Stool, etc.
+  collectionDate: timestamp("collection_date"),
+  collectionTime: timestamp("collection_time"),
+  collectedByUserId: integer("collected_by_user_id").references(() => users.id),
+  status: text("status").default("pending").notNull(), // pending, collected, received, processing, completed
+  notes: text("notes"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+// Lab Results - Individual test results (before final report)
+export const labResults = pgTable("lab_results", {
+  id: serial("id").primaryKey(),
+  labOrderItemId: integer("lab_order_item_id").references(() => labOrderItems.id).notNull(),
+  labSampleId: integer("lab_sample_id").references(() => labSamples.id),
+  testName: text("test_name").notNull(),
+  parameterName: text("parameter_name"), // For tests with multiple parameters (e.g., CBC has WBC, RBC, etc.)
+  resultValue: text("result_value"), // The actual result
+  unit: text("unit"), // Unit of measurement
+  normalRange: text("normal_range"), // Normal range for this parameter
+  isAbnormal: boolean("is_abnormal").default(false), // Flag if result is abnormal
+  enteredByUserId: integer("entered_by_user_id").references(() => users.id).notNull(),
+  validatedByUserId: integer("validated_by_user_id").references(() => users.id),
+  validatedAt: timestamp("validated_at"),
+  status: text("status").default("pending").notNull(), // pending, entered, validated, released
+  notes: text("notes"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at"),
+});
+
+// Update labReports to link to orders
+// Note: labReports table already exists, we'll add order reference via migration if needed
+
+// Type exports for lab workflow
+export type InsertLabOrder = InferInsertModel<typeof labOrders>;
+export type LabOrder = InferSelectModel<typeof labOrders>;
+
+export type InsertLabOrderItem = InferInsertModel<typeof labOrderItems>;
+export type LabOrderItem = InferSelectModel<typeof labOrderItems>;
+
+export type InsertLabSample = InferInsertModel<typeof labSamples>;
+export type LabSample = InferSelectModel<typeof labSamples>;
+
+export type InsertLabResult = InferInsertModel<typeof labResults>;
+export type LabResult = InferSelectModel<typeof labResults>;
+
+// ============================================
+// RADIOLOGY (RIS) WORKFLOW MANAGEMENT
+// ============================================
+
+// Radiology Orders - Orders placed by doctors for imaging tests
+export const radiologyOrders = pgTable("radiology_orders", {
+  id: serial("id").primaryKey(),
+  hospitalId: integer("hospital_id").references(() => hospitals.id).notNull(),
+  patientId: integer("patient_id").references(() => patients.id).notNull(),
+  doctorId: integer("doctor_id").references(() => doctors.id).notNull(),
+  appointmentId: integer("appointment_id").references(() => appointments.id),
+  encounterId: integer("encounter_id").references(() => ipdEncounters.id), // For IPD
+  orderNumber: text("order_number").notNull().unique(), // Radiology order number
+  orderDate: timestamp("order_date").defaultNow().notNull(),
+  priority: text("priority").default("routine"), // routine, urgent, stat
+  status: text("status").default("ordered").notNull(), // ordered, scheduled, in_progress, completed, cancelled
+  clinicalIndication: text("clinical_indication"), // Doctor's clinical indication
+  orderedByUserId: integer("ordered_by_user_id").references(() => users.id).notNull(),
+  scheduledAt: timestamp("scheduled_at"), // When the imaging is scheduled
+  performedByUserId: integer("performed_by_user_id").references(() => users.id), // Radiology technician
+  performedAt: timestamp("performed_at"), // When imaging was performed
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at"),
+});
+
+// Radiology Order Items - Individual tests in an order
+export const radiologyOrderItems = pgTable("radiology_order_items", {
+  id: serial("id").primaryKey(),
+  radiologyOrderId: integer("radiology_order_id").references(() => radiologyOrders.id).notNull(),
+  radiologyTestCatalogId: integer("radiology_test_catalog_id").references(() => radiologyTestCatalog.id).notNull(),
+  testName: text("test_name").notNull(),
+  status: text("status").default("ordered").notNull(), // ordered, scheduled, in_progress, completed, cancelled
+  notes: text("notes"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+// Radiology Reports - Final reports (similar to lab reports)
+export const radiologyReports = pgTable("radiology_reports", {
+  id: serial("id").primaryKey(),
+  radiologyOrderId: integer("radiology_order_id").references(() => radiologyOrders.id), // Link to order
+  patientId: integer("patient_id").references(() => patients.id).notNull(),
+  doctorId: integer("doctor_id").references(() => doctors.id),
+  radiologyTechnicianId: integer("radiology_technician_id").references(() => radiologyTechnicians.id),
+  testName: text("test_name").notNull(),
+  testType: text("test_type").notNull(), // X-Ray, CT, MRI, Ultrasound, etc.
+  findings: text("findings").notNull(), // Radiologist's findings
+  impression: text("impression"), // Radiologist's impression/conclusion
+  reportDate: timestamp("report_date").notNull(),
+  reportUrl: text("report_url"), // Mock URL for now (PACS integration later)
+  imageUrls: text("image_urls"), // JSON array of image URLs (mock for now)
+  status: text("status").default("pending"), // pending, completed, released
+  reportedByUserId: integer("reported_by_user_id").references(() => users.id), // Radiologist
+  reportedAt: timestamp("reported_at"),
+  releasedByUserId: integer("released_by_user_id").references(() => users.id),
+  releasedAt: timestamp("released_at"),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+// Type exports for radiology workflow
+export type InsertRadiologyOrder = InferInsertModel<typeof radiologyOrders>;
+export type RadiologyOrder = InferSelectModel<typeof radiologyOrders>;
+
+export type InsertRadiologyOrderItem = InferInsertModel<typeof radiologyOrderItems>;
+export type RadiologyOrderItem = InferSelectModel<typeof radiologyOrderItems>;
+
+export type InsertRadiologyReport = InferInsertModel<typeof radiologyReports>;
+export type RadiologyReport = InferSelectModel<typeof radiologyReports>;
+
+// Type exports for hospital charges
+export type InsertHospitalCharge = InferInsertModel<typeof hospitalCharges>;
+export type HospitalCharge = InferSelectModel<typeof hospitalCharges>;
+
+export type InsertBedTypePricing = InferInsertModel<typeof bedTypePricing>;
+export type BedTypePricing = InferSelectModel<typeof bedTypePricing>;
+
+// Lab Orders Relations
+export const labOrdersRelations = relations(labOrders, ({ one, many }) => ({
+  hospital: one(hospitals, { fields: [labOrders.hospitalId], references: [hospitals.id] }),
+  patient: one(patients, { fields: [labOrders.patientId], references: [patients.id] }),
+  doctor: one(doctors, { fields: [labOrders.doctorId], references: [doctors.id] }),
+  appointment: one(appointments, { fields: [labOrders.appointmentId], references: [appointments.id] }),
+  encounter: one(ipdEncounters, { fields: [labOrders.encounterId], references: [ipdEncounters.id] }),
+  items: many(labOrderItems),
+  reports: many(labReports),
+}));
+
+// Lab Order Items Relations
+export const labOrderItemsRelations = relations(labOrderItems, ({ one, many }) => ({
+  labOrder: one(labOrders, { fields: [labOrderItems.labOrderId], references: [labOrders.id] }),
+  labTest: one(labTestCatalog, { fields: [labOrderItems.labTestCatalogId], references: [labTestCatalog.id] }),
+  samples: many(labSamples),
+  results: many(labResults),
+}));
+
+// Lab Samples Relations
+export const labSamplesRelations = relations(labSamples, ({ one, many }) => ({
+  labOrderItem: one(labOrderItems, { fields: [labSamples.labOrderItemId], references: [labOrderItems.id] }),
+  labOrder: one(labOrders, { fields: [labSamples.labOrderId], references: [labOrders.id] }),
+  results: many(labResults),
+}));
+
+// Lab Results Relations
+export const labResultsRelations = relations(labResults, ({ one }) => ({
+  labOrderItem: one(labOrderItems, { fields: [labResults.labOrderItemId], references: [labOrderItems.id] }),
+  labSample: one(labSamples, { fields: [labResults.labSampleId], references: [labSamples.id] }),
+}));
+
+// Radiology Orders Relations
+export const radiologyOrdersRelations = relations(radiologyOrders, ({ one, many }) => ({
+  hospital: one(hospitals, { fields: [radiologyOrders.hospitalId], references: [hospitals.id] }),
+  patient: one(patients, { fields: [radiologyOrders.patientId], references: [patients.id] }),
+  doctor: one(doctors, { fields: [radiologyOrders.doctorId], references: [doctors.id] }),
+  appointment: one(appointments, { fields: [radiologyOrders.appointmentId], references: [appointments.id] }),
+  encounter: one(ipdEncounters, { fields: [radiologyOrders.encounterId], references: [ipdEncounters.id] }),
+  items: many(radiologyOrderItems),
+  reports: many(radiologyReports),
+}));
+
+// Radiology Order Items Relations
+export const radiologyOrderItemsRelations = relations(radiologyOrderItems, ({ one }) => ({
+  radiologyOrder: one(radiologyOrders, { fields: [radiologyOrderItems.radiologyOrderId], references: [radiologyOrders.id] }),
+  radiologyTest: one(radiologyTestCatalog, { fields: [radiologyOrderItems.radiologyTestCatalogId], references: [radiologyTestCatalog.id] }),
+}));
+
+// Radiology Reports Relations
+export const radiologyReportsRelations = relations(radiologyReports, ({ one }) => ({
+  radiologyOrder: one(radiologyOrders, { fields: [radiologyReports.radiologyOrderId], references: [radiologyOrders.id] }),
+  patient: one(patients, { fields: [radiologyReports.patientId], references: [patients.id] }),
+  doctor: one(doctors, { fields: [radiologyReports.doctorId], references: [doctors.id] }),
+  radiologyTechnician: one(radiologyTechnicians, { fields: [radiologyReports.radiologyTechnicianId], references: [radiologyTechnicians.id] }),
+}));
+
+// Hospital Charges Catalog - Master pricing for all services
+export const hospitalCharges = pgTable("hospital_charges", {
+  id: serial("id").primaryKey(),
+  hospitalId: integer("hospital_id").references(() => hospitals.id).notNull(),
+  chargeType: text("charge_type").notNull(), // bed, lab, radiology, pharmacy, procedure, consultation, nursing, ot, emergency, admission, discharge, misc
+  chargeCategory: text("charge_category"), // For bed: general, semi_private, private, deluxe, vip, icu, ccu, etc. For lab: pathology, biochemistry, etc.
+  chargeSubCategory: text("charge_sub_category"), // More specific categorization
+  itemName: text("item_name").notNull(), // Name of the charge item
+  itemCode: text("item_code"), // Hospital's internal code for this charge
+  description: text("description"),
+  unitPrice: decimal("unit_price", { precision: 10, scale: 2 }).notNull(), // Base price
+  unit: text("unit").notNull(), // per_day, per_test, per_procedure, per_consultation, per_item, etc.
+  isActive: boolean("is_active").default(true),
+  effectiveFrom: timestamp("effective_from").defaultNow(),
+  effectiveTo: timestamp("effective_to"), // For price changes over time
+  notes: text("notes"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at"),
+});
+
+// Bed Type Pricing - Specific pricing for bed types per hospital
+export const bedTypePricing = pgTable("bed_type_pricing", {
+  id: serial("id").primaryKey(),
+  hospitalId: integer("hospital_id").references(() => hospitals.id).notNull(),
+  bedType: text("bed_type").notNull(), // general, semi_private, private, deluxe, vip, icu, ccu, nicu, picu, etc.
+  dailyRate: decimal("daily_rate", { precision: 10, scale: 2 }).notNull(),
+  halfDayRate: decimal("half_day_rate", { precision: 10, scale: 2 }), // For partial day charges
+  amenities: text("amenities"), // JSON array of included amenities
+  description: text("description"),
+  isActive: boolean("is_active").default(true),
+  effectiveFrom: timestamp("effective_from").defaultNow(),
+  effectiveTo: timestamp("effective_to"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at"),
+});
+
+// Relations for charges
+export const hospitalChargesRelations = relations(hospitalCharges, ({ one }) => ({
+  hospital: one(hospitals, { fields: [hospitalCharges.hospitalId], references: [hospitals.id] }),
+}));
+
+export const bedTypePricingRelations = relations(bedTypePricing, ({ one }) => ({
+  hospital: one(hospitals, { fields: [bedTypePricing.hospitalId], references: [hospitals.id] }),
+}));

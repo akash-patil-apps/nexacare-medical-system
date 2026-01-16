@@ -30,7 +30,8 @@ import {
   SettingOutlined,
   MenuUnfoldOutlined,
   PhoneOutlined,
-  MessageOutlined
+  MessageOutlined,
+  HomeOutlined
 } from '@ant-design/icons';
 import { useAuth } from '../../hooks/use-auth';
 import { getAuthToken } from '../../lib/auth';
@@ -62,6 +63,8 @@ import { IpdEncountersList } from '../../components/ipd/IpdEncountersList';
 import { NurseAssignmentModal } from '../../components/ipd/NurseAssignmentModal';
 import { AdmissionModal } from '../../components/ipd/AdmissionModal';
 import type { IpdEncounter } from '../../types/ipd';
+import IPDPatientDetail from '../ipd/patient-detail';
+import BedManagement from '../ipd/bed-management';
 
 const { Content, Sider } = Layout;
 const { Title, Text } = Typography;
@@ -95,6 +98,7 @@ export default function DoctorDashboard() {
   const [selectedEncounterForNurse, setSelectedEncounterForNurse] = useState<IpdEncounter | null>(null);
   const [isAdmissionModalOpen, setIsAdmissionModalOpen] = useState(false);
   const [selectedPatientForAdmission, setSelectedPatientForAdmission] = useState<number | undefined>(undefined);
+  const [selectedEncounterForDetail, setSelectedEncounterForDetail] = useState<number | null>(null);
 
 
   // ALL HOOKS MUST BE CALLED BEFORE ANY CONDITIONAL RETURNS
@@ -1902,6 +1906,21 @@ export default function DoctorDashboard() {
                   />
                 )}
               </Card>
+            ) : selectedMenuKey === 'bed-management' ? (
+              <BedManagement />
+            ) : selectedMenuKey === 'ipd-patient-detail' && selectedEncounterForDetail ? (
+              <div>
+                <Button
+                  style={{ marginBottom: 16 }}
+                  onClick={() => {
+                    setSelectedEncounterForDetail(null);
+                    setSelectedMenuKey('ipd');
+                  }}
+                >
+                  ← Back to IPD Patients
+                </Button>
+                <IPDPatientDetail encounterId={selectedEncounterForDetail} />
+              </div>
             ) : selectedMenuKey === 'ipd' ? (
               <Card
                 variant="borderless"
@@ -1931,14 +1950,10 @@ export default function DoctorDashboard() {
                     hospitalId={doctorProfile.hospitalId}
                     doctorId={doctorProfile.id}
                     onViewPatient={async (encounter) => {
-                      // Open patient info drawer with IPD encounter context
-                      if (encounter.patientId) {
-                        await handleViewPatientInfo(encounter.patientId);
-                        // Store encounter info for clinical documentation
-                        setPatientInfo((prev: any) => ({
-                          ...prev,
-                          encounter: encounter,
-                        }));
+                      // Show IPD patient detail page
+                      if (encounter.id) {
+                        setSelectedEncounterForDetail(encounter.id);
+                        setSelectedMenuKey('ipd-patient-detail');
                       }
                     }}
                     onTransfer={(encounter) => {

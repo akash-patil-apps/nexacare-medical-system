@@ -251,7 +251,7 @@ router.patch('/beds/:bedId/clean', authorizeRoles('ADMIN', 'HOSPITAL', 'RECEPTIO
 });
 
 // Get complete bed structure (hierarchical view)
-router.get('/structure', authenticateToken, authorizeRoles('ADMIN', 'HOSPITAL', 'RECEPTIONIST'), async (req: AuthenticatedRequest, res) => {
+router.get('/structure', authenticateToken, authorizeRoles('ADMIN', 'HOSPITAL', 'RECEPTIONIST', 'DOCTOR'), async (req: AuthenticatedRequest, res) => {
   try {
     if (!req.user) {
       console.error('❌ Get bed structure: No user in request');
@@ -421,16 +421,14 @@ router.patch('/encounters/:encounterId/transfer-doctor', authorizeRoles('ADMIN',
 router.patch('/encounters/:encounterId/discharge', authorizeRoles('ADMIN', 'HOSPITAL', 'DOCTOR'), async (req: AuthenticatedRequest, res) => {
   try {
     const { encounterId } = req.params;
-    const { dischargeSummaryText, status } = req.body;
+    const { dischargeSummaryText, status, autoGenerateSummary } = req.body;
 
-    if (!dischargeSummaryText) {
-      return res.status(400).json({ message: 'dischargeSummaryText is required' });
-    }
-
+    // dischargeSummaryText is now optional - will auto-generate if not provided
     const encounter = await ipdService.dischargePatient({
       encounterId: +encounterId,
-      dischargeSummaryText,
+      dischargeSummaryText: dischargeSummaryText || undefined,
       status: status || 'discharged', // Use provided status or default to 'discharged'
+      autoGenerateSummary: autoGenerateSummary !== false, // Default to true if not specified
       actorUserId: req.user?.id,
       actorRole: req.user?.role || 'UNKNOWN',
       ipAddress: req.ip || req.socket.remoteAddress || undefined,

@@ -46,6 +46,9 @@ import { NotificationBell } from '../../components/notifications/NotificationBel
 import dayjs from 'dayjs';
 import { getISTNow } from '../../lib/timezone';
 import { playNotificationSound } from '../../lib/notification-sounds';
+import PendingRadiologyOrders from '../radiology/pending-orders';
+import RadiologyReportCreation from '../radiology/report-creation';
+import RadiologyReportRelease from '../radiology/report-release';
 
 const { Content, Sider } = Layout;
 const { Title, Text } = Typography;
@@ -232,9 +235,24 @@ export default function RadiologyTechnicianDashboard() {
       label: 'Dashboard',
     },
     {
+      key: 'pending-orders',
+      icon: <CameraOutlined />,
+      label: 'Pending Orders',
+    },
+    {
+      key: 'report-creation',
+      icon: <FileTextOutlined />,
+      label: 'Report Creation',
+    },
+    {
+      key: 'report-release',
+      icon: <CheckCircleOutlined />,
+      label: 'Report Release',
+    },
+    {
       key: 'orders',
       icon: <ExperimentOutlined />,
-      label: 'Imaging Orders',
+      label: 'All Orders',
     },
     {
       key: 'schedule',
@@ -544,6 +562,12 @@ export default function RadiologyTechnicianDashboard() {
 
   const renderContent = () => {
     switch (selectedMenuKey) {
+      case 'pending-orders':
+        return <PendingRadiologyOrders />;
+      case 'report-creation':
+        return <RadiologyReportCreation />;
+      case 'report-release':
+        return <RadiologyReportRelease />;
       case 'orders':
         return renderOrders();
       case 'schedule':

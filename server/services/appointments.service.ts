@@ -646,17 +646,71 @@ export const getAppointmentsByHospital = async (hospitalId: number) => {
 };
 
 /**
- * Get appointment by ID.
+ * Get appointment by ID with related doctor and patient information.
  */
 export const getAppointmentById = async (appointmentId: number) => {
   console.log(`📅 Fetching appointment ${appointmentId}`);
   try {
-    const [result] = await db
-      .select()
+    // Get appointment with doctor and patient info
+    const result = await db
+      .select({
+        appointment: appointments,
+        doctor: doctors,
+        patient: patients,
+      })
       .from(appointments)
-      .where(eq(appointments.id, appointmentId));
+      .leftJoin(doctors, eq(appointments.doctorId, doctors.id))
+      .leftJoin(patients, eq(appointments.patientId, patients.id))
+      .where(eq(appointments.id, appointmentId))
+      .limit(1);
     
-    return result || null;
+    if (result.length === 0) {
+      return null;
+    }
+    
+    const row = result[0];
+    
+    // Fetch doctor user info if doctor exists
+    let doctorUser = null;
+    if (row.doctor?.userId) {
+      const [user] = await db
+        .select()
+        .from(users)
+        .where(eq(users.id, row.doctor.userId))
+        .limit(1);
+      doctorUser = user || null;
+    }
+    
+    // Fetch patient user info if patient exists
+    let patientUser = null;
+    if (row.patient?.userId) {
+      const [user] = await db
+        .select()
+        .from(users)
+        .where(eq(users.id, row.patient.userId))
+        .limit(1);
+      patientUser = user || null;
+    }
+    
+    // Format the response to include doctor and patient info
+    return {
+      ...row.appointment,
+      doctor: row.doctor ? {
+        id: row.doctor.id,
+        specialty: row.doctor.specialty,
+        consultationFee: row.doctor.consultationFee,
+        fullName: doctorUser?.fullName || null,
+      } : null,
+      patient: row.patient ? {
+        id: row.patient.id,
+        fullName: patientUser?.fullName || null,
+        mobileNumber: patientUser?.mobileNumber || null,
+      } : null,
+      doctorName: doctorUser?.fullName || null,
+      doctorSpecialty: row.doctor?.specialty || null,
+      patientName: patientUser?.fullName || null,
+      patientMobile: patientUser?.mobileNumber || null,
+    };
   } catch (error) {
     console.error('Error fetching appointment:', error);
     throw new Error('Failed to fetch appointment');

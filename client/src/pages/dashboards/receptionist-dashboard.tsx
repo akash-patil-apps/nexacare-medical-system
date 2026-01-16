@@ -67,6 +67,9 @@ import { AdmissionModal, IpdEncountersList, TransferModal, DischargeModal } from
 import type { IpdEncounter } from '../../types/ipd';
 import { InvoiceModal } from '../../components/billing/InvoiceModal';
 import { PaymentModal } from '../../components/billing/PaymentModal';
+import { InvoiceViewModal } from '../../components/billing/InvoiceViewModal';
+import { LabTestPaymentModal } from '../../components/modals/lab-test-payment-modal';
+import { LabTestsConfirmationModal } from '../../components/modals/lab-tests-confirmation-modal';
 import tubeIcon from '../../assets/images/tube.png';
 import checkInIcon from '../../assets/images/check-in.png';
 import medicalIcon from '../../assets/images/medical.png';
@@ -122,7 +125,6 @@ export default function ReceptionistDashboard() {
   const [activeMainTab, setActiveMainTab] = useState<string>('appointments');
   const [patientInfoLoading, setPatientInfoLoading] = useState(false);
   const [recommendedLabTests, setRecommendedLabTests] = useState<any[]>([]);
-  const [confirmingLabTest, setConfirmingLabTest] = useState<number | null>(null);
   const [selectedLabReport, setSelectedLabReport] = useState<any>(null);
   const [isLabReportModalOpen, setIsLabReportModalOpen] = useState(false);
   const [patientsWithLabTests, setPatientsWithLabTests] = useState<Set<number>>(new Set());
@@ -134,6 +136,11 @@ export default function ReceptionistDashboard() {
   const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
   const [selectedInvoiceForPayment, setSelectedInvoiceForPayment] = useState<number | null>(null);
   const [appointmentInvoices, setAppointmentInvoices] = useState<Record<number, any>>({});
+  const [isInvoiceViewModalOpen, setIsInvoiceViewModalOpen] = useState(false);
+  const [selectedInvoiceForView, setSelectedInvoiceForView] = useState<number | null>(null);
+  const [isLabTestPaymentModalOpen, setIsLabTestPaymentModalOpen] = useState(false);
+  const [selectedLabTestForPayment, setSelectedLabTestForPayment] = useState<any>(null);
+  const [isLabTestsConfirmationModalOpen, setIsLabTestsConfirmationModalOpen] = useState(false);
   const appointmentStartTimeValue = Form.useWatch('appointmentStartTime', walkInForm);
   const durationMinutesValue = Form.useWatch('durationMinutes', walkInForm);
   
@@ -328,6 +335,13 @@ export default function ReceptionistDashboard() {
       
       setLabTestsByPatient(labTestsMap);
       setPatientsWithLabTests(patientsWithTests);
+      
+      // Aggregate all recommended lab tests for the main dashboard card
+      const allRecommendedTests: any[] = [];
+      Object.values(labTestsMap).forEach((tests) => {
+        allRecommendedTests.push(...tests);
+      });
+      setRecommendedLabTests(allRecommendedTests);
     };
 
     // Add a small delay to ensure appointments are fully loaded
@@ -1365,59 +1379,94 @@ export default function ReceptionistDashboard() {
     }
   };
 
-  // Handle confirm lab recommendation - send to lab
-  const handleConfirmLabRecommendation = async (reportId: number) => {
-    if (!selectedPatientForLabTests) return;
-    setConfirmingLabTest(reportId);
-    try {
-      const token = localStorage.getItem('auth-token');
-      const response = await fetch(`/api/reception/lab-recommendations/${reportId}/confirm`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        }
-      });
+  // Handle confirm lab recommendation - open payment modal first
+  const handleConfirmLabRecommendation = (test: any) => {
+    if (!hospitalId) {
+      message.warning('Hospital information not available. Please refresh the page.');
+      return;
+    }
+    
+    // Extract patientId from test object or use selectedPatientForLabTests
+    const patientId = test.patientId || selectedPatientForLabTests;
+    if (!patientId) {
+      message.warning('Patient information not available');
+      return;
+    }
+    
+    // Find patient name from appointments or use patientInfo
+    let patientName = `Patient ID: ${patientId}`;
+    if (patientInfo?.patient?.id === patientId && patientInfo?.patient?.name) {
+      patientName = patientInfo.patient.name;
+    } else {
+      // Try to find patient name from appointments
+      const appointment = appointments.find((apt: any) => apt.patientId === patientId);
+      if (appointment?.patient) {
+        patientName = appointment.patient;
+      }
+    }
+    
+    // Use test object directly or find from labTestsByPatient
+    const testDetails = test.patientId 
+      ? test // If test has patientId, use it directly (from main dashboard card)
+      : labTestsByPatient[selectedPatientForLabTests]?.find((t: any) => t.id === test.id || t.testName === test.testName);
+    
+    if (!testDetails) {
+      message.error('Lab test details not found');
+      return;
+    }
+    
+    // Set selected test and open payment modal
+    setSelectedLabTestForPayment({
+      id: testDetails.id,
+      testName: testDetails.testName || 'Unknown Test',
+      patientId: patientId,
+      patientName: patientName,
+      doctorId: testDetails.doctorId,
+      doctorName: testDetails.doctorName,
+      priority: testDetails.priority,
+      notes: testDetails.notes,
+    });
+    setIsLabTestPaymentModalOpen(true);
+  };
 
-      if (response.ok) {
-        message.success('Lab test confirmed and sent to lab technician');
+  // Handle lab test payment success - refresh data
+  const handleLabTestPaymentSuccess = () => {
+    if (selectedLabTestForPayment) {
+      const patientId = selectedLabTestForPayment.patientId;
+      
         // Remove from recommended list
-        setRecommendedLabTests(prev => prev.filter(r => r.id !== reportId));
+      setRecommendedLabTests(prev => prev.filter(r => r.id !== selectedLabTestForPayment.id));
+      
         // Update labTestsByPatient - remove the confirmed test
-        if (selectedPatientForLabTests) {
           setLabTestsByPatient(prev => {
             const updated = { ...prev };
-            if (updated[selectedPatientForLabTests]) {
-              updated[selectedPatientForLabTests] = updated[selectedPatientForLabTests].filter(
-                (t: any) => t.id !== reportId
+        if (updated[patientId]) {
+          updated[patientId] = updated[patientId].filter(
+            (t: any) => t.id !== selectedLabTestForPayment.id
               );
               // If no more tests, remove patient from set
-              if (updated[selectedPatientForLabTests].length === 0) {
+          if (updated[patientId].length === 0) {
                 setPatientsWithLabTests(prevSet => {
                   const newSet = new Set(prevSet);
-                  newSet.delete(selectedPatientForLabTests);
+              newSet.delete(patientId);
                   return newSet;
                 });
-                delete updated[selectedPatientForLabTests];
+            delete updated[patientId];
               }
             }
             return updated;
           });
-        }
+      
         // Refresh patient info to update lab reports
-        if (patientInfo?.patient?.id) {
-          handleViewPatientInfo(patientInfo.patient.id);
-        }
-      } else {
-        const error = await response.json();
-        message.error(error.message || 'Failed to confirm lab test');
+      if (patientInfo?.patient?.id === patientId) {
+        handleViewPatientInfo(patientId);
       }
-    } catch (error: any) {
-      console.error('Error confirming lab recommendation:', error);
-      message.error('Failed to confirm lab test. Please try again.');
-    } finally {
-      setConfirmingLabTest(null);
+      
+      // Refresh appointments
+      refetchAppointments();
     }
+    setIsLabTestPaymentModalOpen(false);
+    setSelectedLabTestForPayment(null);
   };
 
   // Get appointment status with better labels
@@ -1710,9 +1759,9 @@ export default function ReceptionistDashboard() {
                 icon={<img src={tubeIcon} alt="Lab Tests" style={{ width: 16, height: 16 }} />}
                 onClick={() => {
                   setSelectedPatientForLabTests(patientIdNum);
-                  setIsLabTestsModalOpen(true);
+                  setIsLabTestsConfirmationModalOpen(true);
                 }}
-                title={`${labTestsCount} recommended lab test${labTestsCount > 1 ? 's' : ''} - Click to view`}
+                title={`${labTestsCount} recommended lab test${labTestsCount > 1 ? 's' : ''} - Click to confirm`}
                 style={{ padding: 0, height: 'auto' }}
               />
           )}
@@ -1929,7 +1978,21 @@ export default function ReceptionistDashboard() {
                       type="default"
                       icon={<DollarOutlined />}
                       onClick={() => {
-                        setSelectedAppointmentForInvoice(record);
+                        // Pass all available appointment data including patient and doctor info
+                        setSelectedAppointmentForInvoice({
+                          ...record,
+                          patientId: record.patientId || record.patient?.id,
+                          doctorId: record.doctorId || record.doctor?.id,
+                          hospitalId: record.hospitalId || hospitalId,
+                          type: record.type || 'walk-in',
+                          paymentStatus: record.paymentStatus,
+                          // Include patient and doctor info if available
+                          patientName: record.patientName || record.patient?.fullName || record.patient?.name,
+                          patientMobile: record.patientMobile || record.patient?.mobileNumber,
+                          doctorName: record.doctorName || record.doctor?.fullName || record.doctor?.name,
+                          doctorSpecialty: record.doctorSpecialty || record.doctor?.specialty,
+                          doctorConsultationFee: record.doctor?.consultationFee,
+                        });
                         setIsInvoiceModalOpen(true);
                       }}
                       title="Create invoice"
@@ -1967,8 +2030,8 @@ export default function ReceptionistDashboard() {
                       type="link"
                       icon={<FileTextOutlined />}
                       onClick={() => {
-                        // Open invoice in new tab or modal
-                        window.open(`/api/billing/opd/invoices/${invoice.id}`, '_blank');
+                        setSelectedInvoiceForView(invoice.id);
+                        setIsInvoiceViewModalOpen(true);
                       }}
                       title="View invoice"
                     />
@@ -2113,8 +2176,35 @@ export default function ReceptionistDashboard() {
         return;
       }
 
+      const appointment = responseBody.appointment || responseBody;
+      const appointmentId = appointment.id || responseBody.id;
+
       message.success('Walk-in appointment booked successfully!');
-      closeWalkInModal();
+      
+      // Open invoice modal to create invoice and collect payment
+      if (appointmentId) {
+        setHospitalId(context.hospitalId);
+        // Pass all available data including patient and doctor info
+        setSelectedAppointmentForInvoice({
+          id: appointmentId,
+          patientId: patientId,
+          doctorId: selectedDoctor?.id || values.doctorId,
+          hospitalId: context.hospitalId,
+          type: 'walk-in',
+          // Include patient info
+          patientName: foundPatient?.fullName || foundPatient?.name || foundUser?.fullName,
+          patientMobile: foundPatient?.mobileNumber || foundUser?.mobileNumber,
+          // Include doctor info
+          doctorName: selectedDoctor?.fullName || selectedDoctor?.name,
+          doctorSpecialty: selectedDoctor?.specialty,
+          doctorConsultationFee: selectedDoctor?.consultationFee,
+        });
+        // Don't close modal yet - let user complete invoice/payment
+        // closeWalkInModal();
+        setIsWalkInModalOpen(false); // Just hide the walk-in modal, invoice will show
+      } else {
+        closeWalkInModal();
+      }
 
       await Promise.all([refetchWalkIns(), refetchAppointments()]);
 
@@ -4302,37 +4392,48 @@ export default function ReceptionistDashboard() {
                     } 
                     size="small"
                     style={{ borderColor: '#FF9800', borderWidth: 2 }}
-                  >
-                    <List
-                      dataSource={recommendedLabTests}
-                      renderItem={(recommendation: any) => (
-                        <List.Item
-                          actions={[
+                    extra={
+                      patientInfo?.patient?.id && labTestsByPatient[patientInfo.patient.id] && labTestsByPatient[patientInfo.patient.id].length > 0 ? (
                             <Button
                               type="primary"
                               size="small"
-                              loading={confirmingLabTest === recommendation.id}
-                              onClick={() => handleConfirmLabRecommendation(recommendation.id)}
-                            >
-                              Confirm & Send to Lab
-                            </Button>
-                          ]}
+                          icon={<ExperimentOutlined />}
+                          onClick={() => {
+                            setSelectedPatientForLabTests(patientInfo.patient.id);
+                            setIsLabTestsConfirmationModalOpen(true);
+                          }}
                         >
+                          Confirm Tests
+                            </Button>
+                      ) : null
+                    }
+                        >
+                    {patientInfo?.patient?.id && labTestsByPatient[patientInfo.patient.id] && labTestsByPatient[patientInfo.patient.id].length > 0 ? (
+                      <List
+                        dataSource={labTestsByPatient[patientInfo.patient.id]}
+                        renderItem={(test: any) => (
+                          <List.Item>
                           <div style={{ width: '100%' }}>
-                            <Text strong>{recommendation.testName}</Text>
+                              <Space>
+                                <Text strong>{test.testName}</Text>
+                                {test.priority && (
+                                  <Tag color={
+                                    test.priority.toLowerCase() === 'urgent' ? 'red' :
+                                    test.priority.toLowerCase() === 'high' ? 'orange' : 'blue'
+                                  }>
+                                    {test.priority}
+                                  </Tag>
+                                )}
+                              </Space>
                             <br />
                             <Text type="secondary" style={{ fontSize: 12 }}>
-                              {dayjs(recommendation.reportDate).format('DD MMM YYYY')} • {recommendation.testType}
+                                {test.testType || 'Blood Test'}
+                                {test.reportDate && ` • ${dayjs(test.reportDate).format('DD MMM YYYY')}`}
                             </Text>
-                            {recommendation.priority && (
-                              <Tag color={recommendation.priority === 'Critical' ? 'red' : 'orange'} style={{ marginLeft: 8 }}>
-                                {recommendation.priority}
-                              </Tag>
-                            )}
-                            {recommendation.notes && (
+                              {test.notes && (
                               <div style={{ marginTop: 4 }}>
                                 <Text type="secondary" style={{ fontSize: 11 }}>
-                                  Notes: {recommendation.notes}
+                                    Notes: {test.notes}
                                 </Text>
                               </div>
                             )}
@@ -4340,6 +4441,13 @@ export default function ReceptionistDashboard() {
                         </List.Item>
                       )}
                     />
+                    ) : (
+                      <div style={{ padding: '8px 0' }}>
+                        <Text type="secondary">
+                          No recommended tests for this patient. Check other patients for pending confirmations.
+                        </Text>
+                      </div>
+                    )}
                   </Card>
                 )}
 
@@ -4730,8 +4838,7 @@ export default function ReceptionistDashboard() {
                   <Button
                     key="confirm"
                     type="primary"
-                    loading={confirmingLabTest === test.id}
-                    onClick={() => handleConfirmLabRecommendation(test.id)}
+                    onClick={() => handleConfirmLabRecommendation(test)}
                   >
                     Confirm & Send to Lab
                   </Button>
@@ -4866,9 +4973,14 @@ export default function ReceptionistDashboard() {
           appointmentId={selectedAppointmentForInvoice.id}
           patientId={selectedAppointmentForInvoice.patientId}
           doctorId={selectedAppointmentForInvoice.doctorId}
-          hospitalId={hospitalId}
+          hospitalId={hospitalId || selectedAppointmentForInvoice.hospitalId}
           appointmentType={selectedAppointmentForInvoice.type}
           paymentStatus={selectedAppointmentForInvoice.paymentStatus}
+          patientName={selectedAppointmentForInvoice.patientName}
+          patientMobile={selectedAppointmentForInvoice.patientMobile}
+          doctorName={selectedAppointmentForInvoice.doctorName}
+          doctorSpecialty={selectedAppointmentForInvoice.doctorSpecialty}
+          doctorConsultationFee={selectedAppointmentForInvoice.doctorConsultationFee}
         />
       )}
 
@@ -4886,6 +4998,75 @@ export default function ReceptionistDashboard() {
             refetchAppointments();
           }}
           invoiceId={selectedInvoiceForPayment}
+        />
+      )}
+
+      {/* Invoice View Modal */}
+      {selectedInvoiceForView && (
+        <InvoiceViewModal
+          open={isInvoiceViewModalOpen}
+          onCancel={() => {
+            setIsInvoiceViewModalOpen(false);
+            setSelectedInvoiceForView(null);
+          }}
+          invoiceId={selectedInvoiceForView}
+        />
+      )}
+
+      {/* Lab Test Payment Modal */}
+      {selectedLabTestForPayment && hospitalId && (
+        <LabTestPaymentModal
+          open={isLabTestPaymentModalOpen}
+          onCancel={() => {
+            setIsLabTestPaymentModalOpen(false);
+            setSelectedLabTestForPayment(null);
+          }}
+          onSuccess={handleLabTestPaymentSuccess}
+          labTest={selectedLabTestForPayment}
+          hospitalId={hospitalId}
+        />
+      )}
+
+      {/* Lab Tests Confirmation Modal - Combined confirmation for all tests */}
+      {selectedPatientForLabTests && labTestsByPatient[selectedPatientForLabTests] && hospitalId && (
+        <LabTestsConfirmationModal
+          open={isLabTestsConfirmationModalOpen}
+          onCancel={() => {
+            setIsLabTestsConfirmationModalOpen(false);
+            setSelectedPatientForLabTests(null);
+          }}
+          onSuccess={() => {
+            // Refresh data
+            const patientId = selectedPatientForLabTests;
+            setRecommendedLabTests(prev => prev.filter(r => {
+              const testPatientId = r.patientId || (labTestsByPatient[patientId]?.find((t: any) => t.id === r.id) ? patientId : null);
+              return testPatientId !== patientId;
+            }));
+            
+            // Update labTestsByPatient
+            setLabTestsByPatient(prev => {
+              const updated = { ...prev };
+              delete updated[patientId];
+              return updated;
+            });
+            
+            // Remove from patients with tests
+            setPatientsWithLabTests(prevSet => {
+              const newSet = new Set(prevSet);
+              newSet.delete(patientId);
+              return newSet;
+            });
+            
+            // Refresh appointments
+            refetchAppointments();
+            
+            setIsLabTestsConfirmationModalOpen(false);
+            setSelectedPatientForLabTests(null);
+          }}
+          patientId={selectedPatientForLabTests}
+          patientName={appointments.find((apt: any) => apt.patientId === selectedPatientForLabTests)?.patient || `Patient ID: ${selectedPatientForLabTests}`}
+          labTests={labTestsByPatient[selectedPatientForLabTests] || []}
+          hospitalId={hospitalId}
         />
       )}
     </Layout>

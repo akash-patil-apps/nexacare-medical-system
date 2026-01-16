@@ -32,6 +32,12 @@ interface InvoiceModalProps {
   hospitalId?: number;
   appointmentType?: string; // 'online' or 'walk-in'
   paymentStatus?: string; // 'paid' or null/undefined
+  // Optional: Pass patient/doctor info directly to avoid API calls
+  patientName?: string;
+  patientMobile?: string;
+  doctorName?: string;
+  doctorSpecialty?: string;
+  doctorConsultationFee?: string | number;
 }
 
 interface InvoiceItem {
@@ -51,6 +57,11 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({
   hospitalId,
   appointmentType = 'walk-in',
   paymentStatus,
+  patientName,
+  patientMobile,
+  doctorName,
+  doctorSpecialty,
+  doctorConsultationFee,
 }) => {
   const [form] = Form.useForm();
   const queryClient = useQueryClient();
@@ -59,17 +70,62 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({
   const [discountType, setDiscountType] = useState<'amount' | 'percent' | null>(null);
   
   // Fetch appointment details to check payment status from notes
-  const { data: appointmentDetails } = useQuery({
+  const { data: appointmentDetails, isLoading: appointmentLoading } = useQuery({
     queryKey: ['/api/appointments', appointmentId],
     queryFn: async () => {
       const token = localStorage.getItem('auth-token');
       const response = await fetch(`/api/appointments/${appointmentId}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
-      if (!response.ok) throw new Error('Failed to fetch appointment');
+      if (!response.ok) {
+        const error = await response.json().catch(() => ({ message: 'Failed to fetch appointment' }));
+        throw new Error(error.message || 'Failed to fetch appointment');
+      }
       return response.json();
     },
     enabled: open && !!appointmentId,
+  });
+
+  // Fetch patient details - use appointment data if available, otherwise try to fetch
+  // Note: Patient data might be in appointment response, so we'll use that as primary source
+  const { data: patient, isLoading: patientLoading } = useQuery({
+    queryKey: ['/api/reception/patients', patientId, 'info', appointmentDetails?.id],
+    queryFn: async () => {
+      // First try to get from appointment if available
+      if (appointmentDetails?.patient) {
+        return appointmentDetails.patient;
+      }
+      if (appointmentDetails?.patientName) {
+        return {
+          id: patientId,
+          fullName: appointmentDetails.patientName,
+          name: appointmentDetails.patientName,
+          mobileNumber: appointmentDetails.patientMobile || appointmentDetails.patientMobileNumber,
+        };
+      }
+      
+      // Try to fetch from reception API
+      const token = localStorage.getItem('auth-token');
+      try {
+        const response = await fetch(`/api/reception/patients/${patientId}/info`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (response.ok) {
+          const data = await response.json();
+          return data.patient || data;
+        }
+      } catch (e) {
+        // Ignore fetch errors
+      }
+      
+      // Return minimal patient data from appointment
+      return {
+        id: patientId,
+        fullName: appointmentDetails?.patientName || 'Unknown',
+        name: appointmentDetails?.patientName || 'Unknown',
+      };
+    },
+    enabled: open && !!patientId && !!appointmentDetails,
   });
 
   // Extract payment details from appointment notes
@@ -117,29 +173,65 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({
   const needsPaymentMethod = !isOnlinePayment; // Only walk-in or unpaid online appointments need payment method
 
   // Fetch doctor details to get consultation fee
-  const { data: doctor, isLoading: doctorLoading } = useQuery({
+  // Try to get doctor info from appointment first, then fallback to direct fetch
+  const { data: doctor, isLoading: doctorLoading, error: doctorError } = useQuery({
     queryKey: ['/api/doctors', doctorId],
     queryFn: async () => {
       const token = localStorage.getItem('auth-token');
       const response = await fetch(`/api/doctors/${doctorId}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
-      if (!response.ok) throw new Error('Failed to fetch doctor');
+      if (!response.ok) {
+        const error = await response.json().catch(() => ({ message: 'Failed to fetch doctor' }));
+        throw new Error(error.message || 'Failed to fetch doctor');
+      }
       return response.json();
     },
     enabled: open && !!doctorId,
+    retry: 1, // Only retry once
   });
 
-  // Initialize items when doctor data is loaded
+  // Use doctor from props first, then appointment, then fetched doctor
+  const doctorInfo = (doctorName ? {
+    fullName: doctorName,
+    specialty: doctorSpecialty || '',
+    consultationFee: doctorConsultationFee ? parseFloat(doctorConsultationFee.toString()) : (doctor?.consultationFee || 500),
+  } : null) || (appointmentDetails?.doctor || appointmentDetails?.doctorName ? {
+    fullName: appointmentDetails?.doctor?.fullName || appointmentDetails?.doctorName || 'Unknown',
+    specialty: appointmentDetails?.doctor?.specialty || appointmentDetails?.doctorSpecialty || '',
+    consultationFee: appointmentDetails?.doctor?.consultationFee || doctor?.consultationFee || 500,
+  } : doctor);
+
+  // Initialize items when doctor data is loaded or appointment details are available
   useEffect(() => {
-    if (doctor && items.length === 0) {
-      const consultationFee = doctor.consultationFee 
-        ? parseFloat(doctor.consultationFee.toString())
-        : 500; // Default fee
+    if (items.length === 0 && (doctor || doctorInfo || appointmentDetails || doctorConsultationFee)) {
+      // Priority: props > doctorInfo > doctor > appointmentDetails > default
+      // Parse consultation fee properly - handle decimal/string/number types
+      let consultationFee = 500; // Default
+      
+      if (doctorConsultationFee) {
+        consultationFee = parseFloat(doctorConsultationFee.toString());
+      } else if (doctorInfo?.consultationFee) {
+        const fee = doctorInfo.consultationFee;
+        consultationFee = typeof fee === 'string' ? parseFloat(fee) : typeof fee === 'number' ? fee : parseFloat(String(fee));
+      } else if (doctor?.consultationFee) {
+        const fee = doctor.consultationFee;
+        consultationFee = typeof fee === 'string' ? parseFloat(fee) : typeof fee === 'number' ? fee : parseFloat(String(fee));
+      } else if (appointmentDetails?.doctor?.consultationFee) {
+        const fee = appointmentDetails.doctor.consultationFee;
+        consultationFee = typeof fee === 'string' ? parseFloat(fee) : typeof fee === 'number' ? fee : parseFloat(String(fee));
+      }
+      
+      // Ensure fee is valid number
+      if (isNaN(consultationFee) || consultationFee <= 0) {
+        consultationFee = 500; // Fallback to default
+      }
+      
+      const specialty = doctorSpecialty || doctorInfo?.specialty || doctor?.specialty || appointmentDetails?.doctor?.specialty || appointmentDetails?.doctorSpecialty || 'General';
       
       setItems([{
         type: 'consultation_fee',
-        description: `Consultation fee - ${doctor.specialty || 'General'}`,
+        description: `Consultation fee - ${specialty}`,
         quantity: 1,
         unitPrice: consultationFee,
       }]);
@@ -149,7 +241,7 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({
         registrationFee: 0,
       });
     }
-  }, [doctor, items.length, form]);
+  }, [doctor, doctorInfo, appointmentDetails, doctorConsultationFee, doctorSpecialty, items.length, form]);
 
   // Calculate totals
   const calculateTotals = () => {
@@ -389,6 +481,29 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({
     },
   ];
 
+  // Get patient info from multiple sources - prioritize props, then fetched data, then appointment
+  const patientInfo = (patientName ? {
+    id: patientId,
+    fullName: patientName,
+    name: patientName,
+    mobileNumber: patientMobile,
+  } : null) || patient || (appointmentDetails?.patient ? {
+    id: patientId,
+    fullName: appointmentDetails.patient.fullName || appointmentDetails.patient.name,
+    name: appointmentDetails.patient.fullName || appointmentDetails.patient.name,
+    mobileNumber: appointmentDetails.patient.mobileNumber,
+  } : appointmentDetails?.patientName ? {
+    id: patientId,
+    fullName: appointmentDetails.patientName,
+    name: appointmentDetails.patientName,
+    mobileNumber: appointmentDetails.patientMobile || appointmentDetails.patientMobileNumber,
+  } : null);
+
+  // Ensure form is always connected when modal is open
+  if (!open) {
+    return null;
+  }
+
   return (
     <Modal
       title="Create Invoice"
@@ -397,15 +512,26 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({
       footer={null}
       width={700}
     >
-      {doctorLoading ? (
-        <Spin />
+      {(doctorLoading || appointmentLoading) ? (
+        <div style={{ textAlign: 'center', padding: 40 }}>
+          <Spin size="large" />
+          <div style={{ marginTop: 16 }}>
+            <Text type="secondary">Loading appointment details...</Text>
+          </div>
+        </div>
       ) : (
         <Form
           form={form}
           layout="vertical"
           onFinish={handleSubmit}
           initialValues={{
-            consultationFee: doctor?.consultationFee ? parseFloat(doctor.consultationFee.toString()) : 500,
+            consultationFee: (() => {
+              // Get consultation fee with proper parsing - priority: props > doctorInfo > doctor > appointmentDetails
+              const fee = doctorConsultationFee || doctorInfo?.consultationFee || doctor?.consultationFee || appointmentDetails?.doctor?.consultationFee;
+              if (!fee) return 500;
+              const parsed = typeof fee === 'string' ? parseFloat(fee) : typeof fee === 'number' ? fee : parseFloat(String(fee));
+              return isNaN(parsed) || parsed <= 0 ? 500 : parsed;
+            })(),
             registrationFee: 0,
             discountAmount: 0,
             taxAmount: 0,
@@ -420,8 +546,12 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({
             <Space direction="vertical" size="small">
               <Text strong>Appointment ID: {appointmentId}</Text>
               <Text>
-                Doctor: {doctor?.user?.fullName || doctor?.fullName || 'Loading...'}
-                {doctor?.specialty && ` (${doctor.specialty})`}
+                Patient: {patientInfo?.fullName || patientInfo?.name || appointmentDetails?.patientName || appointmentDetails?.patient?.fullName || appointmentDetails?.patient?.name || patientName || 'N/A'} 
+                {(patientInfo?.mobileNumber || appointmentDetails?.patientMobile || appointmentDetails?.patient?.mobileNumber || patientMobile) && ` (${patientInfo?.mobileNumber || appointmentDetails?.patientMobile || appointmentDetails?.patient?.mobileNumber || patientMobile})`}
+              </Text>
+              <Text>
+                Doctor: {doctorInfo?.fullName || doctor?.user?.fullName || doctor?.fullName || appointmentDetails?.doctorName || appointmentDetails?.doctor?.fullName || doctorName || 'N/A'}
+                {(doctorInfo?.specialty || doctor?.specialty || appointmentDetails?.doctorSpecialty || appointmentDetails?.doctor?.specialty || doctorSpecialty) && ` (${doctorInfo?.specialty || doctor?.specialty || appointmentDetails?.doctorSpecialty || appointmentDetails?.doctor?.specialty || doctorSpecialty})`}
               </Text>
             </Space>
           </div>

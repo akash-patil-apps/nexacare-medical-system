@@ -10,6 +10,7 @@ import {
   BarChartOutlined,
   StarOutlined,
   UserOutlined,
+  CheckCircleOutlined,
 } from '@ant-design/icons';
 import { useAuth } from '../../hooks/use-auth';
 import { useLocation } from 'wouter';
@@ -59,6 +60,21 @@ export const LabTechnicianSidebar: React.FC<LabTechnicianSidebarProps> = ({
       key: 'dashboard', 
       icon: <DashboardOutlined style={{ fontSize: 20 }} />, 
       label: 'Dashboard' 
+    },
+    { 
+      key: 'pending-orders', 
+      icon: <ExperimentOutlined style={{ fontSize: 20 }} />, 
+      label: 'Pending Orders' 
+    },
+    { 
+      key: 'result-entry', 
+      icon: <FileSearchOutlined style={{ fontSize: 20 }} />, 
+      label: 'Result Entry' 
+    },
+    { 
+      key: 'report-release', 
+      icon: <CheckCircleOutlined style={{ fontSize: 20 }} />, 
+      label: 'Report Release' 
     },
     { 
       key: 'reports', 

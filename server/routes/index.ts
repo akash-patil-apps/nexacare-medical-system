@@ -29,6 +29,12 @@ import medicationRoutes from "./medication.routes";
 import medicinesRoutes from "./medicines.routes";
 import labTestsRoutes from "./lab-tests.routes";
 import radiologyTestsRoutes from "./radiology-tests.routes";
+import pharmacyRoutes from "./pharmacy.routes";
+import labWorkflowRoutes from "./lab-workflow.routes";
+import radiologyWorkflowRoutes from "./radiology-workflow.routes";
+import ipdWorkflowRoutes from "./ipd-workflow.routes";
+import hospitalChargesRoutes from "./hospital-charges.routes";
+import revenueRoutes from "./revenue.routes";
 
 
 const router = Router();
@@ -66,6 +72,12 @@ export async function registerRoutes(app: Express) {
   app.use("/api/medicines", medicinesRoutes);
   app.use("/api/lab-tests", labTestsRoutes);
   app.use("/api/radiology-tests", radiologyTestsRoutes);
+  app.use("/api/pharmacy", pharmacyRoutes);
+  app.use("/api/lab-workflow", labWorkflowRoutes);
+  app.use("/api/radiology-workflow", radiologyWorkflowRoutes);
+  app.use("/api/ipd-workflow", ipdWorkflowRoutes);
+  app.use("/api/hospital-charges", hospitalChargesRoutes);
+  app.use("/api/revenue", revenueRoutes);
   
   // NOTE: /api/prescriptions/my should use /api/prescriptions/patient for patients
   // The prescriptions router handles all prescription endpoints

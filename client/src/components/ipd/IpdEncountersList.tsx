@@ -25,6 +25,7 @@ interface IpdEncountersListProps {
   onAdministerMedication?: (encounter: IpdEncounter) => void;
   showDoctorInfo?: boolean; // Show doctor information in table
   isNurseView?: boolean; // If true, shows nurse action buttons
+  showAllEncounters?: boolean; // If true, shows all encounters including discharged (default: false, only active)
 }
 
 export const IpdEncountersList: React.FC<IpdEncountersListProps> = ({
@@ -43,6 +44,7 @@ export const IpdEncountersList: React.FC<IpdEncountersListProps> = ({
   onAdministerMedication,
   showDoctorInfo = false,
   isNurseView = false,
+  showAllEncounters = false,
 }) => {
   // Fetch IPD encounters only if not provided as prop
   const { data: encountersRaw = [], isLoading: isFetching } = useQuery<any[]>({
@@ -101,13 +103,14 @@ export const IpdEncountersList: React.FC<IpdEncountersListProps> = ({
     return enc;
   });
 
-  // Filter active encounters (not discharged)
-  const activeEncounters = encounters.filter(
-    (e) => e.status === 'admitted' || e.status === 'transferred',
-  );
+  // Filter encounters based on showAllEncounters prop
+  const displayEncounters = showAllEncounters 
+    ? encounters // Show all encounters including discharged
+    : encounters.filter((e) => e.status === 'admitted' || e.status === 'transferred'); // Only active encounters
   
   console.log('📋 IpdEncountersList - Total encounters:', encounters.length);
-  console.log('📋 IpdEncountersList - Active encounters:', activeEncounters.length);
+  console.log('📋 IpdEncountersList - Display encounters:', displayEncounters.length);
+  console.log('📋 IpdEncountersList - Show all encounters:', showAllEncounters);
   console.log('📋 IpdEncountersList - Encounter statuses:', encounters.map(e => ({ id: e.id, status: e.status, patient: e.patient?.user?.fullName })));
   if (doctorId) {
     console.log('📋 IpdEncountersList - Doctor ID filter:', doctorId);
@@ -165,18 +168,27 @@ export const IpdEncountersList: React.FC<IpdEncountersListProps> = ({
       render: (type: string) => <Tag style={{ margin: 0 }}>{type || 'N/A'}</Tag>,
     },
     {
-      title: 'Current Bed',
+      title: showAllEncounters ? 'Bed' : 'Current Bed',
       dataIndex: 'currentBed',
       key: 'currentBed',
       width: 100,
-      render: (_: any, record: IpdEncounter) =>
-        record.currentBed ? (
-          <Text style={{ fontSize: '13px' }}>
-            {record.currentBed.bedName || `Bed ${record.currentBed.bedNumber}`}
-          </Text>
-        ) : (
-          <Text type="secondary" style={{ fontSize: '13px' }}>N/A</Text>
-        ),
+      render: (_: any, record: IpdEncounter) => {
+        const isDischarged = record.status === 'discharged' || record.status === 'LAMA' || record.status === 'death' || record.status === 'absconded';
+        if (record.currentBed) {
+          return (
+            <Text style={{ fontSize: '13px' }}>
+              {record.currentBed.bedName || `Bed ${record.currentBed.bedNumber}`}
+              {isDischarged && <Text type="secondary" style={{ fontSize: '11px', marginLeft: 4 }}>(Discharged)</Text>}
+            </Text>
+          );
+        } else {
+          return (
+            <Text type="secondary" style={{ fontSize: '13px' }}>
+              {isDischarged ? 'N/A' : 'N/A'}
+            </Text>
+          );
+        }
+      },
     },
     {
       title: 'Attending Doctor',
@@ -203,6 +215,17 @@ export const IpdEncountersList: React.FC<IpdEncountersListProps> = ({
         </Text>
       ),
     },
+    ...(showAllEncounters ? [{
+      title: 'Discharged',
+      dataIndex: 'dischargedAt',
+      key: 'dischargedAt',
+      width: 120,
+      render: (date: string | null, record: IpdEncounter) => (
+        <Text style={{ fontSize: '13px' }}>
+          {date ? new Date(date).toLocaleDateString('en-GB') : (record.status === 'discharged' || record.status === 'LAMA' || record.status === 'death' || record.status === 'absconded' ? 'N/A' : '-')}
+        </Text>
+      ),
+    }] : []),
     {
       title: 'Status',
       dataIndex: 'status',
@@ -334,14 +357,14 @@ export const IpdEncountersList: React.FC<IpdEncountersListProps> = ({
     );
   }
 
-  if (activeEncounters.length === 0) {
-    return <Empty description="No active IPD encounters" />;
+  if (displayEncounters.length === 0) {
+    return <Empty description={showAllEncounters ? "No IPD encounters found" : "No active IPD encounters"} />;
   }
 
   return (
     <Table
       columns={columns}
-      dataSource={activeEncounters}
+      dataSource={displayEncounters}
       rowKey="id"
       pagination={{ 
         pageSize: 10,

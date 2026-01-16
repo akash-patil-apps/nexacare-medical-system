@@ -8,9 +8,14 @@ import { createServer } from "http";
 import { registerRoutes } from "./routes";
 import { setupVite, serveStatic } from "./vite";
 import { errorHandler } from "./middleware/errorHandler";
+import { securityHeaders, rateLimit } from "./middleware/security";
 
 const app = express();
 const server = createServer(app);
+
+// Security middleware
+app.use(securityHeaders);
+app.use(rateLimit({ windowMs: 15 * 60 * 1000, max: 100 })); // 100 requests per 15 minutes
 
 app.use(cors());
 app.use(express.json());

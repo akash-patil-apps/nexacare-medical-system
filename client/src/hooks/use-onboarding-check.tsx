@@ -20,15 +20,23 @@ export function useOnboardingCheck() {
   const { data: onboardingStatus, isLoading } = useQuery({
     queryKey: ['onboarding-status', userRole],
     queryFn: async () => {
-      if (userRole === 'patient') {
-        const res = await apiRequest('GET', '/api/onboarding/patient/status');
+      const roleLower = userRole.toLowerCase();
+      const statusRoutes: Record<string, string> = {
+        patient: '/api/onboarding/patient/status',
+        hospital: '/api/onboarding/hospital/status',
+        nurse: '/api/onboarding/nurse/status',
+        pharmacist: '/api/onboarding/pharmacist/status',
+        radiology_technician: '/api/onboarding/radiology-technician/status',
+        doctor: '/api/onboarding/doctor/status',
+        receptionist: '/api/onboarding/receptionist/status',
+        lab: '/api/onboarding/lab/status',
+      };
+      
+      const statusRoute = statusRoutes[roleLower];
+      if (statusRoute) {
+        const res = await apiRequest('GET', statusRoute);
         return res.json();
       }
-      if (userRole === 'hospital') {
-        const res = await apiRequest('GET', '/api/onboarding/hospital/status');
-        return res.json();
-      }
-      // Add other roles as needed
       return { isCompleted: true };
     },
     enabled: shouldCheck && !!userRole,
@@ -84,14 +92,21 @@ export function useOnboardingCheck() {
           profile: onboardingStatus.profile,
         });
         // Redirect to appropriate onboarding based on role
-        if (userRole === 'patient') {
-          setLocation('/onboarding/patient');
-        } else if (userRole === 'doctor') {
-          setLocation('/onboarding/doctor');
-        } else if (userRole === 'hospital') {
-          setLocation('/onboarding/hospital');
+        const onboardingRoutes: Record<string, string> = {
+          patient: '/onboarding/patient',
+          hospital: '/onboarding/hospital',
+          nurse: '/onboarding/nurse',
+          pharmacist: '/onboarding/pharmacist',
+          radiology_technician: '/onboarding/radiology-technician',
+          doctor: '/onboarding/doctor',
+          receptionist: '/onboarding/receptionist',
+          lab: '/onboarding/lab',
+        };
+        
+        const onboardingRoute = onboardingRoutes[userRole.toLowerCase()];
+        if (onboardingRoute) {
+          setLocation(onboardingRoute);
         }
-        // Add other roles as needed
       } else {
         console.log('✅ Onboarding is completed, no redirect needed');
       }

@@ -153,6 +153,17 @@ body {
   padding: var(--spacing-2xl) var(--spacing-lg);
 }
 
+/* Remove padding and background for dashboard pages */
+body:has(.pharmacist-dashboard-wrapper) .medical-container,
+body:has(.pharmacy-inventory-wrapper) .medical-container,
+body:has(.pharmacy-dispensing-wrapper) .medical-container {
+  padding: 0 !important;
+  background: transparent !important;
+  display: block !important;
+  align-items: unset !important;
+  justify-content: unset !important;
+}
+
 .medical-container__inner {
   max-width: 960px;
   width: 100%;
@@ -370,6 +381,1113 @@ body {
 
 .hospital-onboarding-footer .ant-btn-primary {
   box-shadow: 0 12px 24px rgba(38, 99, 255, 0.25);
+}
+
+/* Patient Onboarding Styles */
+.patient-onboarding-wrapper {
+  min-height: 100vh;
+  padding: 24px;
+  background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%);
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  overflow-y: auto;
+}
+
+.patient-onboarding-card {
+  width: 100%;
+  max-width: 1080px;
+  background: #ffffff;
+}
+
+.patient-onboarding-layout {
+  display: flex;
+  gap: 32px;
+  padding: 32px;
+  width: 100%;
+}
+
+.patient-onboarding-stepper {
+  width: 260px;
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+  padding-right: 16px;
+  border-right: 1px solid var(--border-light);
+}
+
+.patient-onboarding-progress-label {
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  font-size: 12px;
+}
+
+.patient-stepper-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.patient-stepper-item {
+  position: relative;
+  padding-left: 48px;
+  color: var(--text-secondary);
+}
+
+.patient-stepper-item::after {
+  content: '';
+  position: absolute;
+  left: 16px;
+  top: 34px;
+  width: 2px;
+  height: calc(100% - 34px);
+  background: var(--border-light);
+}
+
+.patient-stepper-item:last-child::after {
+  display: none;
+}
+
+.patient-stepper-icon {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 32px;
+  height: 32px;
+  border-radius: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  background: #e0f2fe;
+  color: #1A8FE3;
+  border: 1px solid rgba(26, 143, 227, 0.25);
+  box-shadow: 0 10px 18px rgba(26, 143, 227, 0.15);
+}
+
+.patient-stepper-item.completed .patient-stepper-icon {
+  background: var(--success-100);
+  color: var(--success-600);
+  border-color: transparent;
+  box-shadow: none;
+}
+
+.patient-stepper-item.active .patient-stepper-icon {
+  background: rgba(26, 143, 227, 0.15);
+  color: #1A8FE3;
+  border-color: transparent;
+}
+
+.patient-stepper-item.upcoming .patient-stepper-icon {
+  background: #f3f4f7;
+  color: #a8b1c3;
+  border-color: rgba(168, 177, 195, 0.35);
+  box-shadow: none;
+}
+
+.patient-stepper-item.completed::after {
+  background: var(--success-200);
+}
+
+.patient-stepper-item.active::after {
+  background: linear-gradient(180deg, #bae6fd, var(--border-light));
+}
+
+.patient-stepper-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.patient-stepper-title {
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.patient-stepper-item.completed .patient-stepper-title {
+  color: var(--success-600);
+}
+
+.patient-stepper-item.active .patient-stepper-title {
+  color: #1A8FE3;
+}
+
+.patient-stepper-status {
+  font-size: 13px;
+  color: var(--text-tertiary);
+}
+
+.patient-onboarding-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.patient-onboarding-content-inner {
+  background: #f0f9ff;
+  border-radius: 18px;
+  padding: 24px;
+  border: 1px solid #bae6fd;
+  max-height: calc(100vh - 300px);
+  overflow-y: auto;
+}
+
+.patient-onboarding-footer {
+  margin-top: 24px;
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.patient-onboarding-footer .ant-btn-primary {
+  box-shadow: 0 12px 24px rgba(26, 143, 227, 0.25);
+}
+
+/* Doctor Onboarding Styles */
+.doctor-onboarding-wrapper {
+  min-height: 100vh;
+  padding: 24px;
+  background: linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%);
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  overflow-y: auto;
+}
+
+.doctor-onboarding-card {
+  width: 100%;
+  max-width: 1080px;
+  background: #ffffff;
+}
+
+.doctor-onboarding-layout {
+  display: flex;
+  gap: 32px;
+  padding: 32px;
+  width: 100%;
+}
+
+.doctor-onboarding-stepper {
+  width: 260px;
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+  padding-right: 16px;
+  border-right: 1px solid var(--border-light);
+}
+
+.doctor-onboarding-progress-label {
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  font-size: 12px;
+}
+
+.doctor-stepper-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.doctor-stepper-item {
+  position: relative;
+  padding-left: 48px;
+  color: var(--text-secondary);
+}
+
+.doctor-stepper-item::after {
+  content: '';
+  position: absolute;
+  left: 16px;
+  top: 34px;
+  width: 2px;
+  height: calc(100% - 34px);
+  background: var(--border-light);
+}
+
+.doctor-stepper-item:last-child::after {
+  display: none;
+}
+
+.doctor-stepper-icon {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 32px;
+  height: 32px;
+  border-radius: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  background: #dbeafe;
+  color: #1D4ED8;
+  border: 1px solid rgba(29, 78, 216, 0.25);
+  box-shadow: 0 10px 18px rgba(29, 78, 216, 0.15);
+}
+
+.doctor-stepper-item.completed .doctor-stepper-icon {
+  background: var(--success-100);
+  color: var(--success-600);
+  border-color: transparent;
+  box-shadow: none;
+}
+
+.doctor-stepper-item.active .doctor-stepper-icon {
+  background: rgba(29, 78, 216, 0.15);
+  color: #1D4ED8;
+  border-color: transparent;
+}
+
+.doctor-stepper-item.upcoming .doctor-stepper-icon {
+  background: #f3f4f7;
+  color: #a8b1c3;
+  border-color: rgba(168, 177, 195, 0.35);
+  box-shadow: none;
+}
+
+.doctor-stepper-item.completed::after {
+  background: var(--success-200);
+}
+
+.doctor-stepper-item.active::after {
+  background: linear-gradient(180deg, #bfdbfe, var(--border-light));
+}
+
+.doctor-stepper-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.doctor-stepper-title {
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.doctor-stepper-item.completed .doctor-stepper-title {
+  color: var(--success-600);
+}
+
+.doctor-stepper-item.active .doctor-stepper-title {
+  color: #1D4ED8;
+}
+
+.doctor-stepper-status {
+  font-size: 13px;
+  color: var(--text-tertiary);
+}
+
+.doctor-onboarding-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.doctor-onboarding-content-inner {
+  background: #eff6ff;
+  border-radius: 18px;
+  padding: 24px;
+  border: 1px solid #bfdbfe;
+  max-height: calc(100vh - 300px);
+  overflow-y: auto;
+}
+
+.doctor-onboarding-footer {
+  margin-top: 24px;
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.doctor-onboarding-footer .ant-btn-primary {
+  box-shadow: 0 12px 24px rgba(29, 78, 216, 0.25);
+}
+
+/* Receptionist Onboarding Styles - Similar pattern with orange theme */
+.receptionist-onboarding-wrapper,
+.lab-onboarding-wrapper {
+  min-height: 100vh;
+  padding: 24px;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  overflow-y: auto;
+}
+
+.receptionist-onboarding-wrapper {
+  background: linear-gradient(135deg, #fff7ed 0%, #ffedd5 100%);
+}
+
+.lab-onboarding-wrapper {
+  background: linear-gradient(135deg, #f0faff 0%, #e0f2fe 100%);
+}
+
+.receptionist-onboarding-card,
+.lab-onboarding-card {
+  width: 100%;
+  max-width: 1080px;
+  background: #ffffff;
+}
+
+.receptionist-onboarding-layout,
+.lab-onboarding-layout {
+  display: flex;
+  gap: 32px;
+  padding: 32px;
+  width: 100%;
+}
+
+.receptionist-onboarding-stepper,
+.lab-onboarding-stepper {
+  width: 260px;
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+  padding-right: 16px;
+  border-right: 1px solid var(--border-light);
+}
+
+.receptionist-onboarding-progress-label,
+.lab-onboarding-progress-label {
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  font-size: 12px;
+}
+
+.receptionist-stepper-list,
+.lab-stepper-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.receptionist-stepper-item,
+.lab-stepper-item {
+  position: relative;
+  padding-left: 48px;
+  color: var(--text-secondary);
+}
+
+.receptionist-stepper-item::after,
+.lab-stepper-item::after {
+  content: '';
+  position: absolute;
+  left: 16px;
+  top: 34px;
+  width: 2px;
+  height: calc(100% - 34px);
+  background: var(--border-light);
+}
+
+.receptionist-stepper-item:last-child::after,
+.lab-stepper-item:last-child::after {
+  display: none;
+}
+
+.receptionist-stepper-icon {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 32px;
+  height: 32px;
+  border-radius: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  background: #ffedd5;
+  color: #F97316;
+  border: 1px solid rgba(249, 115, 22, 0.25);
+  box-shadow: 0 10px 18px rgba(249, 115, 22, 0.15);
+}
+
+.lab-stepper-icon {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 32px;
+  height: 32px;
+  border-radius: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  background: #e0f2fe;
+  color: #0EA5E9;
+  border: 1px solid rgba(14, 165, 233, 0.25);
+  box-shadow: 0 10px 18px rgba(14, 165, 233, 0.15);
+}
+
+.receptionist-stepper-item.completed .receptionist-stepper-icon,
+.lab-stepper-item.completed .lab-stepper-icon {
+  background: var(--success-100);
+  color: var(--success-600);
+  border-color: transparent;
+  box-shadow: none;
+}
+
+.receptionist-stepper-item.active .receptionist-stepper-icon {
+  background: rgba(249, 115, 22, 0.15);
+  color: #F97316;
+  border-color: transparent;
+}
+
+.lab-stepper-item.active .lab-stepper-icon {
+  background: rgba(14, 165, 233, 0.15);
+  color: #0EA5E9;
+  border-color: transparent;
+}
+
+.receptionist-stepper-item.upcoming .receptionist-stepper-icon,
+.lab-stepper-item.upcoming .lab-stepper-icon {
+  background: #f3f4f7;
+  color: #a8b1c3;
+  border-color: rgba(168, 177, 195, 0.35);
+  box-shadow: none;
+}
+
+.receptionist-stepper-item.completed::after {
+  background: var(--success-200);
+}
+
+.receptionist-stepper-item.active::after {
+  background: linear-gradient(180deg, #fed7aa, var(--border-light));
+}
+
+.lab-stepper-item.completed::after {
+  background: var(--success-200);
+}
+
+.lab-stepper-item.active::after {
+  background: linear-gradient(180deg, #bae6fd, var(--border-light));
+}
+
+.receptionist-stepper-copy,
+.lab-stepper-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.receptionist-stepper-title,
+.lab-stepper-title {
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.receptionist-stepper-item.completed .receptionist-stepper-title,
+.lab-stepper-item.completed .lab-stepper-title {
+  color: var(--success-600);
+}
+
+.receptionist-stepper-item.active .receptionist-stepper-title {
+  color: #F97316;
+}
+
+.lab-stepper-item.active .lab-stepper-title {
+  color: #0EA5E9;
+}
+
+.receptionist-onboarding-content,
+.lab-onboarding-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.receptionist-onboarding-content-inner {
+  background: #fff7ed;
+  border-radius: 18px;
+  padding: 24px;
+  border: 1px solid #fed7aa;
+  max-height: calc(100vh - 300px);
+  overflow-y: auto;
+}
+
+.lab-onboarding-content-inner {
+  background: #f0faff;
+  border-radius: 18px;
+  padding: 24px;
+  border: 1px solid #bae6fd;
+  max-height: calc(100vh - 300px);
+  overflow-y: auto;
+}
+
+.receptionist-onboarding-footer,
+.lab-onboarding-footer {
+  margin-top: 24px;
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.receptionist-onboarding-footer .ant-btn-primary {
+  box-shadow: 0 12px 24px rgba(249, 115, 22, 0.25);
+}
+
+.lab-onboarding-footer .ant-btn-primary {
+  box-shadow: 0 12px 24px rgba(14, 165, 233, 0.25);
+}
+
+/* Nurse Onboarding Styles - Green theme */
+.nurse-onboarding-wrapper {
+  min-height: 100vh;
+  padding: 24px;
+  background: linear-gradient(135deg, #f0fdf4 0%, #dcfce7 100%);
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  overflow-y: auto;
+}
+
+.nurse-onboarding-card {
+  width: 100%;
+  max-width: 1080px;
+  background: #ffffff;
+}
+
+.nurse-onboarding-layout {
+  display: flex;
+  gap: 32px;
+  padding: 32px;
+  width: 100%;
+}
+
+.nurse-onboarding-stepper {
+  width: 260px;
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+  padding-right: 16px;
+  border-right: 1px solid var(--border-light);
+}
+
+.nurse-onboarding-progress-label {
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  font-size: 12px;
+}
+
+.nurse-stepper-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.nurse-stepper-item {
+  position: relative;
+  padding-left: 48px;
+  color: var(--text-secondary);
+}
+
+.nurse-stepper-item::after {
+  content: '';
+  position: absolute;
+  left: 16px;
+  top: 34px;
+  width: 2px;
+  height: calc(100% - 34px);
+  background: var(--border-light);
+}
+
+.nurse-stepper-item:last-child::after {
+  display: none;
+}
+
+.nurse-stepper-icon {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 32px;
+  height: 32px;
+  border-radius: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  background: #dcfce7;
+  color: #10B981;
+  border: 1px solid rgba(16, 185, 129, 0.25);
+  box-shadow: 0 10px 18px rgba(16, 185, 129, 0.15);
+}
+
+.nurse-stepper-item.completed .nurse-stepper-icon {
+  background: var(--success-100);
+  color: var(--success-600);
+  border-color: transparent;
+  box-shadow: none;
+}
+
+.nurse-stepper-item.active .nurse-stepper-icon {
+  background: rgba(16, 185, 129, 0.15);
+  color: #10B981;
+  border-color: transparent;
+}
+
+.nurse-stepper-item.upcoming .nurse-stepper-icon {
+  background: #f3f4f7;
+  color: #a8b1c3;
+  border-color: rgba(168, 177, 195, 0.35);
+  box-shadow: none;
+}
+
+.nurse-stepper-item.completed::after {
+  background: var(--success-200);
+}
+
+.nurse-stepper-item.active::after {
+  background: linear-gradient(180deg, #bbf7d0, var(--border-light));
+}
+
+.nurse-stepper-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.nurse-stepper-title {
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.nurse-stepper-item.completed .nurse-stepper-title {
+  color: var(--success-600);
+}
+
+.nurse-stepper-item.active .nurse-stepper-title {
+  color: #10B981;
+}
+
+.nurse-onboarding-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.nurse-onboarding-content-inner {
+  background: #f0fdf4;
+  border-radius: 18px;
+  padding: 24px;
+  border: 1px solid #bbf7d0;
+  max-height: calc(100vh - 300px);
+  overflow-y: auto;
+}
+
+.nurse-onboarding-footer {
+  margin-top: 24px;
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.nurse-onboarding-footer .ant-btn-primary {
+  box-shadow: 0 12px 24px rgba(16, 185, 129, 0.25);
+}
+
+/* Pharmacist Onboarding Styles - Purple theme */
+.pharmacist-onboarding-wrapper {
+  min-height: 100vh;
+  padding: 24px;
+  background: linear-gradient(135deg, #faf5ff 0%, #f3e8ff 100%);
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  overflow-y: auto;
+}
+
+.pharmacist-onboarding-card {
+  width: 100%;
+  max-width: 1080px;
+  background: #ffffff;
+}
+
+.pharmacist-onboarding-layout {
+  display: flex;
+  gap: 32px;
+  padding: 32px;
+  width: 100%;
+}
+
+.pharmacist-onboarding-stepper {
+  width: 260px;
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+  padding-right: 16px;
+  border-right: 1px solid var(--border-light);
+}
+
+.pharmacist-onboarding-progress-label {
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  font-size: 12px;
+}
+
+.pharmacist-stepper-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.pharmacist-stepper-item {
+  position: relative;
+  padding-left: 48px;
+  color: var(--text-secondary);
+}
+
+.pharmacist-stepper-item::after {
+  content: '';
+  position: absolute;
+  left: 16px;
+  top: 34px;
+  width: 2px;
+  height: calc(100% - 34px);
+  background: var(--border-light);
+}
+
+.pharmacist-stepper-item:last-child::after {
+  display: none;
+}
+
+.pharmacist-stepper-icon {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 32px;
+  height: 32px;
+  border-radius: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  background: #f3e8ff;
+  color: #a855f7;
+  border: 1px solid rgba(168, 85, 247, 0.25);
+  box-shadow: 0 10px 18px rgba(168, 85, 247, 0.15);
+}
+
+.pharmacist-stepper-item.completed .pharmacist-stepper-icon {
+  background: var(--success-100);
+  color: var(--success-600);
+  border-color: transparent;
+  box-shadow: none;
+}
+
+.pharmacist-stepper-item.active .pharmacist-stepper-icon {
+  background: rgba(168, 85, 247, 0.15);
+  color: #a855f7;
+  border-color: transparent;
+}
+
+.pharmacist-stepper-item.upcoming .pharmacist-stepper-icon {
+  background: #f3f4f7;
+  color: #a8b1c3;
+  border-color: rgba(168, 177, 195, 0.35);
+  box-shadow: none;
+}
+
+.pharmacist-stepper-item.completed::after {
+  background: var(--success-200);
+}
+
+.pharmacist-stepper-item.active::after {
+  background: linear-gradient(180deg, #e9d5ff, var(--border-light));
+}
+
+.pharmacist-stepper-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.pharmacist-stepper-title {
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.pharmacist-stepper-item.completed .pharmacist-stepper-title {
+  color: var(--success-600);
+}
+
+.pharmacist-stepper-item.active .pharmacist-stepper-title {
+  color: #a855f7;
+}
+
+.pharmacist-onboarding-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.pharmacist-onboarding-content-inner {
+  background: #faf5ff;
+  border-radius: 18px;
+  padding: 24px;
+  border: 1px solid #e9d5ff;
+  max-height: calc(100vh - 300px);
+  overflow-y: auto;
+}
+
+.pharmacist-onboarding-footer {
+  margin-top: 24px;
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.pharmacist-onboarding-footer .ant-btn-primary {
+  box-shadow: 0 12px 24px rgba(168, 85, 247, 0.25);
+}
+
+/* Radiology Technician Onboarding Styles - Purple theme */
+.radiology-onboarding-wrapper {
+  min-height: 100vh;
+  padding: 24px;
+  background: linear-gradient(135deg, #faf5ff 0%, #f3e8ff 100%);
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  overflow-y: auto;
+}
+
+.radiology-onboarding-card {
+  width: 100%;
+  max-width: 1080px;
+  background: #ffffff;
+}
+
+.radiology-onboarding-layout {
+  display: flex;
+  gap: 32px;
+  padding: 32px;
+  width: 100%;
+}
+
+.radiology-onboarding-stepper {
+  width: 260px;
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+  padding-right: 16px;
+  border-right: 1px solid var(--border-light);
+}
+
+.radiology-onboarding-progress-label {
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  font-size: 12px;
+}
+
+.radiology-stepper-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.radiology-stepper-item {
+  position: relative;
+  padding-left: 48px;
+  color: var(--text-secondary);
+}
+
+.radiology-stepper-item::after {
+  content: '';
+  position: absolute;
+  left: 16px;
+  top: 34px;
+  width: 2px;
+  height: calc(100% - 34px);
+  background: var(--border-light);
+}
+
+.radiology-stepper-item:last-child::after {
+  display: none;
+}
+
+.radiology-stepper-icon {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 32px;
+  height: 32px;
+  border-radius: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  background: #f3e8ff;
+  color: #7C3AED;
+  border: 1px solid rgba(124, 58, 237, 0.25);
+  box-shadow: 0 10px 18px rgba(124, 58, 237, 0.15);
+}
+
+.radiology-stepper-item.completed .radiology-stepper-icon {
+  background: var(--success-100);
+  color: var(--success-600);
+  border-color: transparent;
+  box-shadow: none;
+}
+
+.radiology-stepper-item.active .radiology-stepper-icon {
+  background: rgba(124, 58, 237, 0.15);
+  color: #7C3AED;
+  border-color: transparent;
+}
+
+.radiology-stepper-item.upcoming .radiology-stepper-icon {
+  background: #f3f4f7;
+  color: #a8b1c3;
+  border-color: rgba(168, 177, 195, 0.35);
+  box-shadow: none;
+}
+
+.radiology-stepper-item.completed::after {
+  background: var(--success-200);
+}
+
+.radiology-stepper-item.active::after {
+  background: linear-gradient(180deg, #ddd6fe, var(--border-light));
+}
+
+.radiology-stepper-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.radiology-stepper-title {
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.radiology-stepper-item.completed .radiology-stepper-title {
+  color: var(--success-600);
+}
+
+.radiology-stepper-item.active .radiology-stepper-title {
+  color: #7C3AED;
+}
+
+.radiology-onboarding-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.radiology-onboarding-content-inner {
+  background: #faf5ff;
+  border-radius: 18px;
+  padding: 24px;
+  border: 1px solid #ddd6fe;
+  max-height: calc(100vh - 300px);
+  overflow-y: auto;
+}
+
+.radiology-onboarding-footer {
+  margin-top: 24px;
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.radiology-onboarding-footer .ant-btn-primary {
+  box-shadow: 0 12px 24px rgba(124, 58, 237, 0.25);
+}
+
+/* Responsive styles for patient onboarding */
+@media (max-width: 768px) {
+  .patient-onboarding-wrapper {
+    padding: 16px;
+    align-items: flex-start;
+  }
+
+  .patient-onboarding-layout {
+    flex-direction: column;
+    gap: 20px;
+    padding: 20px;
+  }
+
+  .patient-onboarding-stepper {
+    width: 100%;
+    padding-right: 0;
+    border-right: none;
+    border-bottom: 1px solid var(--border-light);
+    padding-bottom: 20px;
+  }
+
+  .patient-stepper-list {
+    flex-direction: row;
+    overflow-x: auto;
+    gap: 12px;
+    padding-bottom: 8px;
+  }
+
+  .patient-stepper-item {
+    min-width: 120px;
+    padding-left: 0;
+    padding-top: 40px;
+    text-align: center;
+  }
+
+  .patient-stepper-item::after {
+    display: none;
+  }
+
+  .patient-stepper-icon {
+    left: 50%;
+    transform: translateX(-50%);
+    top: 0;
+  }
+
+  .patient-onboarding-content-inner {
+    max-height: calc(100vh - 400px);
+    padding: 16px;
+  }
+
+  .patient-onboarding-footer {
+    flex-direction: column-reverse;
+    margin-top: 16px;
+  }
+
+  .patient-onboarding-footer .ant-btn {
+    width: 100%;
+  }
 }
 
 .role-emoji {
@@ -802,6 +1920,141 @@ body {
   
   .step-item::after {
     display: none;
+  }
+
+  /* Nurse Onboarding Responsive */
+  .nurse-onboarding-wrapper {
+    padding: 16px;
+  }
+
+  .nurse-onboarding-layout {
+    flex-direction: column;
+    gap: 24px;
+    padding: 20px;
+  }
+
+  .nurse-onboarding-stepper {
+    width: 100%;
+    border-right: none;
+    border-bottom: 1px solid var(--border-light);
+    padding-right: 0;
+    padding-bottom: 24px;
+  }
+
+  .nurse-stepper-list {
+    flex-direction: row;
+    overflow-x: auto;
+    gap: 12px;
+  }
+
+  .nurse-stepper-item {
+    padding-left: 0;
+    padding-top: 40px;
+    min-width: 120px;
+  }
+
+  .nurse-stepper-item::after {
+    display: none;
+  }
+
+  .nurse-stepper-icon {
+    left: 50%;
+    transform: translateX(-50%);
+    top: 0;
+  }
+
+  .nurse-onboarding-content-inner {
+    max-height: none;
+  }
+
+  /* Pharmacist Onboarding Responsive */
+  .pharmacist-onboarding-wrapper {
+    padding: 16px;
+  }
+
+  .pharmacist-onboarding-layout {
+    flex-direction: column;
+    gap: 24px;
+    padding: 20px;
+  }
+
+  .pharmacist-onboarding-stepper {
+    width: 100%;
+    border-right: none;
+    border-bottom: 1px solid var(--border-light);
+    padding-right: 0;
+    padding-bottom: 24px;
+  }
+
+  .pharmacist-stepper-list {
+    flex-direction: row;
+    overflow-x: auto;
+    gap: 12px;
+  }
+
+  .pharmacist-stepper-item {
+    padding-left: 0;
+    padding-top: 40px;
+    min-width: 120px;
+  }
+
+  .pharmacist-stepper-item::after {
+    display: none;
+  }
+
+  .pharmacist-stepper-icon {
+    left: 50%;
+    transform: translateX(-50%);
+    top: 0;
+  }
+
+  .pharmacist-onboarding-content-inner {
+    max-height: none;
+  }
+
+  /* Radiology Onboarding Responsive */
+  .radiology-onboarding-wrapper {
+    padding: 16px;
+  }
+
+  .radiology-onboarding-layout {
+    flex-direction: column;
+    gap: 24px;
+    padding: 20px;
+  }
+
+  .radiology-onboarding-stepper {
+    width: 100%;
+    border-right: none;
+    border-bottom: 1px solid var(--border-light);
+    padding-right: 0;
+    padding-bottom: 24px;
+  }
+
+  .radiology-stepper-list {
+    flex-direction: row;
+    overflow-x: auto;
+    gap: 12px;
+  }
+
+  .radiology-stepper-item {
+    padding-left: 0;
+    padding-top: 40px;
+    min-width: 120px;
+  }
+
+  .radiology-stepper-item::after {
+    display: none;
+  }
+
+  .radiology-stepper-icon {
+    left: 50%;
+    transform: translateX(-50%);
+    top: 0;
+  }
+
+  .radiology-onboarding-content-inner {
+    max-height: none;
   }
 }
 

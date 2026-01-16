@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Modal, Form, Input, Select, Button, Space, message, Spin } from 'antd';
+import { Modal, Form, Input, Select, Button, Space, message, Spin, Checkbox } from 'antd';
 import { ExclamationCircleOutlined } from '@ant-design/icons';
 import { useQueryClient } from '@tanstack/react-query';
 import type { IpdEncounter } from '../../types/ipd';
@@ -29,10 +29,7 @@ export const DischargeModal: React.FC<DischargeModalProps> = ({
       return;
     }
 
-    if (!values.dischargeSummaryText || values.dischargeSummaryText.trim().length === 0) {
-      message.warning('Please enter a discharge summary');
-      return;
-    }
+    // dischargeSummaryText is now optional - will auto-generate if not provided
 
     // Show confirmation dialog
     const dischargeType = values.status || 'discharged';
@@ -141,13 +138,23 @@ export const DischargeModal: React.FC<DischargeModalProps> = ({
         </Form.Item>
 
         <Form.Item
+          name="autoGenerateSummary"
+          valuePropName="checked"
+          initialValue={true}
+        >
+          <Checkbox>
+            Auto-generate comprehensive summary (includes bills, medicines, treatment)
+          </Checkbox>
+        </Form.Item>
+
+        <Form.Item
           name="dischargeSummaryText"
-          label="Discharge Summary"
-          rules={[{ required: true, message: 'Please enter discharge summary' }]}
+          label="Additional Notes (Optional)"
+          tooltip="If auto-generate is enabled, this will be appended to the auto-generated summary. Otherwise, this is the main discharge summary."
         >
           <TextArea
             rows={6}
-            placeholder="Enter discharge summary including diagnosis, treatment given, medications, follow-up instructions, etc."
+            placeholder="Enter any additional notes or custom discharge summary. If auto-generate is enabled, this will be added to the comprehensive summary."
           />
         </Form.Item>
 

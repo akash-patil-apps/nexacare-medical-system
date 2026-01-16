@@ -28,7 +28,8 @@ const ROLE_OPTIONS: RoleOption[] = [
     label: "I'm a Doctor",
     caption: 'Manage clinical workflows',
     emoji: '🩺',
-    available: false,
+    route: '/onboarding/doctor',
+    available: true,
   },
   {
     key: 'hospital',
@@ -43,14 +44,16 @@ const ROLE_OPTIONS: RoleOption[] = [
     label: 'I run a Lab',
     caption: 'Publish diagnostics & reports',
     emoji: '🧪',
-    available: false,
+    route: '/onboarding/lab',
+    available: true,
   },
   {
     key: 'receptionist',
     label: "I'm a Receptionist",
     caption: 'Assist patients & manage walk-ins',
     emoji: '💼',
-    available: false,
+    route: '/onboarding/receptionist',
+    available: true,
   },
   {
     key: 'nurse',
@@ -90,10 +93,11 @@ export default function Register() {
     setSelectedRole(key);
     const role = ROLE_OPTIONS.find((item) => item.key === key);
     if (!role) return;
-    if (!role.available || !role.route) {
-      message.info('Onboarding for this role is coming soon.');
+    if (!role.available) {
+      message.info('Registration for this role is coming soon.');
     } else {
-      setLocation(role.route);
+      // Redirect to new registration flow with role selection
+      setLocation(`/register/with-role?role=${key}`);
     }
   };
 

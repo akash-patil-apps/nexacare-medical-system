@@ -44,6 +44,11 @@ import { KpiCard } from '../../components/dashboard/KpiCard';
 import { QuickActionTile } from '../../components/dashboard/QuickActionTile';
 import { NotificationBell } from '../../components/notifications/NotificationBell';
 import { PharmacistSidebar } from '../../components/layout/PharmacistSidebar';
+import PharmacyInventory from '../pharmacy/inventory';
+import PharmacyDispensing from '../pharmacy/dispensing';
+import PurchaseOrders from '../pharmacy/purchase-orders';
+import Suppliers from '../pharmacy/suppliers';
+import StockMovements from '../pharmacy/stock-movements';
 import dayjs from 'dayjs';
 import relativeTime from 'dayjs/plugin/relativeTime';
 import { getISTNow } from '../../lib/timezone';
@@ -219,14 +224,14 @@ export default function PharmacistDashboard() {
       title: 'Dispense Medicine',
       description: 'Process prescription dispensing',
       icon: <MedicineBoxOutlined />,
-      action: () => message.info('Dispense medicine feature coming soon'),
+      action: () => setSelectedMenuKey('dispensing'),
       color: pharmacistTheme.primary,
     },
     {
       title: 'Check Inventory',
       description: 'View medicine stock levels',
       icon: <ShoppingCartOutlined />,
-      action: () => message.info('Inventory management feature coming soon'),
+      action: () => setSelectedMenuKey('inventory'),
       color: pharmacistTheme.accent,
     },
     {
@@ -260,6 +265,11 @@ export default function PharmacistDashboard() {
       key: 'inventory',
       icon: <ShoppingCartOutlined />,
       label: 'Inventory',
+    },
+    {
+      key: 'dispensing',
+      icon: <CheckCircleOutlined />,
+      label: 'Dispensing',
     },
     {
       key: 'reports',
@@ -414,58 +424,31 @@ export default function PharmacistDashboard() {
   );
 
   const renderInventory = () => (
-    <Card title="Medicine Inventory" size="small">
-      <Alert
-        message="Inventory Management"
-        description="Stock levels, expiry tracking, and reorder alerts will be available here."
-        type="info"
-        showIcon
-        style={{ marginBottom: 16 }}
-      />
-      <Table
-        dataSource={[
-          { id: 1, name: 'Paracetamol 500mg', stock: 150, expiry: '2025-06-15', status: 'normal' },
-          { id: 2, name: 'Amoxicillin 250mg', stock: 25, expiry: '2025-04-10', status: 'low' },
-          { id: 3, name: 'Ibuprofen 200mg', stock: 80, expiry: '2025-08-22', status: 'normal' },
-        ]}
-        columns={[
-          {
-            title: 'Medicine',
-            dataIndex: 'name',
-            key: 'name',
-            render: (name: string) => <Text strong>{name}</Text>,
-          },
-          {
-            title: 'Stock',
-            dataIndex: 'stock',
-            key: 'stock',
-            render: (stock: number) => (
-              <Text style={{ color: stock < 50 ? '#EF4444' : '#059669' }}>
-                {stock} units
-              </Text>
-            ),
-          },
-          {
-            title: 'Expiry',
-            dataIndex: 'expiry',
-            key: 'expiry',
-            render: (expiry: string) => dayjs(expiry).format('DD/MM/YYYY'),
-          },
-          {
-            title: 'Status',
-            dataIndex: 'status',
-            key: 'status',
-            render: (status: string) => (
-              <Tag color={status === 'low' ? 'red' : 'green'}>
-                {status.toUpperCase()}
-              </Tag>
-            ),
-          },
-        ]}
-        pagination={{ pageSize: 10 }}
-        size="small"
-      />
-    </Card>
+    <Tabs
+      defaultActiveKey="inventory"
+      items={[
+        {
+          key: 'inventory',
+          label: 'Inventory',
+          children: <PharmacyInventory />,
+        },
+        {
+          key: 'purchase-orders',
+          label: 'Purchase Orders',
+          children: <PurchaseOrders />,
+        },
+        {
+          key: 'suppliers',
+          label: 'Suppliers',
+          children: <Suppliers />,
+        },
+        {
+          key: 'stock-movements',
+          label: 'Stock Movements',
+          children: <StockMovements />,
+        },
+      ]}
+    />
   );
 
   const renderReports = () => (
@@ -507,6 +490,8 @@ export default function PharmacistDashboard() {
         return renderPrescriptions();
       case 'inventory':
         return renderInventory();
+      case 'dispensing':
+        return <PharmacyDispensing />;
       case 'reports':
         return renderReports();
       default:
@@ -582,6 +567,7 @@ export default function PharmacistDashboard() {
           height: 20px !important;
         }
       `}</style>
+      <div className="pharmacist-dashboard-wrapper">
       <Layout style={{ minHeight: '100vh', backgroundColor: pharmacistTheme.background }}>
       {/* Sidebar */}
       {!isMobile ? (
@@ -668,6 +654,7 @@ export default function PharmacistDashboard() {
         </Content>
       </Layout>
     </Layout>
+    </div>
     </>
   );
 }

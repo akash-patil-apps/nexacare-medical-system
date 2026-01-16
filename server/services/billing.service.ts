@@ -209,6 +209,116 @@ export const createInvoice = async (data: {
 };
 
 /**
+ * Create invoice for lab test (without appointment)
+ */
+export const createLabTestInvoice = async (data: {
+  hospitalId: number;
+  patientId: number;
+  items: Array<{
+    type: string;
+    description: string;
+    quantity?: number;
+    unitPrice: number;
+  }>;
+  discountAmount?: number;
+  discountType?: 'amount' | 'percent';
+  discountReason?: string;
+  taxAmount?: number;
+  actorUserId?: number;
+  actorRole?: string;
+  ipAddress?: string;
+  userAgent?: string;
+}) => {
+  // Build invoice items
+  const invoiceItemsData = data.items || [];
+  
+  if (invoiceItemsData.length === 0) {
+    throw new Error('At least one invoice item is required');
+  }
+  
+  // Calculate subtotal
+  const subtotal = invoiceItemsData.reduce((sum, item) => {
+    return sum + (item.unitPrice * (item.quantity || 1));
+  }, 0);
+  
+  // Calculate totals
+  const totals = calculateTotals(
+    subtotal,
+    data.discountAmount || 0,
+    data.discountType || null,
+    data.taxAmount || 0
+  );
+  
+  // Generate invoice number
+  const invoiceNumber = await generateInvoiceNumber(data.hospitalId);
+  
+  // Create invoice (without appointmentId)
+  const [invoice] = await db
+    .insert(invoices)
+    .values({
+      hospitalId: data.hospitalId,
+      patientId: data.patientId,
+      appointmentId: null, // Lab test invoices don't require appointments
+      invoiceNumber,
+      status: 'draft',
+      subtotal: totals.subtotal.toString(),
+      discountAmount: totals.discountAmount.toString(),
+      discountType: data.discountType || null,
+      discountReason: data.discountReason || null,
+      taxAmount: totals.taxAmount.toString(),
+      total: totals.total.toString(),
+      paidAmount: '0',
+      balanceAmount: totals.total.toString(),
+      currency: 'INR',
+      createdAt: sql`NOW()`,
+    })
+    .returning();
+  
+  // Create invoice items
+  const items = await Promise.all(
+    invoiceItemsData.map(item =>
+      db.insert(invoiceItems).values({
+        invoiceId: invoice.id,
+        type: item.type,
+        description: item.description,
+        quantity: item.quantity || 1,
+        unitPrice: item.unitPrice.toString(),
+        amount: (item.unitPrice * (item.quantity || 1)).toString(),
+        createdAt: sql`NOW()`,
+      }).returning()
+    )
+  );
+  
+  // Log audit event
+  if (data.actorUserId && data.actorRole) {
+    await auditService.logPatientAudit({
+      hospitalId: data.hospitalId,
+      patientId: data.patientId,
+      actorUserId: data.actorUserId,
+      actorRole: data.actorRole,
+      action: 'create_invoice',
+      entityType: 'invoice',
+      entityId: invoice.id,
+      before: null,
+      after: {
+        invoiceId: invoice.id,
+        invoiceNumber,
+        total: totals.total,
+        status: 'draft',
+      },
+      message: `Invoice ${invoiceNumber} created for lab test. Total: ₹${totals.total}`,
+      ipAddress: data.ipAddress,
+      userAgent: data.userAgent,
+    });
+  }
+  
+  return {
+    ...invoice,
+    items: items.map(i => i[0]),
+  };
+};
+
+/**
  * Issue invoice (change status from draft to issued)
  */
 export const issueInvoice = async (invoiceId: number, actorUserId?: number, actorRole?: string) => {
@@ -252,7 +362,7 @@ export const issueInvoice = async (invoiceId: number, actorUserId?: number, acto
  */
 export const recordPayment = async (data: {
   invoiceId: number;
-  method: 'cash' | 'card' | 'upi' | 'online';
+  method: 'cash' | 'card' | 'upi' | 'online' | 'gpay' | 'phonepe';
   amount: number;
   reference?: string;
   notes?: string;

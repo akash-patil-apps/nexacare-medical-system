@@ -196,6 +196,120 @@ router.get(
   }
 );
 
+// POST /onboarding/doctor/complete
+router.post(
+  "/doctor/complete",
+  authenticateToken,
+  authorizeRoles("DOCTOR"),
+  async (req: AuthenticatedRequest, res) => {
+    try {
+      const result = await onboardingService.completeDoctorOnboarding(
+        req.user!.id,
+        req.body
+      );
+      res.status(200).json(result);
+    } catch (error) {
+      console.error("Doctor onboarding error:", error);
+      res.status(400).json({
+        message: "Onboarding failed",
+        error: error instanceof Error ? error.message : "Unknown error"
+      });
+    }
+  }
+);
+
+// GET /onboarding/doctor/status
+router.get(
+  "/doctor/status",
+  authenticateToken,
+  authorizeRoles("DOCTOR"),
+  async (req: AuthenticatedRequest, res) => {
+    try {
+      const status = await onboardingService.getDoctorOnboardingStatus(req.user!.id);
+      res.status(200).json(status);
+    } catch (error) {
+      console.error("Get doctor onboarding status error:", error);
+      res.status(500).json({ message: "Failed to get onboarding status" });
+    }
+  }
+);
+
+// POST /onboarding/receptionist/complete
+router.post(
+  "/receptionist/complete",
+  authenticateToken,
+  authorizeRoles("RECEPTIONIST"),
+  async (req: AuthenticatedRequest, res) => {
+    try {
+      const result = await onboardingService.completeReceptionistOnboarding(
+        req.user!.id,
+        req.body
+      );
+      res.status(200).json(result);
+    } catch (error) {
+      console.error("Receptionist onboarding error:", error);
+      res.status(400).json({
+        message: "Onboarding failed",
+        error: error instanceof Error ? error.message : "Unknown error"
+      });
+    }
+  }
+);
+
+// GET /onboarding/receptionist/status
+router.get(
+  "/receptionist/status",
+  authenticateToken,
+  authorizeRoles("RECEPTIONIST"),
+  async (req: AuthenticatedRequest, res) => {
+    try {
+      const status = await onboardingService.getReceptionistOnboardingStatus(req.user!.id);
+      res.status(200).json(status);
+    } catch (error) {
+      console.error("Get receptionist onboarding status error:", error);
+      res.status(500).json({ message: "Failed to get onboarding status" });
+    }
+  }
+);
+
+// POST /onboarding/lab/complete
+router.post(
+  "/lab/complete",
+  authenticateToken,
+  authorizeRoles("LAB"),
+  async (req: AuthenticatedRequest, res) => {
+    try {
+      const result = await onboardingService.completeLabOnboarding(
+        req.user!.id,
+        req.body
+      );
+      res.status(200).json(result);
+    } catch (error) {
+      console.error("Lab onboarding error:", error);
+      res.status(400).json({
+        message: "Onboarding failed",
+        error: error instanceof Error ? error.message : "Unknown error"
+      });
+    }
+  }
+);
+
+// GET /onboarding/lab/status
+router.get(
+  "/lab/status",
+  authenticateToken,
+  authorizeRoles("LAB"),
+  async (req: AuthenticatedRequest, res) => {
+    try {
+      const status = await onboardingService.getLabOnboardingStatus(req.user!.id);
+      res.status(200).json(status);
+    } catch (error) {
+      console.error("Get lab onboarding status error:", error);
+      res.status(500).json({ message: "Failed to get onboarding status" });
+    }
+  }
+);
+
 export default router;
 
 

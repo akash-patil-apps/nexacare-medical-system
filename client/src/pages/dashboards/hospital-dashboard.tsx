@@ -30,6 +30,7 @@ import {
   BarChartOutlined,
   MenuUnfoldOutlined,
   SettingOutlined,
+  DollarOutlined,
 } from '@ant-design/icons';
 import { useAuth } from '../../hooks/use-auth';
 import { useResponsive } from '../../hooks/use-responsive';
@@ -37,6 +38,7 @@ import { KpiCard } from '../../components/dashboard/KpiCard';
 import { NotificationBell } from '../../components/notifications/NotificationBell';
 import { BedOccupancyMap, TransferModal, TransferDoctorModal, DischargeModal, BedStructureManager } from '../../components/ipd';
 import { IpdEncountersList } from '../../components/ipd/IpdEncountersList';
+import IPDPatientDetail from '../../pages/ipd/patient-detail';
 import { ClinicalNotesEditor } from '../../components/clinical/ClinicalNotesEditor';
 import { VitalsEntryForm } from '../../components/clinical/VitalsEntryForm';
 import { subscribeToAppointmentEvents } from '../../lib/appointments-events';
@@ -64,6 +66,7 @@ export default function HospitalDashboard() {
   const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false);
   const [activeAppointmentTab, setActiveAppointmentTab] = useState<string>('today_all');
   const [activeMainTab, setActiveMainTab] = useState<string>('appointments');
+  const [ipdSubTab, setIpdSubTab] = useState<string>('structure');
   const [selectedEncounter, setSelectedEncounter] = useState<IpdEncounter | null>(null);
   const [isTransferModalOpen, setIsTransferModalOpen] = useState(false);
   const [isTransferDoctorModalOpen, setIsTransferDoctorModalOpen] = useState(false);
@@ -75,6 +78,7 @@ export default function HospitalDashboard() {
   const [vitalsHistory, setVitalsHistory] = useState<any[]>([]);
   const [isClinicalNoteModalOpen, setIsClinicalNoteModalOpen] = useState(false);
   const [isVitalsModalOpen, setIsVitalsModalOpen] = useState(false);
+  const [selectedEncounterForDetail, setSelectedEncounterForDetail] = useState<number | null>(null);
 
   // Redirect if not authenticated
   if (!isLoading && !user) {
@@ -712,8 +716,13 @@ export default function HospitalDashboard() {
     },
     {
       key: 'analytics',
-      icon: <BarChartOutlined style={{ fontSize: 18, color: selectedMenuKey === 'analytics' ? hospitalTheme.primary : '#8C8C8C' }} />, 
-      label: 'Analytics' 
+      icon: <BarChartOutlined style={{ fontSize: 18, color: selectedMenuKey === 'analytics' ? hospitalTheme.primary : '#8C8C8C' }} />,
+    },
+    {
+      key: 'revenue',
+      label: 'Revenue',
+      path: '/dashboard/hospital/revenue',
+      icon: <DollarOutlined style={{ fontSize: 18, color: selectedMenuKey === 'revenue' ? hospitalTheme.primary : '#8C8C8C' }} />, 
     },
   ], [selectedMenuKey]);
 
@@ -793,7 +802,11 @@ export default function HospitalDashboard() {
         }}
         onClick={(e) => {
           if (onMenuClick) onMenuClick();
-          message.info(`${e.key} page coming soon.`);
+          if (e.key === 'revenue') {
+            window.location.href = '/dashboard/hospital/revenue';
+          } else {
+            message.info(`${e.key} page coming soon.`);
+          }
         }}
         theme="light"
       />
@@ -1224,37 +1237,37 @@ export default function HospitalDashboard() {
                 <div style={{ flex: 1, minWidth: 200 }}>
               <KpiCard
                 label="Daily Revenue"
-                    value={statsLoading ? '...' : `₹${(stats?.dailyRevenue || 0).toLocaleString()}`}
+                    value={statsLoading ? '...' : `₹${((stats?.dailyRevenue) || 0).toLocaleString()}`}
                 icon={<BarChartOutlined style={{ fontSize: '24px', color: '#22C55E' }} />}
                 trendLabel="Today"
                 trendType="positive"
                     trendColor="#22C55E"
                     trendBg="#D1FAE5"
-                    onView={() => message.info('View revenue')}
+                    onView={() => window.location.href = '/dashboard/hospital/revenue'}
               />
                 </div>
                 <div style={{ flex: 1, minWidth: 200 }}>
               <KpiCard
                 label="Weekly Revenue"
-                    value={statsLoading ? '...' : `₹${(stats?.weeklyRevenue || 0).toLocaleString()}`}
+                    value={statsLoading ? '...' : `₹${((stats?.weeklyRevenue) || 0).toLocaleString()}`}
                 icon={<BarChartOutlined style={{ fontSize: '24px', color: '#3B82F6' }} />}
                 trendLabel="This Week"
                 trendType="positive"
                     trendColor="#3B82F6"
                     trendBg="#DBEAFE"
-                    onView={() => message.info('View revenue')}
+                    onView={() => window.location.href = '/dashboard/hospital/revenue'}
               />
                 </div>
                 <div style={{ flex: 1, minWidth: 200 }}>
               <KpiCard
                 label="Monthly Revenue"
-                    value={statsLoading ? '...' : `₹${(stats?.monthlyRevenue || stats?.totalRevenue || 0).toLocaleString()}`}
+                    value={statsLoading ? '...' : `₹${((stats?.monthlyRevenue || stats?.totalRevenue) || 0).toLocaleString()}`}
                 icon={<BarChartOutlined style={{ fontSize: '24px', color: hospitalTheme.primary }} />}
                 trendLabel="This Month"
                 trendType="positive"
                     trendColor={hospitalTheme.primary}
                     trendBg={hospitalTheme.highlight}
-                    onView={() => message.info('View revenue')}
+                    onView={() => window.location.href = '/dashboard/hospital/revenue'}
               />
                 </div>
               </div>
@@ -1465,6 +1478,8 @@ export default function HospitalDashboard() {
                             padding: isMobile ? 12 : 16,
                           }}>
                             <Tabs
+                              activeKey={ipdSubTab}
+                              onChange={setIpdSubTab}
                               style={{ 
                                 display: 'flex', 
                                 flexDirection: 'column', 
@@ -1523,6 +1538,7 @@ export default function HospitalDashboard() {
                                     }}>
                                       <IpdEncountersList
                                         showDoctorInfo={true}
+                                        showAllEncounters={false}
                                         onViewPatient={async (encounter: IpdEncounter) => {
                                           if (encounter.patientId) {
                                             await handleViewPatientInfo(encounter.patientId, encounter);
@@ -1539,6 +1555,30 @@ export default function HospitalDashboard() {
                                         onDischarge={(encounter: IpdEncounter) => {
                                           setSelectedEncounter(encounter);
                                           setIsDischargeModalOpen(true);
+                                        }}
+                                      />
+                                    </div>
+                                  ),
+                                },
+                                {
+                                  key: 'past-encounters',
+                                  label: 'Past IPD Patients',
+                                  children: (
+                                    <div style={{ 
+                                      flex: 1,
+                                      minHeight: 0,
+                                      overflow: 'hidden',
+                                      display: 'flex',
+                                      flexDirection: 'column',
+                                      paddingTop: 16,
+                                    }}>
+                                      <IpdEncountersList
+                                        showDoctorInfo={true}
+                                        showAllEncounters={true}
+                                        onViewPatient={async (encounter: IpdEncounter) => {
+                                          if (encounter.patientId) {
+                                            await handleViewPatientInfo(encounter.patientId, encounter);
+                                          }
                                         }}
                                       />
                                     </div>
@@ -1641,11 +1681,19 @@ export default function HospitalDashboard() {
                       </Text>
                     </div>
                     <div>
-                      <Text type="secondary">Current Bed:</Text>
+                      <Text type="secondary">{patientInfo.encounter.status === 'discharged' || patientInfo.encounter.status === 'LAMA' || patientInfo.encounter.status === 'death' || patientInfo.encounter.status === 'absconded' ? 'Last Bed:' : 'Current Bed:'}</Text>
                       <Text strong style={{ marginLeft: 8 }}>
                         {patientInfo.encounter.currentBed?.bedName || `Bed ${patientInfo.encounter.currentBed?.bedNumber}` || 'N/A'}
                       </Text>
                     </div>
+                    {(patientInfo.encounter.status === 'discharged' || patientInfo.encounter.status === 'LAMA' || patientInfo.encounter.status === 'death' || patientInfo.encounter.status === 'absconded') && patientInfo.encounter.dischargedAt && (
+                      <div>
+                        <Text type="secondary">Discharged At:</Text>
+                        <Text strong style={{ marginLeft: 8 }}>
+                          {dayjs(patientInfo.encounter.dischargedAt).format('DD MMM YYYY, hh:mm A')}
+                        </Text>
+                      </div>
+                    )}
                   </>
                 )}
               </Space>
@@ -1757,6 +1805,48 @@ export default function HospitalDashboard() {
                       </div>
                     ),
                   },
+                  ...(patientInfo.encounter && (patientInfo.encounter.status === 'discharged' || patientInfo.encounter.status === 'LAMA' || patientInfo.encounter.status === 'death' || patientInfo.encounter.status === 'absconded') ? [{
+                    key: 'discharge-summary',
+                    label: 'Discharge Summary',
+                    children: (
+                      <div>
+                        {patientInfo.encounter.dischargeSummaryText ? (
+                          <div>
+                            <div style={{ marginBottom: 16 }}>
+                              <Text strong>Discharge Date: </Text>
+                              <Text>{patientInfo.encounter.dischargedAt ? dayjs(patientInfo.encounter.dischargedAt).format('DD MMM YYYY, hh:mm A') : 'N/A'}</Text>
+                            </div>
+                            <div style={{ marginBottom: 16 }}>
+                              <Text strong>Discharge Status: </Text>
+                              <Tag color={patientInfo.encounter.status === 'discharged' ? 'green' : patientInfo.encounter.status === 'death' ? 'red' : 'orange'}>
+                                {patientInfo.encounter.status?.toUpperCase()}
+                              </Tag>
+                            </div>
+                            <div>
+                              <Text strong>Discharge Summary:</Text>
+                              <div style={{ 
+                                marginTop: 16, 
+                                padding: 16, 
+                                background: '#f5f5f5', 
+                                borderRadius: 8,
+                                whiteSpace: 'pre-wrap',
+                                fontFamily: 'monospace',
+                                fontSize: '13px',
+                                maxHeight: '400px',
+                                overflowY: 'auto'
+                              }}>
+                                {patientInfo.encounter.dischargeSummaryText}
+                              </div>
+                            </div>
+                          </div>
+                        ) : (
+                          <div>
+                            <Text type="secondary">No discharge summary available.</Text>
+                          </div>
+                        )}
+                      </div>
+                    ),
+                  }] : []),
                 ]}
               />
             </Card>

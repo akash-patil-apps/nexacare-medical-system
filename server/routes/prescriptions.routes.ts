@@ -245,6 +245,9 @@ router.get(
   async (req: AuthenticatedRequest, res) => {
     try {
       const prescriptionId = Number(req.params.id);
+      if (isNaN(prescriptionId)) {
+        return res.status(400).json({ message: "Invalid prescription ID" });
+      }
       const prescription = await prescriptionService.getPrescriptionById(prescriptionId, req.user!.id, req.user!.role);
       if (!prescription) {
         return res.status(404).json({ message: "Prescription not found or unauthorized" });

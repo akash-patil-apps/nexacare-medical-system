@@ -44,6 +44,10 @@ import { NotificationBell } from '../../components/notifications/NotificationBel
 import { LabTechnicianSidebar } from '../../components/layout/LabTechnicianSidebar';
 import { subscribeToAppointmentEvents } from '../../lib/appointments-events';
 import { getISTStartOfDay, isSameDayIST } from '../../lib/timezone';
+import PendingLabOrders from '../lab/pending-orders';
+import LabResultEntry from '../lab/result-entry';
+import LabReportRelease from '../lab/report-release';
+import SampleCollection from '../lab/sample-collection';
 
 const { Content, Sider } = Layout;
 const { Title, Text } = Typography;
@@ -747,12 +751,27 @@ export default function LabDashboard() {
                   onClick={() => setMobileDrawerOpen(true)}
                   style={{ fontSize: '18px' }}
                 />
-                <Title level={4} style={{ margin: 0 }}>Dashboard</Title>
+                <Title level={4} style={{ margin: 0 }}>
+                  {selectedMenuKey === 'pending-orders' ? 'Pending Orders' :
+                   selectedMenuKey === 'result-entry' ? 'Result Entry' :
+                   selectedMenuKey === 'report-release' ? 'Report Release' :
+                   selectedMenuKey === 'reports' ? 'Lab Reports' :
+                   selectedMenuKey === 'upload' ? 'Upload Report' :
+                   selectedMenuKey === 'analytics' ? 'Analytics' :
+                   'Dashboard'}
+                </Title>
                 <div style={{ paddingRight: 8, overflow: 'visible' }}>
                   <NotificationBell />
                 </div>
               </div>
             )}
+
+            {/* Render content based on selected menu */}
+            {selectedMenuKey === 'pending-orders' && <PendingLabOrders />}
+            {selectedMenuKey === 'result-entry' && <LabResultEntry />}
+            {selectedMenuKey === 'report-release' && <LabReportRelease />}
+            {selectedMenuKey === 'dashboard' && (
+              <>
             
             {/* Alert/Banner Notifications - Show important unread notifications */}
             {notifications.filter((n: any) => !n.isRead).length > 0 && (
@@ -1044,6 +1063,12 @@ export default function LabDashboard() {
               </Card>
             </Col>
           </Row>
+              </>
+            )}
+          </div>
+        </Content>
+      </Layout>
+      </Layout>
 
       {/* Lab Report Upload Modal */}
       <LabReportUploadModal
@@ -1058,10 +1083,6 @@ export default function LabDashboard() {
         }}
         report={selectedReport}
       />
-          </div>
-        </Content>
-      </Layout>
-      </Layout>
     </>
   );
 }

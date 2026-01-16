@@ -655,6 +655,241 @@ export const getRadiologyTechnicianOnboardingStatus = async (userId: number) => 
   }
 };
 
+/**
+ * Complete doctor onboarding by creating/updating doctor profile.
+ */
+export const completeDoctorOnboarding = async (userId: number, data: any) => {
+  console.log(`🎯 Completing doctor onboarding for user ${userId}`);
+  
+  try {
+    const { doctors } = await import("../../shared/schema");
+    const existingDoctor = await db
+      .select()
+      .from(doctors)
+      .where(eq(doctors.userId, userId))
+      .limit(1);
+
+    const doctorData = {
+      hospitalId: data.hospitalId || null,
+      specialty: data.specialty || null,
+      qualification: data.qualification || null,
+      licenseNumber: data.licenseNumber || null,
+      experience: data.experience ? Number(data.experience) : null,
+      consultationFee: data.consultationFee ? String(data.consultationFee) : null,
+      workingHours: data.workingHours || null,
+      languages: data.languages || null,
+      awards: data.awards || null,
+      bio: data.bio || null,
+    };
+
+    if (existingDoctor.length > 0) {
+      const result = await db
+        .update(doctors)
+        .set(doctorData)
+        .where(eq(doctors.userId, userId))
+        .returning();
+      return { success: true, doctor: result[0], isNew: false };
+    } else {
+      const result = await db
+        .insert(doctors)
+        .values({
+          userId,
+          ...doctorData,
+          createdAt: new Date(),
+        })
+        .returning();
+      return { success: true, doctor: result[0], isNew: true };
+    }
+  } catch (error) {
+    console.error(`❌ Doctor onboarding failed for user ${userId}:`, error);
+    throw error;
+  }
+};
+
+/**
+ * Get doctor onboarding status.
+ */
+export const getDoctorOnboardingStatus = async (userId: number) => {
+  try {
+    const { doctors } = await import("../../shared/schema");
+    const doctor = await db
+      .select()
+      .from(doctors)
+      .where(eq(doctors.userId, userId))
+      .limit(1);
+
+    const hasProfile = doctor.length > 0;
+    const isComplete = hasProfile && doctor[0]?.specialty && doctor[0]?.licenseNumber;
+
+    return {
+      userId,
+      hasProfile,
+      isCompleted: isComplete,
+      isComplete,
+      profile: doctor[0] || null,
+    };
+  } catch (error) {
+    console.error(`❌ Error checking doctor onboarding status:`, error);
+    return { isCompleted: false };
+  }
+};
+
+/**
+ * Complete receptionist onboarding by creating/updating receptionist profile.
+ */
+export const completeReceptionistOnboarding = async (userId: number, data: any) => {
+  console.log(`🎯 Completing receptionist onboarding for user ${userId}`);
+  
+  try {
+    const { receptionists } = await import("../../shared/schema");
+    const existingReceptionist = await db
+      .select()
+      .from(receptionists)
+      .where(eq(receptionists.userId, userId))
+      .limit(1);
+
+    const receptionistData = {
+      hospitalId: data.hospitalId || null,
+      employeeId: data.employeeId || null,
+      department: data.department || null,
+      shift: data.shift || null,
+      workingHours: data.workingHours || null,
+      dateOfJoining: data.dateOfJoining ? new Date(data.dateOfJoining) : null,
+    };
+
+    if (existingReceptionist.length > 0) {
+      const result = await db
+        .update(receptionists)
+        .set(receptionistData)
+        .where(eq(receptionists.userId, userId))
+        .returning();
+      return { success: true, receptionist: result[0], isNew: false };
+    } else {
+      const result = await db
+        .insert(receptionists)
+        .values({
+          userId,
+          ...receptionistData,
+          createdAt: new Date(),
+        })
+        .returning();
+      return { success: true, receptionist: result[0], isNew: true };
+    }
+  } catch (error) {
+    console.error(`❌ Receptionist onboarding failed for user ${userId}:`, error);
+    throw error;
+  }
+};
+
+/**
+ * Get receptionist onboarding status.
+ */
+export const getReceptionistOnboardingStatus = async (userId: number) => {
+  try {
+    const { receptionists } = await import("../../shared/schema");
+    const receptionist = await db
+      .select()
+      .from(receptionists)
+      .where(eq(receptionists.userId, userId))
+      .limit(1);
+
+    const hasProfile = receptionist.length > 0;
+    const isComplete = hasProfile && receptionist[0]?.hospitalId;
+
+    return {
+      userId,
+      hasProfile,
+      isCompleted: isComplete,
+      isComplete,
+      profile: receptionist[0] || null,
+    };
+  } catch (error) {
+    console.error(`❌ Error checking receptionist onboarding status:`, error);
+    return { isCompleted: false };
+  }
+};
+
+/**
+ * Complete lab onboarding by creating/updating lab profile.
+ */
+export const completeLabOnboarding = async (userId: number, data: any) => {
+  console.log(`🎯 Completing lab onboarding for user ${userId}`);
+  
+  try {
+    const { labs } = await import("../../shared/schema");
+    const existingLab = await db
+      .select()
+      .from(labs)
+      .where(eq(labs.userId, userId))
+      .limit(1);
+
+    const labData = {
+      name: data.name || null,
+      licenseNumber: data.licenseNumber || null,
+      address: data.address || null,
+      city: data.city || null,
+      state: data.state || null,
+      zipCode: data.zipCode || null,
+      contactEmail: data.contactEmail || null,
+      operatingHours: data.operatingHours || null,
+      specializations: data.specializations ? (Array.isArray(data.specializations) ? data.specializations.join(', ') : data.specializations) : null,
+      testCategories: data.testCategories ? (Array.isArray(data.testCategories) ? data.testCategories.join(', ') : data.testCategories) : null,
+      equipment: data.equipment ? (Array.isArray(data.equipment) ? data.equipment.join(', ') : data.equipment) : null,
+      accreditation: data.accreditation || null,
+    };
+
+    if (existingLab.length > 0) {
+      const result = await db
+        .update(labs)
+        .set(labData)
+        .where(eq(labs.userId, userId))
+        .returning();
+      return { success: true, lab: result[0], isNew: false };
+    } else {
+      const result = await db
+        .insert(labs)
+        .values({
+          userId,
+          ...labData,
+          createdAt: new Date(),
+        })
+        .returning();
+      return { success: true, lab: result[0], isNew: true };
+    }
+  } catch (error) {
+    console.error(`❌ Lab onboarding failed for user ${userId}:`, error);
+    throw error;
+  }
+};
+
+/**
+ * Get lab onboarding status.
+ */
+export const getLabOnboardingStatus = async (userId: number) => {
+  try {
+    const { labs } = await import("../../shared/schema");
+    const lab = await db
+      .select()
+      .from(labs)
+      .where(eq(labs.userId, userId))
+      .limit(1);
+
+    const hasProfile = lab.length > 0;
+    const isComplete = hasProfile && lab[0]?.name && lab[0]?.licenseNumber;
+
+    return {
+      userId,
+      hasProfile,
+      isCompleted: isComplete,
+      isComplete,
+      profile: lab[0] || null,
+    };
+  } catch (error) {
+    console.error(`❌ Error checking lab onboarding status:`, error);
+    return { isCompleted: false };
+  }
+};
+
 
 
 

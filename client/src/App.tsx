@@ -8,6 +8,7 @@ import { App as AntApp } from 'antd';
 // Import pages
 import Login from './pages/auth/login';
 import Register from './pages/auth/register';
+import RegisterWithRole from './pages/auth/register-with-role';
 import OtpVerification from './pages/auth/otp-verification';
 import PatientDashboard from './pages/dashboards/patient-dashboard';
 import PatientAppointments from './pages/dashboards/patient-appointments';
@@ -26,6 +27,10 @@ import HospitalOnboarding from './pages/onboarding/hospital-onboarding';
 import NurseOnboarding from './pages/onboarding/nurse-onboarding';
 import PharmacistOnboarding from './pages/onboarding/pharmacist-onboarding';
 import RadiologyTechnicianOnboarding from './pages/onboarding/radiology-technician-onboarding';
+import DoctorOnboarding from './pages/onboarding/doctor-onboarding';
+import ReceptionistOnboarding from './pages/onboarding/receptionist-onboarding';
+import LabOnboarding from './pages/onboarding/lab-onboarding';
+import RevenueDetails from './pages/revenue/revenue-details';
 import NotFound from './pages/not-found';
 
 // Create a client
@@ -82,6 +87,7 @@ function App() {
                   <Route path="/" component={Login} />
                   <Route path="/login" component={Login} />
                   <Route path="/register" component={Register} />
+                  <Route path="/register/with-role" component={RegisterWithRole} />
                   <Route path="/otp-verification" component={OtpVerification} />
                   
                   {/* Onboarding Routes */}
@@ -90,6 +96,9 @@ function App() {
                   <Route path="/onboarding/nurse" component={NurseOnboarding} />
                   <Route path="/onboarding/pharmacist" component={PharmacistOnboarding} />
                   <Route path="/onboarding/radiology-technician" component={RadiologyTechnicianOnboarding} />
+                  <Route path="/onboarding/doctor" component={DoctorOnboarding} />
+                  <Route path="/onboarding/receptionist" component={ReceptionistOnboarding} />
+                  <Route path="/onboarding/lab" component={LabOnboarding} />
                   
                   {/* Dashboard Routes */}
                   <Route path="/dashboard" component={DashboardRedirect} />
@@ -99,6 +108,7 @@ function App() {
                   <Route path="/dashboard/doctor" component={DoctorDashboard} />
                   <Route path="/dashboard/doctor/appointments" component={DoctorAppointments} />
                   <Route path="/dashboard/hospital" component={HospitalDashboard} />
+                  <Route path="/dashboard/hospital/revenue" component={RevenueDetails} />
                   <Route path="/dashboard/lab" component={LabDashboard} />
                   <Route path="/dashboard/receptionist" component={ReceptionistDashboard} />
                   <Route path="/dashboard/nurse" component={NurseDashboard} />

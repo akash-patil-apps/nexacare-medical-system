@@ -1,6 +1,7 @@
 import express from 'express';
 import { authenticateToken, authorizeRoles, AuthenticatedRequest } from '../middleware/auth';
 import * as billingService from '../services/billing.service';
+import * as billingPdfService from '../services/billing-pdf.service';
 
 const router = express.Router();
 
@@ -46,10 +47,34 @@ const getHospitalId = async (user: any): Promise<number> => {
 router.post('/opd/invoices', authenticateToken, authorizeRoles('ADMIN', 'HOSPITAL', 'RECEPTIONIST'), async (req: AuthenticatedRequest, res) => {
   try {
     const hospitalId = await getHospitalId(req.user);
-    const { appointmentId, items, discountAmount, discountType, discountReason, taxAmount } = req.body;
+    const { appointmentId, patientId, items, discountAmount, discountType, discountReason, taxAmount } = req.body;
     
+    // If patientId is provided but no appointmentId, create lab test invoice
+    if (patientId && !appointmentId) {
+      if (!items || !Array.isArray(items) || items.length === 0) {
+        return res.status(400).json({ message: 'items are required for lab test invoices' });
+      }
+      
+      const invoice = await billingService.createLabTestInvoice({
+        hospitalId,
+        patientId,
+        items,
+        discountAmount,
+        discountType,
+        discountReason,
+        taxAmount,
+        actorUserId: req.user?.id,
+        actorRole: req.user?.role || 'UNKNOWN',
+        ipAddress: req.ip || req.socket.remoteAddress || undefined,
+        userAgent: req.get('user-agent') || undefined,
+      });
+      
+      return res.json(invoice);
+    }
+    
+    // Otherwise, create appointment invoice (existing logic)
     if (!appointmentId) {
-      return res.status(400).json({ message: 'appointmentId is required' });
+      return res.status(400).json({ message: 'appointmentId or patientId is required' });
     }
     
     // Get patientId from appointment
@@ -194,7 +219,7 @@ router.post('/opd/invoices/:invoiceId/payments', authenticateToken, authorizeRol
       return res.status(400).json({ message: 'method and amount are required' });
     }
     
-    if (!['cash', 'card', 'upi', 'online'].includes(method)) {
+    if (!['cash', 'card', 'upi', 'online', 'gpay', 'phonepe'].includes(method)) {
       return res.status(400).json({ message: 'Invalid payment method' });
     }
     
@@ -285,6 +310,21 @@ router.get('/my/invoices', authenticateToken, async (req: AuthenticatedRequest, 
   } catch (err: any) {
     console.error('❌ Get my invoices error:', err);
     res.status(400).json({ message: err.message || 'Failed to get invoices' });
+  }
+});
+
+// Generate invoice PDF
+router.get('/opd/invoices/:invoiceId/pdf', authenticateToken, authorizeRoles('ADMIN', 'HOSPITAL', 'RECEPTIONIST', 'DOCTOR'), async (req: AuthenticatedRequest, res) => {
+  try {
+    const { invoiceId } = req.params;
+    const pdfBuffer = await billingPdfService.generateInvoicePDF(+invoiceId);
+    
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="invoice-${invoiceId}.pdf"`);
+    res.send(pdfBuffer);
+  } catch (err: any) {
+    console.error('❌ Generate PDF error:', err);
+    res.status(400).json({ message: err.message || 'Failed to generate PDF' });
   }
 });
 

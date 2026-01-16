@@ -85,6 +85,34 @@
       "when": 1767770829487,
       "tag": "0011_opposite_kronos",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1768473460847,
+      "tag": "0012_abnormal_forge",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1768478210306,
+      "tag": "0013_big_sentinel",
+      "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1768548421534,
+      "tag": "0014_thin_wendell_rand",
+      "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "7",
+      "when": 1768566765842,
+      "tag": "0015_groovy_the_captain",
+      "breakpoints": true
     }
   ]
 }

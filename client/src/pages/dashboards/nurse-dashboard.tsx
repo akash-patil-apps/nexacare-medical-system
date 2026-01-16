@@ -84,6 +84,7 @@ export default function NurseDashboard() {
   const [selectedPatientId, setSelectedPatientId] = useState<number | undefined>(undefined);
   const [selectedPatientName, setSelectedPatientName] = useState<string | undefined>(undefined);
   const [selectedEncounter, setSelectedEncounter] = useState<any>(null);
+  const [selectedEncounterForDetail, setSelectedEncounterForDetail] = useState<number | null>(null);
 
   // Redirect if not authenticated
   if (!isLoading && !user) {
@@ -337,6 +338,11 @@ export default function NurseDashboard() {
       icon: <FileTextOutlined />,
       label: 'Nursing Notes',
     },
+    {
+      key: 'emar',
+      icon: <MedicineBoxOutlined />,
+      label: 'eMAR',
+    },
   ];
 
   const renderDashboard = () => (
@@ -380,7 +386,10 @@ export default function NurseDashboard() {
           showDoctorInfo={true}
           isNurseView={true}
           onViewPatient={(encounter) => {
-            message.info('Patient details view coming soon');
+            if (encounter.id) {
+              setSelectedEncounterForDetail(encounter.id);
+              setSelectedMenuKey('ipd-patient-detail');
+            }
           }}
           onRecordVitals={(encounterId, patientId, patientName) => {
             setSelectedEncounterId(encounterId);
@@ -471,8 +480,11 @@ export default function NurseDashboard() {
         showDoctorInfo={true}
         isNurseView={true}
         onViewPatient={(encounter) => {
-          // Handle patient details view
-          message.info('Patient details view coming soon');
+          // Show IPD patient detail page
+          if (encounter.id) {
+            setSelectedEncounterForDetail(encounter.id);
+            setSelectedMenuKey('emar');
+          }
         }}
         onRecordVitals={(encounterId, patientId, patientName) => {
           setSelectedEncounterId(encounterId);
@@ -488,11 +500,13 @@ export default function NurseDashboard() {
         }}
         onViewMedications={(encounter) => {
           setSelectedEncounter(encounter);
-          setIsMedicationsModalOpen(true);
+          setSelectedEncounterForDetail(encounter.id);
+          setSelectedMenuKey('emar');
         }}
         onAdministerMedication={(encounter) => {
           setSelectedEncounter(encounter);
-          setIsAdministerModalOpen(true);
+          setSelectedEncounterForDetail(encounter.id);
+          setSelectedMenuKey('emar');
         }}
       />
     </Card>
@@ -587,6 +601,23 @@ export default function NurseDashboard() {
   );
 
   const renderContent = () => {
+    if (selectedEncounterForDetail) {
+      return (
+        <div>
+          <Button
+            style={{ marginBottom: 16 }}
+            onClick={() => {
+              setSelectedEncounterForDetail(null);
+              setSelectedMenuKey('dashboard');
+            }}
+          >
+            ← Back to List
+          </Button>
+          <IPDPatientDetail encounterId={selectedEncounterForDetail} />
+        </div>
+      );
+    }
+
     switch (selectedMenuKey) {
       case 'patients':
         return renderPatients();
@@ -594,6 +625,8 @@ export default function NurseDashboard() {
         return renderVitals();
       case 'notes':
         return renderNotes();
+      case 'emar':
+        return <EMAR />;
       default:
         return renderDashboard();
     }

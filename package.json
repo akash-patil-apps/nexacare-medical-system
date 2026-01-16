@@ -17,6 +17,8 @@
     "seed:catalog": "tsx scripts/seed-catalog-data.ts",
     "seed:cities": "tsx scripts/seed-cities.ts",
     "seed:maharashtra": "tsx scripts/seed-maharashtra-data.ts",
+    "seed:charges": "tsx scripts/seed-hospital-charges-and-beds.ts",
+    "check-beds": "tsx scripts/check-bed-structure.ts",
     "check-user": "tsx scripts/check-user.ts",
     "create-test-user": "tsx scripts/create-test-user.ts",
     "export-test-data": "tsx scripts/export-test-data.ts",
