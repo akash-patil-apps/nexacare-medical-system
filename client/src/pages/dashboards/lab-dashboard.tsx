@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Redirect } from "wouter";
 import { 
@@ -16,7 +16,7 @@ import {
   Drawer,
   Spin,
   Select,
-  Alert,
+  App,
   Divider
 } from 'antd';
 
@@ -41,6 +41,7 @@ import { useResponsive } from '../../hooks/use-responsive';
 import { KpiCard } from '../../components/dashboard/KpiCard';
 import LabReportUploadModal from '../../components/modals/lab-report-upload-modal';
 import { NotificationBell } from '../../components/notifications/NotificationBell';
+import { TopHeader } from '../../components/layout/TopHeader';
 import { LabTechnicianSidebar } from '../../components/layout/LabTechnicianSidebar';
 import { subscribeToAppointmentEvents } from '../../lib/appointments-events';
 import { getISTStartOfDay, isSameDayIST } from '../../lib/timezone';
@@ -62,8 +63,10 @@ const labTheme = {
 
 export default function LabDashboard() {
   const { user, logout, isLoading } = useAuth();
+  const { notification: notificationApi } = App.useApp();
   const { isMobile, isTablet } = useResponsive();
   const queryClient = useQueryClient();
+  const shownNotificationIdsRef = useRef<Set<number>>(new Set());
   const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false);
   const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
   const [selectedReport, setSelectedReport] = useState<any>(null);
@@ -161,6 +164,61 @@ export default function LabDashboard() {
     refetchInterval: 15000,
     refetchOnWindowFocus: true,
   });
+
+  // Show floating notifications for unread notifications
+  useEffect(() => {
+    if (!notifications || notifications.length === 0) return;
+
+    const unread = notifications.filter((n: any) => !n.isRead);
+    
+    unread.forEach((notif: any) => {
+      const notifId = Number(notif.id);
+      
+      // Only show if we haven't shown this notification before
+      if (!shownNotificationIdsRef.current.has(notifId)) {
+        shownNotificationIdsRef.current.add(notifId);
+        
+        const type = (notif.type || '').toLowerCase();
+        let notificationType: 'info' | 'success' | 'warning' | 'error' = 'info';
+        if (type.includes('cancel') || type.includes('reject') || type.includes('critical')) notificationType = 'error';
+        else if (type.includes('confirm') || type.includes('complete') || type.includes('ready')) notificationType = 'success';
+        else if (type.includes('pending') || type.includes('resched') || type.includes('processing')) notificationType = 'warning';
+        
+        // Show as floating notification in top right
+        notificationApi[notificationType]({
+          message: notif.title || 'Notification',
+          description: notif.message,
+          placement: 'topRight',
+          duration: 10, // Auto-dismiss after 10 seconds
+          key: `notif-${notifId}`,
+          onClick: () => {
+            // Mark as read when clicked
+            const token = localStorage.getItem('auth-token');
+            if (token) {
+              fetch(`/api/notifications/read/${notifId}`, {
+                method: 'POST',
+                headers: { Authorization: `Bearer ${token}` },
+              }).then(() => {
+                queryClient.invalidateQueries({ queryKey: ['/api/notifications/me'] });
+              });
+            }
+          },
+          onClose: () => {
+            // Mark as read when closed
+            const token = localStorage.getItem('auth-token');
+            if (token) {
+              fetch(`/api/notifications/read/${notifId}`, {
+                method: 'POST',
+                headers: { Authorization: `Bearer ${token}` },
+              }).then(() => {
+                queryClient.invalidateQueries({ queryKey: ['/api/notifications/me'] });
+              });
+            }
+          },
+        });
+      }
+    });
+  }, [notifications, notificationApi, queryClient]);
 
   // Real-time: subscribe to appointment events for notifications
   useEffect(() => {
@@ -554,7 +612,7 @@ export default function LabDashboard() {
     );
   };
 
-  const siderWidth = isMobile ? 0 : 260;
+  const siderWidth = isMobile ? 0 : 80; // Narrow sidebar width matching PatientSidebar
 
   return (
     <>
@@ -666,7 +724,7 @@ export default function LabDashboard() {
       {/* Desktop/Tablet Sidebar */}
       {!isMobile && (
       <Sider 
-        width={260}
+        width={80}
         style={{
           position: 'fixed',
           top: 0,
@@ -698,7 +756,7 @@ export default function LabDashboard() {
           onClose={() => setMobileDrawerOpen(false)}
           open={mobileDrawerOpen}
           bodyStyle={{ padding: 0 }}
-          width={260}
+          width={80}
         >
           <LabTechnicianSidebar 
             selectedMenuKey={selectedMenuKey}
@@ -717,52 +775,70 @@ export default function LabDashboard() {
           minHeight: '100vh',
           background: labTheme.background,
           transition: 'margin-left 0.2s ease',
-          overflow: 'hidden',
+          display: 'flex',
+          flexDirection: 'column',
+          height: '100vh', // Fixed height to enable scrolling
         }}
       >
+        {/* TopHeader - Matching Patient Dashboard Design */}
+        <TopHeader
+          userName={user?.fullName || 'Lab Admin'}
+          userRole="Lab"
+          userId={useMemo(() => {
+            if (user?.id) {
+              const year = new Date().getFullYear();
+              const idNum = String(user.id).padStart(3, '0');
+              return `LAB-${year}-${idNum}`;
+            }
+            return 'LAB-2024-001';
+          }, [user?.id])}
+          userInitials={useMemo(() => {
+            if (user?.fullName) {
+              const names = user.fullName.split(' ');
+              if (names.length >= 2) {
+                return `${names[0][0]}${names[1][0]}`.toUpperCase();
+              }
+              return user.fullName.substring(0, 2).toUpperCase();
+            }
+            return 'LA';
+          }, [user?.fullName])}
+          notificationCount={notifications.filter((n: any) => !n.isRead).length}
+        />
+
         <Content
           style={{
             background: labTheme.background,
-            height: '100vh',
-            overflow: 'hidden',
-            padding: isMobile ? '24px 16px 16px' : isTablet ? '24px 20px 20px' : '24px 32px 24px',
+            flex: 1,
+            overflowY: 'auto',
+            overflowX: 'hidden',
+            minHeight: 0, // Important for flex scrolling
+            // Responsive padding - reduced to save side space
+            padding: isMobile 
+              ? '12px 12px 16px'  // Mobile: smaller side padding
+              : isTablet 
+                ? '12px 16px 20px'  // Tablet: medium side padding
+                : '12px 16px 20px', // Desktop: reduced padding
             display: 'flex',
             flexDirection: 'column',
+            margin: 0,
+            width: '100%',
           }}
         >
           <div style={{ 
             display: 'flex', 
             flexDirection: 'column', 
-            height: '100%',
-            overflow: 'hidden',
+            flex: 1,
+            minHeight: 0,
           }}>
-            {/* Notifications Bell (top-right) */}
-            {!isMobile && (
-              <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 8, paddingRight: 8, overflow: 'visible' }}>
-                <NotificationBell />
-              </div>
-            )}
             {/* Mobile Menu Button */}
             {isMobile && (
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+              <div style={{ display: 'flex', justifyContent: 'flex-start', alignItems: 'center', marginBottom: 16 }}>
                 <Button
                   type="text"
                   icon={<MenuUnfoldOutlined />}
                   onClick={() => setMobileDrawerOpen(true)}
                   style={{ fontSize: '18px' }}
                 />
-                <Title level={4} style={{ margin: 0 }}>
-                  {selectedMenuKey === 'pending-orders' ? 'Pending Orders' :
-                   selectedMenuKey === 'result-entry' ? 'Result Entry' :
-                   selectedMenuKey === 'report-release' ? 'Report Release' :
-                   selectedMenuKey === 'reports' ? 'Lab Reports' :
-                   selectedMenuKey === 'upload' ? 'Upload Report' :
-                   selectedMenuKey === 'analytics' ? 'Analytics' :
-                   'Dashboard'}
-                </Title>
-                <div style={{ paddingRight: 8, overflow: 'visible' }}>
-                  <NotificationBell />
-                </div>
               </div>
             )}
 
@@ -773,43 +849,7 @@ export default function LabDashboard() {
             {selectedMenuKey === 'dashboard' && (
               <>
             
-            {/* Alert/Banner Notifications - Show important unread notifications */}
-            {notifications.filter((n: any) => !n.isRead).length > 0 && (
-              <div style={{ marginBottom: 16 }}>
-                {notifications
-                  .filter((n: any) => !n.isRead)
-                  .slice(0, 3) // Show max 3 alerts
-                  .map((notif: any) => {
-                    const type = (notif.type || '').toLowerCase();
-                    let alertType: 'info' | 'success' | 'warning' | 'error' = 'info';
-                    if (type.includes('cancel') || type.includes('reject') || type.includes('critical')) alertType = 'error';
-                    else if (type.includes('confirm') || type.includes('complete') || type.includes('ready')) alertType = 'success';
-                    else if (type.includes('pending') || type.includes('resched') || type.includes('processing')) alertType = 'warning';
-                    
-                    return (
-                      <Alert
-                        key={notif.id}
-                        message={notif.title || 'Notification'}
-                        description={notif.message}
-                        type={alertType}
-                        showIcon
-                        closable
-                        style={{ marginBottom: 8 }}
-                        onClose={() => {
-                          // Mark as read when closed
-                          const token = localStorage.getItem('auth-token');
-                          fetch(`/api/notifications/read/${notif.id}`, {
-                            method: 'POST',
-                            headers: { Authorization: `Bearer ${token}` },
-                          }).then(() => {
-                            queryClient.invalidateQueries({ queryKey: ['/api/notifications/me'] });
-                          });
-                        }}
-                      />
-                    );
-                  })}
-              </div>
-            )}
+            {/* Floating Notifications - Auto-dismiss after 10 seconds (handled by useEffect) */}
 
             {/* KPI Cards - Matching Receptionist Dashboard Design */}
             {isMobile ? (

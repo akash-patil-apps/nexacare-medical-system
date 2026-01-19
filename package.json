@@ -27,7 +27,8 @@
     "fix-mobile-numbers": "tsx scripts/fix-mobile-numbers.ts",
     "cleanup-and-reseed": "tsx scripts/cleanup-and-reseed.ts",
     "verify-mobile-numbers": "tsx scripts/verify-mobile-numbers.ts",
-    "check-appointment-data": "tsx scripts/check-appointment-data.ts"
+    "check-appointment-data": "tsx scripts/check-appointment-data.ts",
+    "test:cron": "tsx scripts/test-cron-endpoint.ts"
   },
   "dependencies": {
     "@neondatabase/serverless": "^1.0.1",
@@ -35,6 +36,7 @@
     "bcryptjs": "^2.4.3",
     "concurrently": "^8.2.0",
     "cors": "^2.8.5",
+    "dayjs": "^1.11.19",
     "dotenv": "^16.3.1",
     "drizzle-zod": "^0.8.2",
     "express": "^4.18.2",
@@ -43,7 +45,6 @@
     "nanoid": "^5.1.5",
     "pg": "^8.11.1",
     "postgres": "^3.4.7",
-    "tsx": "^4.7.0",
     "ws": "^8.18.3",
     "zod": "^3.25.67"
   },
@@ -63,10 +64,11 @@
     "cross-env": "^7.0.3",
     "drizzle-kit": "^0.31.4",
     "drizzle-orm": "^0.44.5",
+    "figma-mcp-server": "^2.1.1",
     "pdfkit": "^0.17.2",
     "tailwindcss-animate": "^1.0.7",
     "tsconfig-paths": "^4.2.0",
-    "tsx": "^4.7.0",
+    "tsx": "^4.21.0",
     "typescript": "^5.4.5",
     "vite": "^6.3.5"
   }

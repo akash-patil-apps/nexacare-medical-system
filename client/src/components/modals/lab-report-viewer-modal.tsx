@@ -132,7 +132,7 @@ Generated on: ${dayjs().format('DD MMM YYYY, hh:mm A')}
           Download Report
         </Button>,
       ]}
-      destroyOnClose
+      destroyOnHidden
     >
       {loading ? (
         <div style={{ textAlign: 'center', padding: '40px 0' }}>

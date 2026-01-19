@@ -229,7 +229,7 @@ router.post('/notes/:id/sign', authorizeRoles('DOCTOR', 'ADMIN', 'HOSPITAL'), as
  */
 
 // Create vitals entry
-router.post('/vitals', authorizeRoles('DOCTOR', 'NURSE', 'ADMIN', 'HOSPITAL'), async (req: AuthenticatedRequest, res) => {
+router.post('/vitals', authorizeRoles('DOCTOR', 'NURSE', 'ADMIN', 'HOSPITAL', 'RECEPTIONIST'), async (req: AuthenticatedRequest, res) => {
   try {
     if (!req.user?.id) {
       return res.status(401).json({ message: 'User not authenticated' });

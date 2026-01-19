@@ -34,9 +34,11 @@ import { useLocation } from 'wouter';
 import { useQueryClient } from '@tanstack/react-query';
 import { Popconfirm } from 'antd';
 import { PatientSidebar } from '../../components/layout/PatientSidebar';
+import { TopHeader } from '../../components/layout/TopHeader';
 import { useResponsive } from '../../hooks/use-responsive';
+import { useQuery } from '@tanstack/react-query';
 import { formatDate } from '../../lib/utils';
-import { formatTimeSlot12h } from '../../lib/time';
+import { formatTimeSlot12h, parseTimeTo24h } from '../../lib/time';
 import { subscribeToAppointmentEvents } from '../../lib/appointments-events';
 import { playNotificationSound } from '../../lib/notification-sounds';
 import dayjs from 'dayjs';
@@ -77,7 +79,23 @@ export default function PatientAppointments() {
   const { user } = useAuth();
   const [, setLocation] = useLocation();
   const queryClient = useQueryClient();
-  const { isMobile } = useResponsive();
+  const { isMobile, isTablet } = useResponsive();
+  
+  // Get notifications for TopHeader
+  const { data: notifications = [] } = useQuery({
+    queryKey: ['/api/notifications/me'],
+    queryFn: async () => {
+      const token = localStorage.getItem('auth-token');
+      const response = await fetch('/api/notifications/me', {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!response.ok) return [];
+      return response.json();
+    },
+    refetchInterval: 15000,
+  });
+  
+  const siderWidth = isMobile ? 0 : 80; // Narrow sidebar width matching PatientSidebar
   const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false);
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [prescriptionsByAppointment, setPrescriptionsByAppointment] = useState<Record<number, any>>({});
@@ -122,6 +140,51 @@ export default function PatientAppointments() {
 
     // Fallback: date only
     return new Date(y, mo - 1, da);
+  };
+
+  /**
+   * Calculate appointment slot end time from date and time slot string
+   * Time slot can be:
+   * - "02:00-02:30" (range) - use the end time (legacy: "02:00" means 2 PM)
+   * - "02:00 PM" (single time) - assume 30 minutes duration
+   * - "14:00" (24-hour format) - assume 30 minutes duration
+   */
+  const getSlotEndTime = (dateStr: string, timeSlot: string): Date | null => {
+    if (!dateStr || !timeSlot) return null;
+    
+    // Parse date
+    const dateMatch = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateStr.trim());
+    if (!dateMatch) return null;
+    const year = Number(dateMatch[1]);
+    const month = Number(dateMatch[2]) - 1; // 0-indexed
+    const day = Number(dateMatch[3]);
+    
+    const slot = timeSlot.trim();
+    
+    // Check if it's a range like "02:00-02:30"
+    if (slot.includes('-')) {
+      const parts = slot.split('-').map(s => s.trim());
+      if (parts.length === 2) {
+        const endTimeStr = parts[1];
+        // Use parseTimeTo24h to handle legacy convention properly
+        const parsedEnd = parseTimeTo24h(endTimeStr);
+        if (parsedEnd) {
+          const endDate = new Date(year, month, day, parsedEnd.hours24, parsedEnd.minutes, 0, 0);
+          return endDate;
+        }
+      }
+    }
+    
+    // Single time - parse and add 30 minutes duration
+    const parsedStart = parseTimeTo24h(slot);
+    if (!parsedStart) return null;
+    
+    const startDate = new Date(year, month, day, parsedStart.hours24, parsedStart.minutes, 0, 0);
+    
+    // Add 30 minutes for default slot duration
+    const endDate = new Date(startDate);
+    endDate.setMinutes(endDate.getMinutes() + 30);
+    return endDate;
   };
 
   // Load appointments from API
@@ -261,9 +324,9 @@ export default function PatientAppointments() {
   }, []);
 
   // Categorize appointments into upcoming and past
+  // Logic: Show in "Upcoming" if appointment_slot_end_time >= current_time, else "Past"
   const categorizedAppointments = useMemo(() => {
     const nowIST = getISTNow();
-    const todayIST = getISTStartOfDay(nowIST);
     
     const upcoming: Appointment[] = [];
     const past: Appointment[] = [];
@@ -277,37 +340,46 @@ export default function PatientAppointments() {
       
       if (!matchesFilter || !matchesSearch) return;
       
-      // Build appointment date/time
+      // Get appointment slot end time
       const appointmentDateRaw = appointment.appointmentDate || '';
       const appointmentTimeRaw = appointment.appointmentTime || appointment.timeSlot || '';
-      const appointmentDateTimeLocal = parseLocalDateTime(appointmentDateRaw, appointmentTimeRaw);
-      const appointmentDateTimeIST = toIST(appointmentDateTimeLocal);
-
-      const displayStatus = (appointment.displayStatus || appointment.status || '').toLowerCase();
-
-      // Past if it is explicitly finished/cancelled/absent OR the appointment day is before today (IST).
-      // Also move to past if appointment time has passed for today's appointments (especially pending ones).
-      const isFinishedStatus = displayStatus === 'completed' || displayStatus === 'cancelled' || displayStatus === 'absent';
-
-      if (appointmentDateTimeIST) {
-        const aptDayIST = getISTStartOfDay(appointmentDateTimeIST);
-        const isPastDay = aptDayIST.getTime() < todayIST.getTime();
-        const isToday = aptDayIST.getTime() === todayIST.getTime();
-        
-        // For today's appointments: check if time has passed
-        // If pending/confirmed and time has passed, move to past
-        const isTimePassed = isToday && appointmentDateTimeIST.getTime() < nowIST.getTime();
-        const shouldBePast = isTimePassed && (displayStatus === 'pending' || displayStatus === 'confirmed');
-        
-        if (isFinishedStatus || isPastDay || shouldBePast) {
-          past.push(appointment);
-        } else {
-          upcoming.push(appointment);
-        }
-      } else {
-        // No date: fall back to status only
+      
+      if (!appointmentDateRaw || !appointmentTimeRaw) {
+        // No date/time: fall back to status
+        const displayStatus = (appointment.displayStatus || appointment.status || '').toLowerCase();
+        const isFinishedStatus = displayStatus === 'completed' || displayStatus === 'cancelled' || displayStatus === 'absent';
         if (isFinishedStatus) past.push(appointment);
         else upcoming.push(appointment);
+        return;
+      }
+      
+      // Calculate slot end time
+      const slotEndTimeLocal = getSlotEndTime(appointmentDateRaw, appointmentTimeRaw);
+      if (!slotEndTimeLocal) {
+        // Could not parse time: fall back to status
+        const displayStatus = (appointment.displayStatus || appointment.status || '').toLowerCase();
+        const isFinishedStatus = displayStatus === 'completed' || displayStatus === 'cancelled' || displayStatus === 'absent';
+        if (isFinishedStatus) past.push(appointment);
+        else upcoming.push(appointment);
+        return;
+      }
+      
+      // Convert to IST
+      const slotEndTimeIST = toIST(slotEndTimeLocal);
+      if (!slotEndTimeIST) {
+        // Could not convert to IST: fall back to status
+        const displayStatus = (appointment.displayStatus || appointment.status || '').toLowerCase();
+        const isFinishedStatus = displayStatus === 'completed' || displayStatus === 'cancelled' || displayStatus === 'absent';
+        if (isFinishedStatus) past.push(appointment);
+        else upcoming.push(appointment);
+        return;
+      }
+      
+      // Categorize based on slot end time: if slot_end_time >= current_time, it's upcoming
+      if (slotEndTimeIST.getTime() >= nowIST.getTime()) {
+        upcoming.push(appointment);
+      } else {
+        past.push(appointment);
       }
     });
     
@@ -413,7 +485,7 @@ export default function PatientAppointments() {
     setIsViewModalOpen(true);
   };
 
-  const handleCancelAppointment = async (appointmentId: number) => {
+  const handleCancelAppointment = async (appointmentId: number, appointment?: Appointment) => {
     try {
       const token = localStorage.getItem('auth-token');
       const response = await fetch(`/api/appointments/${appointmentId}/cancel`, {
@@ -425,8 +497,28 @@ export default function PatientAppointments() {
       });
 
       if (response.ok) {
+        const result = await response.json();
         playNotificationSound('cancellation');
-        message.success('Appointment cancelled successfully');
+        
+        // Show appropriate message based on refund info
+        if (result.refundInfo) {
+          if (result.isConfirmed) {
+            // After confirmation: 10% fee, 90% refund
+            message.success(
+              `Appointment cancelled successfully. A 10% cancellation fee (₹${result.refundInfo.cancellationFee}) has been deducted. ₹${result.refundInfo.refundAmount} will be refunded to your account.`,
+              8
+            );
+          } else {
+            // Before confirmation: full refund
+            message.success(
+              `Appointment cancelled successfully. Full refund of ₹${result.refundInfo.refundAmount} will be processed.`,
+              8
+            );
+          }
+        } else {
+          message.success('Appointment cancelled successfully');
+        }
+        
         loadAppointments();
         queryClient.invalidateQueries({ queryKey: ['/api/appointments/my'] });
       } else {
@@ -548,11 +640,15 @@ export default function PatientAppointments() {
           >
             View
           </Button>
-          {record.status === 'pending' && (
+          {(record.status === 'pending' || record.status === 'confirmed') && (
             <Popconfirm
               title="Cancel Appointment"
-              description="Are you sure you want to cancel this appointment?"
-              onConfirm={() => handleCancelAppointment(record.id)}
+              description={
+                record.confirmedAt
+                  ? "This appointment has been confirmed. A 10% cancellation fee will be deducted, and 90% of the booking amount will be refunded. Are you sure you want to cancel?"
+                  : "This appointment has not been confirmed yet. You will receive a full refund. Are you sure you want to cancel?"
+              }
+              onConfirm={() => handleCancelAppointment(record.id, record)}
               okText="Yes, Cancel"
               cancelText="No"
             >
@@ -646,7 +742,7 @@ export default function PatientAppointments() {
         {/* Desktop/Tablet Sidebar */}
         {!isMobile && (
           <Sider
-            width={260}
+            width={80}
             style={{
               position: 'fixed',
               top: 0,
@@ -657,8 +753,7 @@ export default function PatientAppointments() {
               display: 'flex',
               flexDirection: 'column',
               zIndex: 10,
-              borderLeft: '1px solid #E3F2FF',
-              borderBottom: '1px solid #E3F2FF',
+              borderRight: '1px solid #E5E7EB',
             }}
           >
             <PatientSidebar selectedMenuKey="appointments" />
@@ -681,35 +776,70 @@ export default function PatientAppointments() {
 
         <Layout
           style={{
-            marginLeft: isMobile ? 0 : 260,
+            marginLeft: siderWidth,
             minHeight: '100vh',
-            background: '#F3F4F6',
-            overflow: 'hidden',
+            background: '#F7FBFF',
+            display: 'flex',
+            flexDirection: 'column',
+            height: '100vh',
           }}
         >
+          {/* TopHeader - Matching Patient Dashboard Design */}
+          <TopHeader
+            userName={user?.fullName || 'User'}
+            userRole="Patient"
+            userId={(() => {
+              if (user?.id) {
+                const year = new Date().getFullYear();
+                const idNum = String(user.id).padStart(3, '0');
+                return `PAT-${year}-${idNum}`;
+              }
+              return 'PAT-2024-001';
+            })()}
+            userInitials={(() => {
+              if (user?.fullName) {
+                const names = user.fullName.split(' ');
+                if (names.length >= 2) {
+                  return `${names[0][0]}${names[1][0]}`.toUpperCase();
+                }
+                return user.fullName.substring(0, 2).toUpperCase();
+              }
+              return 'UP';
+            })()}
+            notificationCount={notifications.filter((n: any) => !n.isRead).length}
+          />
+
           <Content
             style={{
-              background: '#F3F4F6',
-              height: '100vh',
+              background: '#F7FBFF',
+              flex: 1,
               overflowY: 'auto',
-              padding: 0,
+              overflowX: 'hidden',
+              minHeight: 0,
+              // Responsive padding - reduced to save side space
+              padding: isMobile 
+                ? '12px 12px 16px'
+                : isTablet 
+                  ? '12px 16px 20px'
+                  : '12px 16px 20px',
+              margin: 0,
+              width: '100%',
             }}
           >
             {/* Mobile Menu Button */}
             {isMobile && (
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '16px', background: '#F3F4F6' }}>
+              <div style={{ display: 'flex', justifyContent: 'flex-start', alignItems: 'center', marginBottom: 16 }}>
                 <Button
                   type="text"
                   icon={<MenuUnfoldOutlined />}
                   onClick={() => setMobileDrawerOpen(true)}
                   style={{ fontSize: '18px' }}
                 />
-                <div style={{ width: 32 }} />
               </div>
             )}
 
             {/* Content */}
-            <div style={{ padding: '24px 32px 32px 32px', maxWidth: '1400px', margin: '0 auto', width: '100%' }}>
+            <div style={{ paddingBottom: 24 }}>
               {/* KPI Cards */}
               <Row gutter={[16, 16]} style={{ marginBottom: '24px' }}>
                 <Col xs={24} sm={12} lg={6}>

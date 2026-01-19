@@ -237,7 +237,8 @@ export const appointments = pgTable("appointments", {
   symptoms: text("symptoms"),
   notes: text("notes"),
   // OPD token/queue basics (v1)
-  tokenNumber: integer("token_number"),
+  tokenNumber: integer("token_number"), // Real token assigned after check-in
+  tempTokenNumber: integer("temp_token_number"), // Temporary token assigned on confirmation (before check-in)
   checkedInAt: timestamp("checked_in_at"),
   confirmedAt: timestamp("confirmed_at"),
   completedAt: timestamp("completed_at"),

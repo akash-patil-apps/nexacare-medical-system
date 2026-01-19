@@ -35,6 +35,7 @@ import radiologyWorkflowRoutes from "./radiology-workflow.routes";
 import ipdWorkflowRoutes from "./ipd-workflow.routes";
 import hospitalChargesRoutes from "./hospital-charges.routes";
 import revenueRoutes from "./revenue.routes";
+import cronRoutes from "./cron.routes";
 
 
 const router = Router();
@@ -78,6 +79,7 @@ export async function registerRoutes(app: Express) {
   app.use("/api/ipd-workflow", ipdWorkflowRoutes);
   app.use("/api/hospital-charges", hospitalChargesRoutes);
   app.use("/api/revenue", revenueRoutes);
+  app.use("/api/cron", cronRoutes);
   
   // NOTE: /api/prescriptions/my should use /api/prescriptions/patient for patients
   // The prescriptions router handles all prescription endpoints

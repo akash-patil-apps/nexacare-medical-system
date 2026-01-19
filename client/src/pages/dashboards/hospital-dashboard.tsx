@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Redirect } from "wouter";
 import { formatTimeSlot12h } from "../../lib/time";
@@ -16,7 +16,7 @@ import {
   message,
   Drawer,
   Spin,
-  Alert,
+  App,
   Divider,
   Tabs,
   List,
@@ -31,11 +31,14 @@ import {
   MenuUnfoldOutlined,
   SettingOutlined,
   DollarOutlined,
+  BellOutlined,
+  LogoutOutlined,
 } from '@ant-design/icons';
 import { useAuth } from '../../hooks/use-auth';
 import { useResponsive } from '../../hooks/use-responsive';
 import { KpiCard } from '../../components/dashboard/KpiCard';
 import { NotificationBell } from '../../components/notifications/NotificationBell';
+import { TopHeader } from '../../components/layout/TopHeader';
 import { BedOccupancyMap, TransferModal, TransferDoctorModal, DischargeModal, BedStructureManager } from '../../components/ipd';
 import { IpdEncountersList } from '../../components/ipd/IpdEncountersList';
 import IPDPatientDetail from '../../pages/ipd/patient-detail';
@@ -59,10 +62,11 @@ const hospitalTheme = {
 };
 
 export default function HospitalDashboard() {
-  const { user, isLoading } = useAuth();
+  const { user, isLoading, logout } = useAuth();
+  const { notification: notificationApi } = App.useApp();
   const { isMobile, isTablet } = useResponsive();
   const queryClient = useQueryClient();
-  const [collapsed, setCollapsed] = useState(false);
+  const shownNotificationIdsRef = useRef<Set<number>>(new Set());
   const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false);
   const [activeAppointmentTab, setActiveAppointmentTab] = useState<string>('today_all');
   const [activeMainTab, setActiveMainTab] = useState<string>('appointments');
@@ -111,12 +115,6 @@ export default function HospitalDashboard() {
     }
   }
 
-  // Auto-collapse sidebar on mobile/tablet
-  useEffect(() => {
-    if (isMobile || isTablet) {
-      setCollapsed(true);
-    }
-  }, [isMobile, isTablet]);
 
   // Fetch clinical notes and vitals
   const fetchClinicalData = async (patientId: number) => {
@@ -276,6 +274,61 @@ export default function HospitalDashboard() {
     refetchInterval: 15000,
     refetchOnWindowFocus: true,
   });
+
+  // Show floating notifications for unread notifications
+  useEffect(() => {
+    if (!notifications || notifications.length === 0) return;
+
+    const unread = notifications.filter((n: any) => !n.isRead);
+    
+    unread.forEach((notif: any) => {
+      const notifId = Number(notif.id);
+      
+      // Only show if we haven't shown this notification before
+      if (!shownNotificationIdsRef.current.has(notifId)) {
+        shownNotificationIdsRef.current.add(notifId);
+        
+        const type = (notif.type || '').toLowerCase();
+        let notificationType: 'info' | 'success' | 'warning' | 'error' = 'info';
+        if (type.includes('cancel') || type.includes('reject') || type.includes('critical')) notificationType = 'error';
+        else if (type.includes('confirm') || type.includes('complete') || type.includes('ready')) notificationType = 'success';
+        else if (type.includes('pending') || type.includes('resched') || type.includes('processing')) notificationType = 'warning';
+        
+        // Show as floating notification in top right
+        notificationApi[notificationType]({
+          message: notif.title || 'Notification',
+          description: notif.message,
+          placement: 'topRight',
+          duration: 10, // Auto-dismiss after 10 seconds
+          key: `notif-${notifId}`,
+          onClick: () => {
+            // Mark as read when clicked
+            const token = localStorage.getItem('auth-token');
+            if (token) {
+              fetch(`/api/notifications/read/${notifId}`, {
+                method: 'POST',
+                headers: { Authorization: `Bearer ${token}` },
+              }).then(() => {
+                queryClient.invalidateQueries({ queryKey: ['/api/notifications/me'] });
+              });
+            }
+          },
+          onClose: () => {
+            // Mark as read when closed
+            const token = localStorage.getItem('auth-token');
+            if (token) {
+              fetch(`/api/notifications/read/${notifId}`, {
+                method: 'POST',
+                headers: { Authorization: `Bearer ${token}` },
+              }).then(() => {
+                queryClient.invalidateQueries({ queryKey: ['/api/notifications/me'] });
+              });
+            }
+          },
+        });
+      }
+    });
+  }, [notifications, notificationApi, queryClient]);
 
   // Real-time: subscribe to appointment events for notifications
   useEffect(() => {
@@ -726,7 +779,7 @@ export default function HospitalDashboard() {
     },
   ], [selectedMenuKey]);
 
-  const siderWidth = isMobile ? 0 : (collapsed ? 80 : 260);
+  const siderWidth = isMobile ? 0 : 80; // Narrow sidebar width matching PatientSidebar
 
   // Generate hospital admin ID (HOS-YYYY-XXX format)
   const hospitalAdminId = useMemo(() => {
@@ -752,153 +805,159 @@ export default function HospitalDashboard() {
 
   // Sidebar content component (reusable for drawer and sider)
   const SidebarContent = ({ onMenuClick }: { onMenuClick?: () => void }) => (
-      <div style={{ 
+    <div style={{ 
       display: 'flex', 
       flexDirection: 'column', 
       height: '100%',
-      background: '#fff',
+      background: '#fff', // White background matching PatientSidebar
+      width: '80px', // Narrow vertical bar
+      alignItems: 'center',
+      padding: '16px 0',
+      gap: '12px',
+      borderRight: '1px solid #E5E7EB', // Light border on right
     }}>
-      {/* NexaCare Hospital Logo/Name Section */}
-      <div style={{
-        padding: '20px 16px',
-        borderBottom: '1px solid #E5E7EB',
-        display: 'flex',
-        flexDirection: 'column',
-        alignItems: 'center',
-        gap: '8px',
-      }}>
-        <div style={{
+      {/* User Icon at Top */}
+      <Button
+        type="text"
+        icon={<UserOutlined style={{ fontSize: '20px', color: '#1A8FE3' }} />}
+        style={{
           width: '48px',
           height: '48px',
-          borderRadius: '12px',
-          background: hospitalTheme.primary,
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
-          color: '#fff',
-          fontSize: '24px',
-        }}>
-          <BankOutlined />
-        </div>
-        <div style={{ textAlign: 'center' }}>
-          <Text strong style={{ display: 'block', fontSize: '14px', fontWeight: 600, color: '#111827', lineHeight: 1.4 }}>
-            NexaCare Hospital
-          </Text>
-      </div>
-      </div>
-
-      {/* Navigation Menu */}
-      <Menu
-        className="hospital-dashboard-menu"
-        mode="inline"
-        selectedKeys={[selectedMenuKey]}
-        items={sidebarMenu}
-        style={{ 
-          border: 'none', 
-          flex: 1,
-          background: 'transparent',
-          padding: '8px',
-          overflowY: 'auto',
+          background: '#E3F2FF', // Light blue background for active user icon
+          borderRadius: '8px',
         }}
-        onClick={(e) => {
-          if (onMenuClick) onMenuClick();
-          if (e.key === 'revenue') {
-            window.location.href = '/dashboard/hospital/revenue';
-          } else {
-            message.info(`${e.key} page coming soon.`);
-          }
-        }}
-        theme="light"
+        onClick={() => message.info('Profile coming soon.')}
       />
 
-      {/* User Profile Footer - Light Grey Rounded Card */}
-      <div style={{
-        marginTop: 'auto',
-        padding: '16px',
-        background: '#fff',
-        flexShrink: 0,
-      }}>
-        <div style={{
-          background: '#F3F4F6',
-          borderRadius: '12px',
-          padding: '16px',
-        }}>
-          {/* Layer 1: Profile Photo + (Name + ID) */}
-          <div style={{
-            display: 'flex',
-            alignItems: 'flex-start',
-            gap: '12px',
-            marginBottom: '12px',
-          }}>
-            {/* Avatar */}
-            <div style={{
-              width: '40px',
-              height: '40px',
-              borderRadius: '50%',
-              background: hospitalTheme.primary,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              color: '#fff',
-              fontWeight: 600,
-              fontSize: '14px',
-              flexShrink: 0,
-            }}>
-              {userInitials}
-            </div>
-            
-            {/* Name (top) and ID (below) - stacked vertically */}
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <Text strong style={{ display: 'block', fontSize: '14px', fontWeight: 600, color: '#262626', lineHeight: 1.5, marginBottom: '4px' }}>
-                {user?.fullName || 'Hospital Admin'}
-              </Text>
-              <Text style={{ display: 'block', fontSize: '12px', color: '#8C8C8C' }}>
-                ID: {hospitalAdminId}
-              </Text>
-            </div>
-          </div>
-          
-          {/* Layer 2: Hospital Name */}
-          {hospitalName && (
-            <div style={{
-              marginBottom: '12px',
-              paddingBottom: '12px',
-              borderBottom: '1px solid #E5E7EB',
-            }}>
-              <Text style={{ display: 'block', fontSize: '12px', color: '#8C8C8C', lineHeight: 1.4 }}>
-                {hospitalName}
-              </Text>
-            </div>
-          )}
-          
-          {/* Layer 3: Active Hospital Admin Text + Settings Icon */}
-          <div style={{
+      {/* Navigation Icons - Vertical Stack */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', flex: 1, alignItems: 'center' }}>
+        <Button
+          type="text"
+          icon={<BankOutlined style={{ fontSize: '20px', color: selectedMenuKey === 'dashboard' ? '#1A8FE3' : '#6B7280' }} />}
+          style={{
+            width: '48px',
+            height: '48px',
             display: 'flex',
             alignItems: 'center',
-            justifyContent: 'space-between',
-          }}>
-            {/* Active Hospital Admin on left */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <div style={{
-                width: '8px',
-                height: '8px',
-                borderRadius: '50%',
-                background: '#10B981',
-              }} />
-              <Text style={{ fontSize: '12px', color: '#10B981', fontWeight: 500 }}>
-                Active Hospital Admin
-              </Text>
-            </div>
-            
-            {/* Settings Icon on right */}
-            <Button 
-              type="text" 
-              icon={<SettingOutlined style={{ color: '#8C8C8C', fontSize: '18px' }} />} 
-              onClick={() => message.info('Settings coming soon.')}
-              style={{ flexShrink: 0, padding: 0, width: '32px', height: '32px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-            />
-          </div>
-        </div>
+            justifyContent: 'center',
+            background: selectedMenuKey === 'dashboard' ? '#E3F2FF' : 'transparent',
+            borderRadius: '8px',
+          }}
+          onClick={() => {
+            if (onMenuClick) onMenuClick();
+            setSelectedMenuKey('dashboard');
+          }}
+        />
+        
+        <Button
+          type="text"
+          icon={<TeamOutlined style={{ fontSize: '20px', color: selectedMenuKey === 'doctors' ? '#1A8FE3' : '#6B7280' }} />}
+          style={{
+            width: '48px',
+            height: '48px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            background: selectedMenuKey === 'doctors' ? '#E3F2FF' : 'transparent',
+            borderRadius: '8px',
+          }}
+          onClick={() => {
+            if (onMenuClick) onMenuClick();
+            message.info('Doctors page coming soon.');
+          }}
+        />
+        
+        <Button
+          type="text"
+          icon={<UserOutlined style={{ fontSize: '20px', color: selectedMenuKey === 'patients' ? '#1A8FE3' : '#6B7280' }} />}
+          style={{
+            width: '48px',
+            height: '48px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            background: selectedMenuKey === 'patients' ? '#E3F2FF' : 'transparent',
+            borderRadius: '8px',
+          }}
+          onClick={() => {
+            if (onMenuClick) onMenuClick();
+            message.info('Patients page coming soon.');
+          }}
+        />
+        
+        <Button
+          type="text"
+          icon={<CalendarOutlined style={{ fontSize: '20px', color: selectedMenuKey === 'appointments' ? '#1A8FE3' : '#6B7280' }} />}
+          style={{
+            width: '48px',
+            height: '48px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            background: selectedMenuKey === 'appointments' ? '#E3F2FF' : 'transparent',
+            borderRadius: '8px',
+          }}
+          onClick={() => {
+            if (onMenuClick) onMenuClick();
+            message.info('Appointments page coming soon.');
+          }}
+        />
+        
+        <Button
+          type="text"
+          icon={<FileTextOutlined style={{ fontSize: '20px', color: selectedMenuKey === 'reports' ? '#1A8FE3' : '#6B7280' }} />}
+          style={{
+            width: '48px',
+            height: '48px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            background: selectedMenuKey === 'reports' ? '#E3F2FF' : 'transparent',
+            borderRadius: '8px',
+          }}
+          onClick={() => {
+            if (onMenuClick) onMenuClick();
+            message.info('Lab Reports page coming soon.');
+          }}
+        />
+        
+        <Button
+          type="text"
+          icon={<BarChartOutlined style={{ fontSize: '20px', color: selectedMenuKey === 'revenue' ? '#1A8FE3' : '#6B7280' }} />}
+          style={{
+            width: '48px',
+            height: '48px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            background: selectedMenuKey === 'revenue' ? '#E3F2FF' : 'transparent',
+            borderRadius: '8px',
+          }}
+          onClick={() => {
+            if (onMenuClick) onMenuClick();
+            window.location.href = '/dashboard/hospital/revenue';
+          }}
+        />
+      </div>
+
+      {/* Bottom Icons */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', alignItems: 'center' }}>
+        <Button
+          type="text"
+          icon={<LogoutOutlined style={{ fontSize: '20px', color: '#EF4444' }} />}
+          style={{
+            width: '48px',
+            height: '48px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+          }}
+          onClick={() => logout()}
+          title="Logout"
+        />
       </div>
     </div>
   );
@@ -1062,24 +1121,19 @@ export default function HospitalDashboard() {
       {/* Desktop/Tablet Sidebar */}
       {!isMobile && (
       <Sider 
-          trigger={null}
-        collapsible 
-        collapsed={collapsed}
-        onCollapse={setCollapsed}
-        width={260}
-        collapsedWidth={80}
+        width={80}
         style={{
           position: 'fixed',
           top: 0,
           left: 0,
           height: '100vh',
-          width: siderWidth,
+          width: 80,
           background: '#fff',
-          boxShadow: '2px 0 8px rgba(0,0,0,0.1)',
+          boxShadow: '0 2px 16px rgba(26, 143, 227, 0.08)',
           display: 'flex',
           flexDirection: 'column',
-          transition: 'width 0.2s ease',
           zIndex: 10,
+          borderRight: '1px solid #E5E7EB',
         }}
       >
           <SidebarContent />
@@ -1106,84 +1160,74 @@ export default function HospitalDashboard() {
           minHeight: '100vh',
           background: hospitalTheme.background,
           transition: 'margin-left 0.2s ease',
-          overflow: 'hidden',
+          display: 'flex',
+          flexDirection: 'column',
+          height: '100vh', // Fixed height to enable scrolling
         }}
       >
+        {/* TopHeader - Matching Patient Dashboard Design */}
+        <TopHeader
+          userName={user?.fullName || 'Hospital Admin'}
+          userRole="Hospital"
+          userId={useMemo(() => {
+            if (user?.id) {
+              const year = new Date().getFullYear();
+              const idNum = String(user.id).padStart(3, '0');
+              return `HOS-${year}-${idNum}`;
+            }
+            return 'HOS-2024-001';
+          }, [user?.id])}
+          userInitials={useMemo(() => {
+            if (user?.fullName) {
+              const names = user.fullName.split(' ');
+              if (names.length >= 2) {
+                return `${names[0][0]}${names[1][0]}`.toUpperCase();
+              }
+              return user.fullName.substring(0, 2).toUpperCase();
+            }
+            return 'HA';
+          }, [user?.fullName])}
+          notificationCount={notifications.filter((n: any) => !n.isRead).length}
+        />
+
         <Content
           style={{
             background: hospitalTheme.background,
-            height: '100vh',
-            overflow: 'hidden',
-            padding: isMobile ? '24px 16px 16px' : isTablet ? '24px 20px 20px' : '24px 32px 24px',
+            flex: 1,
+            overflowY: 'auto',
+            overflowX: 'hidden',
+            minHeight: 0, // Important for flex scrolling
+            // Responsive padding - reduced to save side space
+            padding: isMobile 
+              ? '12px 12px 16px'  // Mobile: smaller side padding
+              : isTablet 
+                ? '12px 16px 20px'  // Tablet: medium side padding
+                : '12px 16px 20px', // Desktop: reduced padding
             display: 'flex',
             flexDirection: 'column',
+            margin: 0,
+            width: '100%',
           }}
         >
           <div style={{ 
             display: 'flex', 
             flexDirection: 'column', 
-            height: '100%',
-            overflow: 'hidden',
+            flex: 1,
+            minHeight: 0,
           }}>
-            {/* Notifications Bell (top-right) */}
-            {!isMobile && (
-              <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 8, paddingRight: 8, overflow: 'visible' }}>
-                <NotificationBell />
-              </div>
-            )}
             {/* Mobile Menu Button */}
             {isMobile && (
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+              <div style={{ display: 'flex', justifyContent: 'flex-start', alignItems: 'center', marginBottom: 16 }}>
                 <Button
                   type="text"
                   icon={<MenuUnfoldOutlined />}
                   onClick={() => setMobileDrawerOpen(true)}
                   style={{ fontSize: '18px' }}
                 />
-                <Title level={4} style={{ margin: 0 }}>Dashboard</Title>
-                <div style={{ paddingRight: 8, overflow: 'visible' }}>
-                  <NotificationBell />
-                </div>
               </div>
             )}
             
-            {/* Alert/Banner Notifications - Show important unread notifications */}
-            {notifications.filter((n: any) => !n.isRead).length > 0 && (
-              <div style={{ marginBottom: 16 }}>
-                {notifications
-                  .filter((n: any) => !n.isRead)
-                  .slice(0, 3) // Show max 3 alerts
-                  .map((notif: any) => {
-                    const type = (notif.type || '').toLowerCase();
-                    let alertType: 'info' | 'success' | 'warning' | 'error' = 'info';
-                    if (type.includes('cancel') || type.includes('reject') || type.includes('critical')) alertType = 'error';
-                    else if (type.includes('confirm') || type.includes('complete') || type.includes('ready')) alertType = 'success';
-                    else if (type.includes('pending') || type.includes('resched') || type.includes('processing')) alertType = 'warning';
-                    
-                    return (
-                      <Alert
-                        key={notif.id}
-                        message={notif.title || 'Notification'}
-                        description={notif.message}
-                        type={alertType}
-                        showIcon
-                        closable
-                        style={{ marginBottom: 8 }}
-                        onClose={() => {
-                          // Mark as read when closed
-                          const token = localStorage.getItem('auth-token');
-                          fetch(`/api/notifications/read/${notif.id}`, {
-                            method: 'POST',
-                            headers: { Authorization: `Bearer ${token}` },
-                          }).then(() => {
-                            queryClient.invalidateQueries({ queryKey: ['/api/notifications/me'] });
-                          });
-                        }}
-                      />
-                    );
-                  })}
-              </div>
-            )}
+            {/* Floating Notifications - Auto-dismiss after 10 seconds (handled by useEffect) */}
 
             {/* KPI Cards - Matching Receptionist Dashboard Design */}
             {isMobile ? (

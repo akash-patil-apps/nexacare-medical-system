@@ -6,7 +6,9 @@ import type { AuthenticatedRequest } from "../types";
 import * as prescriptionService from "../services/prescription.service";
 import * as doctorsService from "../services/doctors.service";
 import * as patientsService from "../services/patients.service";
-import { insertPrescriptionSchema } from "../../shared/schema"; 
+import { insertPrescriptionSchema } from "../../shared/schema";
+import { NotificationService } from "../services/localNotification.service";
+import * as medicineReminderService from "../services/medicine-reminder.service"; 
 
 const router = Router();
 
@@ -48,6 +50,32 @@ router.post(
       const prescriptionData = { ...parsed, doctorId };
       
       const result = await prescriptionService.issuePrescription(prescriptionData);
+      
+      // Send notification to patient
+      try {
+        const patient = await patientsService.getPatientById(parsed.patientId);
+        if (patient?.userId) {
+          await NotificationService.sendPrescriptionNotification(
+            result.id,
+            patient.userId,
+            doctorId
+          );
+          console.log(`✅ Prescription notification sent to patient ${patient.userId}`);
+          
+          // Schedule medicine reminders
+          try {
+            await medicineReminderService.scheduleMedicineReminders(result.id);
+            console.log(`✅ Medicine reminders scheduled for prescription ${result.id}`);
+          } catch (reminderError) {
+            console.error('Failed to schedule medicine reminders:', reminderError);
+            // Don't fail the request if reminder scheduling fails
+          }
+        }
+      } catch (notifError) {
+        console.error('Failed to send prescription notification:', notifError);
+        // Don't fail the request if notification fails
+      }
+      
       res.status(201).json(result);
     } catch (err) {
       console.error("❌ Issue prescription error:", err);

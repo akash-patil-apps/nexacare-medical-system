@@ -308,6 +308,11 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({
 
       const invoice = await response.json();
       
+      // Check if invoice already has payment (from pre-paid appointment)
+      const invoicePaidAmount = parseFloat(invoice.paidAmount || '0');
+      const invoiceTotal = parseFloat(invoice.total || '0');
+      const alreadyPaid = invoicePaidAmount > 0;
+      
       // Issue the invoice immediately
       await fetch(`/api/billing/opd/invoices/${invoice.id}/issue`, {
         method: 'PATCH',
@@ -318,7 +323,8 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({
 
       // Record payment - automatically for online payments, or from form for walk-in
       // For online payments, automatically record payment with details from appointment
-      if (isOnlinePayment && paymentDetails) {
+      // But skip if invoice already has payment recorded (from pre-paid appointment)
+      if (isOnlinePayment && paymentDetails && !alreadyPaid) {
         try {
           // Extract amount from payment details or use invoice total
           let paymentAmount = totals.total;

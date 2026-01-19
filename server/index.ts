@@ -9,13 +9,24 @@ import { registerRoutes } from "./routes";
 import { setupVite, serveStatic } from "./vite";
 import { errorHandler } from "./middleware/errorHandler";
 import { securityHeaders, rateLimit } from "./middleware/security";
+import { startMedicineReminderScheduler } from "./scheduler";
 
 const app = express();
 const server = createServer(app);
 
 // Security middleware
 app.use(securityHeaders);
-app.use(rateLimit({ windowMs: 15 * 60 * 1000, max: 100 })); // 100 requests per 15 minutes
+
+// Rate limiting - more lenient in development
+const isDevelopment = process.env.NODE_ENV !== 'production';
+app.use((req, res, next) => {
+  // Skip rate limiting for static assets and in development
+  if (isDevelopment || req.path.startsWith('/assets/') || req.path.startsWith('/@')) {
+    return next();
+  }
+  // Apply rate limiting for production
+  rateLimit({ windowMs: 15 * 60 * 1000, max: 1000 })(req, res, next);
+});
 
 app.use(cors());
 app.use(express.json());
@@ -36,6 +47,13 @@ const start = async () => {
   const PORT = process.env.PORT || 3000;
   server.listen(PORT, () => {
     console.log(`Server is running on http://localhost:${PORT}`);
+    
+    // Start medicine reminder scheduler
+    if (process.env.ENABLE_MEDICINE_REMINDERS !== 'false') {
+      startMedicineReminderScheduler();
+    } else {
+      console.log('ℹ️ Medicine reminder scheduler disabled (ENABLE_MEDICINE_REMINDERS=false)');
+    }
   });
 };
 

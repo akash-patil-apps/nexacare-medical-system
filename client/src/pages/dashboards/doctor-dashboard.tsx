@@ -11,7 +11,7 @@ import {
   Typography,
   Menu,
   message,
-  notification,
+  App,
   Spin,
   Tabs,
   Drawer,
@@ -31,7 +31,8 @@ import {
   MenuUnfoldOutlined,
   PhoneOutlined,
   MessageOutlined,
-  HomeOutlined
+  HomeOutlined,
+  LogoutOutlined
 } from '@ant-design/icons';
 import { useAuth } from '../../hooks/use-auth';
 import { getAuthToken } from '../../lib/auth';
@@ -56,6 +57,7 @@ import {
 import { getISTNow, toIST, getISTStartOfDay, isSameDayIST } from '../../lib/timezone';
 import { playNotificationSound } from '../../lib/notification-sounds';
 import { NotificationBell } from '../../components/notifications/NotificationBell';
+import { TopHeader } from '../../components/layout/TopHeader';
 import { AvailabilityManager } from '../../components/availability/AvailabilityManager';
 import { ClinicalNotesEditor } from '../../components/clinical/ClinicalNotesEditor';
 import { VitalsEntryForm } from '../../components/clinical/VitalsEntryForm';
@@ -77,7 +79,8 @@ const doctorTheme = {
 };
 
 export default function DoctorDashboard() {
-  const { user, isLoading } = useAuth();
+  const { user, isLoading, logout } = useAuth();
+  const { notification: notificationApi } = App.useApp();
   const queryClient = useQueryClient();
   const [, setLocation] = useLocation();
   const { isMobile, isTablet } = useResponsive();
@@ -740,12 +743,12 @@ export default function DoctorDashboard() {
         else if (type.includes('confirm') || type.includes('complete')) notificationType = 'success';
         else if (type.includes('pending') || type.includes('resched')) notificationType = 'warning';
         
-        // Show as auto-dismissing banner (toast notification)
-        notification[notificationType]({
+        // Show as floating notification in top right (auto-dismiss after 10 seconds)
+        notificationApi[notificationType]({
           message: notif.title || 'Notification',
           description: notif.message,
           placement: 'topRight',
-          duration: 5, // Auto-dismiss after 5 seconds
+          duration: 10, // Auto-dismiss after 10 seconds
           key: `notif-${notifId}`, // Unique key for each notification
           onClick: () => {
             // Mark as read when clicked
@@ -759,10 +762,22 @@ export default function DoctorDashboard() {
               });
             }
           },
+          onClose: () => {
+            // Mark as read when closed
+            const token = getAuthToken();
+            if (token) {
+              fetch(`/api/notifications/read/${notifId}`, {
+                method: 'POST',
+                headers: { Authorization: `Bearer ${token}` },
+              }).then(() => {
+                queryClient.invalidateQueries({ queryKey: ['/api/notifications/me'] });
+              });
+            }
+          },
         });
       }
     });
-  }, [notifications, queryClient]);
+  }, [notifications, notificationApi, queryClient]);
   
   // Calculate completed appointments using universal status constants
   const completedAppointmentsCount = useMemo(() => {
@@ -1398,155 +1413,181 @@ export default function DoctorDashboard() {
     },
   ];
 
-  const siderWidth = isMobile ? 0 : 260; // Fixed width, no collapse
+  const siderWidth = isMobile ? 0 : 80; // Narrow sidebar width matching PatientSidebar
 
-  // Sidebar content component (reusable for drawer and sider)
+  // Sidebar content component (reusable for drawer and sider) - Narrow icon-only design
   const SidebarContent = ({ onMenuClick }: { onMenuClick?: () => void }) => (
     <div style={{ 
       display: 'flex', 
       flexDirection: 'column', 
       height: '100%',
-      background: '#fff',
+      background: '#fff', // White background matching PatientSidebar
+      width: '80px', // Narrow vertical bar
+      alignItems: 'center',
+      padding: '16px 0',
+      gap: '12px',
+      borderRight: '1px solid #E5E7EB', // Light border on right
     }}>
-      <div
+      {/* User Icon at Top */}
+      <Button
+        type="text"
+        icon={<UserOutlined style={{ fontSize: '20px', color: '#1A8FE3' }} />}
         style={{
-          padding: '20px 16px',
-          borderBottom: '1px solid #E5E7EB',
-          display: 'flex',
-          flexDirection: 'column',
-          alignItems: 'center',
-          gap: '8px',
-        }}
-      >
-        <div style={{
           width: '48px',
           height: '48px',
-          borderRadius: '12px',
-          background: doctorTheme.primary,
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
-          color: '#fff',
-          fontSize: '24px',
-        }}>
-          <MedicineBoxOutlined />
-        </div>
-        <div style={{ textAlign: 'center' }}>
-          <Text strong style={{ display: 'block', fontSize: '14px', fontWeight: 600, color: '#111827', lineHeight: 1.4 }}>
-            NexaCare
-          </Text>
-          <Text style={{ display: 'block', fontSize: '12px', color: '#6B7280', lineHeight: 1.4 }}>
-            Healthcare System
-          </Text>
-        </div>
-      </div>
-      <Menu
-        className="doctor-dashboard-menu"
-        mode="inline"
-        selectedKeys={[selectedMenuKey]}
-        items={sidebarMenu}
-        style={{ 
-          border: 'none', 
-          flex: 1, 
-          background: 'transparent', 
-          padding: '8px',
-          overflowY: 'auto',
+          background: '#E3F2FF', // Light blue background for active user icon
+          borderRadius: '8px',
         }}
-        onClick={(e) => {
-          handleMenuClick(e);
-          onMenuClick?.();
-        }}
-        theme="light"
+        onClick={() => message.info('Profile coming soon.')}
       />
 
-      {/* User Profile Footer - Light Grey Rounded Card (matching receptionist) */}
-      <div style={{
-        marginTop: 'auto',
-        padding: '16px',
-        background: '#fff',
-        flexShrink: 0,
-      }}>
-        <div style={{
-          background: '#F3F4F6',
-          borderRadius: '12px',
-          padding: '16px',
-        }}>
-          {/* Layer 1: Profile Photo + (Name + ID) */}
-          <div style={{
+      {/* Navigation Icons - Vertical Stack */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', flex: 1, alignItems: 'center' }}>
+        <Button
+          type="text"
+          icon={<UserOutlined style={{ fontSize: '20px', color: selectedMenuKey === 'dashboard' ? '#1A8FE3' : '#6B7280' }} />}
+          style={{
+          width: '48px',
+          height: '48px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+            background: selectedMenuKey === 'dashboard' ? '#E3F2FF' : 'transparent',
+            borderRadius: '8px',
+          }}
+          onClick={() => {
+            handleMenuClick({ key: 'dashboard' } as any);
+            onMenuClick?.();
+          }}
+        />
+        
+        <Button
+          type="text"
+          icon={<CalendarOutlined style={{ fontSize: '20px', color: selectedMenuKey === 'appointments' ? '#1A8FE3' : '#6B7280' }} />}
+        style={{ 
+            width: '48px',
+            height: '48px',
             display: 'flex',
-            alignItems: 'flex-start',
-            gap: '12px',
-            marginBottom: '12px',
-          }}>
-            {/* Avatar */}
-            <div style={{
-              width: '40px',
-              height: '40px',
-              borderRadius: '50%',
-              background: doctorTheme.primary,
+            alignItems: 'center',
+            justifyContent: 'center',
+            background: selectedMenuKey === 'appointments' ? '#E3F2FF' : 'transparent',
+            borderRadius: '8px',
+          }}
+          onClick={() => {
+            handleMenuClick({ key: 'appointments' } as any);
+          onMenuClick?.();
+        }}
+        />
+        
+        <Button
+          type="text"
+          icon={<TeamOutlined style={{ fontSize: '20px', color: selectedMenuKey === 'patients' ? '#1A8FE3' : '#6B7280' }} />}
+          style={{
+            width: '48px',
+            height: '48px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            background: selectedMenuKey === 'patients' ? '#E3F2FF' : 'transparent',
+            borderRadius: '8px',
+          }}
+          onClick={() => {
+            handleMenuClick({ key: 'patients' } as any);
+            onMenuClick?.();
+          }}
+        />
+        
+        <Button
+          type="text"
+          icon={<MedicineBoxOutlined style={{ fontSize: '20px', color: selectedMenuKey === 'prescriptions' ? '#1A8FE3' : '#6B7280' }} />}
+          style={{
+            width: '48px',
+            height: '48px',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-              color: '#fff',
-              fontWeight: 600,
-              fontSize: '14px',
-              flexShrink: 0,
-            }}>
-              {userInitials}
-            </div>
-            
-            {/* Name (top) and ID (below) - stacked vertically */}
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <Text strong style={{ display: 'block', fontSize: '14px', fontWeight: 600, color: '#262626', lineHeight: 1.5, marginBottom: '4px' }}>
-                {user?.fullName || 'Doctor'}
-              </Text>
-              <Text style={{ display: 'block', fontSize: '12px', color: '#8C8C8C' }}>
-                ID: {doctorId}
-              </Text>
-            </div>
-          </div>
-          
-          {/* Layer 2: Hospital Name */}
-          {hospitalName ? (
-            <div style={{
-              marginBottom: '12px',
-              paddingBottom: '12px',
-              borderBottom: '1px solid #E5E7EB',
-            }}>
-              <Text style={{ display: 'block', fontSize: '12px', color: '#8C8C8C', lineHeight: 1.4 }}>
-                {hospitalName}
-              </Text>
-            </div>
-          ) : null}
-          
-          {/* Layer 3: Active Doctor Text + Settings Icon */}
-          <div style={{
+            background: selectedMenuKey === 'prescriptions' ? '#E3F2FF' : 'transparent',
+            borderRadius: '8px',
+          }}
+          onClick={() => {
+            handleMenuClick({ key: 'prescriptions' } as any);
+            onMenuClick?.();
+          }}
+        />
+        
+        <Button
+          type="text"
+          icon={<FileTextOutlined style={{ fontSize: '20px', color: selectedMenuKey === 'reports' ? '#1A8FE3' : '#6B7280' }} />}
+          style={{
+            width: '48px',
+            height: '48px',
             display: 'flex',
             alignItems: 'center',
-            justifyContent: 'space-between',
-          }}>
-            {/* Active Doctor on left */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <div style={{
-                width: '8px',
-                height: '8px',
-                borderRadius: '50%',
-                background: '#10B981',
-              }} />
-              <Text style={{ fontSize: '12px', color: '#10B981', fontWeight: 500 }}>
-                Active Doctor
-              </Text>
+            justifyContent: 'center',
+            background: selectedMenuKey === 'reports' ? '#E3F2FF' : 'transparent',
+            borderRadius: '8px',
+          }}
+          onClick={() => {
+            handleMenuClick({ key: 'reports' } as any);
+            onMenuClick?.();
+          }}
+        />
+        
+        <Button
+          type="text"
+          icon={<TeamOutlined style={{ fontSize: '20px', color: selectedMenuKey === 'ipd' ? '#1A8FE3' : '#6B7280' }} />}
+          style={{
+            width: '48px',
+            height: '48px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            background: selectedMenuKey === 'ipd' ? '#E3F2FF' : 'transparent',
+            borderRadius: '8px',
+          }}
+          onClick={() => {
+            handleMenuClick({ key: 'ipd' } as any);
+            onMenuClick?.();
+          }}
+        />
+        
+        <Button
+          type="text"
+          icon={<SettingOutlined style={{ fontSize: '20px', color: selectedMenuKey === 'availability' ? '#1A8FE3' : '#6B7280' }} />}
+          style={{
+            width: '48px',
+            height: '48px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            background: selectedMenuKey === 'availability' ? '#E3F2FF' : 'transparent',
+            borderRadius: '8px',
+          }}
+          onClick={() => {
+            handleMenuClick({ key: 'availability' } as any);
+            onMenuClick?.();
+          }}
+        />
             </div>
             
-            {/* Settings Icon on right */}
-            <Button 
-              type="text" 
-              icon={<SettingOutlined style={{ color: '#8C8C8C', fontSize: '18px' }} />} 
-              onClick={() => message.info('Settings coming soon.')}
-              style={{ flexShrink: 0, padding: 0, width: '32px', height: '32px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-            />
-          </div>
-        </div>
+      {/* Bottom Icons */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', alignItems: 'center' }}>
+        <Button
+          type="text"
+          icon={<LogoutOutlined style={{ fontSize: '20px', color: '#EF4444' }} />}
+          style={{
+            width: '48px',
+            height: '48px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+          }}
+          onClick={() => logout()}
+          title="Logout"
+        />
       </div>
     </div>
   );
@@ -1704,20 +1745,19 @@ export default function DoctorDashboard() {
       {/* Desktop/Tablet Sidebar */}
       {!isMobile && (
         <Sider
-          width={260}
+          width={80}
           style={{
             position: 'fixed',
             top: 0,
             left: 0,
             height: '100vh',
-            width: 260,
+            width: 80,
             background: '#fff',
             boxShadow: '0 2px 16px rgba(26, 143, 227, 0.08)',
             display: 'flex',
             flexDirection: 'column',
             zIndex: 10,
-            borderLeft: '1px solid #E3F2FF',
-            borderBottom: '1px solid #E3F2FF',
+            borderRight: '1px solid #E5E7EB',
           }}
         >
           <SidebarContent />
@@ -1754,42 +1794,54 @@ export default function DoctorDashboard() {
           marginLeft: siderWidth,
           minHeight: '100vh',
           background: doctorTheme.background,
-          overflow: 'hidden',
+          display: 'flex',
+          flexDirection: 'column',
+          height: '100vh', // Fixed height to enable scrolling
         }}
       >
+        {/* TopHeader - Matching Patient Dashboard Design */}
+        <TopHeader
+          userName={user?.fullName || 'Doctor'}
+          userRole="Doctor"
+          userId={doctorId}
+          userInitials={userInitials}
+          notificationCount={notifications.filter((n: any) => !n.isRead).length}
+        />
+
         <Content
           style={{
             background: doctorTheme.background,
-            height: '100vh',
-            overflow: 'hidden',
-            padding: isMobile ? '24px 16px 16px' : isTablet ? '24px 20px 20px' : '24px 32px 24px',
+            flex: 1,
+            overflowY: 'auto',
+            overflowX: 'hidden',
+            minHeight: 0, // Important for flex scrolling
+            // Responsive padding - reduced to save side space
+            padding: isMobile 
+              ? '12px 12px 16px'  // Mobile: smaller side padding
+              : isTablet 
+                ? '12px 16px 20px'  // Tablet: medium side padding
+                : '12px 16px 20px', // Desktop: reduced padding
             display: 'flex',
             flexDirection: 'column',
+            margin: 0,
+            width: '100%',
           }}
         >
           <div style={{ 
             display: 'flex', 
             flexDirection: 'column', 
-            height: '100%',
-            overflow: 'hidden',
+            flex: 1,
+            minHeight: 0,
           }}>
-            {/* Notifications Bell (top-right) */}
-            {!isMobile && (
-              <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 8, paddingRight: 8, overflow: 'visible' }}>
-                <NotificationBell />
-              </div>
-            )}
             {/* Mobile Menu Button */}
             {isMobile && (
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+              <div style={{ display: 'flex', justifyContent: 'flex-start', alignItems: 'center', marginBottom: 16 }}>
                 <Button
                   type="text"
                   icon={<MenuUnfoldOutlined />}
                   onClick={() => setMobileDrawerOpen(true)}
                   style={{ fontSize: '18px' }}
                 />
-                <Title level={4} style={{ margin: 0 }}>Dashboard</Title>
-                <NotificationBell />
               </div>
             )}
 

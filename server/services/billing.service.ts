@@ -111,8 +111,12 @@ export const createInvoice = async (data: {
   // Build invoice items
   const invoiceItemsData = data.items || [];
   
-  // If no items provided, add consultation fee from doctor
-  if (invoiceItemsData.length === 0) {
+  // Always ensure consultation fee is included
+  // Check if consultation fee already exists in items
+  const hasConsultationFee = invoiceItemsData.some(item => item.type === 'consultation_fee');
+  
+  if (!hasConsultationFee) {
+    // Add consultation fee from doctor
     const consultationFee = apt.doctor?.consultationFee 
       ? parseFloat(apt.doctor.consultationFee.toString())
       : 500; // Default fee if not set
@@ -123,6 +127,25 @@ export const createInvoice = async (data: {
       quantity: 1,
       unitPrice: consultationFee,
     });
+  }
+  
+  // Extract payment details from appointment notes if appointment was pre-paid
+  let prePaidAmount = 0;
+  const appointmentNotes = apt.appointment?.notes || '';
+  const paymentStatus = apt.appointment?.paymentStatus;
+  
+  // Check if appointment was paid online
+  if (paymentStatus?.toLowerCase() === 'paid' && appointmentNotes) {
+    // Try to extract payment amount from notes
+    // Format: "Payment: TXN123 | Method: card | Amount: ₹500 | Status: success"
+    const paymentMatch = appointmentNotes.match(/Amount:\s*([^|]+)/i);
+    if (paymentMatch) {
+      const amountStr = paymentMatch[1].trim().replace(/[₹,\s]/g, '');
+      const parsedAmount = parseFloat(amountStr);
+      if (!isNaN(parsedAmount) && parsedAmount > 0) {
+        prePaidAmount = parsedAmount;
+      }
+    }
   }
   
   // Calculate subtotal
@@ -141,6 +164,20 @@ export const createInvoice = async (data: {
   // Generate invoice number
   const invoiceNumber = await generateInvoiceNumber(data.hospitalId);
   
+  // Calculate initial paid amount and balance
+  // If appointment was pre-paid, set initial paidAmount to the amount that was paid
+  // But cap it at the invoice total (in case payment was for consultation fee only but invoice has additional items)
+  const initialPaidAmount = Math.min(prePaidAmount, totals.total);
+  const initialBalanceAmount = totals.total - initialPaidAmount;
+  
+  // Determine initial status based on payment
+  let initialStatus = 'draft';
+  if (initialPaidAmount >= totals.total) {
+    initialStatus = 'paid';
+  } else if (initialPaidAmount > 0) {
+    initialStatus = 'partially_paid';
+  }
+  
   // Create invoice
   const [invoice] = await db
     .insert(invoices)
@@ -149,15 +186,15 @@ export const createInvoice = async (data: {
       patientId: data.patientId,
       appointmentId: data.appointmentId,
       invoiceNumber,
-      status: 'draft',
+      status: initialStatus,
       subtotal: totals.subtotal.toString(),
       discountAmount: totals.discountAmount.toString(),
       discountType: data.discountType || null,
       discountReason: data.discountReason || null,
       taxAmount: totals.taxAmount.toString(),
       total: totals.total.toString(),
-      paidAmount: '0',
-      balanceAmount: totals.total.toString(),
+      paidAmount: initialPaidAmount.toString(),
+      balanceAmount: initialBalanceAmount.toString(),
       currency: 'INR',
       createdAt: sql`NOW()`,
     })
@@ -178,6 +215,80 @@ export const createInvoice = async (data: {
     )
   );
   
+  // If appointment was pre-paid, create payment record
+  if (prePaidAmount > 0 && initialPaidAmount > 0) {
+    try {
+      // Extract payment method and reference from appointment notes
+      let paymentMethod: 'cash' | 'card' | 'upi' | 'online' | 'gpay' | 'phonepe' = 'online';
+      let paymentReference: string | null = null;
+      
+      if (appointmentNotes) {
+        const methodMatch = appointmentNotes.match(/Method:\s*([^|]+)/i);
+        if (methodMatch) {
+          const methodStr = methodMatch[1].trim().toLowerCase();
+          if (['cash', 'card', 'upi', 'online', 'gpay', 'phonepe'].includes(methodStr)) {
+            paymentMethod = methodStr as any;
+          }
+        }
+        
+        const txnMatch = appointmentNotes.match(/Payment:\s*([^|]+)/i);
+        if (txnMatch) {
+          paymentReference = txnMatch[1].trim();
+        }
+      }
+      
+      // Extract payment date from appointment notes or use appointment date
+      let paymentDate: Date = new Date();
+      if (appointmentNotes) {
+        const dateMatch = appointmentNotes.match(/Date:\s*([^\n|]+)/i);
+        const timeMatch = appointmentNotes.match(/Time:\s*([^\n|]+)/i);
+        if (dateMatch && timeMatch) {
+          try {
+            const dateStr = dateMatch[1].trim();
+            const timeStr = timeMatch[1].trim();
+            const dateTimeStr = `${dateStr} ${timeStr}`;
+            const parsedDate = new Date(dateTimeStr);
+            if (!isNaN(parsedDate.getTime())) {
+              paymentDate = parsedDate;
+            }
+          } catch (e) {
+            // Use appointment confirmedAt or appointmentDate as fallback
+            if (apt.appointment?.confirmedAt) {
+              paymentDate = new Date(apt.appointment.confirmedAt);
+            } else if (apt.appointment?.appointmentDate) {
+              paymentDate = new Date(apt.appointment.appointmentDate);
+            }
+          }
+        } else if (apt.appointment?.confirmedAt) {
+          paymentDate = new Date(apt.appointment.confirmedAt);
+        } else if (apt.appointment?.appointmentDate) {
+          paymentDate = new Date(apt.appointment.appointmentDate);
+        }
+      } else if (apt.appointment?.confirmedAt) {
+        paymentDate = new Date(apt.appointment.confirmedAt);
+      } else if (apt.appointment?.appointmentDate) {
+        paymentDate = new Date(apt.appointment.appointmentDate);
+      }
+      
+      // Create payment record
+      // Note: receivedByUserId should be the user who created the invoice (receptionist)
+      // For online payments, we don't have the original user, so we use the actorUserId or a system user
+      await db.insert(payments).values({
+        invoiceId: invoice.id,
+        method: paymentMethod,
+        amount: initialPaidAmount.toString(),
+        reference: paymentReference,
+        receivedByUserId: data.actorUserId || 1, // Use actorUserId or fallback to system user
+        receivedAt: paymentDate,
+        notes: `Online payment completed during appointment booking. Amount: ₹${initialPaidAmount}`,
+        createdAt: sql`NOW()`,
+      });
+    } catch (paymentError) {
+      // Log error but don't fail invoice creation
+      console.error('Failed to create payment record for pre-paid appointment:', paymentError);
+    }
+  }
+  
   // Log audit event
   if (data.actorUserId && data.actorRole) {
     await auditService.logPatientAudit({
@@ -194,9 +305,9 @@ export const createInvoice = async (data: {
         invoiceNumber,
         appointmentId: data.appointmentId,
         total: totals.total,
-        status: 'draft',
+        status: initialStatus,
       },
-      message: `Invoice ${invoiceNumber} created for appointment ${data.appointmentId}. Total: ₹${totals.total}`,
+      message: `Invoice ${invoiceNumber} created for appointment ${data.appointmentId}. Total: ₹${totals.total}${prePaidAmount > 0 ? `, Pre-paid: ₹${prePaidAmount}` : ''}`,
       ipAddress: data.ipAddress,
       userAgent: data.userAgent,
     });

@@ -232,7 +232,7 @@ export default function LabReportUploadModal({
           {report ? 'Update Report' : 'Upload Report'}
         </Button>,
       ]}
-      destroyOnClose
+      destroyOnHidden
     >
       <Form
         form={form}

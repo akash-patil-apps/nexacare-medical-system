@@ -1,11 +1,12 @@
 // server/services/appointments.service.ts
 import { db } from '../db';
-import { appointments, patients, doctors, hospitals, users, receptionists } from '../../shared/schema';
+import { appointments, patients, doctors, hospitals, users, receptionists, invoices } from '../../shared/schema';
 import { eq, and, desc, ne } from 'drizzle-orm';
 import { sql } from 'drizzle-orm';
 import type { InsertAppointment } from '../../shared/schema';
 import { emitAppointmentChanged } from '../events/appointments.events';
 import { createNotification } from './notifications.service';
+import * as billingService from './billing.service';
 
 /**
  * Book a new appointment.
@@ -835,7 +836,8 @@ function parseAppointmentStartTime(appointmentDate: Date | string, timeSlot: str
 
 /**
  * Cancel appointment.
- * Patients can only cancel appointments at least 3 hours before the appointment start time.
+ * - Patients can cancel appointments BEFORE receptionist confirmation (full refund)
+ * - Patients can cancel appointments AFTER receptionist confirmation (10% cancellation fee, 90% refund)
  */
 export const cancelAppointment = async (appointmentId: number, userId: number, cancellationReason?: string) => {
   console.log(`📅 Cancelling appointment ${appointmentId}${cancellationReason ? ` with reason: ${cancellationReason}` : ''}`);
@@ -857,7 +859,7 @@ export const cancelAppointment = async (appointmentId: number, userId: number, c
       throw new Error('Appointment is already cancelled');
     }
     
-    // Check 3-hour restriction: Patients can only cancel at least 3 hours before appointment start time
+    // Check if appointment has already started or passed
     const appointmentStartTime = parseAppointmentStartTime(
       existingAppointment.appointmentDate,
       existingAppointment.timeSlot
@@ -865,31 +867,110 @@ export const cancelAppointment = async (appointmentId: number, userId: number, c
     
     if (appointmentStartTime) {
       const now = new Date();
-      const threeHoursInMs = 3 * 60 * 60 * 1000; // 3 hours in milliseconds
-      const timeUntilAppointment = appointmentStartTime.getTime() - now.getTime();
-      
-      if (timeUntilAppointment < threeHoursInMs) {
-        const hoursUntil = Math.floor(timeUntilAppointment / (60 * 60 * 1000));
-        const minutesUntil = Math.floor((timeUntilAppointment % (60 * 60 * 1000)) / (60 * 1000));
+      if (appointmentStartTime.getTime() < now.getTime()) {
+        throw new Error('Cannot cancel appointment that has already started or passed');
+      }
+    }
+    
+    // Check if appointment is confirmed (has confirmedAt timestamp)
+    const isConfirmed = !!existingAppointment.confirmedAt;
+    
+    // Process refund if payment exists
+    let refundInfo: { refundAmount: number; cancellationFee: number } | null = null;
+    
+    if (isConfirmed) {
+      // After confirmation: 10% cancellation fee, 90% refund
+      try {
+        // Find invoice for this appointment
+        const [invoice] = await db
+          .select()
+          .from(invoices)
+          .where(eq(invoices.appointmentId, appointmentId))
+          .limit(1);
         
-        if (timeUntilAppointment < 0) {
-          throw new Error('Cannot cancel appointment that has already started or passed');
-        } else {
-          throw new Error(`Appointments can only be cancelled at least 3 hours before the scheduled time. Your appointment is in ${hoursUntil} hour(s) and ${minutesUntil} minute(s).`);
+        if (invoice) {
+          const paidAmount = parseFloat(invoice.paidAmount || '0');
+          if (paidAmount > 0) {
+            const cancellationFee = Math.round(paidAmount * 0.1 * 100) / 100; // 10% fee, rounded to 2 decimals
+            const refundAmount = paidAmount - cancellationFee;
+            
+            if (refundAmount > 0) {
+              // Process refund
+              await billingService.processRefund({
+                invoiceId: invoice.id,
+                amount: refundAmount,
+                reason: `Appointment cancellation after confirmation. 10% cancellation fee applied. ${cancellationReason ? `Reason: ${cancellationReason}` : ''}`,
+                processedByUserId: userId,
+                actorUserId: userId,
+                actorRole: 'PATIENT',
+              });
+              
+              refundInfo = {
+                refundAmount,
+                cancellationFee,
+              };
+            }
+          }
         }
+      } catch (refundError) {
+        console.error('Error processing refund:', refundError);
+        // Continue with cancellation even if refund fails
+      }
+    } else {
+      // Before confirmation: full refund
+      try {
+        // Find invoice for this appointment
+        const [invoice] = await db
+          .select()
+          .from(invoices)
+          .where(eq(invoices.appointmentId, appointmentId))
+          .limit(1);
+        
+        if (invoice) {
+          const paidAmount = parseFloat(invoice.paidAmount || '0');
+          if (paidAmount > 0) {
+            // Process full refund
+            await billingService.processRefund({
+              invoiceId: invoice.id,
+              amount: paidAmount,
+              reason: `Appointment cancellation before confirmation. Full refund. ${cancellationReason ? `Reason: ${cancellationReason}` : ''}`,
+              processedByUserId: userId,
+              actorUserId: userId,
+              actorRole: 'PATIENT',
+            });
+            
+            refundInfo = {
+              refundAmount: paidAmount,
+              cancellationFee: 0,
+            };
+          }
+        }
+      } catch (refundError) {
+        console.error('Error processing refund:', refundError);
+        // Continue with cancellation even if refund fails
       }
     }
     
     const updateData: any = {
-      status: 'cancelled'
+      status: 'cancelled',
     };
     
-    // Store cancellation reason in notes field
-    if (cancellationReason) {
-      const currentNotes = existingAppointment.notes || '';
-      const cancellationNote = `Cancellation Reason: ${cancellationReason}`;
-      updateData.notes = currentNotes ? `${currentNotes}\n${cancellationNote}` : cancellationNote;
+    // Store cancellation reason and refund info in notes field
+    let cancellationNote = '';
+    if (isConfirmed) {
+      cancellationNote = `Cancellation Reason: ${cancellationReason || 'Not specified'}\nCancelled after confirmation.`;
+      if (refundInfo) {
+        cancellationNote += ` 10% cancellation fee (₹${refundInfo.cancellationFee}) applied. Refund amount: ₹${refundInfo.refundAmount}`;
+      }
+    } else {
+      cancellationNote = `Cancellation Reason: ${cancellationReason || 'Not specified'}\nCancelled before confirmation.`;
+      if (refundInfo) {
+        cancellationNote += ` Full refund: ₹${refundInfo.refundAmount}`;
+      }
     }
+    
+    const currentNotes = existingAppointment.notes || '';
+    updateData.notes = currentNotes ? `${currentNotes}\n${cancellationNote}` : cancellationNote;
     
     const [result] = await db
       .update(appointments)
@@ -901,9 +982,15 @@ export const cancelAppointment = async (appointmentId: number, userId: number, c
       throw new Error('Failed to update appointment');
     }
     
-    console.log(`✅ Appointment ${appointmentId} cancelled${cancellationReason ? ` with reason: ${cancellationReason}` : ''}`);
+    console.log(`✅ Appointment ${appointmentId} cancelled${cancellationReason ? ` with reason: ${cancellationReason}` : ''}${refundInfo ? `. Refund: ₹${refundInfo.refundAmount}` : ''}`);
     await emitAppointmentChanged(result.id, "cancelled");
-    return result;
+    
+    // Return result with refund info
+    return {
+      ...result,
+      refundInfo,
+      isConfirmed,
+    };
   } catch (error) {
     console.error('Error cancelling appointment:', error);
     if (error instanceof Error) {
@@ -996,14 +1083,43 @@ export const confirmAppointmentByReceptionist = async (appointmentId: number, re
     
     console.log(`📋 Current appointment status: ${existingAppointment.status}`);
     
-    // Update appointment status to confirmed
+    // Assign temporary token on confirmation (before check-in)
+    // Convert appointmentDate to a proper date string for SQL comparison
+    let appointmentDateStr: string;
+    const rawDate = existingAppointment.appointmentDate;
+    if (rawDate instanceof Date) {
+      appointmentDateStr = rawDate.toISOString().slice(0, 10);
+    } else if (typeof rawDate === 'string') {
+      appointmentDateStr = rawDate.slice(0, 10);
+    } else {
+      appointmentDateStr = new Date(rawDate).toISOString().slice(0, 10);
+    }
+
+    // Get max temp token for this doctor/date
+    const maxTempTokenRow = await db
+      .select({
+        maxTempToken: sql<number>`COALESCE(MAX(${appointments.tempTokenNumber}), 0)`,
+      })
+      .from(appointments)
+      .where(
+        and(
+          eq(appointments.doctorId, existingAppointment.doctorId),
+          sql`DATE(${appointments.appointmentDate}) = DATE(${sql.raw(`'${appointmentDateStr}'`)})`,
+        ),
+      );
+
+    const maxTempToken = maxTempTokenRow?.[0]?.maxTempToken ?? 0;
+    const nextTempToken = maxTempToken + 1;
+    
+    // Update appointment status to confirmed and assign temporary token
     // Use SQL NOW() for timestamp compatibility with PostgreSQL
     const [result] = await db
       .update(appointments)
       .set({
         status: 'confirmed',
         receptionistId,
-        confirmedAt: sql`NOW()`
+        confirmedAt: sql`NOW()`,
+        tempTokenNumber: nextTempToken, // Assign temporary token on confirmation
       })
       .where(eq(appointments.id, appointmentId))
       .returning();
@@ -1159,10 +1275,26 @@ export const checkInAppointment = async (appointmentId: number, receptionistId: 
 
         const maxToken = maxTokenRow?.[0]?.maxToken ?? 0;
         const nextToken = maxToken + 1;
+        const tempToken = (existingAppointment as any).tempTokenNumber;
 
-        const checkInNote = `Patient checked in at ${new Date().toLocaleString()} (Token: ${nextToken})`;
+        // Check if patient is late (appointment time has passed)
+        const appointmentTime = existingAppointment.appointmentTime || '';
+        const now = new Date();
+        let appointmentDateTime: Date;
+        try {
+          appointmentDateTime = new Date(`${appointmentDateStr}T${appointmentTime}`);
+          if (isNaN(appointmentDateTime.getTime())) {
+            // Fallback: use appointment date only
+            appointmentDateTime = new Date(appointmentDateStr);
+          }
+        } catch {
+          appointmentDateTime = new Date(appointmentDateStr);
+        }
+        const isLate = now > appointmentDateTime;
+
+        const checkInNote = `Real Token: ${nextToken}${tempToken ? ` (was Temp Token: ${tempToken})` : ''}${isLate ? ' - Late arrival' : ''}`;
         const updatedNotes =
-          existingNotes && /Token:\s*\d+/i.test(existingNotes) ? existingNotes : (existingNotes ? `${existingNotes}\n${checkInNote}` : checkInNote);
+          existingNotes && /Real Token:\s*\d+/i.test(existingNotes) ? existingNotes : (existingNotes ? `${existingNotes}\n${checkInNote}` : checkInNote);
 
         try {
           const [updated] = await tx
@@ -1172,7 +1304,7 @@ export const checkInAppointment = async (appointmentId: number, receptionistId: 
               status: existingStatus === 'confirmed' ? 'checked-in' : existingStatus,
         notes: updatedNotes,
               receptionistId,
-              tokenNumber: nextToken,
+              tokenNumber: nextToken, // Assign real token on check-in
               checkedInAt: (existingAppointment as any).checkedInAt ? (existingAppointment as any).checkedInAt : sql`NOW()`,
       })
       .where(eq(appointments.id, appointmentId))

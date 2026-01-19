@@ -32,6 +32,7 @@ export async function setupVite(app: Express, server: Server) {
   
   const vite = await createViteServer({
     root: clientRoot,
+    configFile: path.resolve(clientRoot, "vite.config.ts"),
     server: {
       middlewareMode: true,
       hmr: { server },
@@ -55,12 +56,6 @@ export async function setupVite(app: Express, server: Server) {
         }
       },
     },
-    optimizeDeps: {
-      exclude: ['@vitejs/plugin-react']
-    },
-    esbuild: {
-      logOverride: { 'this-is-undefined-in-esm': 'silent' }
-    }
   });
 
   app.use(vite.middlewares);

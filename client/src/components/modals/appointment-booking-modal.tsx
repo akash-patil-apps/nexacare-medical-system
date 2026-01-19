@@ -656,7 +656,7 @@ export default function AppointmentBookingModal({
       onCancel={handleCancel}
       width={800}
       footer={null}
-      destroyOnClose
+      destroyOnHidden
     >
       <Spin spinning={loading}>
         <Steps current={currentStep} style={{ marginBottom: 32 }}>

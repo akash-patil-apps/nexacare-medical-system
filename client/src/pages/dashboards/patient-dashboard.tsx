@@ -1,4 +1,4 @@
-import { useMemo, useState, useEffect } from 'react';
+import React, { useMemo, useState, useEffect, useRef } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Redirect, useLocation } from 'wouter';
 import { 
@@ -14,7 +14,7 @@ import {
   Skeleton,
   Tabs,
   Drawer,
-  Alert,
+  App,
 } from 'antd';
 import {
   CalendarOutlined,
@@ -28,6 +28,9 @@ import {
   ReloadOutlined,
   UploadOutlined,
   HistoryOutlined,
+  EnvironmentOutlined,
+  ClockCircleOutlined,
+  UserOutlined,
 } from '@ant-design/icons';
 import { useAuth } from '../../hooks/use-auth';
 import { useOnboardingCheck } from '../../hooks/use-onboarding-check';
@@ -41,6 +44,7 @@ import { formatTimeSlot12h } from '../../lib/time';
 import { subscribeToAppointmentEvents } from '../../lib/appointments-events';
 import { PatientSidebar } from '../../components/layout/PatientSidebar';
 import { NotificationBell } from '../../components/notifications/NotificationBell';
+import { TopHeader } from '../../components/layout/TopHeader';
 
 const { Content, Sider } = Layout;
 const { Title, Text } = Typography;
@@ -77,6 +81,7 @@ const fetchWithAuth = async <T,>(url: string, init?: RequestInit): Promise<T> =>
 
 export default function PatientDashboard() {
   const { user, isLoading } = useAuth();
+  const { notification: notificationApi } = App.useApp();
   const queryClient = useQueryClient();
   const [, setLocation] = useLocation();
   const { isMobile, isTablet } = useResponsive();
@@ -85,6 +90,7 @@ export default function PatientDashboard() {
   const [selectedLabReport, setSelectedLabReport] = useState<any>(null);
   const [isLabReportModalOpen, setIsLabReportModalOpen] = useState(false);
   const [selectedMenuKey] = useState<string>('dashboard');
+  const shownNotificationIdsRef = useRef<Set<number>>(new Set());
   
   // Redirect if not authenticated
   if (!isLoading && !user) {
@@ -133,6 +139,61 @@ export default function PatientDashboard() {
     refetchInterval: 15000,
     refetchOnWindowFocus: true,
   });
+
+  // Show floating notifications for unread notifications
+  useEffect(() => {
+    if (!notifications || notifications.length === 0) return;
+
+    const unread = notifications.filter((n: any) => !n.isRead);
+    
+    unread.forEach((notif: any) => {
+      const notifId = Number(notif.id);
+      
+      // Only show if we haven't shown this notification before
+      if (!shownNotificationIdsRef.current.has(notifId)) {
+        shownNotificationIdsRef.current.add(notifId);
+        
+        const type = (notif.type || '').toLowerCase();
+        let notificationType: 'info' | 'success' | 'warning' | 'error' = 'info';
+        if (type.includes('cancel') || type.includes('reject')) notificationType = 'error';
+        else if (type.includes('confirm') || type.includes('complete')) notificationType = 'success';
+        else if (type.includes('pending') || type.includes('resched')) notificationType = 'warning';
+        
+        // Show as floating notification in top right
+        notificationApi[notificationType]({
+          message: notif.title || 'Notification',
+          description: notif.message,
+          placement: 'topRight',
+          duration: 10, // Auto-dismiss after 10 seconds
+          key: `notif-${notifId}`,
+          onClick: () => {
+            // Mark as read when clicked
+            const token = localStorage.getItem('auth-token');
+            if (token) {
+              fetch(`/api/notifications/read/${notifId}`, {
+                method: 'POST',
+                headers: { Authorization: `Bearer ${token}` },
+              }).then(() => {
+                queryClient.invalidateQueries({ queryKey: ['/api/notifications/me'] });
+              });
+            }
+          },
+          onClose: () => {
+            // Mark as read when closed
+            const token = localStorage.getItem('auth-token');
+            if (token) {
+              fetch(`/api/notifications/read/${notifId}`, {
+                method: 'POST',
+                headers: { Authorization: `Bearer ${token}` },
+              }).then(() => {
+                queryClient.invalidateQueries({ queryKey: ['/api/notifications/me'] });
+              });
+            }
+          },
+        });
+      }
+    });
+  }, [notifications, notificationApi, queryClient]);
 
   const {
     data: allAppointments = [],
@@ -399,7 +460,7 @@ export default function PatientDashboard() {
     }
   };
 
-  const siderWidth = isMobile ? 0 : 260;
+  const siderWidth = isMobile ? 0 : 80; // Narrow sidebar width from Figma
 
 
   // Patient theme colors
@@ -480,23 +541,21 @@ export default function PatientDashboard() {
         }
       `}</style>
       <Layout className="patient-dashboard-wrapper" style={{ minHeight: '100vh', background: patientTheme.background }}>
-      {/* Desktop/Tablet Sidebar */}
+      {/* Desktop/Tablet Sidebar - Narrow White Vertical Bar (80px) */}
       {!isMobile && (
         <Sider
-          width={260}
+          width={80}
           style={{
             position: 'fixed',
             top: 0,
             left: 0,
             height: '100vh',
-            width: 260,
-            background: '#fff',
-            boxShadow: '0 2px 16px rgba(26, 143, 227, 0.08)',
+            width: 80,
+            background: '#fff', // White background matching Figma
             display: 'flex',
             flexDirection: 'column',
             zIndex: 10,
-            borderLeft: '1px solid #E3F2FF',
-            borderBottom: '1px solid #E3F2FF',
+            boxShadow: '1px 0 4px rgba(0,0,0,0.04)',
           }}
         >
           <PatientSidebar selectedMenuKey={selectedMenuKey} />
@@ -522,83 +581,75 @@ export default function PatientDashboard() {
           marginLeft: siderWidth,
           minHeight: '100vh',
           background: patientTheme.background,
-          overflow: 'hidden',
+          display: 'flex',
+          flexDirection: 'column',
+          height: '100vh', // Fixed height to enable scrolling
         }}
       >
+        {/* TopHeader - Matching Figma Design */}
+        <TopHeader
+          userName={user?.fullName || 'User'}
+          userRole="Patient"
+          userId={useMemo(() => {
+            if (user?.id) {
+              const year = new Date().getFullYear();
+              const idNum = String(user.id).padStart(3, '0');
+              return `PAT-${year}-${idNum}`;
+            }
+            return 'PAT-2024-001';
+          }, [user?.id])}
+          userInitials={useMemo(() => {
+            if (user?.fullName) {
+              const names = user.fullName.split(' ');
+              if (names.length >= 2) {
+                return `${names[0][0]}${names[1][0]}`.toUpperCase();
+              }
+              return user.fullName.substring(0, 2).toUpperCase();
+            }
+            return 'UP';
+          }, [user?.fullName])}
+          notificationCount={notifications.filter((n: any) => !n.isRead).length}
+        />
+
         <Content
           style={{
             background: patientTheme.background,
-            height: '100vh',
+            flex: 1,
             overflowY: 'auto',
-            padding: isMobile ? '24px 16px 16px' : isTablet ? '24px 20px 20px' : '24px 32px 24px',
+            overflowX: 'hidden',
+            minHeight: 0, // Important for flex scrolling
+            // Responsive padding - reduced to save side space
+            padding: isMobile 
+              ? '12px 12px 16px'  // Mobile: smaller side padding
+              : isTablet 
+                ? '12px 16px 20px'  // Tablet: medium side padding
+                : '12px 16px 20px', // Desktop: reduced from 20px to 16px side padding
+            margin: 0, // Removed auto margin to eliminate side margins
+            width: '100%', // Use full available width
           }}
         >
           <div style={{ paddingBottom: 24 }}>
-            {/* Notifications Bell (top-right) */}
-            {!isMobile && (
-              <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 8 }}>
-                <NotificationBell />
-              </div>
-            )}
-
             {/* Mobile Menu Button */}
             {isMobile && (
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+              <div style={{ display: 'flex', justifyContent: 'flex-start', alignItems: 'center', marginBottom: 16 }}>
                 <Button
                   type="text"
                   icon={<MenuUnfoldOutlined />}
                   onClick={() => setMobileDrawerOpen(true)}
                   style={{ fontSize: '18px' }}
                 />
-                <Title level={4} style={{ margin: 0 }}>Dashboard</Title>
-                <NotificationBell />
               </div>
             )}
 
-            {/* Alert/Banner Notifications - Show important unread notifications */}
-            {notifications.filter((n: any) => !n.isRead).length > 0 && (
-              <div style={{ marginBottom: 16 }}>
-                {notifications
-                  .filter((n: any) => !n.isRead)
-                  .slice(0, 3)
-                  .map((notif: any) => {
-                    const type = (notif.type || '').toLowerCase();
-                    let alertType: 'info' | 'success' | 'warning' | 'error' = 'info';
-                    if (type.includes('cancel') || type.includes('reject')) alertType = 'error';
-                    else if (type.includes('confirm') || type.includes('complete')) alertType = 'success';
-                    else if (type.includes('pending') || type.includes('resched')) alertType = 'warning';
-                    
-                    return (
-                      <Alert
-                        key={notif.id}
-                        message={notif.title || 'Notification'}
-                        description={notif.message}
-                        type={alertType}
-                        showIcon
-                        closable
-                        style={{ marginBottom: 8 }}
-                        onClose={() => {
-                          const token = localStorage.getItem('auth-token');
-                          fetch(`/api/notifications/read/${notif.id}`, {
-                            method: 'POST',
-                            headers: { Authorization: `Bearer ${token}` },
-                          }).then(() => {
-                            queryClient.invalidateQueries({ queryKey: ['/api/notifications/me'] });
-                          });
-                        }}
-                      />
-                    );
-                  })}
-              </div>
-            )}
+            {/* Floating Notifications - Auto-dismiss after 10 seconds (handled by useEffect) */}
 
-            {/* KPI Cards - Matching Figma Design */}
+            {/* KPI Cards - Matching Figma Design (gap-3 = 12px, p-3 = 12px padding) */}
             {isMobile ? (
               <div style={{ 
                 display: 'flex', 
                 overflowX: 'auto', 
-                gap: 16, 
-                marginBottom: 24,
+                gap: 12, // gap-3 from Figma
+                marginBottom: 16, // space-y-4 = 16px
                 paddingBottom: 8,
                 scrollSnapType: 'x mandatory',
                 WebkitOverflowScrolling: 'touch',
@@ -614,7 +665,7 @@ export default function PatientDashboard() {
                       message.info('No lab reports available yet.');
                     }
                   } },
-                  { label: "Messages", value: messageCounts.total, icon: <MessageOutlined />, trendLabel: messageCounts.unread > 0 ? `+${messageCounts.unread} new` : "0 new", trendColor: "#7C3AED", trendBg: "#E9D5FF", onView: () => message.info('Messages coming soon.') },
+                  { label: "Messages", value: messageCounts.total, icon: <MessageOutlined />, trendLabel: messageCounts.unread > 0 ? `${messageCounts.unread} new` : "0 new", trendColor: "#7C3AED", trendBg: "#E9D5FF", onView: () => message.info('Messages coming soon.') },
                 ].map((kpi, idx) => (
                   <div key={idx} style={{ minWidth: 220, scrollSnapAlign: 'start' }}>
                     <KpiCard {...kpi} />
@@ -622,8 +673,8 @@ export default function PatientDashboard() {
                 ))}
               </div>
             ) : (
-              <div style={{ display: 'flex', gap: 16, marginBottom: 24, width: '100%' }}>
-                <div style={{ flex: 1, minWidth: 0 }}>
+              <Row gutter={[12, 12]} style={{ marginBottom: 16 }}> {/* gap-3 = 12px from Figma */}
+                <Col xs={24} sm={12} lg={6}>
                   <KpiCard
                     label="Upcoming Appointments"
                     value={stats.upcomingAppointments}
@@ -634,8 +685,8 @@ export default function PatientDashboard() {
                     trendBg="#D1FAE5"
                     onView={() => setLocation('/dashboard/patient/appointments')}
                   />
-                </div>
-                <div style={{ flex: 1, minWidth: 0 }}>
+                </Col>
+                <Col xs={24} sm={12} lg={6}>
                   <KpiCard
                     label="Active Prescriptions"
                     value={stats.prescriptions}
@@ -646,8 +697,8 @@ export default function PatientDashboard() {
                     trendBg="#DBEAFE"
                     onView={() => setLocation('/dashboard/patient/prescriptions')}
                   />
-                </div>
-                <div style={{ flex: 1, minWidth: 0 }}>
+                </Col>
+                <Col xs={24} sm={12} lg={6}>
                   <KpiCard
                     label="Lab Reports"
                     value={stats.labReports}
@@ -665,72 +716,129 @@ export default function PatientDashboard() {
                       }
                     }}
                   />
-                </div>
-                <div style={{ flex: 1, minWidth: 0 }}>
+                </Col>
+                <Col xs={24} sm={12} lg={6}>
                   <KpiCard
                     label="Messages"
                     value={messageCounts.total}
                     icon={<MessageOutlined />}
-                    trendLabel={messageCounts.unread > 0 ? `+${messageCounts.unread} new` : "0 new"}
+                    trendLabel={messageCounts.unread > 0 ? `${messageCounts.unread} new` : "0 new"}
                     trendType="neutral"
                     trendColor="#7C3AED"
                     trendBg="#E9D5FF"
                     onView={() => message.info('Messages coming soon.')}
                   />
-                </div>
-              </div>
+                </Col>
+              </Row>
             )}
 
-            {/* Quick Actions - Single line with hover effects */}
-            <div style={{ marginBottom: 32, display: 'flex', gap: 12, flexWrap: isMobile ? 'wrap' : 'nowrap' }}>
-              <QuickActionTile
-                label="New Appointment"
+            {/* Quick Actions - Matching Figma (gap-2 = 8px, h-9 = 36px) */}
+            <Row gutter={[8, 8]} style={{ marginBottom: 16 }}> {/* gap-2 = 8px from Figma */}
+              <Col xs={24} sm={12} lg={5}>
+                <Button
+                  type="primary"
                 icon={<PlusOutlined />}
                 onClick={() => handleQuickAction('book')}
-                variant="primary"
-              />
-              <QuickActionTile
-                label="Request Refill"
+                  block
+                  style={{
+                    height: 36, // h-9 from Figma
+                    fontSize: 14, // text-sm
+                    borderRadius: 10, // Style guide value
+                    fontWeight: 500,
+                  }}
+                >
+                  New Appointment
+                </Button>
+              </Col>
+              <Col xs={24} sm={12} lg={5}>
+                <Button
                 icon={<ReloadOutlined />}
                 onClick={() => handleQuickAction('refill')}
-              />
-              <QuickActionTile
-                label="Upload Document"
+                  block
+                  style={{
+                    height: 36,
+                    fontSize: 14,
+                    borderRadius: 10,
+                  }}
+                >
+                  Request Refill
+                </Button>
+              </Col>
+              <Col xs={24} sm={12} lg={5}>
+                <Button
                 icon={<UploadOutlined />}
                 onClick={() => handleQuickAction('upload')}
-              />
-              <QuickActionTile
-                label="Send Message"
+                  block
+                  style={{
+                    height: 36,
+                    fontSize: 14,
+                    borderRadius: 10,
+                  }}
+                >
+                  Upload Document
+                </Button>
+              </Col>
+              <Col xs={24} sm={12} lg={5}>
+                <Button
                 icon={<SendOutlined />}
                 onClick={() => handleQuickAction('message')}
-              />
-              <QuickActionTile
-                label="View History"
+                  block
+                  style={{
+                    height: 36,
+                    fontSize: 14,
+                    borderRadius: 10,
+                  }}
+                >
+                  Send Message
+                </Button>
+              </Col>
+              <Col xs={24} sm={12} lg={4}>
+                <Button
                 icon={<HistoryOutlined />}
                 onClick={() => handleQuickAction('history')}
-              />
-            </div>
+                  block
+                  style={{
+                    height: 36,
+                    fontSize: 14,
+                    borderRadius: 10,
+                  }}
+                >
+                  View History
+                </Button>
+              </Col>
+            </Row>
 
             {/* Main Content Sections - Upcoming Appointments on first line, Prescriptions and Lab Results on second line */}
-            <Row gutter={[24, 24]}>
-              {/* Upcoming Appointments - Full Width First Line */}
-              <Col xs={24} lg={24}>
+            {/* Matching Figma: gap-4 = 16px, space-y-4 = 16px */}
+            <Space direction="vertical" size={16} style={{ width: '100%' }}>
+              {/* Upcoming Appointments - Full Width First Line - Matching Figma (p-4 = 16px, rounded-xl = 16px) */}
+              <div style={{ width: '100%' }}>
                 <Card
                   variant="borderless"
                   style={{ 
-                    borderRadius: 16,
+                    borderRadius: 16, // Style guide: 16px
                     boxShadow: '0 2px 8px rgba(0, 0, 0, 0.08)',
                     border: '1px solid #E5E7EB',
                     background: '#fff',
+                    marginBottom: 16, // space-y-4 = 16px
                   }}
-                  title={<Title level={4} style={{ margin: 0, color: '#262626', fontWeight: 600, fontSize: '18px' }}>Upcoming Appointments</Title>}
+                  styles={{
+                    body: {
+                      padding: 16, // p-4 = 16px from Figma
+                    }
+                  }}
+                  title={
+                    <Title level={5} style={{ margin: 0, color: '#111827', fontWeight: 600, fontSize: 18 }}> {/* text-lg = 18px */}
+                      Appointments
+                    </Title>
+                  }
                   extra={
                     <Button 
                       type="link" 
-                      style={{ color: patientTheme.primary, fontWeight: 500, padding: 0 }} 
+                      style={{ color: patientTheme.primary, fontWeight: 500, padding: 0, fontSize: 14, height: 'auto' }} 
                       onClick={() => setLocation('/dashboard/patient/appointments')}
                     >
-                      View All
+                      View All →
                     </Button>
                   }
                 >
@@ -757,52 +865,124 @@ export default function PatientDashboard() {
                         key: tab.key,
                         label: tab.label,
                         children: (
-                            <div style={{ maxHeight: isMobile ? '60vh' : '50vh', overflowY: 'auto', paddingRight: 4 }}>
-                          <Space direction="vertical" style={{ width: '100%' }} size={12}>
+                            <div style={{ maxHeight: isMobile ? '60vh' : '50vh', overflowY: 'auto', paddingRight: 4, marginTop: 16 }}> {/* mt-4 = 16px */}
+                          <Space direction="vertical" style={{ width: '100%' }} size={16}> {/* space-y-4 = 16px for appointment cards */}
                             {appointmentsToShow.map((apt: any) => (
                               <Card
                                 key={apt.id}
-                                size="small"
                                 style={{ 
-                                  background: apt.status === 'confirmed' ? patientTheme.highlight : apt.status === 'pending' ? '#FFF7E6' : apt.status === 'cancelled' ? '#FFF1F0' : '#F6FFED',
-                                  borderRadius: 12,
-                                  border: `1px solid ${apt.status === 'confirmed' ? patientTheme.primary : '#E8E8E8'}`,
+                                  background: '#fff',
+                                  borderRadius: 16, // Style guide: 16px
+                                  border: '1px solid #E5E7EB',
                                   transition: 'all 0.3s ease',
                                   cursor: 'pointer',
+                                  marginBottom: 16, // space-y-4 = 16px
+                                  position: 'relative', // For absolute positioned badge
                                 }}
                                 hoverable
                                 onClick={() => setLocation('/dashboard/patient/appointments')}
+                                styles={{
+                                  body: {
+                                    padding: 16, // p-4 = 16px
+                                  }
+                                }}
                               >
-                                <Row justify="space-between" align="middle">
-                                  <Col flex="auto">
-                                    <Space direction="vertical" size={4}>
-                                      <Text strong>{apt.doctor}</Text>
-                                      <Text type="secondary">{apt.specialty} · {apt.hospital}</Text>
-                                      <Text type="secondary">
-                                        {apt.date} {apt.time ? `· ${apt.time}` : ''}
+                                {/* Status Badge - Top Right (Absolute Position) - Matching Figma */}
+                                <Tag 
+                                  color={
+                                    apt.status === 'confirmed' ? 'success' :
+                                    apt.status === 'pending' ? 'warning' :
+                                    apt.status === 'completed' ? 'success' :
+                                    apt.status === 'cancelled' ? 'error' : 'default'
+                                  }
+                                  style={{
+                                    position: 'absolute',
+                                    top: 16,
+                                    right: 16,
+                                    borderRadius: 6,
+                                    fontWeight: 600,
+                                    fontSize: 12,
+                                    textTransform: 'uppercase',
+                                    padding: '2px 8px',
+                                    margin: 0,
+                                  }}
+                                >
+                                  {apt.status === 'pending' ? 'PENDING' : 
+                                   apt.status === 'confirmed' ? 'CONFIRMED' :
+                                   apt.status === 'completed' ? 'COMPLETED' :
+                                   apt.status === 'cancelled' ? 'CANCELLED' : apt.status.toUpperCase()}
+                                </Tag>
+
+                                {/* Content with padding for badge */}
+                                <div style={{ paddingRight: 100 }}> {/* Space for badge */}
+                                  <Space direction="vertical" size={8} style={{ width: '100%' }}>
+                                    {/* Doctor Name with Icon - Matching Figma */}
+                                    <Space size={8} align="start">
+                                      <div style={{
+                                        width: 40,
+                                        height: 40,
+                                        borderRadius: '50%',
+                                        background: '#E3F2FF', // Light blue circle from Figma
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center',
+                                        flexShrink: 0,
+                                      }}>
+                                        <UserOutlined style={{ fontSize: 20, color: '#1A8FE3' }} />
+                                      </div>
+                                      <div style={{ flex: 1 }}>
+                                        <Text strong style={{ fontSize: 16, fontWeight: 600, color: '#111827', display: 'block' }}>
+                                          {apt.doctor}
+                                      </Text>
+                                        {/* Specialty - directly below doctor name (matching Figma) */}
+                                        <Text style={{ fontSize: 14, color: '#6B7280', display: 'block', marginTop: 4 }}>
+                                          {apt.specialty}
+                                        </Text>
+                                      </div>
+                                    </Space>
+                                    
+                                    {/* Hospital with map pin icon */}
+                                    <Space size={6}>
+                                      <EnvironmentOutlined style={{ fontSize: 14, color: '#6B7280' }} />
+                                      <Text style={{ fontSize: 14, color: '#6B7280' }}>
+                                        {apt.hospital}
                                       </Text>
                                     </Space>
-                                  </Col>
-                                  <Col>
-                                    <Space direction="vertical" align="end" size={4}>
-                                      <Tag color={
-                                        apt.status === 'confirmed' ? 'blue' :
-                                        apt.status === 'pending' ? 'orange' :
-                                        apt.status === 'completed' ? 'green' :
-                                        apt.status === 'cancelled' ? 'red' : 'default'
-                                      }>
-                                        {apt.status.toUpperCase()}
-                                      </Tag>
+                                    
+                                    {/* Date with calendar icon */}
+                                    <Space size={6}>
+                                      <CalendarOutlined style={{ fontSize: 14, color: '#6B7280' }} />
+                                      <Text style={{ fontSize: 14, color: '#6B7280' }}>
+                                        {apt.date}
+                                      </Text>
+                                    </Space>
+                                    
+                                    {/* Time with clock icon */}
+                                    {apt.time && (
+                                      <Space size={6}>
+                                        <ClockCircleOutlined style={{ fontSize: 14, color: '#6B7280' }} />
+                                        <Text style={{ fontSize: 14, color: '#6B7280' }}>
+                                          {apt.time}
+                                        </Text>
+                                      </Space>
+                                    )}
+                                  </Space>
+                                  
+                                  {/* View Details Button - Bottom */}
+                                  <div style={{ marginTop: 12 }}>
                                       <Button
                                         size="small"
                                         type="link"
-                                        onClick={() => setLocation('/dashboard/patient/appointments')}
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        setLocation('/dashboard/patient/appointments');
+                                      }}
+                                      style={{ padding: 0, fontSize: 14, color: '#6B7280' }}
                                       >
                                         View Details
                                       </Button>
-                                    </Space>
-                                  </Col>
-                                </Row>
+                                  </div>
+                                </div>
                               </Card>
                             ))}
                           </Space>
@@ -814,57 +994,41 @@ export default function PatientDashboard() {
                     </>
                   )}
                 </Card>
-              </Col>
+              </div>
 
               {/* Second Line - Prescriptions and Lab Results Side by Side */}
+              <Row gutter={[16, 16]}> {/* gap-4 = 16px */}
               <Col xs={24} lg={12}>
-                {/* Prescriptions */}
+                {/* Prescriptions - Matching Figma (p-4 = 16px, rounded-xl = 16px) */}
                 <Card
                   variant="borderless"
                   style={{ 
-                    borderRadius: 16,
+                    borderRadius: 16, // Style guide: 16px
                     boxShadow: '0 2px 8px rgba(0, 0, 0, 0.08)',
                     border: '1px solid #E5E7EB',
                     background: '#fff',
+                    height: '100%',
                   }}
-                  title={<Title level={4} style={{ margin: 0, color: '#262626', fontWeight: 600, fontSize: '18px' }}>Prescriptions</Title>}
+                  styles={{
+                    body: {
+                      padding: 16, // p-4 = 16px from Figma
+                    }
+                  }}
+                  title={<Title level={5} style={{ margin: 0, color: '#111827', fontWeight: 600, fontSize: 18 }}>Prescriptions</Title>}
                   extra={
-                    <Space size={8}>
                       <Button
-                        type="primary"
-                        size="small"
-                        style={{
-                          borderRadius: '8px',
-                          fontSize: '12px',
-                          fontWeight: 500,
-                          height: '28px',
-                          padding: '4px 12px',
-                        }}
-                      >
-                        Current
+                      type="link" 
+                      style={{ color: patientTheme.primary, fontWeight: 500, padding: 0, fontSize: 14, height: 'auto' }} 
+                      onClick={() => setLocation('/dashboard/patient/prescriptions')}
+                    >
+                      View All →
                       </Button>
-                      <Button
-                        size="small"
-                        style={{
-                          borderRadius: '8px',
-                          fontSize: '12px',
-                          fontWeight: 500,
-                          height: '28px',
-                          padding: '4px 12px',
-                          background: '#F3F4F6',
-                          borderColor: '#F3F4F6',
-                          color: '#6B7280',
-                        }}
-                      >
-                        Past
-                      </Button>
-                    </Space>
                   }
                 >
                   {prescriptionsLoading ? (
                     <Skeleton active paragraph={{ rows: 3 }} />
                   ) : prescriptionCards.length ? (
-                    <Space direction="vertical" style={{ width: '100%' }} size={16}>
+                    <Space direction="vertical" style={{ width: '100%' }} size={12}> {/* space-y-3 = 12px from Figma */}
                       {prescriptionCards.map((rx) => (
                         <PrescriptionCard
                           key={rx.id}
@@ -890,20 +1054,26 @@ export default function PatientDashboard() {
               </Col>
 
               <Col xs={24} lg={12}>
-                {/* Lab Results */}
+                {/* Lab Results - Matching Figma (p-4 = 16px, rounded-xl = 16px) */}
                 <Card 
                   variant="borderless"
                   style={{ 
-                    borderRadius: 16,
+                    borderRadius: 16, // Style guide: 16px
                     boxShadow: '0 2px 8px rgba(0, 0, 0, 0.08)',
                     border: '1px solid #E5E7EB',
                     background: '#fff',
+                    height: '100%',
                   }}
-                  title={<Title level={4} style={{ margin: 0, color: '#262626', fontWeight: 600, fontSize: '18px' }}>Lab Results</Title>}
+                  styles={{
+                    body: {
+                      padding: 16, // p-4 = 16px from Figma
+                    }
+                  }}
+                  title={<Title level={5} style={{ margin: 0, color: '#111827', fontWeight: 600, fontSize: 18 }}>Lab Results</Title>}
                   extra={
                     <Button 
                       type="link" 
-                      style={{ color: patientTheme.primary, fontWeight: 500, padding: 0 }} 
+                      style={{ color: patientTheme.primary, fontWeight: 500, padding: 0, fontSize: 14, height: 'auto' }} 
                       onClick={() => {
                         if (labReportsData.length > 0) {
                           setSelectedLabReport(labReportsData[0]);
@@ -913,22 +1083,28 @@ export default function PatientDashboard() {
                         }
                       }}
                     >
-                      View All
+                      View All →
                     </Button>
                   }
                 >
                   {labReportsLoading ? (
                     <Skeleton active paragraph={{ rows: 3 }} />
                   ) : labReportsData.length > 0 ? (
-                    <Space direction="vertical" style={{ width: '100%' }} size={16}>
+                    <Space direction="vertical" style={{ width: '100%' }} size={12}> {/* space-y-3 = 12px from Figma */}
                       {labReportsData.slice(0, 3).map((report: any) => (
                         <Card
                           key={report.id}
                           size="small"
                           style={{ 
-                            borderRadius: 12,
-                            border: '1px solid #E8E8E8',
+                            borderRadius: 16, // Style guide: 16px
+                            border: '1px solid #E5E7EB',
                             cursor: 'pointer',
+                            background: '#fff',
+                          }}
+                          styles={{
+                            body: {
+                              padding: 12, // p-3 = 12px
+                            }
                           }}
                           hoverable
                           onClick={() => {
@@ -946,7 +1122,7 @@ export default function PatientDashboard() {
                               </Space>
                             </Col>
                             <Col>
-                              <Tag color="blue" style={{ borderRadius: 12 }}>
+                              <Tag color="blue" style={{ borderRadius: 6, fontWeight: 500 }}>
                                 {report.status || 'Completed'}
                               </Tag>
                             </Col>
@@ -965,6 +1141,7 @@ export default function PatientDashboard() {
                 </Card>
               </Col>
             </Row>
+            </Space>
           </div>
         </Content>
       </Layout>

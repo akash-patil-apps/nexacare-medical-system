@@ -122,22 +122,74 @@ router.get(
   }
 );
 
-// Create lab request from doctor
+// Create lab request from doctor or receptionist
 router.post(
   "/requests",
   authenticateToken,
-  authorizeRoles("doctor"),
+  authorizeRoles("doctor", "DOCTOR", "RECEPTIONIST", "receptionist"),
   async (req: AuthenticatedRequest, res) => {
     try {
       const requestData = req.body;
+      const userRole = req.user!.role?.toUpperCase();
       
-      // Get doctor user ID from authenticated user
-      const doctorUserId = req.user!.id;
+      // For receptionist, we need to get hospital name and include it in notes
+      // For doctor, use doctorUserId
+      let doctorUserId: number | undefined;
+      let hospitalName: string | undefined;
+      
+      if (userRole === 'RECEPTIONIST') {
+        // Receptionist requesting lab test - get hospital name
+        const { db } = await import('../db');
+        const { receptionists, hospitals } = await import('../../shared/schema');
+        const { eq } = await import('drizzle-orm');
+        
+        const [receptionist] = await db
+          .select({ hospitalId: receptionists.hospitalId })
+          .from(receptionists)
+          .where(eq(receptionists.userId, req.user!.id))
+          .limit(1);
+        
+        if (receptionist?.hospitalId) {
+          const [hospital] = await db
+            .select({ name: hospitals.name })
+            .from(hospitals)
+            .where(eq(hospitals.id, receptionist.hospitalId))
+            .limit(1);
+          
+          hospitalName = hospital?.name || 'Hospital';
+        }
+        
+        // For receptionist requests, doctorId should be provided in requestData
+        // If not provided, we'll use a default or get from appointment
+        if (requestData.doctorId) {
+          // Get doctor's userId from doctorId
+          const { doctors, users } = await import('../../shared/schema');
+          const [doctor] = await db
+            .select({ userId: doctors.userId })
+            .from(doctors)
+            .where(eq(doctors.id, requestData.doctorId))
+            .limit(1);
+          doctorUserId = doctor?.userId;
+        }
+      } else {
+        // Doctor requesting
+        doctorUserId = req.user!.id;
+      }
+      
+      if (!doctorUserId) {
+        return res.status(400).json({ message: 'Doctor ID is required for lab request' });
+      }
+      
+      // Add hospital name to notes if it's a receptionist request
+      const notesWithSender = hospitalName 
+        ? `Requested by: ${hospitalName}${requestData.notes ? ` - ${requestData.notes}` : ''}`
+        : requestData.notes;
       
       // Create lab request (pending report)
       const created = await createLabRequest({
         ...requestData,
         doctorUserId,
+        notes: notesWithSender,
       });
       
       res.status(201).json({ success: true, request: created[0] });

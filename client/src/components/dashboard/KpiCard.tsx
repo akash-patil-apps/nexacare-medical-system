@@ -41,9 +41,9 @@ export function KpiCard({
         width: '100%',
         display: 'flex', 
         flexDirection: 'column',
-        borderRadius: 12,
+        borderRadius: 16, // Style guide: 16px for cards (not 12px from Figma)
         boxShadow: '0 2px 8px rgba(0, 0, 0, 0.08)',
-        border: 'none',
+        border: '1px solid #E5E7EB',
         transition: 'all 0.2s ease',
         cursor: onView ? 'pointer' : 'default',
         background: '#fff',
@@ -54,46 +54,49 @@ export function KpiCard({
           display: 'flex', 
           flexDirection: 'column', 
           flex: 1, 
-          padding: '20px',
-          minHeight: '140px',
+          padding: 12, // p-3 = 12px from Figma (optimized version)
+          minHeight: '120px',
         }
       }}
       onClick={onView}
     >
-      {/* Icon and Label in same row - Icon on left */}
-      <div style={{ width: '100%', display: 'flex', alignItems: 'center', gap: '8px', marginBottom: 16 }}>
+      {/* Label on top */}
+      <Text type="secondary" style={{ fontSize: '13px', fontWeight: 400, color: '#6b7280', lineHeight: 1.5, marginBottom: 12 }}>
+        {label}
+      </Text>
+      
+      {/* Value and Icon in same row - Icon on right (matching Figma) */}
+      <div style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+        <Title 
+          level={1} 
+          style={{ 
+            margin: 0, 
+            fontSize: '32px', 
+            lineHeight: '40px', 
+            wordBreak: 'break-word',
+            fontWeight: 700,
+            color: '#262626',
+            textAlign: 'left',
+            flex: 1,
+          }}
+        >
+          {value}
+        </Title>
         {icon && (
           <div style={{ 
-            fontSize: '20px',
+            fontSize: '24px',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
             color: '#6b7280',
+            marginLeft: 8,
           }}>
             {icon}
           </div>
         )}
-        <Text type="secondary" style={{ fontSize: '13px', fontWeight: 400, color: '#6b7280', lineHeight: 1.5, flex: 1 }}>
-          {label}
-        </Text>
       </div>
-      <Title 
-        level={1} 
-        style={{ 
-          margin: '0 0 16px', 
-          fontSize: '32px', 
-          lineHeight: '40px', 
-          wordBreak: 'break-word',
-          fontWeight: 700,
-          color: '#262626',
-          textAlign: 'left',
-          flex: 1,
-          display: 'flex',
-          alignItems: 'center',
-        }}
-      >
-        {value}
-      </Title>
+      
+      {/* Tag and View link at bottom */}
       <div style={{ width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 'auto' }}>
         {trendLabel && (
           <Tag 

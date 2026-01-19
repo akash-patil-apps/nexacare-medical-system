@@ -36,59 +36,236 @@ import {
   UploadOutlined,
   EditOutlined,
   DeleteOutlined,
-  EyeOutlined
+  EyeOutlined,
+  CalendarOutlined,
+  TeamOutlined
 } from '@ant-design/icons';
 import { useAuth } from '../../hooks/use-auth';
 import PrescriptionForm from '../../components/prescription-form';
 import { apiRequest } from '../../lib/queryClient';
 import { formatDate } from '../../lib/utils';
+import { TopHeader } from '../../components/layout/TopHeader';
+import { useResponsive } from '../../hooks/use-responsive';
+import { useLocation } from 'wouter';
+import { Drawer, Button } from 'antd';
+import { MenuUnfoldOutlined } from '@ant-design/icons';
 
-const { Header, Content, Sider } = Layout;
+const { Content, Sider } = Layout;
 const { Title, Text } = Typography;
 const { Option } = Select;
 
 export default function DoctorPrescriptionsPage() {
   const { message } = App.useApp();
-  const { user, logout } = useAuth();
-  const [collapsed, setCollapsed] = useState(false);
+  const { user } = useAuth();
+  const [, setLocation] = useLocation();
+  const { isMobile, isTablet } = useResponsive();
+  const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false);
   const [isPrescriptionModalOpen, setIsPrescriptionModalOpen] = useState(false);
   const [selectedPrescription, setSelectedPrescription] = useState(null);
   const [isViewModalOpen, setIsViewModalOpen] = useState(false);
 
-  const userMenuItems = [
-    {
-      key: 'profile',
-      icon: <UserOutlined />,
-      label: 'Profile',
+  // Get notifications for TopHeader
+  const { data: notifications = [] } = useQuery({
+    queryKey: ['/api/notifications/me'],
+    queryFn: async () => {
+      const token = localStorage.getItem('auth-token');
+      const response = await fetch('/api/notifications/me', {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!response.ok) return [];
+      return response.json();
     },
-    {
-      key: 'settings',
-      icon: <SettingOutlined />,
-      label: 'Settings',
-    },
-    {
-      type: 'divider' as const,
-    },
-    {
-      key: 'logout',
-      icon: <LogoutOutlined />,
-      label: 'Logout',
-      onClick: logout,
-    },
-  ];
+    refetchInterval: 15000,
+  });
+  
+  const siderWidth = isMobile ? 0 : 80; // Narrow sidebar width matching PatientSidebar
+  
+  // Sidebar content component - matching doctor dashboard
+  const SidebarContent = ({ onMenuClick }: { onMenuClick?: () => void }) => {
+    const handleMenuClick = (key: string) => {
+      if (onMenuClick) onMenuClick();
+      switch (key) {
+        case 'dashboard':
+          setLocation('/dashboard/doctor');
+          break;
+        case 'appointments':
+          setLocation('/dashboard/doctor/appointments');
+          break;
+        case 'patients':
+          message.info('Patients page coming soon.');
+          break;
+        case 'prescriptions':
+          setLocation('/dashboard/doctor/prescriptions');
+          break;
+        case 'reports':
+          message.info('Lab Reports page coming soon.');
+          break;
+        case 'ipd':
+          message.info('IPD Patients page coming soon.');
+          break;
+        case 'availability':
+          message.info('Availability page coming soon.');
+          break;
+        default:
+          break;
+      }
+    };
 
-  const sidebarMenu = [
-    {
-      key: 'dashboard',
-      icon: <UserOutlined />,
-      label: 'Dashboard',
-    },
-    {
-      key: 'prescriptions',
-      icon: <FileTextOutlined />,
-      label: 'Prescriptions',
-    },
-  ];
+    return (
+      <div style={{ 
+        display: 'flex', 
+        flexDirection: 'column', 
+        height: '100%',
+        background: '#fff',
+        width: '80px',
+        alignItems: 'center',
+        padding: '16px 0',
+        gap: '12px',
+        borderRight: '1px solid #E5E7EB',
+      }}>
+        <Button
+          type="text"
+          icon={<UserOutlined style={{ fontSize: '20px', color: '#1A8FE3' }} />}
+          style={{
+            width: '48px',
+            height: '48px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            background: '#E3F2FF',
+            borderRadius: '8px',
+          }}
+          onClick={() => message.info('Profile coming soon.')}
+        />
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', flex: 1, alignItems: 'center' }}>
+          <Button
+            type="text"
+            icon={<UserOutlined style={{ fontSize: '20px', color: '#6B7280' }} />}
+            style={{
+              width: '48px',
+              height: '48px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              background: 'transparent',
+              borderRadius: '8px',
+            }}
+            onClick={() => handleMenuClick('dashboard')}
+          />
+          <Button
+            type="text"
+            icon={<CalendarOutlined style={{ fontSize: '20px', color: '#6B7280' }} />}
+            style={{
+              width: '48px',
+              height: '48px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              background: 'transparent',
+              borderRadius: '8px',
+            }}
+            onClick={() => handleMenuClick('appointments')}
+          />
+          <Button
+            type="text"
+            icon={<TeamOutlined style={{ fontSize: '20px', color: '#6B7280' }} />}
+            style={{
+              width: '48px',
+              height: '48px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              background: 'transparent',
+              borderRadius: '8px',
+            }}
+            onClick={() => handleMenuClick('patients')}
+          />
+          <Button
+            type="text"
+            icon={<MedicineBoxOutlined style={{ fontSize: '20px', color: '#1A8FE3' }} />}
+            style={{
+              width: '48px',
+              height: '48px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              background: '#E3F2FF',
+              borderRadius: '8px',
+            }}
+            onClick={() => handleMenuClick('prescriptions')}
+          />
+          <Button
+            type="text"
+            icon={<FileTextOutlined style={{ fontSize: '20px', color: '#6B7280' }} />}
+            style={{
+              width: '48px',
+              height: '48px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              background: 'transparent',
+              borderRadius: '8px',
+            }}
+            onClick={() => handleMenuClick('reports')}
+          />
+          <Button
+            type="text"
+            icon={<TeamOutlined style={{ fontSize: '20px', color: '#6B7280' }} />}
+            style={{
+              width: '48px',
+              height: '48px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              background: 'transparent',
+              borderRadius: '8px',
+            }}
+            onClick={() => handleMenuClick('ipd')}
+          />
+          <Button
+            type="text"
+            icon={<SettingOutlined style={{ fontSize: '20px', color: '#6B7280' }} />}
+            style={{
+              width: '48px',
+              height: '48px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              background: 'transparent',
+              borderRadius: '8px',
+            }}
+            onClick={() => handleMenuClick('availability')}
+          />
+        </div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', alignItems: 'center' }}>
+          <Button
+            type="text"
+            icon={<BellOutlined style={{ fontSize: '20px', color: '#6B7280' }} />}
+            style={{
+              width: '48px',
+              height: '48px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}
+            onClick={() => message.info('Notifications coming soon.')}
+          />
+          <Button
+            type="text"
+            icon={<SettingOutlined style={{ fontSize: '20px', color: '#6B7280' }} />}
+            style={{
+              width: '48px',
+              height: '48px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}
+            onClick={() => message.info('Settings coming soon.')}
+          />
+        </div>
+      </div>
+    );
+  };
 
   // Fetch prescriptions data
   const { data: prescriptions = [], isLoading, refetch } = useQuery({
@@ -208,66 +385,108 @@ export default function DoctorPrescriptionsPage() {
   ];
 
   return (
-    <Layout style={{ minHeight: '100vh' }}>
+    <Layout style={{ minHeight: '100vh', background: '#F5F7FF' }}>
+      {/* Desktop/Tablet Sidebar */}
+      {!isMobile && (
       <Sider 
-        trigger={null} 
-        collapsible 
-        collapsed={collapsed}
+          width={80}
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            height: '100vh',
+            background: '#fff',
+            boxShadow: '0 2px 16px rgba(26, 143, 227, 0.08)',
+            display: 'flex',
+            flexDirection: 'column',
+            zIndex: 10,
+            borderRight: '1px solid #E5E7EB',
+          }}
+        >
+          <SidebarContent />
+        </Sider>
+      )}
+
+      {/* Mobile Drawer */}
+      {isMobile && (
+        <Drawer
+          title="Navigation"
+          placement="left"
+          onClose={() => setMobileDrawerOpen(false)}
+          open={mobileDrawerOpen}
+          styles={{ body: { padding: 0 } }}
+          width={260}
+        >
+          <SidebarContent onMenuClick={() => setMobileDrawerOpen(false)} />
+        </Drawer>
+      )}
+
+      <Layout
         style={{
-          background: '#fff',
-          boxShadow: '2px 0 8px rgba(0,0,0,0.15)'
+          marginLeft: siderWidth,
+          minHeight: '100vh',
+          background: '#F5F7FF',
+          display: 'flex',
+          flexDirection: 'column',
+          height: '100vh',
         }}
       >
-        <div style={{ 
-          padding: '16px', 
-          textAlign: 'center',
-          borderBottom: '1px solid #f0f0f0'
-        }}>
-          <MedicineBoxOutlined style={{ fontSize: '24px', color: '#1890ff' }} />
-          {!collapsed && (
-            <Title level={4} style={{ margin: '8px 0 0 0', color: '#1890ff' }}>
-              NexaCare
-            </Title>
-          )}
-        </div>
-        <Menu
-          mode="inline"
-          defaultSelectedKeys={['prescriptions']}
-          style={{ borderRight: 0 }}
-          items={sidebarMenu}
+        {/* TopHeader - Matching Patient Dashboard Design */}
+        <TopHeader
+          userName={user?.fullName || 'Doctor'}
+          userRole="Doctor"
+          userId={(() => {
+            if (user?.id) {
+              const year = new Date().getFullYear();
+              const idNum = String(user.id).padStart(3, '0');
+              return `DOC-${year}-${idNum}`;
+            }
+            return 'DOC-2024-001';
+          })()}
+          userInitials={(() => {
+            if (user?.fullName) {
+              const names = user.fullName.split(' ');
+              if (names.length >= 2) {
+                return `${names[0][0]}${names[1][0]}`.toUpperCase();
+              }
+              return user.fullName.substring(0, 2).toUpperCase();
+            }
+            return 'DR';
+          })()}
+          notificationCount={notifications.filter((n: any) => !n.isRead).length}
         />
-      </Sider>
-      
-      <Layout>
-        <Header style={{ 
-          padding: '0 24px', 
-          background: '#fff', 
-          display: 'flex', 
-          alignItems: 'center', 
-          justifyContent: 'space-between',
-          boxShadow: '0 2px 8px rgba(0,0,0,0.15)'
-        }}>
+
+        <Content
+          style={{
+            background: '#F5F7FF',
+            flex: 1,
+            overflowY: 'auto',
+            overflowX: 'hidden',
+            minHeight: 0,
+            // Responsive padding - reduced to save side space
+            padding: isMobile 
+              ? '12px 12px 16px'
+              : isTablet 
+                ? '12px 16px 20px'
+                : '12px 16px 20px',
+            margin: 0,
+            width: '100%',
+          }}
+        >
+          {/* Mobile Menu Button */}
+          {isMobile && (
+            <div style={{ display: 'flex', justifyContent: 'flex-start', alignItems: 'center', marginBottom: 16 }}>
           <Button
             type="text"
-            icon={collapsed ? <PlusOutlined /> : <PlusOutlined />}
-            onClick={() => setCollapsed(!collapsed)}
-            style={{ fontSize: '16px', width: 64, height: 64 }}
-          />
-          <Space>
-            <Badge count={5} size="small">
-              <BellOutlined style={{ fontSize: '18px' }} />
-            </Badge>
-            <Dropdown menu={{ items: userMenuItems }} placement="bottomRight">
-              <Space style={{ cursor: 'pointer' }}>
-                <Avatar icon={<UserOutlined />} />
-                <Text strong>{user?.fullName}</Text>
-              </Space>
-            </Dropdown>
-          </Space>
-        </Header>
-        
-        <Content style={{ margin: '0 24px 24px', marginTop: 0, background: '#f5f5f5', minHeight: 'calc(100vh - 112px)' }}>
-          <div style={{ background: '#fff', padding: '24px', borderRadius: '8px', marginBottom: '24px' }}>
+                icon={<MenuUnfoldOutlined />}
+                onClick={() => setMobileDrawerOpen(true)}
+                style={{ fontSize: '18px' }}
+              />
+            </div>
+          )}
+
+          <div style={{ paddingBottom: 24 }}>
+            <div style={{ background: '#fff', padding: 16, borderRadius: 16, marginBottom: 16, border: '1px solid #E5E7EB' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
               <div>
                 <Title level={2} style={{ margin: '0 0 8px 0', color: '#1890ff' }}>
@@ -481,6 +700,7 @@ export default function DoctorPrescriptionsPage() {
               </div>
             )}
           </Modal>
+          </div>
         </Content>
       </Layout>
     </Layout>

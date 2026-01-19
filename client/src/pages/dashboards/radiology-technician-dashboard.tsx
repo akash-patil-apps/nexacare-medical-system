@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Redirect, useLocation } from "wouter";
 import {
@@ -23,6 +23,7 @@ import {
   Select,
   DatePicker,
   InputNumber,
+  App,
 } from 'antd';
 import {
   UserOutlined,
@@ -37,12 +38,14 @@ import {
   PlusOutlined,
   EditOutlined,
   CameraOutlined,
+  LogoutOutlined,
 } from '@ant-design/icons';
 import { useAuth } from '../../hooks/use-auth';
 import { useResponsive } from '../../hooks/use-responsive';
 import { KpiCard } from '../../components/dashboard/KpiCard';
 import { QuickActionTile } from '../../components/dashboard/QuickActionTile';
 import { NotificationBell } from '../../components/notifications/NotificationBell';
+import { TopHeader } from '../../components/layout/TopHeader';
 import dayjs from 'dayjs';
 import { getISTNow } from '../../lib/timezone';
 import { playNotificationSound } from '../../lib/notification-sounds';
@@ -62,10 +65,12 @@ const radiologyTheme = {
 };
 
 export default function RadiologyTechnicianDashboard() {
-  const { user, isLoading } = useAuth();
+  const { user, isLoading, logout } = useAuth();
+  const { notification: notificationApi } = App.useApp();
   const queryClient = useQueryClient();
   const [, setLocation] = useLocation();
   const { isMobile, isTablet } = useResponsive();
+  const shownNotificationIdsRef = useRef<Set<number>>(new Set());
   const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false);
   const [selectedMenuKey, setSelectedMenuKey] = useState<string>('dashboard');
 
@@ -123,6 +128,76 @@ export default function RadiologyTechnicianDashboard() {
     },
     enabled: !!user && user.role?.toUpperCase() === 'RADIOLOGY_TECHNICIAN',
   });
+
+  // Get notifications for radiology technician
+  const { data: notifications = [] } = useQuery({
+    queryKey: ['/api/notifications/me'],
+    queryFn: async () => {
+      const token = localStorage.getItem('auth-token');
+      const response = await fetch('/api/notifications/me', {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!response.ok) return [];
+      return response.json();
+    },
+    refetchInterval: 15000,
+    refetchOnWindowFocus: true,
+  });
+
+  // Show floating notifications for unread notifications
+  useEffect(() => {
+    if (!notifications || notifications.length === 0) return;
+
+    const unread = notifications.filter((n: any) => !n.isRead);
+    
+    unread.forEach((notif: any) => {
+      const notifId = Number(notif.id);
+      
+      // Only show if we haven't shown this notification before
+      if (!shownNotificationIdsRef.current.has(notifId)) {
+        shownNotificationIdsRef.current.add(notifId);
+        
+        const type = (notif.type || '').toLowerCase();
+        let notificationType: 'info' | 'success' | 'warning' | 'error' = 'info';
+        if (type.includes('cancel') || type.includes('reject') || type.includes('critical')) notificationType = 'error';
+        else if (type.includes('confirm') || type.includes('complete') || type.includes('ready')) notificationType = 'success';
+        else if (type.includes('pending') || type.includes('resched') || type.includes('processing')) notificationType = 'warning';
+        
+        // Show as floating notification in top right
+        notificationApi[notificationType]({
+          message: notif.title || 'Notification',
+          description: notif.message,
+          placement: 'topRight',
+          duration: 10, // Auto-dismiss after 10 seconds
+          key: `notif-${notifId}`,
+          onClick: () => {
+            // Mark as read when clicked
+            const token = localStorage.getItem('auth-token');
+            if (token) {
+              fetch(`/api/notifications/read/${notifId}`, {
+                method: 'POST',
+                headers: { Authorization: `Bearer ${token}` },
+              }).then(() => {
+                queryClient.invalidateQueries({ queryKey: ['/api/notifications/me'] });
+              });
+            }
+          },
+          onClose: () => {
+            // Mark as read when closed
+            const token = localStorage.getItem('auth-token');
+            if (token) {
+              fetch(`/api/notifications/read/${notifId}`, {
+                method: 'POST',
+                headers: { Authorization: `Bearer ${token}` },
+              }).then(() => {
+                queryClient.invalidateQueries({ queryKey: ['/api/notifications/me'] });
+              });
+            }
+          },
+        });
+      }
+    });
+  }, [notifications, notificationApi, queryClient]);
 
   // Get radiology reports (similar to lab reports API)
   const { data: radiologyReports = [], isLoading: isLoadingReports } = useQuery({
@@ -592,7 +667,7 @@ export default function RadiologyTechnicianDashboard() {
       {/* Sidebar */}
       {!isMobile ? (
         <Sider
-          width={280}
+          width={80}
           style={{
             background: 'white',
             borderRight: '1px solid #e5e7eb',
@@ -633,9 +708,24 @@ export default function RadiologyTechnicianDashboard() {
           <Menu
             mode="inline"
             selectedKeys={[selectedMenuKey]}
-            onClick={({ key }) => setSelectedMenuKey(key)}
+            onClick={({ key }) => {
+              if (key === 'logout') {
+                logout();
+              } else {
+                setSelectedMenuKey(key);
+              }
+            }}
             style={{ border: 'none', marginTop: 8 }}
-            items={menuItems}
+            items={[
+              ...menuItems,
+              { type: 'divider' },
+              {
+                key: 'logout',
+                icon: <LogoutOutlined />,
+                label: 'Logout',
+                danger: true,
+              },
+            ]}
           />
         </Sider>
       ) : (
@@ -673,58 +763,72 @@ export default function RadiologyTechnicianDashboard() {
             mode="inline"
             selectedKeys={[selectedMenuKey]}
             onClick={({ key }) => {
-              setSelectedMenuKey(key);
-              setMobileDrawerOpen(false);
+              if (key === 'logout') {
+                logout();
+              } else {
+                setSelectedMenuKey(key);
+                setMobileDrawerOpen(false);
+              }
             }}
-            items={menuItems}
+            items={[
+              ...menuItems,
+              { type: 'divider' },
+              {
+                key: 'logout',
+                icon: <LogoutOutlined />,
+                label: 'Logout',
+                danger: true,
+              },
+            ]}
           />
         </Drawer>
       )}
 
       {/* Main Content */}
       <Layout style={{
-        marginLeft: isMobile ? 0 : 280,
+        marginLeft: isMobile ? 0 : 80, // Narrow sidebar width matching PatientSidebar
         backgroundColor: radiologyTheme.background,
+        display: 'flex',
+        flexDirection: 'column',
+        height: '100vh', // Fixed height to enable scrolling
       }}>
-        {/* Header */}
-        <div style={{
-          padding: isMobile ? '16px' : '24px',
-          background: 'white',
-          borderBottom: '1px solid #e5e7eb',
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          position: 'sticky',
-          top: 0,
-          zIndex: 999,
-        }}>
-          <Space>
-            {isMobile && (
-              <Button
-                type="text"
-                icon={<MenuUnfoldOutlined />}
-                onClick={() => setMobileDrawerOpen(true)}
-              />
-            )}
-            <Title level={4} style={{ margin: 0, color: radiologyTheme.primary }}>
-              Radiology Dashboard
-            </Title>
-          </Space>
-
-          <Space>
-            <NotificationBell />
-            <Button
-              type="text"
-              icon={<SettingOutlined />}
-              onClick={() => message.info('Settings coming soon')}
-            />
-          </Space>
-        </div>
+        {/* TopHeader - Matching Patient Dashboard Design */}
+        <TopHeader
+          userName={user?.fullName || 'Radiology Technician'}
+          userRole="Radiology"
+          userId={useMemo(() => {
+            if (user?.id) {
+              const year = new Date().getFullYear();
+              const idNum = String(user.id).padStart(3, '0');
+              return `RAD-${year}-${idNum}`;
+            }
+            return 'RAD-2024-001';
+          }, [user?.id])}
+          userInitials={useMemo(() => {
+            if (user?.fullName) {
+              const names = user.fullName.split(' ');
+              if (names.length >= 2) {
+                return `${names[0][0]}${names[1][0]}`.toUpperCase();
+              }
+              return user.fullName.substring(0, 2).toUpperCase();
+            }
+            return 'RT';
+          }, [user?.fullName])}
+          notificationCount={0}
+        />
 
         {/* Content */}
         <Content style={{
-          padding: isMobile ? '16px' : '24px',
-          minHeight: 'calc(100vh - 80px)',
+          flex: 1,
+          overflowY: 'auto',
+          overflowX: 'hidden',
+          minHeight: 0, // Important for flex scrolling
+          // Responsive padding - reduced to save side space
+          padding: isMobile 
+            ? '12px 12px 16px'  // Mobile: smaller side padding
+            : '12px 16px 20px', // Desktop: reduced padding
+          margin: 0,
+          width: '100%',
         }}>
           {renderContent()}
         </Content>

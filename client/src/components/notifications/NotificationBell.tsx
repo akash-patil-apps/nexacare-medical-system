@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Badge, Button, Drawer, List, Space, Tag, Typography, notification } from 'antd';
+import { Badge, Button, Drawer, List, Space, Tag, Typography, App } from 'antd';
 import { BellOutlined, CheckOutlined } from '@ant-design/icons';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { subscribeToAppointmentEvents } from '../../lib/appointments-events';
@@ -60,6 +60,7 @@ export function NotificationBell({
   placement?: 'right' | 'left';
   showToastOnNew?: boolean;
 }) {
+  const { notification } = App.useApp();
   const queryClient = useQueryClient();
   const [open, setOpen] = useState(false);
 
@@ -127,7 +128,7 @@ export function NotificationBell({
       });
     }
     knownIdsRef.current = ids;
-  }, [notifications, showToastOnNew]);
+  }, [notifications, showToastOnNew, notification]);
 
   const typeTagColor = (type: string) => {
     const t = (type || '').toLowerCase();

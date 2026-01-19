@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useRef } from "react";
+import React, { useState, useEffect, useMemo, useRef } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Redirect } from "wouter";
 import { 
@@ -61,6 +61,9 @@ import { getISTStartOfDay, isSameDayIST } from '../../lib/timezone';
 import { normalizeStatus, APPOINTMENT_STATUS } from '../../lib/appointment-status';
 import { playNotificationSound } from '../../lib/notification-sounds';
 import { NotificationBell } from '../../components/notifications/NotificationBell';
+import { TopHeader } from '../../components/layout/TopHeader';
+import { App } from 'antd';
+import { CheckOutlined, CloseOutlined, ReloadOutlined } from '@ant-design/icons';
 import LabReportViewerModal from '../../components/modals/lab-report-viewer-modal';
 import { QueuePanel } from '../../components/queue/QueuePanel';
 import { AdmissionModal, IpdEncountersList, TransferModal, DischargeModal } from '../../components/ipd';
@@ -70,6 +73,8 @@ import { PaymentModal } from '../../components/billing/PaymentModal';
 import { InvoiceViewModal } from '../../components/billing/InvoiceViewModal';
 import { LabTestPaymentModal } from '../../components/modals/lab-test-payment-modal';
 import { LabTestsConfirmationModal } from '../../components/modals/lab-tests-confirmation-modal';
+import { VitalsEntryForm } from '../../components/clinical/VitalsEntryForm';
+import LabRequestModal from '../../components/modals/lab-request-modal';
 import tubeIcon from '../../assets/images/tube.png';
 import checkInIcon from '../../assets/images/check-in.png';
 import medicalIcon from '../../assets/images/medical.png';
@@ -87,8 +92,10 @@ const receptionistTheme = {
 
 export default function ReceptionistDashboard() {
   const { user, isLoading } = useAuth();
+  const { notification: notificationApi } = App.useApp();
   const queryClient = useQueryClient();
   const { isMobile, isTablet } = useResponsive();
+  const shownNotificationIdsRef = useRef<Set<number>>(new Set());
   const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false);
   const [selectedMenuKey] = useState<string>('dashboard');
   const [isBookingModalOpen, setIsBookingModalOpen] = useState(false);
@@ -141,6 +148,10 @@ export default function ReceptionistDashboard() {
   const [isLabTestPaymentModalOpen, setIsLabTestPaymentModalOpen] = useState(false);
   const [selectedLabTestForPayment, setSelectedLabTestForPayment] = useState<any>(null);
   const [isLabTestsConfirmationModalOpen, setIsLabTestsConfirmationModalOpen] = useState(false);
+  const [isVitalsModalOpen, setIsVitalsModalOpen] = useState(false);
+  const [selectedAppointmentForVitals, setSelectedAppointmentForVitals] = useState<any>(null);
+  const [isLabRequestModalOpen, setIsLabRequestModalOpen] = useState(false);
+  const [selectedAppointmentForLabRequest, setSelectedAppointmentForLabRequest] = useState<any>(null);
   const appointmentStartTimeValue = Form.useWatch('appointmentStartTime', walkInForm);
   const durationMinutesValue = Form.useWatch('durationMinutes', walkInForm);
   
@@ -227,6 +238,24 @@ export default function ReceptionistDashboard() {
     refetchOnMount: true, // Refetch when component mounts
   });
 
+  // Get notifications for receptionist (must be before useEffect that uses it)
+  const { data: notifications = [] } = useQuery({
+    queryKey: ['/api/notifications/me'],
+    queryFn: async () => {
+      const token = localStorage.getItem('auth-token');
+      const response = await fetch('/api/notifications/me', {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+        },
+      });
+      if (!response.ok) return [];
+      return response.json();
+    },
+    enabled: !!user,
+    refetchInterval: 15000,
+    refetchOnWindowFocus: true,
+  });
+
   // Track previous appointment count and statuses for sound notifications
   const [previousAppointmentData, setPreviousAppointmentData] = useState<{
     count: number;
@@ -241,6 +270,119 @@ export default function ReceptionistDashboard() {
     window.addEventListener('storage', handleStorageChange);
     return () => window.removeEventListener('storage', handleStorageChange);
   }, [refetchAppointments]);
+
+  // Show floating notifications with action buttons for receptionist
+  useEffect(() => {
+    if (!notifications || notifications.length === 0) return;
+
+    const unread = notifications.filter((n: any) => !n.isRead);
+    
+    unread.forEach((notif: any) => {
+      const notifId = Number(notif.id);
+      
+      // Only show if we haven't shown this notification before
+      if (!shownNotificationIdsRef.current.has(notifId)) {
+        shownNotificationIdsRef.current.add(notifId);
+        
+        const type = (notif.type || '').toLowerCase();
+        let notificationType: 'info' | 'success' | 'warning' | 'error' = 'info';
+        if (type.includes('cancel') || type.includes('reject')) notificationType = 'error';
+        else if (type.includes('confirm') || type.includes('complete')) notificationType = 'success';
+        else if (type.includes('pending') || type.includes('resched')) notificationType = 'warning';
+        
+        // Check if notification is about a pending appointment
+        const isPendingAppointment = type.includes('appointment') && type.includes('pending');
+        
+        // Create action buttons for pending appointments using React.createElement
+        const actionButtons = isPendingAppointment && notif.relatedId ? React.createElement(
+          Space,
+          { size: 'small', style: { marginTop: 8 } },
+          React.createElement(
+            Button,
+            {
+              type: 'primary',
+              size: 'small',
+              icon: React.createElement(CheckOutlined),
+              onClick: () => {
+                handleConfirmAppointment(notif.relatedId!);
+                notificationApi.destroy(`notif-${notifId}`);
+              }
+            },
+            'Confirm'
+          ),
+          React.createElement(
+            Button,
+            {
+              danger: true,
+              size: 'small',
+              icon: React.createElement(CloseOutlined),
+              onClick: () => {
+                const appointment = appointments.find((apt: any) => apt.id === notif.relatedId);
+                if (appointment) {
+                  handleRejectAppointment(appointment);
+                }
+                notificationApi.destroy(`notif-${notifId}`);
+              }
+            },
+            'Cancel'
+          ),
+          React.createElement(
+            Button,
+            {
+              size: 'small',
+              icon: React.createElement(ReloadOutlined),
+              onClick: () => {
+                const appointment = appointments.find((apt: any) => apt.id === notif.relatedId);
+                if (appointment) {
+                  handleRejectAppointment(appointment); // Opens cancel with suggestion modal
+                }
+                notificationApi.destroy(`notif-${notifId}`);
+              }
+            },
+            'Reschedule'
+          )
+        ) : null;
+        
+        // Show as floating notification in top right
+        notificationApi[notificationType]({
+          message: notif.title || 'Notification',
+          description: React.createElement(
+            'div',
+            null,
+            React.createElement('div', null, notif.message),
+            actionButtons
+          ),
+          placement: 'topRight',
+          duration: 10, // Auto-dismiss after 10 seconds
+          key: `notif-${notifId}`,
+          onClick: () => {
+            // Mark as read when clicked
+            const token = localStorage.getItem('auth-token');
+            if (token) {
+              fetch(`/api/notifications/read/${notifId}`, {
+                method: 'POST',
+                headers: { Authorization: `Bearer ${token}` },
+              }).then(() => {
+                queryClient.invalidateQueries({ queryKey: ['/api/notifications/me'] });
+              });
+            }
+          },
+          onClose: () => {
+            // Mark as read when closed
+            const token = localStorage.getItem('auth-token');
+            if (token) {
+              fetch(`/api/notifications/read/${notifId}`, {
+                method: 'POST',
+                headers: { Authorization: `Bearer ${token}` },
+              }).then(() => {
+                queryClient.invalidateQueries({ queryKey: ['/api/notifications/me'] });
+              });
+            }
+          },
+        });
+      }
+    });
+  }, [notifications, notificationApi, queryClient, appointments]);
 
   // Detect new appointments and play sounds
   useEffect(() => {
@@ -518,23 +660,6 @@ export default function ReceptionistDashboard() {
     refetchInterval: 5000,
   });
 
-  // Get notifications for receptionist (for KPI badge only)
-  const { data: notifications = [] } = useQuery({
-    queryKey: ['/api/notifications/me'],
-    queryFn: async () => {
-      const token = localStorage.getItem('auth-token');
-      const response = await fetch('/api/notifications/me', {
-        headers: {
-          'Authorization': `Bearer ${token}`,
-        },
-      });
-      if (!response.ok) return [];
-      return response.json();
-    },
-    enabled: !!user,
-    refetchInterval: 15000,
-    refetchOnWindowFocus: true,
-  });
   const { data: doctors = [], isLoading: doctorsLoading } = useQuery({
     queryKey: ['/api/reception/doctors'],
     queryFn: async () => {
@@ -587,6 +712,27 @@ export default function ReceptionistDashboard() {
     }
     return null;
   }, [receptionistProfile?.hospitalName]);
+
+  // Compute userId and userInitials for TopHeader (must be early, before other useMemos)
+  const userId = useMemo(() => {
+    if (user?.id) {
+      const year = new Date().getFullYear();
+      const idNum = String(user.id).padStart(3, '0');
+      return `REC-${year}-${idNum}`;
+    }
+    return 'REC-2024-001';
+  }, [user?.id]);
+
+  const userInitials = useMemo(() => {
+    if (user?.fullName) {
+      const names = user.fullName.split(' ');
+      if (names.length >= 2) {
+        return `${names[0][0]}${names[1][0]}`.toUpperCase();
+      }
+      return user.fullName.substring(0, 2).toUpperCase();
+    }
+    return 'RC';
+  }, [user?.fullName]);
 
   // Filter appointments that are today or in the future (IST day-based)
   // Receptionists need to see pending (to confirm), confirmed (to check-in), and cancelled appointments.
@@ -1915,6 +2061,53 @@ export default function ReceptionistDashboard() {
                 title="Check-in patient"
               />
             )}
+            
+            {/* Record Vitals button - for checked-in appointments (before doctor sees patient) */}
+            {['checked-in', 'attended', 'in_consultation'].includes(String(record.status || '').toLowerCase()) && record.patientId && (
+              <Button
+                size="small"
+                type="default"
+                icon={<ExperimentOutlined />}
+                onClick={() => {
+                  setSelectedAppointmentForVitals({
+                    ...record,
+                    patientId: record.patientId || record.patient?.id,
+                    appointmentId: record.id,
+                  });
+                  setIsVitalsModalOpen(true);
+                }}
+                title="Record vitals"
+                style={{
+                  background: '#f0f9ff',
+                  border: '1px solid #91caff',
+                  color: '#1890ff'
+                }}
+              />
+            )}
+            
+            {/* Request Lab Test button - for checked-in appointments (before doctor sees patient) */}
+            {['checked-in', 'attended', 'in_consultation'].includes(String(record.status || '').toLowerCase()) && record.patientId && (
+              <Button
+                size="small"
+                type="default"
+                icon={<ExperimentOutlined />}
+                onClick={() => {
+                  setSelectedAppointmentForLabRequest({
+                    ...record,
+                    patientId: record.patientId || record.patient?.id,
+                    doctorId: record.doctorId || record.doctor?.id,
+                    appointmentId: record.id,
+                  });
+                  setIsLabRequestModalOpen(true);
+                }}
+                title="Request lab test"
+                style={{
+                  background: '#fff7e6',
+                  border: '1px solid #ffd591',
+                  color: '#fa8c16'
+                }}
+              />
+            )}
 
             {/* Reschedule - for pending/confirmed/attended (NOT checked-in, as patient has already arrived) */}
             {['pending', 'confirmed', 'attended'].includes(String(record.status || '').toLowerCase()) && (
@@ -1971,8 +2164,8 @@ export default function ReceptionistDashboard() {
               
               return (
                 <>
-                  {/* Create Invoice button - show if no invoice exists and appointment is confirmed/checked-in */}
-                  {!invoice && ['confirmed', 'checked-in', 'attended'].includes(String(record.status || '').toLowerCase()) && (
+                  {/* Create Invoice button - show if no invoice exists and appointment is checked-in (patient must be checked in first) */}
+                  {!invoice && ['checked-in', 'attended', 'in_consultation', 'completed'].includes(String(record.status || '').toLowerCase()) && (
                     <Button
                       size="small"
                       type="default"
@@ -2034,18 +2227,55 @@ export default function ReceptionistDashboard() {
                         setIsInvoiceViewModalOpen(true);
                       }}
                       title="View invoice"
-                    />
-                  )}
-                </>
-              );
-            })()}
+        />
+      )}
+
+      {/* Vitals Entry Modal */}
+      {selectedAppointmentForVitals && (
+        <VitalsEntryForm
+          open={isVitalsModalOpen}
+          onCancel={() => {
+            setIsVitalsModalOpen(false);
+            setSelectedAppointmentForVitals(null);
+          }}
+          onSuccess={() => {
+            queryClient.invalidateQueries({ queryKey: ['/api/clinical/vitals'] });
+            setIsVitalsModalOpen(false);
+            setSelectedAppointmentForVitals(null);
+          }}
+          patientId={selectedAppointmentForVitals.patientId}
+          appointmentId={selectedAppointmentForVitals.appointmentId}
+        />
+      )}
+
+      {/* Lab Request Modal */}
+      {selectedAppointmentForLabRequest && (
+        <LabRequestModal
+          open={isLabRequestModalOpen}
+          onCancel={() => {
+            setIsLabRequestModalOpen(false);
+            setSelectedAppointmentForLabRequest(null);
+          }}
+          onSuccess={() => {
+            queryClient.invalidateQueries({ queryKey: ['/api/labs/requests'] });
+            setIsLabRequestModalOpen(false);
+            setSelectedAppointmentForLabRequest(null);
+          }}
+          patientId={selectedAppointmentForLabRequest.patientId}
+          appointmentId={selectedAppointmentForLabRequest.appointmentId}
+          doctorId={selectedAppointmentForLabRequest.doctorId}
+        />
+      )}
+    </>
+  );
+})()}
             </Space>
           );
       },
     },
   ];
 
-  const siderWidth = isMobile ? 0 : 260;
+  const siderWidth = isMobile ? 0 : 80; // Narrow sidebar width matching PatientSidebar
 
   // Handle walk-in appointment booking
   const handleWalkInAppointmentBooking = async (values: any) => {
@@ -2942,7 +3172,7 @@ export default function ReceptionistDashboard() {
       {/* Desktop/Tablet Sidebar */}
       {!isMobile && (
         <Sider 
-          width={260}
+          width={80}
           style={{
             position: 'fixed',
             top: 0,
@@ -2970,7 +3200,7 @@ export default function ReceptionistDashboard() {
           onClose={() => setMobileDrawerOpen(false)}
           open={mobileDrawerOpen}
           styles={{ body: { padding: 0 } }}
-          width={260}
+          width={80}
         >
           <ReceptionistSidebar selectedMenuKey={selectedMenuKey} hospitalName={hospitalName} onMenuClick={() => setMobileDrawerOpen(false)} />
         </Drawer>
@@ -2981,82 +3211,58 @@ export default function ReceptionistDashboard() {
           marginLeft: siderWidth,
           minHeight: '100vh',
           background: receptionistTheme.background,
-          overflow: 'hidden',
+          display: 'flex',
+          flexDirection: 'column',
+          height: '100vh', // Fixed height to enable scrolling
         }}
       >
+        {/* TopHeader - Matching Patient Dashboard Design */}
+        <TopHeader
+          userName={user?.fullName || 'Receptionist'}
+          userRole="Receptionist"
+          userId={userId}
+          userInitials={userInitials}
+          notificationCount={notifications.filter((n: any) => !n.isRead).length}
+        />
+
         <Content
           style={{
             background: receptionistTheme.background,
-            height: '100vh',
-            overflow: 'hidden',
-            padding: isMobile ? '24px 16px 16px' : isTablet ? '24px 20px 20px' : '24px 32px 24px',
+            flex: 1,
+            overflowY: 'auto',
+            overflowX: 'hidden',
+            minHeight: 0, // Important for flex scrolling
+            // Responsive padding - reduced to save side space
+            padding: isMobile 
+              ? '12px 12px 16px'  // Mobile: smaller side padding
+              : isTablet 
+                ? '12px 16px 20px'  // Tablet: medium side padding
+                : '12px 16px 20px', // Desktop: reduced padding
             display: 'flex',
             flexDirection: 'column',
+            margin: 0,
+            width: '100%',
           }}
         >
           <div style={{ 
             display: 'flex', 
             flexDirection: 'column', 
-            height: '100%',
-            overflow: 'hidden',
+            flex: 1,
+            minHeight: 0,
           }}>
-            {/* Notifications Bell (top-right) */}
-            {!isMobile && (
-              <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 8 }}>
-                <NotificationBell />
-              </div>
-            )}
             {/* Mobile Menu Button */}
             {isMobile && (
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+              <div style={{ display: 'flex', justifyContent: 'flex-start', alignItems: 'center', marginBottom: 16 }}>
                 <Button
                   type="text"
                   icon={<MenuUnfoldOutlined />}
                   onClick={() => setMobileDrawerOpen(true)}
                   style={{ fontSize: '18px' }}
                 />
-                <Title level={4} style={{ margin: 0 }}>Dashboard</Title>
-                <NotificationBell />
               </div>
             )}
             
-            {/* Alert/Banner Notifications - Show important unread notifications */}
-            {notifications.filter((n: any) => !n.isRead).length > 0 && (
-              <div style={{ marginBottom: 16 }}>
-                {notifications
-                  .filter((n: any) => !n.isRead)
-                  .slice(0, 3) // Show max 3 alerts
-                  .map((notif: any) => {
-                    const type = (notif.type || '').toLowerCase();
-                    let alertType: 'info' | 'success' | 'warning' | 'error' = 'info';
-                    if (type.includes('cancel') || type.includes('reject')) alertType = 'error';
-                    else if (type.includes('confirm') || type.includes('complete')) alertType = 'success';
-                    else if (type.includes('pending') || type.includes('resched')) alertType = 'warning';
-                    
-                    return (
-                      <Alert
-                        key={notif.id}
-                        message={notif.title || 'Notification'}
-                        description={notif.message}
-                        type={alertType}
-                        showIcon
-                        closable
-                        style={{ marginBottom: 8 }}
-                        onClose={() => {
-                          // Mark as read when closed
-                          const token = localStorage.getItem('auth-token');
-                          fetch(`/api/notifications/read/${notif.id}`, {
-                            method: 'POST',
-                            headers: { Authorization: `Bearer ${token}` },
-                          }).then(() => {
-                            queryClient.invalidateQueries({ queryKey: ['/api/notifications/me'] });
-                          });
-                        }}
-                      />
-                    );
-                  })}
-              </div>
-            )}
+            {/* Floating Notifications - Auto-dismiss after 10 seconds (handled by useEffect) */}
             
           {/* KPI Cards - Matching Patient Dashboard Design */}
             {isMobile ? (
@@ -4594,7 +4800,7 @@ export default function ReceptionistDashboard() {
             }}
             footer={null}
             width={600}
-            destroyOnClose
+            destroyOnHidden
           >
             <Form
               form={cancelSuggestionForm}
@@ -4725,7 +4931,7 @@ export default function ReceptionistDashboard() {
             }}
             footer={null}
             width={520}
-            destroyOnClose
+            destroyOnHidden
           >
             <Form form={rescheduleForm} layout="vertical" onFinish={handleRescheduleSubmit}>
               <Alert
@@ -4821,7 +5027,7 @@ export default function ReceptionistDashboard() {
         }}
         footer={null}
         width={700}
-        destroyOnClose
+        destroyOnHidden
       >
         {selectedPatientForLabTests && labTestsByPatient[selectedPatientForLabTests] ? (
           <>

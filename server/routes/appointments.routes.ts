@@ -281,9 +281,10 @@ router.patch('/:appointmentId/cancel', async (req: AuthenticatedRequest, res) =>
       cancellationReason
     );
     res.json(appointment);
-  } catch (err) {
+  } catch (err: any) {
     console.error('Cancel appointment error:', err);
-    res.status(400).json({ message: 'Failed to cancel appointment' });
+    const errorMessage = err?.message || 'Failed to cancel appointment';
+    res.status(400).json({ message: errorMessage });
   }
 });
 

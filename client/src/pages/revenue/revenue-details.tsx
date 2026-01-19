@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import {
   Card,
@@ -14,6 +14,8 @@ import {
   Input,
   message,
   DatePicker,
+  Layout,
+  Drawer,
 } from 'antd';
 import {
   DollarOutlined,
@@ -22,14 +24,27 @@ import {
   CalendarOutlined,
   CreditCardOutlined,
   WalletOutlined,
+  UserOutlined,
+  BellOutlined,
+  SettingOutlined,
+  BankOutlined,
+  TeamOutlined,
+  FileTextOutlined,
+  BarChartOutlined,
+  MenuUnfoldOutlined,
 } from '@ant-design/icons';
 import { apiRequest } from '../../lib/queryClient';
 import type { ColumnsType } from 'antd/es/table';
 import dayjs, { type Dayjs } from 'dayjs';
+import { useAuth } from '../../hooks/use-auth';
+import { useResponsive } from '../../hooks/use-responsive';
+import { useLocation } from 'wouter';
+import { TopHeader } from '../../components/layout/TopHeader';
 
 const { Title, Text } = Typography;
 const { RangePicker } = DatePicker;
 const { Option } = Select;
+const { Content, Sider } = Layout;
 
 interface RevenueTransaction {
   id: number;
@@ -47,10 +62,201 @@ interface RevenueTransaction {
 }
 
 export default function RevenueDetails() {
+  const { user } = useAuth();
+  const [, setLocation] = useLocation();
+  const { isMobile, isTablet } = useResponsive();
+  const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false);
   const [dateRange, setDateRange] = useState<[Dayjs | null, Dayjs | null]>([null, null]);
   const [paymentMethodFilter, setPaymentMethodFilter] = useState<string>('all');
   const [sourceFilter, setSourceFilter] = useState<string>('all');
   const [searchText, setSearchText] = useState<string>('');
+  const [selectedMenuKey] = useState<string>('revenue');
+
+  // Get notifications for TopHeader
+  const { data: notifications = [] } = useQuery({
+    queryKey: ['/api/notifications/me'],
+    queryFn: async () => {
+      const token = localStorage.getItem('auth-token');
+      const response = await fetch('/api/notifications/me', {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!response.ok) return [];
+      return response.json();
+    },
+    refetchInterval: 15000,
+  });
+  
+  const siderWidth = isMobile ? 0 : 80; // Narrow sidebar width matching PatientSidebar
+  
+  // Sidebar content component - matching hospital dashboard
+  const SidebarContent = ({ onMenuClick }: { onMenuClick?: () => void }) => {
+    const handleMenuClick = (key: string) => {
+      if (onMenuClick) onMenuClick();
+      switch (key) {
+        case 'dashboard':
+          setLocation('/dashboard/hospital');
+          break;
+        case 'doctors':
+          message.info('Doctors page coming soon.');
+          break;
+        case 'patients':
+          message.info('Patients page coming soon.');
+          break;
+        case 'appointments':
+          message.info('Appointments page coming soon.');
+          break;
+        case 'reports':
+          message.info('Lab Reports page coming soon.');
+          break;
+        case 'revenue':
+          setLocation('/dashboard/hospital/revenue');
+          break;
+        default:
+          break;
+      }
+    };
+
+    return (
+      <div style={{ 
+        display: 'flex', 
+        flexDirection: 'column', 
+        height: '100%',
+        background: '#fff',
+        width: '80px',
+        alignItems: 'center',
+        padding: '16px 0',
+        gap: '12px',
+        borderRight: '1px solid #E5E7EB',
+      }}>
+        <Button
+          type="text"
+          icon={<UserOutlined style={{ fontSize: '20px', color: '#1A8FE3' }} />}
+          style={{
+            width: '48px',
+            height: '48px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            background: '#E3F2FF',
+            borderRadius: '8px',
+          }}
+          onClick={() => message.info('Profile coming soon.')}
+        />
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', flex: 1, alignItems: 'center' }}>
+          <Button
+            type="text"
+            icon={<BankOutlined style={{ fontSize: '20px', color: '#6B7280' }} />}
+            style={{
+              width: '48px',
+              height: '48px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              background: 'transparent',
+              borderRadius: '8px',
+            }}
+            onClick={() => handleMenuClick('dashboard')}
+          />
+          <Button
+            type="text"
+            icon={<TeamOutlined style={{ fontSize: '20px', color: '#6B7280' }} />}
+            style={{
+              width: '48px',
+              height: '48px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              background: 'transparent',
+              borderRadius: '8px',
+            }}
+            onClick={() => handleMenuClick('doctors')}
+          />
+          <Button
+            type="text"
+            icon={<UserOutlined style={{ fontSize: '20px', color: '#6B7280' }} />}
+            style={{
+              width: '48px',
+              height: '48px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              background: 'transparent',
+              borderRadius: '8px',
+            }}
+            onClick={() => handleMenuClick('patients')}
+          />
+          <Button
+            type="text"
+            icon={<CalendarOutlined style={{ fontSize: '20px', color: '#6B7280' }} />}
+            style={{
+              width: '48px',
+              height: '48px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              background: 'transparent',
+              borderRadius: '8px',
+            }}
+            onClick={() => handleMenuClick('appointments')}
+          />
+          <Button
+            type="text"
+            icon={<FileTextOutlined style={{ fontSize: '20px', color: '#6B7280' }} />}
+            style={{
+              width: '48px',
+              height: '48px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              background: 'transparent',
+              borderRadius: '8px',
+            }}
+            onClick={() => handleMenuClick('reports')}
+          />
+          <Button
+            type="text"
+            icon={<BarChartOutlined style={{ fontSize: '20px', color: '#1A8FE3' }} />}
+            style={{
+              width: '48px',
+              height: '48px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              background: '#E3F2FF',
+              borderRadius: '8px',
+            }}
+            onClick={() => handleMenuClick('revenue')}
+          />
+        </div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', alignItems: 'center' }}>
+          <Button
+            type="text"
+            icon={<BellOutlined style={{ fontSize: '20px', color: '#6B7280' }} />}
+            style={{
+              width: '48px',
+              height: '48px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}
+            onClick={() => message.info('Notifications coming soon.')}
+          />
+          <Button
+            type="text"
+            icon={<SettingOutlined style={{ fontSize: '20px', color: '#6B7280' }} />}
+            style={{
+              width: '48px',
+              height: '48px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}
+            onClick={() => message.info('Settings coming soon.')}
+          />
+        </div>
+      </div>
+    );
+  };
 
   // Fetch revenue statistics
   const { data: stats, isLoading: statsLoading, refetch: refetchStats } = useQuery({
@@ -206,8 +412,108 @@ export default function RevenueDetails() {
   };
 
   return (
-    <div style={{ padding: 24 }}>
-      <Space direction="vertical" size="large" style={{ width: '100%' }}>
+    <Layout style={{ minHeight: '100vh', background: '#F5F7FF' }}>
+      {/* Desktop/Tablet Sidebar */}
+      {!isMobile && (
+        <Sider
+          width={80}
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            height: '100vh',
+            background: '#fff',
+            boxShadow: '0 2px 16px rgba(26, 143, 227, 0.08)',
+            display: 'flex',
+            flexDirection: 'column',
+            zIndex: 10,
+            borderRight: '1px solid #E5E7EB',
+          }}
+        >
+          <SidebarContent />
+        </Sider>
+      )}
+
+      {/* Mobile Drawer */}
+      {isMobile && (
+        <Drawer
+          title="Navigation"
+          placement="left"
+          onClose={() => setMobileDrawerOpen(false)}
+          open={mobileDrawerOpen}
+          styles={{ body: { padding: 0 } }}
+          width={260}
+        >
+          <SidebarContent onMenuClick={() => setMobileDrawerOpen(false)} />
+        </Drawer>
+      )}
+
+      <Layout
+        style={{
+          marginLeft: siderWidth,
+          minHeight: '100vh',
+          background: '#F5F7FF',
+          display: 'flex',
+          flexDirection: 'column',
+          height: '100vh',
+        }}
+      >
+        {/* TopHeader - Matching Patient Dashboard Design */}
+        <TopHeader
+          userName={user?.fullName || 'Hospital Admin'}
+          userRole="Hospital"
+          userId={useMemo(() => {
+            if (user?.id) {
+              const year = new Date().getFullYear();
+              const idNum = String(user.id).padStart(3, '0');
+              return `HOS-${year}-${idNum}`;
+            }
+            return 'HOS-2024-001';
+          }, [user?.id])}
+          userInitials={useMemo(() => {
+            if (user?.fullName) {
+              const names = user.fullName.split(' ');
+              if (names.length >= 2) {
+                return `${names[0][0]}${names[1][0]}`.toUpperCase();
+              }
+              return user.fullName.substring(0, 2).toUpperCase();
+            }
+            return 'HA';
+          }, [user?.fullName])}
+          notificationCount={notifications.filter((n: any) => !n.isRead).length}
+        />
+
+        <Content
+          style={{
+            background: '#F5F7FF',
+            flex: 1,
+            overflowY: 'auto',
+            overflowX: 'hidden',
+            minHeight: 0,
+            // Responsive padding - reduced to save side space
+            padding: isMobile 
+              ? '12px 12px 16px'
+              : isTablet 
+                ? '12px 16px 20px'
+                : '12px 16px 20px',
+            margin: 0,
+            width: '100%',
+          }}
+        >
+          {/* Mobile Menu Button */}
+          {isMobile && (
+            <div style={{ display: 'flex', justifyContent: 'flex-start', alignItems: 'center', marginBottom: 16 }}>
+              <Button
+                type="text"
+                icon={<MenuUnfoldOutlined />}
+                onClick={() => setMobileDrawerOpen(true)}
+                style={{ fontSize: '18px' }}
+              />
+            </div>
+          )}
+
+          <div style={{ paddingBottom: 24 }}>
+            <Space direction="vertical" size="large" style={{ width: '100%' }}>
         {/* Header */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <Title level={2} style={{ margin: 0 }}>
@@ -380,7 +686,10 @@ export default function RevenueDetails() {
             scroll={{ x: 1200 }}
           />
         </Card>
-      </Space>
-    </div>
+            </Space>
+          </div>
+        </Content>
+      </Layout>
+    </Layout>
   );
 }

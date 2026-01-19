@@ -1,7 +1,7 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Redirect, useLocation } from "wouter";
-import {
+import { 
   Layout,
   Card,
   Button,
@@ -23,6 +23,7 @@ import {
   Select,
   DatePicker,
   InputNumber,
+  App,
 } from 'antd';
 import {
   UserOutlined,
@@ -47,6 +48,7 @@ import { useResponsive } from '../../hooks/use-responsive';
 import { KpiCard } from '../../components/dashboard/KpiCard';
 import { QuickActionTile } from '../../components/dashboard/QuickActionTile';
 import { NotificationBell } from '../../components/notifications/NotificationBell';
+import { TopHeader } from '../../components/layout/TopHeader';
 import { VitalsEntryForm } from '../../components/clinical/VitalsEntryForm';
 import { NursingNotesForm } from '../../components/clinical/NursingNotesForm';
 import { IpdEncountersList } from '../../components/ipd/IpdEncountersList';
@@ -71,9 +73,11 @@ const nurseTheme = {
 
 export default function NurseDashboard() {
   const { user, isLoading } = useAuth();
+  const { notification: notificationApi } = App.useApp();
   const queryClient = useQueryClient();
   const [, setLocation] = useLocation();
   const { isMobile, isTablet } = useResponsive();
+  const shownNotificationIdsRef = useRef<Set<number>>(new Set());
   const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false);
   const [selectedMenuKey, setSelectedMenuKey] = useState<string>('dashboard');
   const [isVitalsModalOpen, setIsVitalsModalOpen] = useState(false);
@@ -203,6 +207,76 @@ export default function NurseDashboard() {
     },
     enabled: !!nurseProfile,
   });
+
+  // Get notifications for nurse
+  const { data: notifications = [] } = useQuery({
+    queryKey: ['/api/notifications/me'],
+    queryFn: async () => {
+      const token = localStorage.getItem('auth-token');
+      const response = await fetch('/api/notifications/me', {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!response.ok) return [];
+      return response.json();
+    },
+    refetchInterval: 15000,
+    refetchOnWindowFocus: true,
+  });
+
+  // Show floating notifications for unread notifications
+  useEffect(() => {
+    if (!notifications || notifications.length === 0) return;
+
+    const unread = notifications.filter((n: any) => !n.isRead);
+    
+    unread.forEach((notif: any) => {
+      const notifId = Number(notif.id);
+      
+      // Only show if we haven't shown this notification before
+      if (!shownNotificationIdsRef.current.has(notifId)) {
+        shownNotificationIdsRef.current.add(notifId);
+        
+        const type = (notif.type || '').toLowerCase();
+        let notificationType: 'info' | 'success' | 'warning' | 'error' = 'info';
+        if (type.includes('cancel') || type.includes('reject') || type.includes('critical')) notificationType = 'error';
+        else if (type.includes('confirm') || type.includes('complete') || type.includes('ready')) notificationType = 'success';
+        else if (type.includes('pending') || type.includes('resched') || type.includes('processing')) notificationType = 'warning';
+        
+        // Show as floating notification in top right
+        notificationApi[notificationType]({
+          message: notif.title || 'Notification',
+          description: notif.message,
+          placement: 'topRight',
+          duration: 10, // Auto-dismiss after 10 seconds
+          key: `notif-${notifId}`,
+          onClick: () => {
+            // Mark as read when clicked
+            const token = localStorage.getItem('auth-token');
+            if (token) {
+              fetch(`/api/notifications/read/${notifId}`, {
+                method: 'POST',
+                headers: { Authorization: `Bearer ${token}` },
+              }).then(() => {
+                queryClient.invalidateQueries({ queryKey: ['/api/notifications/me'] });
+              });
+            }
+          },
+          onClose: () => {
+            // Mark as read when closed
+            const token = localStorage.getItem('auth-token');
+            if (token) {
+              fetch(`/api/notifications/read/${notifId}`, {
+                method: 'POST',
+                headers: { Authorization: `Bearer ${token}` },
+              }).then(() => {
+                queryClient.invalidateQueries({ queryKey: ['/api/notifications/me'] });
+              });
+            }
+          },
+        });
+      }
+    });
+  }, [notifications, notificationApi, queryClient]);
 
   // Get hospital name from nurse profile (similar to doctor dashboard)
   const hospitalName = useMemo(() => {
@@ -710,7 +784,7 @@ export default function NurseDashboard() {
         {/* Desktop/Tablet Sidebar */}
         {!isMobile && (
         <Sider
-            width={260}
+            width={80}
           style={{
             position: 'fixed',
               top: 0,
@@ -742,7 +816,7 @@ export default function NurseDashboard() {
             onClose={() => setMobileDrawerOpen(false)}
           open={mobileDrawerOpen}
             bodyStyle={{ padding: 0 }}
-            width={260}
+            width={80}
           >
             <NurseSidebar 
               selectedMenuKey={selectedMenuKey}
@@ -757,40 +831,67 @@ export default function NurseDashboard() {
 
         <Layout
           style={{
-            marginLeft: isMobile ? 0 : 260,
+            marginLeft: isMobile ? 0 : 80, // Narrow sidebar width matching PatientSidebar
             minHeight: '100vh',
             background: nurseTheme.background,
-            overflow: 'hidden',
+            display: 'flex',
+            flexDirection: 'column',
+            height: '100vh', // Fixed height to enable scrolling
           }}
         >
+          {/* TopHeader - Matching Patient Dashboard Design */}
+          <TopHeader
+            userName={user?.fullName || 'Nurse'}
+            userRole="Nurse"
+            userId={useMemo(() => {
+              if (user?.id) {
+                const year = new Date().getFullYear();
+                const idNum = String(user.id).padStart(3, '0');
+                return `NUR-${year}-${idNum}`;
+              }
+              return 'NUR-2024-001';
+            }, [user?.id])}
+            userInitials={useMemo(() => {
+              if (user?.fullName) {
+                const names = user.fullName.split(' ');
+                if (names.length >= 2) {
+                  return `${names[0][0]}${names[1][0]}`.toUpperCase();
+                }
+                return user.fullName.substring(0, 2).toUpperCase();
+              }
+              return 'NU';
+            }, [user?.fullName])}
+            notificationCount={0}
+          />
+
           <Content
             style={{
               background: nurseTheme.background,
-              height: '100vh',
+              flex: 1,
               overflowY: 'auto',
-              padding: isMobile ? '24px 16px 16px' : isTablet ? '24px 20px 20px' : '24px 32px 24px',
+              overflowX: 'hidden',
+              minHeight: 0, // Important for flex scrolling
+              // Responsive padding - reduced to save side space
+              padding: isMobile 
+                ? '12px 12px 16px'  // Mobile: smaller side padding
+                : isTablet 
+                  ? '12px 16px 20px'  // Tablet: medium side padding
+                  : '12px 16px 20px', // Desktop: reduced padding
+              margin: 0,
+              width: '100%',
             }}
           >
             <div style={{ paddingBottom: 24 }}>
-              {/* Notifications Bell (top-right) */}
-              {!isMobile && (
-                <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 8 }}>
-                  <NotificationBell />
-                </div>
-              )}
-
               {/* Mobile Menu Button */}
-            {isMobile && (
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-              <Button
-                type="text"
-                icon={<MenuUnfoldOutlined />}
-                onClick={() => setMobileDrawerOpen(true)}
+              {isMobile && (
+                <div style={{ display: 'flex', justifyContent: 'flex-start', alignItems: 'center', marginBottom: 16 }}>
+                  <Button
+                    type="text"
+                    icon={<MenuUnfoldOutlined />}
+                    onClick={() => setMobileDrawerOpen(true)}
                     style={{ fontSize: '18px' }}
                   />
-                  <Title level={4} style={{ margin: 0 }}>Nurse Station</Title>
-            <NotificationBell />
-        </div>
+                </div>
               )}
 
           {renderContent()}

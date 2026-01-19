@@ -34,6 +34,7 @@ interface LabRequestModalProps {
   onSuccess?: () => void;
   patientId?: number;
   appointmentId?: number;
+  doctorId?: number; // For receptionist requests
   patientsOverride?: Array<{ id: number; fullName: string; mobileNumber?: string }>;
 }
 
@@ -43,6 +44,7 @@ export default function LabRequestModal({
   onSuccess,
   patientId,
   appointmentId,
+  doctorId,
   patientsOverride,
 }: LabRequestModalProps) {
   const [form] = Form.useForm();
@@ -214,6 +216,7 @@ export default function LabRequestModal({
         testNamesFiltered.map(async (testName: string) => {
           const payload = {
             patientId: values.patientId,
+            doctorId: doctorId || values.doctorId || undefined, // Include doctorId if available (for receptionist requests)
             labId: values.labId,
             testName: testName.trim(),
             reportDate: values.requestedDate ? values.requestedDate.format('YYYY-MM-DD') : dayjs().format('YYYY-MM-DD'),
@@ -311,7 +314,7 @@ export default function LabRequestModal({
           Request Test
         </Button>,
       ]}
-      destroyOnClose
+      destroyOnHidden
     >
       <Alert
         message="Lab Request"

@@ -16,7 +16,8 @@ import {
   Progress,
   Timeline,
   List,
-  Modal
+  Modal,
+  Drawer
 } from 'antd';
 import { 
   UserOutlined, 
@@ -37,53 +38,40 @@ import {
   EyeOutlined
 } from '@ant-design/icons';
 import { useAuth } from '../../hooks/use-auth';
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { useQuery } from "@tanstack/react-query";
 import { apiRequest } from '../../lib/queryClient';
 import { formatDate } from '../../lib/utils';
+import { PatientSidebar } from '../../components/layout/PatientSidebar';
+import { TopHeader } from '../../components/layout/TopHeader';
+import { useResponsive } from '../../hooks/use-responsive';
+import { MenuUnfoldOutlined } from '@ant-design/icons';
 
-const { Header, Content, Sider } = Layout;
+const { Content, Sider } = Layout;
 const { Title, Text } = Typography;
 
 export default function PatientPrescriptionsPage() {
-  const { user, logout } = useAuth();
-  const [collapsed, setCollapsed] = useState(false);
+  const { user } = useAuth();
+  const { isMobile, isTablet } = useResponsive();
+  const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false);
   const [selectedPrescription, setSelectedPrescription] = useState(null);
   const [isViewModalOpen, setIsViewModalOpen] = useState(false);
-  const userMenuItems = [
-    {
-      key: 'profile',
-      icon: <UserOutlined />,
-      label: 'Profile',
+  
+  // Get notifications for TopHeader
+  const { data: notifications = [] } = useQuery({
+    queryKey: ['/api/notifications/me'],
+    queryFn: async () => {
+      const token = localStorage.getItem('auth-token');
+      const response = await fetch('/api/notifications/me', {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!response.ok) return [];
+      return response.json();
     },
-    {
-      key: 'settings',
-      icon: <SettingOutlined />,
-      label: 'Settings',
-    },
-    {
-      type: 'divider',
-    },
-    {
-      key: 'logout',
-      icon: <LogoutOutlined />,
-      label: 'Logout',
-      onClick: logout,
-    },
-  ];
-
-  const sidebarMenu = [
-    {
-      key: 'dashboard',
-      icon: <UserOutlined />,
-      label: 'Dashboard',
-    },
-    {
-      key: 'prescriptions',
-      icon: <FileTextOutlined />,
-      label: 'Prescriptions',
-    },
-  ];
+    refetchInterval: 15000,
+  });
+  
+  const siderWidth = isMobile ? 0 : 80; // Narrow sidebar width matching PatientSidebar
 
   // Fetch prescriptions data
   const { data: prescriptions = [], isLoading } = useQuery({
@@ -173,65 +161,105 @@ export default function PatientPrescriptionsPage() {
   ];
 
   return (
-    <Layout style={{ minHeight: '100vh' }}>
-      <Sider 
-        trigger={null} 
-        collapsible 
-        collapsed={collapsed}
+    <Layout style={{ minHeight: '100vh', background: '#F7FBFF' }}>
+      {/* Desktop/Tablet Sidebar */}
+      {!isMobile && (
+        <Sider
+          width={80}
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            height: '100vh',
+            background: '#fff',
+            boxShadow: '0 2px 16px rgba(26, 143, 227, 0.08)',
+            display: 'flex',
+            flexDirection: 'column',
+            zIndex: 10,
+            borderRight: '1px solid #E5E7EB',
+          }}
+        >
+          <PatientSidebar selectedMenuKey="prescriptions" />
+        </Sider>
+      )}
+
+      {/* Mobile Drawer */}
+      {isMobile && (
+        <Drawer
+          title="Navigation"
+          placement="left"
+          onClose={() => setMobileDrawerOpen(false)}
+          open={mobileDrawerOpen}
+          styles={{ body: { padding: 0 } }}
+          width={260}
+        >
+          <PatientSidebar selectedMenuKey="prescriptions" onMenuClick={() => setMobileDrawerOpen(false)} />
+        </Drawer>
+      )}
+
+      <Layout
         style={{
-          background: '#fff',
-          boxShadow: '2px 0 8px rgba(0,0,0,0.15)'
+          marginLeft: siderWidth,
+          minHeight: '100vh',
+          background: '#F7FBFF',
+          display: 'flex',
+          flexDirection: 'column',
+          height: '100vh',
         }}
       >
-        <div style={{ 
-          padding: '16px', 
-          textAlign: 'center',
-          borderBottom: '1px solid #f0f0f0'
-        }}>
-          <MedicineBoxOutlined style={{ fontSize: '24px', color: '#1890ff' }} />
-          {!collapsed && (
-            <Title level={4} style={{ margin: '8px 0 0 0', color: '#1890ff' }}>
-              NexaCare
-            </Title>
-          )}
-        </div>
-        <Menu
-          mode="inline"
-          defaultSelectedKeys={['prescriptions']}
-          style={{ borderRight: 0 }}
-          items={sidebarMenu}
+        {/* TopHeader - Matching Patient Dashboard Design */}
+        <TopHeader
+          userName={user?.fullName || 'User'}
+          userRole="Patient"
+          userId={useMemo(() => {
+            if (user?.id) {
+              const year = new Date().getFullYear();
+              const idNum = String(user.id).padStart(3, '0');
+              return `PAT-${year}-${idNum}`;
+            }
+            return 'PAT-2024-001';
+          }, [user?.id])}
+          userInitials={useMemo(() => {
+            if (user?.fullName) {
+              const names = user.fullName.split(' ');
+              if (names.length >= 2) {
+                return `${names[0][0]}${names[1][0]}`.toUpperCase();
+              }
+              return user.fullName.substring(0, 2).toUpperCase();
+            }
+            return 'UP';
+          }, [user?.fullName])}
+          notificationCount={notifications.filter((n: any) => !n.isRead).length}
         />
-      </Sider>
-      
-      <Layout>
-        <Header style={{ 
-          padding: '0 24px', 
-          background: '#fff', 
-          display: 'flex', 
-          alignItems: 'center', 
-          justifyContent: 'space-between',
-          boxShadow: '0 2px 8px rgba(0,0,0,0.15)'
-        }}>
-          <Button
-            type="text"
-            icon={collapsed ? <PlusOutlined /> : <PlusOutlined />}
-            onClick={() => setCollapsed(!collapsed)}
-            style={{ fontSize: '16px', width: 64, height: 64 }}
-          />
-          <Space>
-            <Badge count={3} size="small">
-              <BellOutlined style={{ fontSize: '18px' }} />
-            </Badge>
-            <Dropdown menu={{ items: userMenuItems }} placement="bottomRight">
-              <Space style={{ cursor: 'pointer' }}>
-                <Avatar icon={<UserOutlined />} />
-                <Text strong>{user?.fullName}</Text>
-              </Space>
-            </Dropdown>
-          </Space>
-        </Header>
-        
-        <Content style={{ margin: '0 24px 24px', marginTop: 0, background: '#f5f5f5', minHeight: 'calc(100vh - 112px)' }}>
+
+        <Content
+          style={{
+            background: '#F7FBFF',
+            flex: 1,
+            overflowY: 'auto',
+            overflowX: 'hidden',
+            minHeight: 0,
+            // Responsive padding - reduced to save side space
+            padding: isMobile 
+              ? '12px 12px 16px'
+              : isTablet 
+                ? '12px 16px 20px'
+                : '12px 16px 20px',
+            margin: 0,
+            width: '100%',
+          }}
+        >
+          {/* Mobile Menu Button */}
+          {isMobile && (
+            <div style={{ display: 'flex', justifyContent: 'flex-start', alignItems: 'center', marginBottom: 16 }}>
+              <Button
+                type="text"
+                icon={<MenuUnfoldOutlined />}
+                onClick={() => setMobileDrawerOpen(true)}
+                style={{ fontSize: '18px' }}
+              />
+            </div>
+          )}
           <div style={{ background: '#fff', padding: '24px', borderRadius: '8px', marginBottom: '24px' }}>
             <Title level={2} style={{ margin: '0 0 16px 0', color: '#1890ff' }}>
               <FileTextOutlined style={{ marginRight: '8px' }} />
@@ -241,7 +269,7 @@ export default function PatientPrescriptionsPage() {
           </div>
 
           {/* Quick Stats */}
-          <Row gutter={[16, 16]} style={{ marginBottom: '24px' }}>
+          <Row gutter={[12, 12]} style={{ marginBottom: 16 }}>
             <Col xs={24} sm={8}>
               <Card>
                 <Statistic
