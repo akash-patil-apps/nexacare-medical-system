@@ -75,6 +75,7 @@ import { LabTestPaymentModal } from '../../components/modals/lab-test-payment-mo
 import { LabTestsConfirmationModal } from '../../components/modals/lab-tests-confirmation-modal';
 import { VitalsEntryForm } from '../../components/clinical/VitalsEntryForm';
 import LabRequestModal from '../../components/modals/lab-request-modal';
+import { injectNotificationProgressBar } from '../../lib/notification-utils';
 import tubeIcon from '../../assets/images/tube.png';
 import checkInIcon from '../../assets/images/check-in.png';
 import medicalIcon from '../../assets/images/medical.png';
@@ -334,7 +335,7 @@ export default function ReceptionistDashboard() {
               onClick: () => {
                 const appointment = appointments.find((apt: any) => apt.id === notif.relatedId);
                 if (appointment) {
-                  handleRejectAppointment(appointment); // Opens cancel with suggestion modal
+                  openRescheduleModal(appointment); // Open reschedule modal
                 }
                 notificationApi.destroy(`notif-${notifId}`);
               }
@@ -348,13 +349,14 @@ export default function ReceptionistDashboard() {
           message: notif.title || 'Notification',
           description: React.createElement(
             'div',
-            null,
-            React.createElement('div', null, notif.message),
+            { style: { minWidth: '400px' } },
+            React.createElement('div', { style: { marginBottom: actionButtons ? '8px' : '0' } }, notif.message),
             actionButtons
           ),
           placement: 'topRight',
-          duration: 10, // Auto-dismiss after 10 seconds
+          duration: 10, // Auto-dismiss after 10 seconds (doesn't mark as read)
           key: `notif-${notifId}`,
+          style: { minWidth: '420px', maxWidth: '500px' },
           onClick: () => {
             // Mark as read when clicked
             const token = localStorage.getItem('auth-token');
@@ -368,7 +370,7 @@ export default function ReceptionistDashboard() {
             }
           },
           onClose: () => {
-            // Mark as read when closed
+            // Mark as read only when user explicitly closes the notification (not on auto-dismiss)
             const token = localStorage.getItem('auth-token');
             if (token) {
               fetch(`/api/notifications/read/${notifId}`, {
@@ -380,6 +382,14 @@ export default function ReceptionistDashboard() {
             }
           },
         });
+
+        // Inject progress bar after notification is rendered
+        injectNotificationProgressBar(
+          notif.title || 'Notification',
+          notif.message || '',
+          notificationType,
+          10
+        );
       }
     });
   }, [notifications, notificationApi, queryClient, appointments]);
@@ -3508,7 +3518,9 @@ export default function ReceptionistDashboard() {
                     onChange={setActiveAppointmentTab}
                     items={appointmentTabs.map(tab => ({
                       key: tab.key,
-                      label: tab.label,
+                      label: tab.key === 'pending' && tab.count > 0 ? (
+                        <span style={{ color: '#ff4d4f', fontWeight: 600 }}>{tab.label}</span>
+                      ) : tab.label,
                       children: (
                         <div style={{ 
                           flex: 1,

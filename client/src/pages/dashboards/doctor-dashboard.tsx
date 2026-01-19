@@ -58,6 +58,7 @@ import { getISTNow, toIST, getISTStartOfDay, isSameDayIST } from '../../lib/time
 import { playNotificationSound } from '../../lib/notification-sounds';
 import { NotificationBell } from '../../components/notifications/NotificationBell';
 import { TopHeader } from '../../components/layout/TopHeader';
+import { injectNotificationProgressBar } from '../../lib/notification-utils';
 import { AvailabilityManager } from '../../components/availability/AvailabilityManager';
 import { ClinicalNotesEditor } from '../../components/clinical/ClinicalNotesEditor';
 import { VitalsEntryForm } from '../../components/clinical/VitalsEntryForm';
@@ -748,8 +749,9 @@ export default function DoctorDashboard() {
           message: notif.title || 'Notification',
           description: notif.message,
           placement: 'topRight',
-          duration: 10, // Auto-dismiss after 10 seconds
+          duration: 10, // Auto-dismiss after 10 seconds (doesn't mark as read)
           key: `notif-${notifId}`, // Unique key for each notification
+          style: { minWidth: '420px', maxWidth: '500px' },
           onClick: () => {
             // Mark as read when clicked
             const token = getAuthToken();
@@ -763,7 +765,7 @@ export default function DoctorDashboard() {
             }
           },
           onClose: () => {
-            // Mark as read when closed
+            // Mark as read only when user explicitly closes the notification (not on auto-dismiss)
             const token = getAuthToken();
             if (token) {
               fetch(`/api/notifications/read/${notifId}`, {
@@ -775,6 +777,14 @@ export default function DoctorDashboard() {
             }
           },
         });
+
+        // Inject progress bar after notification is rendered
+        injectNotificationProgressBar(
+          notif.title || 'Notification',
+          notif.message || '',
+          notificationType,
+          10
+        );
       }
     });
   }, [notifications, notificationApi, queryClient]);
@@ -1575,8 +1585,8 @@ export default function DoctorDashboard() {
             
       {/* Bottom Icons */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', alignItems: 'center' }}>
-        <Button
-          type="text"
+            <Button 
+              type="text" 
           icon={<LogoutOutlined style={{ fontSize: '20px', color: '#EF4444' }} />}
           style={{
             width: '48px',
