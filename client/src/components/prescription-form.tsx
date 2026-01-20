@@ -15,16 +15,21 @@ import {
   List,
   Popconfirm,
   App,
-  InputNumber
+  InputNumber,
+  DatePicker
 } from 'antd';
 import { 
   PlusOutlined, 
   DeleteOutlined, 
   MedicineBoxOutlined,
-  FileTextOutlined
+  FileTextOutlined,
+  CloseOutlined,
+  LineChartOutlined,
+  EditOutlined
 } from '@ant-design/icons';
+import type { Dayjs } from 'dayjs';
 import { apiRequest } from "../lib/queryClient";
-import { getAuthToken } from "../lib/auth";
+import { getAuthToken, getUserFromToken } from "../lib/auth";
 import type { Medication } from "../../../shared/schema";
 import dayjs from "dayjs";
 import prescriptionIcon from '../assets/images/prescription.png';
@@ -97,6 +102,32 @@ export default function PrescriptionForm({
   const queryClient = useQueryClient();
   const prevIsOpenRef = useRef(false);
   const [isExtendLoading, setIsExtendLoading] = useState(false);
+  
+  // Inline medication form state
+  const [currentMedication, setCurrentMedication] = useState<Partial<Medication>>({
+    name: '',
+    dosage: '',
+    unit: 'mg',
+    frequency: '',
+    duration: '',
+    timing: 'After meals',
+    instructions: '',
+  });
+  
+  // Vitals state
+  const [vitals, setVitals] = useState({
+    bp: '',
+    temp: '',
+    pulse: '',
+    spo2: '',
+    rr: '',
+    weight: '',
+    height: '',
+  });
+  
+  // Patient data state
+  const [patientData, setPatientData] = useState<any>(null);
+  const [isHeightEditable, setIsHeightEditable] = useState(false);
 
   // Fetch patients for doctor to select from
   const { data: patients } = useQuery({
@@ -107,6 +138,37 @@ export default function PrescriptionForm({
     },
     enabled: !!doctorId && !patientsOverride,
   });
+
+  // Fetch patient data when patientId is available
+  const { data: fetchedPatientData } = useQuery({
+    queryKey: ['/api/reception/patients', patientId],
+    queryFn: async () => {
+      if (!patientId) return null;
+      const token = getAuthToken();
+      const response = await fetch(`/api/reception/patients/${patientId}/info`, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+        },
+      });
+      if (!response.ok) return null;
+      return response.json();
+    },
+    enabled: !!patientId && isOpen,
+  });
+
+  // Update patientData when fetchedPatientData changes
+  useEffect(() => {
+    if (fetchedPatientData) {
+      setPatientData(fetchedPatientData);
+      // Pre-fill height if available
+      if (fetchedPatientData.patient?.height && !isHeightEditable) {
+        setVitals(prev => ({
+          ...prev,
+          height: fetchedPatientData.patient.height?.toString() || '',
+        }));
+      }
+    }
+  }, [fetchedPatientData, isHeightEditable]);
 
   // Fetch hospitals for doctor to select from
   const { data: hospitals } = useQuery({
@@ -222,10 +284,34 @@ export default function PrescriptionForm({
         diagnosis: prescription?.diagnosis,
         instructions: prescription?.instructions,
       });
+      
+      // Reset inline medication form
+      setCurrentMedication({
+        name: '',
+        dosage: '',
+        unit: 'mg',
+        frequency: '',
+        duration: '',
+        timing: 'After meals',
+        instructions: '',
+      });
+      
+      // Reset vitals (but keep height if patient has it)
+      const initialHeight = fetchedPatientData?.patient?.height?.toString() || '';
+      setVitals({
+        bp: '',
+        temp: '',
+        pulse: '',
+        spo2: '',
+        rr: '',
+        weight: '',
+        height: initialHeight,
+      });
+      setIsHeightEditable(false);
     }
     // Update ref to track previous state
     prevIsOpenRef.current = isOpen;
-  }, [isOpen]); // Only depend on isOpen to prevent clearing fields while typing
+  }, [isOpen, fetchedPatientData]); // Only depend on isOpen to prevent clearing fields while typing
 
 
   const createPrescriptionMutation = useMutation({
@@ -315,6 +401,90 @@ export default function PrescriptionForm({
       message.success('Prescription created successfully!');
       console.log('✅ Prescription created:', data);
       console.log('📋 Created prescription appointmentId:', data?.appointmentId || 'NOT SET');
+      
+      // Save vitals if any are provided
+      if (vitals.bp || vitals.temp || vitals.pulse || vitals.spo2 || vitals.rr || vitals.weight || vitals.height) {
+        try {
+          const token = getAuthToken();
+          const user = getUserFromToken();
+          
+          if (token && user && hospitalId) {
+            // Parse BP (format: "120/80")
+            let bpSystolic: number | undefined;
+            let bpDiastolic: number | undefined;
+            if (vitals.bp) {
+              const bpMatch = vitals.bp.match(/(\d+)\s*\/\s*(\d+)/);
+              if (bpMatch) {
+                bpSystolic = parseInt(bpMatch[1]);
+                bpDiastolic = parseInt(bpMatch[2]);
+              }
+            }
+            
+            // Parse temperature (convert from Fahrenheit to Celsius if needed)
+            let temperature: number | undefined;
+            let temperatureUnit = 'F'; // Default to Fahrenheit as shown in UI
+            if (vitals.temp) {
+              temperature = parseFloat(vitals.temp);
+            }
+            
+            const vitalsPayload: any = {
+              patientId: data.patientId || patientId,
+              appointmentId: data.appointmentId || appointmentId,
+              recordedByUserId: user.id,
+              bpSystolic,
+              bpDiastolic,
+              temperature,
+              temperatureUnit,
+              pulse: vitals.pulse ? parseInt(vitals.pulse) : undefined,
+              spo2: vitals.spo2 ? parseInt(vitals.spo2) : undefined,
+              respirationRate: vitals.rr ? parseInt(vitals.rr) : undefined,
+              weight: vitals.weight ? parseFloat(vitals.weight) : undefined,
+              height: vitals.height ? parseFloat(vitals.height) : undefined,
+            };
+            
+            // Remove undefined values
+            Object.keys(vitalsPayload).forEach(key => {
+              if (vitalsPayload[key] === undefined) {
+                delete vitalsPayload[key];
+              }
+            });
+            
+            const vitalsResponse = await fetch('/api/clinical/vitals', {
+              method: 'POST',
+              headers: {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify(vitalsPayload),
+            });
+            
+            if (vitalsResponse.ok) {
+              console.log('✅ Vitals saved successfully');
+            } else {
+              console.warn('⚠️ Failed to save vitals:', await vitalsResponse.text());
+            }
+            
+            // Update patient profile with height/weight if provided
+            const patientUpdatePayload: any = {};
+            if (vitals.height) {
+              patientUpdatePayload.height = parseFloat(vitals.height);
+            }
+            if (vitals.weight) {
+              patientUpdatePayload.weight = parseFloat(vitals.weight);
+            }
+            
+            // Note: Patient profile update is handled by backend when vitals are saved
+            // The vitals chart stores the latest values, and patient profile can be updated separately if needed
+            if (Object.keys(patientUpdatePayload).length > 0) {
+              console.log('📝 Patient vitals to update:', patientUpdatePayload);
+              // Backend can handle patient profile updates if needed
+            }
+          }
+        } catch (error) {
+          console.error('❌ Error saving vitals:', error);
+          // Don't show error to user - vitals are optional
+        }
+      }
       
       // Invalidate all prescription-related queries to ensure all dashboards update
       queryClient.invalidateQueries({ queryKey: ['/api/prescriptions'] });
@@ -437,6 +607,43 @@ export default function PrescriptionForm({
     setIsMedicationModalOpen(false);
     message.success('Medication added successfully!');
   };
+  
+  // Handle inline medication addition
+  const handleAddMedicationInline = () => {
+    if (!currentMedication.name || !currentMedication.dosage || !currentMedication.frequency || !currentMedication.duration) {
+      message.error('Please fill in all required medication fields');
+      return;
+    }
+    
+    // Format duration to include "days" if it's just a number
+    let durationValue = currentMedication.duration!;
+    if (/^\d+$/.test(durationValue)) {
+      durationValue = `${durationValue} days`;
+    }
+    
+    const newMedication: Medication = {
+      name: currentMedication.name!,
+      dosage: currentMedication.dosage!,
+      unit: currentMedication.unit || 'mg',
+      frequency: currentMedication.frequency!,
+      duration: durationValue,
+      timing: currentMedication.timing || 'After meals',
+      instructions: currentMedication.instructions || '',
+    };
+    
+    setMedications([...medications, newMedication]);
+    setCurrentMedication({
+      name: '',
+      dosage: '',
+      unit: 'mg',
+      frequency: '',
+      duration: '',
+      timing: 'After meals',
+      instructions: '',
+    });
+    message.success('Medication added successfully!');
+  };
+  
 
   const isEditExpired = useMemo(() => {
     if (!prescription || !prescription.editableUntil) return false;
@@ -500,46 +707,84 @@ export default function PrescriptionForm({
   return (
     <>
       <Modal
-        title={
-          <Space>
-            <FileTextOutlined />
-            {prescription ? 'Edit Prescription' : 'Create New Prescription'}
-          </Space>
-        }
+        title={null}
         open={isOpen}
         onCancel={onClose}
         footer={null}
-        width={800}
+        width={1100}
         destroyOnHidden
         getContainer={() => document.body}
         zIndex={2000}
         maskClosable={false}
+        closeIcon={<CloseOutlined />}
         styles={{
           body: {
-            maxHeight: '70vh',
-            overflowY: 'auto',
             padding: '24px',
+            maxHeight: '90vh',
+            overflowY: 'auto',
           }
         }}
       >
+        {/* Custom Header */}
+        <div style={{ marginBottom: '24px', paddingBottom: '16px', borderBottom: '1px solid #E5E7EB' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
+                <FileTextOutlined style={{ fontSize: '20px', color: '#1890ff' }} />
+                <Title level={4} style={{ margin: 0, fontSize: '20px', fontWeight: 600 }}>
+                  {prescription ? 'Edit Prescription' : 'Create New Prescription'}
+                </Title>
+              </div>
+              <Text type="secondary" style={{ fontSize: '14px', marginLeft: '28px' }}>
+                Quick medication entry with minimal clicks
+              </Text>
+            </div>
+          </div>
+        </div>
         <Form
           form={form}
           layout="vertical"
           onFinish={handleSubmit}
           initialValues={prescription}
         >
-          <Row gutter={16}>
+          {/* Patient and Diagnosis Section */}
+          <Row gutter={16} style={{ marginBottom: '24px' }}>
             <Col span={12}>
               <Form.Item
                 name="patientId"
-                label="Patient"
+                label={<Text strong>Patient *</Text>}
                 rules={[{ required: true, message: 'Please select a patient' }]}
               >
+                {patientId && (selectedPatientOption || fallbackPatientOption || patientData) ? (
+                  <div style={{ 
+                    padding: '8px 12px', 
+                    border: '1px solid #D9D9D9', 
+                    borderRadius: '6px',
+                    background: '#FAFAFA',
+                    minHeight: '32px',
+                    display: 'flex',
+                    alignItems: 'center'
+                  }}>
+                    <Text>
+                      Patient : {(() => {
+                        const patient = selectedPatientOption || fallbackPatientOption || (patientData?.user);
+                        const name = patient?.fullName || patient?.name || patientName || 'Unknown';
+                        // Calculate age from dateOfBirth
+                        let age = '';
+                        if (patientData?.patient?.dateOfBirth) {
+                          const dob = dayjs(patientData.patient.dateOfBirth);
+                          const years = dayjs().diff(dob, 'year');
+                          age = `${years}Y`;
+                        }
+                        return `${name}${age ? ` ${age}` : ''}`;
+                      })()}
+                    </Text>
+                  </div>
+                ) : (
                 <Select
                   placeholder="Select patient"
                   showSearch
                   optionFilterProp="children"
-                  disabled={!!patientId}
                   onChange={(value: number) => {
                     form.setFieldsValue({
                       appointmentId: appointmentIdMap?.[value],
@@ -564,19 +809,31 @@ export default function PrescriptionForm({
                     </Option>
                   ))}
                 </Select>
+                )}
               </Form.Item>
             </Col>
+            <Col span={12}>
+              <Form.Item
+                name="diagnosis"
+                label={<Text strong>Diagnosis *</Text>}
+                rules={[{ required: true, message: 'Please enter diagnosis' }]}
+              >
+                <Input placeholder="e.g., Upper Respiratory Tract Infection" />
+              </Form.Item>
+            </Col>
+          </Row>
+
             {hideHospitalSelect || hospitalId ? (
               <Form.Item name="hospitalId" initialValue={hospitalId} hidden>
                 <Input />
               </Form.Item>
             ) : (
-              <Col span={12}>
                 <Form.Item
                   name="hospitalId"
                   label="Hospital"
                   rules={[{ required: true, message: 'Please select a hospital' }]}
                   initialValue={hospitalId}
+              hidden={!!hospitalId}
                 >
                   <Select
                     placeholder="Select hospital"
@@ -591,105 +848,436 @@ export default function PrescriptionForm({
                     ))}
                   </Select>
                 </Form.Item>
-              </Col>
             )}
-          </Row>
 
           <Form.Item name="appointmentId" hidden initialValue={appointmentId}>
             <Input />
           </Form.Item>
 
-          <Form.Item
-            name="diagnosis"
-            label="Diagnosis"
-            rules={[{ required: true, message: 'Please enter diagnosis' }]}
-          >
-            <TextArea
-              rows={3}
-              placeholder="Enter patient diagnosis"
-            />
-          </Form.Item>
+          {/* Vitals Record Section (Optional) */}
+          <div style={{ 
+            border: '2px solid #D1FAE5', 
+            borderRadius: '8px', 
+            padding: '16px', 
+            marginBottom: '24px',
+            background: '#F0FDF4'
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '16px' }}>
+              <LineChartOutlined style={{ color: '#10B981' }} />
+              <Text strong style={{ fontSize: '14px' }}>Vitals Record (Optional)</Text>
+            </div>
+            <Row gutter={16}>
+              <Col span={6}>
+                <div>
+                  <Text type="secondary" style={{ fontSize: '12px' }}>BP</Text>
+                  <Input 
+                    placeholder="120/80" 
+                    value={vitals.bp}
+                    onChange={(e) => {
+                      let value = e.target.value.replace(/\D/g, ''); // Remove non-digits
+                      // Auto-format: if 4+ digits, add "/" after 3rd digit
+                      if (value.length > 3) {
+                        value = value.slice(0, 3) + '/' + value.slice(3, 5);
+                      }
+                      setVitals({ ...vitals, bp: value });
+                    }}
+                    maxLength={6}
+                    style={{ marginTop: '4px' }}
+                  />
+                  <Text type="secondary" style={{ fontSize: '11px', display: 'block', marginTop: '2px' }}>mmHg</Text>
+                </div>
+              </Col>
+              <Col span={6}>
+                <div>
+                  <Text type="secondary" style={{ fontSize: '12px' }}>Temp</Text>
+                  <Input 
+                    placeholder="37.0" 
+                    value={vitals.temp}
+                    onChange={(e) => setVitals({ ...vitals, temp: e.target.value })}
+                    style={{ marginTop: '4px' }}
+                  />
+                  <Text type="secondary" style={{ fontSize: '11px', display: 'block', marginTop: '2px' }}>°C</Text>
+                </div>
+              </Col>
+              <Col span={6}>
+                <div>
+                  <Text type="secondary" style={{ fontSize: '12px' }}>Pulse</Text>
+                  <Input 
+                    placeholder="72" 
+                    value={vitals.pulse}
+                    onChange={(e) => setVitals({ ...vitals, pulse: e.target.value })}
+                    style={{ marginTop: '4px' }}
+                  />
+                  <Text type="secondary" style={{ fontSize: '11px', display: 'block', marginTop: '2px' }}>bpm</Text>
+                </div>
+              </Col>
+              <Col span={6}>
+                <div>
+                  <Text type="secondary" style={{ fontSize: '12px' }}>SpO2</Text>
+                  <Input 
+                    placeholder="98" 
+                    value={vitals.spo2}
+                    onChange={(e) => setVitals({ ...vitals, spo2: e.target.value })}
+                    style={{ marginTop: '4px' }}
+                  />
+                  <Text type="secondary" style={{ fontSize: '11px', display: 'block', marginTop: '2px' }}>%</Text>
+                </div>
+              </Col>
+            </Row>
+            <Row gutter={16} style={{ marginTop: '12px' }}>
+              <Col span={6}>
+                <div>
+                  <Text type="secondary" style={{ fontSize: '12px' }}>RR</Text>
+                  <Input 
+                    placeholder="16" 
+                    value={vitals.rr}
+                    onChange={(e) => setVitals({ ...vitals, rr: e.target.value })}
+                    style={{ marginTop: '4px' }}
+                  />
+                  <Text type="secondary" style={{ fontSize: '11px', display: 'block', marginTop: '2px' }}>/min</Text>
+                </div>
+              </Col>
+              <Col span={6}>
+                <div>
+                  <Text type="secondary" style={{ fontSize: '12px' }}>Weight</Text>
+                  <Input 
+                    placeholder="70" 
+                    value={vitals.weight}
+                    onChange={(e) => setVitals({ ...vitals, weight: e.target.value })}
+                    style={{ marginTop: '4px' }}
+                  />
+                  <Text type="secondary" style={{ fontSize: '11px', display: 'block', marginTop: '2px' }}>kg</Text>
+                </div>
+              </Col>
+              <Col span={6}>
+                <div>
+                  <Text type="secondary" style={{ fontSize: '12px' }}>Height</Text>
+                  <Input 
+                    placeholder="170" 
+                    value={vitals.height}
+                    onChange={(e) => setVitals({ ...vitals, height: e.target.value })}
+                    disabled={!isHeightEditable && patientData?.patient?.height}
+                    style={{ marginTop: '4px' }}
+                    suffix={
+                      patientData?.patient?.height && !isHeightEditable ? (
+                        <EditOutlined 
+                          onClick={() => setIsHeightEditable(true)}
+                          style={{ cursor: 'pointer', color: '#1890ff' }}
+                        />
+                      ) : null
+                    }
+                  />
+                  <Text type="secondary" style={{ fontSize: '11px', display: 'block', marginTop: '2px' }}>cm</Text>
+                </div>
+              </Col>
+            </Row>
+          </div>
 
-          <Form.Item
-            name="instructions"
-            label="General Instructions"
-          >
-            <TextArea
-              rows={2}
-              placeholder="Enter general instructions for the patient"
-            />
-          </Form.Item>
-
-          <Divider />
-
-          <div style={{ marginBottom: '16px' }}>
+          {/* Medications Section */}
+          <div style={{ 
+            border: '2px solid #DBEAFE', 
+            borderRadius: '8px', 
+            padding: '16px', 
+            marginBottom: '24px',
+            background: '#EFF6FF'
+          }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-              <Title level={5} style={{ margin: 0 }}>
-                <MedicineBoxOutlined style={{ marginRight: '8px' }} />
-                Medications ({medications.length})
-              </Title>
-              <Space>
-                <Button
-                  type="primary"
-                  icon={<img src={prescriptionIcon} alt="Prescription" style={{ width: 16, height: 16 }} />}
-                  onClick={() => {
-                    setIsMedicationModalOpen(true);
-                  }}
-                >
-                  Add Medication
-                </Button>
-              </Space>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <MedicineBoxOutlined style={{ color: '#3B82F6', fontSize: '18px' }} />
+                <Text strong style={{ fontSize: '14px' }}>Medications ({medications.length})</Text>
+              </div>
+              <Text type="secondary" style={{ fontSize: '12px' }}>Press Enter or select from dropdown to add</Text>
             </div>
 
-            {medications.length > 0 ? (
-              <List
-                dataSource={medications}
-                renderItem={(medication, index) => (
-                  <List.Item
-                    actions={[
-                      <Popconfirm
-                        title="Remove medication?"
-                        description="Are you sure you want to remove this medication?"
-                        onConfirm={() => handleRemoveMedication(index)}
-                        okText="Yes"
-                        cancelText="No"
-                      >
-                        <Button type="text" danger icon={<DeleteOutlined />} />
-                      </Popconfirm>
-                    ]}
-                  >
-                    <List.Item.Meta
-                      title={medication.name}
-                      description={
-                        <div>
-                          <Text strong>Dosage:</Text> {medication.dosage} {medication.unit}<br />
-                          <Text strong>Frequency:</Text> {medication.frequency}<br />
-                          <Text strong>Timing:</Text> {medication.timing}<br />
-                          <Text strong>Duration:</Text> {medication.duration}<br />
-                          {medication.instructions && (
-                            <>
-                              <Text strong>Instructions:</Text> {medication.instructions}
-                            </>
-                          )}
-                        </div>
+            {/* Inline Medication Form */}
+            <Row gutter={8} style={{ marginBottom: '12px' }}>
+              <Col span={6}>
+                <Text type="secondary" style={{ fontSize: '12px', display: 'block', marginBottom: '4px' }}>Medicine Name *</Text>
+                <Select
+                  showSearch
+                  placeholder="e.g., Amoxicillin"
+                  value={currentMedication.name}
+                  onChange={(value) => {
+                    // Just update the name, dosage will be auto-filled onSelect
+                    setCurrentMedication({ ...currentMedication, name: value });
+                  }}
+                  onSelect={(value) => {
+                    // When medicine is selected from dropdown, check if we can auto-add
+                    const selectedMedicine = medicines.find((m: any) => m.name === value);
+                    let updatedMedication = { ...currentMedication, name: value };
+                    
+                    if (selectedMedicine) {
+                      const strengthMatch = selectedMedicine.strength?.match(/(\d+)/);
+                      const dosageValue = strengthMatch ? strengthMatch[1] : selectedMedicine.strength || '';
+                      let unitValue = selectedMedicine.unit || '';
+                      if (!unitValue && selectedMedicine.strength) {
+                        const unitMatch = selectedMedicine.strength.match(/([a-zA-Z]+)/);
+                        unitValue = unitMatch ? unitMatch[1] : selectedMedicine.dosageForm || '';
                       }
+                      if (!unitValue) {
+                        unitValue = selectedMedicine.dosageForm || '';
+                      }
+                      updatedMedication = {
+                        ...updatedMedication,
+                        dosage: dosageValue,
+                        unit: unitValue,
+                      };
+                    }
+                    
+                    setCurrentMedication(updatedMedication);
+                    // Try to add medication if all required fields are filled
+                    if (updatedMedication.name && updatedMedication.dosage && updatedMedication.frequency && updatedMedication.duration) {
+                      handleAddMedicationInline();
+                    }
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      handleAddMedicationInline();
+                    }
+                  }}
+                  loading={isLoadingMedicines}
+                  filterOption={(input, option) => {
+                    const label = String(option?.label || '').toLowerCase();
+                    const value = String(option?.value || '').toLowerCase();
+                    const searchTerm = input.toLowerCase().trim();
+                    if (!searchTerm) return true;
+                    if (label.includes(searchTerm) || value.includes(searchTerm)) return true;
+                    return fuzzyMatch(searchTerm, label) || fuzzyMatch(searchTerm, value);
+                  }}
+                  options={medicines.map((medicine: any) => ({
+                    value: medicine.name,
+                    label: `${medicine.name}${medicine.strength ? ` (${medicine.strength})` : ''}`,
+                  }))}
+                  style={{ width: '100%' }}
+                />
+              </Col>
+              <Col span={4}>
+                <Text type="secondary" style={{ fontSize: '12px', display: 'block', marginBottom: '4px' }}>Dosage *</Text>
+                <Input 
+                  placeholder="500mg" 
+                  value={currentMedication.dosage}
+                  onChange={(e) => setCurrentMedication({ ...currentMedication, dosage: e.target.value })}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      handleAddMedicationInline();
+                    }
+                  }}
+                />
+              </Col>
+              <Col span={4}>
+                <Text type="secondary" style={{ fontSize: '12px', display: 'block', marginBottom: '4px' }}>Frequency *</Text>
+                <Select
+                  showSearch
+                  placeholder="Select or type (e.g., 222)"
+                  value={currentMedication.frequency}
+                  onChange={(value) => {
+                    const updatedMedication = { ...currentMedication, frequency: value };
+                    setCurrentMedication(updatedMedication);
+                    // Try to add medication if all required fields are filled
+                    if (updatedMedication.name && updatedMedication.dosage && updatedMedication.frequency && updatedMedication.duration) {
+                      handleAddMedicationInline();
+                    }
+                  }}
+                  onSearch={(value) => {
+                    // Auto-format manual input like "222" to "2-2-2" when user types 3 digits
+                    if (/^\d{3}$/.test(value)) {
+                      const formatted = value.split('').join('-');
+                      setCurrentMedication({ ...currentMedication, frequency: formatted });
+                    } else if (/^\d{1,3}-\d{1,3}-\d{1,3}$/.test(value)) {
+                      setCurrentMedication({ ...currentMedication, frequency: value });
+                    }
+                  }}
+                  onBlur={() => {
+                    // Format on blur if user typed something like "222"
+                    const value = currentMedication.frequency || '';
+                    if (/^\d{3}$/.test(value)) {
+                      const formatted = value.split('').join('-');
+                      setCurrentMedication({ ...currentMedication, frequency: formatted });
+                    }
+                  }}
+                  filterOption={(input, option) => {
+                    const label = String(option?.label || '').toLowerCase();
+                    const value = String(option?.value || '').toLowerCase();
+                    const searchTerm = input.toLowerCase().trim();
+                    if (!searchTerm) return true;
+                    // Allow custom input if it matches pattern (e.g., "222" or "2-2-2")
+                    if (/^\d{3}$/.test(searchTerm) || /^\d{1,3}-\d{1,3}-\d{1,3}$/.test(searchTerm)) {
+                      return true;
+                    }
+                    return label.includes(searchTerm) || value.includes(searchTerm);
+                  }}
+                  allowClear
+                  style={{ width: '100%' }}
+                >
+                  <Option value="1-0-0">1-0-0</Option>
+                  <Option value="0-1-0">0-1-0</Option>
+                  <Option value="0-0-1">0-0-1</Option>
+                  <Option value="1-0-1">1-0-1</Option>
+                  <Option value="1-1-1">1-1-1</Option>
+                  <Option value="0-1-1">0-1-1</Option>
+                  <Option value="1-1-0">1-1-0</Option>
+                </Select>
+              </Col>
+              <Col span={4}>
+                <Text type="secondary" style={{ fontSize: '12px', display: 'block', marginBottom: '4px' }}>Days *</Text>
+                <Input.Group compact style={{ display: 'flex' }}>
+                <Button
+                  onClick={() => {
+                      const currentDays = parseInt(currentMedication.duration?.replace(/\D/g, '') || '0') || 0;
+                      if (currentDays > 0) {
+                        setCurrentMedication({ ...currentMedication, duration: (currentDays - 1).toString() });
+                      }
+                  }}
+                    style={{ width: '32px', padding: 0 }}
+                >
+                    -
+                </Button>
+                  <Input 
+                    placeholder="7" 
+                    value={currentMedication.duration?.replace(/\D/g, '') || ''}
+                    onChange={(e) => {
+                      const value = e.target.value.replace(/\D/g, ''); // Only numbers
+                      setCurrentMedication({ ...currentMedication, duration: value });
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        handleAddMedicationInline();
+                      }
+                    }}
+                    style={{ flex: 1, textAlign: 'center' }}
+                  />
+                  <Button 
+                    onClick={() => {
+                      const currentDays = parseInt(currentMedication.duration?.replace(/\D/g, '') || '0') || 0;
+                      setCurrentMedication({ ...currentMedication, duration: (currentDays + 1).toString() });
+                    }}
+                    style={{ width: '32px', padding: 0 }}
+                  >
+                    +
+                  </Button>
+                </Input.Group>
+              </Col>
+              <Col span={4}>
+                <Text type="secondary" style={{ fontSize: '12px', display: 'block', marginBottom: '4px' }}>Timing</Text>
+                <div style={{ display: 'flex', gap: '4px' }}>
+                  <Button
+                    type={currentMedication.timing === 'Before meals' ? 'primary' : 'default'}
+                    onClick={() => setCurrentMedication({ ...currentMedication, timing: 'Before meals' })}
+                    style={{ flex: 1 }}
+                  >
+                    B
+                  </Button>
+                  <Button
+                    type={currentMedication.timing === 'After meals' ? 'primary' : 'default'}
+                    onClick={() => setCurrentMedication({ ...currentMedication, timing: 'After meals' })}
+                    style={{ flex: 1 }}
+                  >
+                    A
+                  </Button>
+                  <Select
+                    value={currentMedication.timing}
+                    onChange={(value) => setCurrentMedication({ ...currentMedication, timing: value })}
+                    style={{ flex: 1 }}
+                    size="small"
+                  >
+                    <Option value="With meals">With</Option>
+                    <Option value="Morning">Morning</Option>
+                    <Option value="Evening">Evening</Option>
+                    <Option value="Night">Night</Option>
+                    <Option value="Anytime">Any</Option>
+                  </Select>
+            </div>
+              </Col>
+            </Row>
+
+
+            {/* Medications List */}
+            {medications.length > 0 ? (
+              <div style={{ 
+                border: '1px dashed #D1D5DB', 
+                borderRadius: '8px', 
+                padding: '16px',
+                background: '#FFFFFF',
+                minHeight: '100px'
+              }}>
+                {medications.map((medication, index) => (
+                  <div key={index} style={{ 
+                    padding: '8px', 
+                    marginBottom: '8px', 
+                    background: '#F9FAFB', 
+                    borderRadius: '4px',
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center'
+                  }}>
+                        <div>
+                      <Text strong>{medication.name}</Text>
+                      <div style={{ fontSize: '12px', color: '#6B7280', marginTop: '4px' }}>
+                        {medication.dosage} {medication.unit} • {medication.frequency} • {medication.duration} • {medication.timing}
+                        {medication.instructions && <div style={{ marginTop: '4px' }}>{medication.instructions}</div>}
+                        </div>
+                    </div>
+                    <Button 
+                      type="text" 
+                      danger 
+                      icon={<DeleteOutlined />} 
+                      onClick={() => handleRemoveMedication(index)}
+                      size="small"
                     />
-                  </List.Item>
-                )}
-              />
+                  </div>
+                ))}
+              </div>
             ) : (
-              <Card style={{ textAlign: 'center', background: '#fafafa' }}>
-                <Text type="secondary">No medications added yet. Click "Add Medication" to start.</Text>
-              </Card>
+              <div style={{ 
+                border: '2px dashed #D1D5DB', 
+                borderRadius: '8px', 
+                padding: '40px',
+                textAlign: 'center',
+                background: '#FFFFFF'
+              }}>
+                <MedicineBoxOutlined style={{ fontSize: '32px', color: '#9CA3AF', marginBottom: '8px' }} />
+                <div>
+                  <Text type="secondary">No medications added yet. Fill the form above and press Enter or select medicine from dropdown</Text>
+                </div>
+              </div>
             )}
           </div>
 
-          <Divider />
+          {/* General Instructions */}
+          <Form.Item
+            name="instructions"
+            label={<Text strong>General Instructions</Text>}
+            style={{ marginBottom: '24px' }}
+          >
+            <TextArea
+              rows={3}
+              placeholder="Enter general instructions for the patient (e.g., Rest, avoid cold drinks, etc.)"
+            />
+          </Form.Item>
 
-          <Form.Item>
-            <Space style={{ width: '100%', justifyContent: 'flex-end' }}>
+          {/* Date Fields */}
+          <Row gutter={16} style={{ marginBottom: '24px' }}>
+            <Col span={12}>
+              <Form.Item
+                name="followUpDate"
+                label={<Text strong>Follow-up Date (Optional)</Text>}
+              >
+                <DatePicker 
+                  style={{ width: '100%' }}
+                  format="DD/MM/YYYY"
+                  placeholder="dd/mm/yyyy"
+                />
+              </Form.Item>
+            </Col>
+          </Row>
+
+          <Form.Item style={{ marginBottom: 0, marginTop: '24px' }}>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', paddingTop: '16px', borderTop: '1px solid #E5E7EB' }}>
               {remainingLabel && (
-                <Text type={isEditExpired ? 'danger' : 'secondary'} style={{ marginRight: 12 }}>
+                <Text type={isEditExpired ? 'danger' : 'secondary'} style={{ marginRight: 'auto', alignSelf: 'center' }}>
                   {remainingLabel}
                 </Text>
               )}
@@ -698,18 +1286,20 @@ export default function PrescriptionForm({
                   Extend edit window (+7 days)
                 </Button>
               )}
-              <Button onClick={onClose}>
+              <Button onClick={onClose} style={{ minWidth: '100px' }}>
                 Cancel
               </Button>
               <Button
                 type="primary"
                 htmlType="submit"
+                icon={<FileTextOutlined />}
                 loading={createPrescriptionMutation.isPending || updatePrescriptionMutation.isPending}
                 disabled={!!prescription && isEditExpired && !isExtendLoading}
+                style={{ minWidth: '160px' }}
               >
                 {prescription ? 'Update Prescription' : 'Create Prescription'}
               </Button>
-            </Space>
+            </div>
           </Form.Item>
         </Form>
       </Modal>

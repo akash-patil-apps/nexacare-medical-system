@@ -20,7 +20,8 @@ import {
   Radio,
   InputNumber,
   Breadcrumb,
-  Drawer
+  Drawer,
+  Modal
 } from 'antd';
 
 const { Content, Sider } = Layout;
@@ -39,7 +40,11 @@ import {
   SearchOutlined,
   ThunderboltOutlined,
   MenuUnfoldOutlined,
-  CloseCircleOutlined
+  CloseCircleOutlined,
+  CreditCardOutlined,
+  MobileOutlined,
+  WalletOutlined,
+  BankOutlined
 } from '@ant-design/icons';
 import { useAuth } from '../hooks/use-auth';
 import { useLocation } from 'wouter';
@@ -49,7 +54,6 @@ import { PatientSidebar } from '../components/layout/PatientSidebar';
 import { useResponsive } from '../hooks/use-responsive';
 import { formatTimeSlot12h, parseTimeTo24h } from '../lib/time';
 import { playNotificationSound } from '../lib/notification-sounds';
-import AppointmentPaymentModal from '../components/modals/appointment-payment-modal';
 
 const { Option } = Select;
 const { TextArea } = Input;
@@ -117,9 +121,10 @@ export default function BookAppointment() {
   const [selectedSpecialty, setSelectedSpecialty] = useState<string>('');
   const [filteredHospitals, setFilteredHospitals] = useState<Hospital[]>([]);
   const [allSpecialties, setAllSpecialties] = useState<string[]>([]);
-  const [showPaymentModal, setShowPaymentModal] = useState(false);
-  const [bookedAppointmentId, setBookedAppointmentId] = useState<number | null>(null);
-  const [consultationFee, setConsultationFee] = useState<number>(500);
+  const [selectedPriority, setSelectedPriority] = useState<string>('normal');
+  const [selectedPaymentMethod, setSelectedPaymentMethod] = useState<'googlepay' | 'phonepe' | 'card' | 'cash' | null>(null);
+  const [showReceipt, setShowReceipt] = useState(false);
+  const [receiptData, setReceiptData] = useState<any>(null);
 
   // Load user city on component mount
   useEffect(() => {
@@ -341,15 +346,30 @@ export default function BookAppointment() {
   /**
    * Determines doctor availability status.
    * 
-   * NEW LOGIC:
-   * - "Not Available" ONLY when doctor is unavailable for ENTIRE day (isAvailable=false OR status='out' OR no slots)
-   * - "Available" or "Busy" when doctor has slots (even if some time ranges are unavailable)
-   * - Individual slots will show color coding (green/yellow/red) based on booking count
+   * DOCTOR AVAILABILITY LOGIC:
+   * 
+   * 1. "Not Available" (Red) - Doctor unavailable for ENTIRE day:
+   *    - Condition: doctor.isAvailable === false OR doctor.status === 'out' OR no slots configured
+   *    - Shows: Red button with "Not Available" text and close icon
+   *    - Patient cannot select this doctor
+   * 
+   * 2. "Busy" (Yellow) - Doctor manually marked as busy but has available slots:
+   *    - Condition: doctor.status === 'busy' AND has slots configured
+   *    - Shows: Yellow/orange button with "Busy" text and clock icon
+   *    - Patient can still book, but doctor may be less responsive
+   * 
+   * 3. "Available" (Green) - Doctor has available slots:
+   *    - Condition: doctor.isAvailable === true AND doctor.status !== 'busy' AND doctor.status !== 'out' AND has slots
+   *    - Shows: Green button with "Available" text and check icon
+   *    - Patient can book normally
+   * 
+   * Note: Individual time slot availability (green/yellow/red) is shown when user selects a date,
+   * based on booking count per slot (max 5 patients per 30-minute slot).
    * 
    * Scenarios:
-   * 1. Doctor unavailable 2pm-4pm, patient at 3pm: Shows "Available" (has other slots)
-   * 2. Doctor has slots but some are fully booked: Shows "Available" (slots show red/yellow/green)
-   * 3. Doctor not available entire day: Shows "Not Available"
+   * - Doctor unavailable 2pm-4pm, patient at 3pm: Shows "Available" (has other slots)
+   * - Doctor has slots but some are fully booked: Shows "Available" (slots show red/yellow/green)
+   * - Doctor not available entire day: Shows "Not Available"
    */
   const getDoctorAvailabilityStatus = (doctor: Doctor): {
     statusText: string;
@@ -664,82 +684,27 @@ export default function BookAppointment() {
     }
   };
 
-  const handlePaymentSuccess = async (paymentMethod: 'online' | 'counter', paymentDetails?: any) => {
-    try {
-      if (!bookedAppointmentId) {
-        message.error('Appointment ID not found');
-        return;
-      }
-
-      const token = localStorage.getItem('auth-token');
-      
-      // Update appointment with payment status
-      const updateData: any = {};
-
-      // Add payment details to notes if online payment
-      if (paymentMethod === 'online' && paymentDetails) {
-        const now = new Date();
-        const paymentDate = now.toLocaleDateString('en-IN');
-        const paymentTime = now.toLocaleTimeString('en-IN');
-        const paymentNote = `Payment: ${paymentDetails.transactionId} | Method: ${paymentDetails.paymentMethod} | Amount: ₹${paymentDetails.amount} | Status: ${paymentDetails.status} | Date: ${paymentDate} | Time: ${paymentTime}`;
-        updateData.notes = paymentNote;
-        updateData.paymentStatus = 'paid';
-      } else {
-        updateData.paymentStatus = 'pending';
-      }
-
-      const response = await fetch(`/api/appointments/${bookedAppointmentId}`, {
-        method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify(updateData)
-      });
-
-      if (response.ok) {
-        // Play booking success sound
-        playNotificationSound('booking');
-        
-        // Invalidate all appointment queries to refresh dashboards
-        queryClient.invalidateQueries({ queryKey: ['/api/appointments/my'] });
-        queryClient.invalidateQueries({ queryKey: ['patient-appointments'] });
-        
-        if (paymentMethod === 'online') {
-          message.success('Appointment booked and payment completed successfully!');
-        } else {
-          message.success('Appointment booked successfully! Please pay at the counter when you arrive.');
-        }
-        
-        setTimeout(() => {
-          setLocation('/dashboard/patient/appointments');
-        }, 1500);
-      } else {
-        const errorData = await response.json();
-        console.error('❌ Failed to update payment status:', errorData);
-        message.warning('Appointment booked but payment status update failed. Please contact support.');
-        setLocation('/dashboard/patient/appointments');
-      }
-    } catch (error) {
-      console.error('❌ Error updating payment status:', error);
-      message.warning('Appointment booked but payment status update failed. Please contact support.');
-      setLocation('/dashboard/patient/appointments');
-    }
-  };
 
   const handleSubmit = async () => {
     try {
+      // Validate payment method is selected
+      if (!selectedPaymentMethod) {
+        message.error('Please select a payment method');
+        return;
+      }
+
       setLoading(true);
       console.log('🚀 Starting appointment booking...');
       console.log('🏥 Selected hospital:', selectedHospital?.id);
       console.log('👨‍⚕️ Selected doctor:', selectedDoctor?.id);
       console.log('📅 Selected date:', selectedDate?.format('YYYY-MM-DD'));
       console.log('⏰ Selected slot:', selectedSlot);
-      console.log('👤 User:', user?.id);
+      console.log('💳 Payment method:', selectedPaymentMethod);
       
       // Validate required fields
       if (!selectedHospital || !selectedDoctor || !selectedDate || !selectedSlot) {
         message.error('Please complete all steps before booking');
+        setLoading(false);
         return;
       }
       
@@ -758,6 +723,26 @@ export default function BookAppointment() {
       
       // Get form values including priority
       const formValues = form.getFieldsValue();
+      const priority = selectedPriority || formValues.priority || 'normal';
+      
+      // Process payment first if online payment method
+      let paymentDetails: any = null;
+      const onlinePaymentMethods = ['googlepay', 'phonepe', 'card'];
+      if (selectedPaymentMethod && onlinePaymentMethods.includes(selectedPaymentMethod)) {
+        // Simulate online payment processing
+        await new Promise(resolve => setTimeout(resolve, 2000)); // Simulate payment processing
+        
+        paymentDetails = {
+          method: selectedPaymentMethod,
+          transactionId: `TXN${Date.now()}`,
+          paymentMethod: selectedPaymentMethod,
+          amount: typeof selectedDoctor.consultationFee === 'string' 
+            ? parseFloat(selectedDoctor.consultationFee) 
+            : (Number(selectedDoctor.consultationFee) || 500),
+          timestamp: new Date().toISOString(),
+          status: 'success',
+        };
+      }
       
       const appointmentData = {
         // patientId will be set by backend based on authenticated user
@@ -768,9 +753,10 @@ export default function BookAppointment() {
         timeSlot: selectedSlot || appointmentTime,
         reason: 'consultation',
         symptoms: '',
-        notes: '',
+        notes: paymentDetails ? `Payment: ${paymentDetails.transactionId} | Method: ${paymentDetails.paymentMethod} | Amount: ₹${paymentDetails.amount} | Status: ${paymentDetails.status} | Date: ${new Date().toLocaleDateString('en-IN')} | Time: ${new Date().toLocaleTimeString('en-IN')}` : '',
         type: 'online',
-        priority: formValues.priority || 'normal'
+        priority: priority,
+        paymentStatus: selectedPaymentMethod && ['googlepay', 'phonepe', 'card'].includes(selectedPaymentMethod) ? 'paid' : 'pending',
       };
 
       console.log('📤 Sending appointment data:', appointmentData);
@@ -794,16 +780,30 @@ export default function BookAppointment() {
         const result = await response.json();
         console.log('✅ Appointment booked successfully:', result);
         
-        // Get consultation fee from selected doctor
-        const fee = selectedDoctor?.consultationFee 
-          ? parseFloat(selectedDoctor.consultationFee.toString()) 
-          : 500;
-        setConsultationFee(fee);
-        setBookedAppointmentId(result.id || result.appointment?.id);
+        // Play booking success sound
+        playNotificationSound('booking');
         
-        // Show payment modal instead of redirecting
-        setShowPaymentModal(true);
-        setLoading(false);
+        // Invalidate all appointment queries to refresh dashboards
+        queryClient.invalidateQueries({ queryKey: ['/api/appointments/my'] });
+        queryClient.invalidateQueries({ queryKey: ['patient-appointments'] });
+        
+        if (selectedPaymentMethod && ['googlepay', 'phonepe', 'card'].includes(selectedPaymentMethod) && paymentDetails) {
+          // Show receipt for online payment
+          setReceiptData({
+            appointment: result,
+            payment: paymentDetails,
+            doctor: selectedDoctor,
+            hospital: selectedHospital,
+            date: selectedDate,
+            slot: selectedSlot,
+          });
+          setShowReceipt(true);
+        } else {
+          message.success('Appointment booked successfully! Please pay at the counter when you arrive.');
+          setTimeout(() => {
+            setLocation('/dashboard/patient/appointments');
+          }, 1500);
+        }
       } else {
         const errorData = await response.json();
         console.error('❌ Booking failed:', errorData);
@@ -824,9 +824,9 @@ export default function BookAppointment() {
       content: (
         <div>
           {/* Search and Filter Section */}
-          <Row gutter={[16, 16]} style={{ marginBottom: '32px' }}>
+          <Row gutter={[16, 16]} style={{ marginBottom: '24px' }}>
             <Col xs={24} md={8}>
-              <Text strong style={{ marginBottom: '8px', display: 'block', fontSize: '14px', color: '#374151' }}>
+              <Text strong style={{ marginBottom: '8px', display: 'block', fontSize: '14px', color: '#374151', fontWeight: 500 }}>
                 Search Hospital
               </Text>
               <Input
@@ -835,19 +835,19 @@ export default function BookAppointment() {
                 onChange={handleSearchChange}
                 prefix={<SearchOutlined style={{ color: '#9CA3AF' }} />}
                 allowClear
-                style={{ borderRadius: '8px' }}
+                style={{ borderRadius: '8px', height: '40px' }}
                 size="large"
               />
             </Col>
             <Col xs={24} md={8}>
-              <Text strong style={{ marginBottom: '8px', display: 'block', fontSize: '14px', color: '#374151' }}>
+              <Text strong style={{ marginBottom: '8px', display: 'block', fontSize: '14px', color: '#374151', fontWeight: 500 }}>
                 Filter by Specialty
               </Text>
               <Select
                 placeholder="All Specialties"
                 value={selectedSpecialty || undefined}
                 onChange={handleSpecialtyChange}
-                style={{ width: '100%', borderRadius: '8px' }}
+                style={{ width: '100%', borderRadius: '8px', height: '40px' }}
                 allowClear
                 suffixIcon={<ArrowRightOutlined style={{ transform: 'rotate(90deg)', color: '#9CA3AF' }} />}
                 size="large"
@@ -860,13 +860,13 @@ export default function BookAppointment() {
               </Select>
             </Col>
             <Col xs={24} md={8}>
-              <Text strong style={{ marginBottom: '8px', display: 'block', fontSize: '14px', color: '#374151' }}>
+              <Text strong style={{ marginBottom: '8px', display: 'block', fontSize: '14px', color: '#374151', fontWeight: 500 }}>
                 Select City
               </Text>
               <Select
                 value={selectedCity}
                 onChange={handleCityChange}
-                style={{ width: '100%', borderRadius: '8px' }}
+                style={{ width: '100%', borderRadius: '8px', height: '40px' }}
                 placeholder="Select city"
                 suffixIcon={<ArrowRightOutlined style={{ transform: 'rotate(90deg)', color: '#9CA3AF' }} />}
                 size="large"
@@ -886,7 +886,7 @@ export default function BookAppointment() {
           {/* Results Count */}
           <div style={{ marginBottom: '24px' }}>
             <Text style={{ fontSize: '14px', color: '#6B7280' }}>
-              Showing {filteredHospitals.length} hospitals in {selectedCity}
+              Showing {filteredHospitals.length} hospital{filteredHospitals.length !== 1 ? 's' : ''} in {selectedCity}
               </Text>
             </div>
           
@@ -916,9 +916,12 @@ export default function BookAppointment() {
                 const departments = typeof hospital.departments === 'string' 
                   ? JSON.parse(hospital.departments) 
                   : hospital.departments || [];
-                const status = hospital.is_verified ? 'Available' : 'Pending';
-                const statusColor = hospital.is_verified ? '#10B981' : '#F59E0B';
-                const statusBg = hospital.is_verified ? '#D1FAE5' : '#FEF3C7';
+                // Hospital status logic:
+                // - "Pending" (Yellow): hospital.isVerified === false (not yet verified by admin)
+                // - "Available" (Green): hospital.isVerified === true (verified and approved)
+                const status = hospital.isVerified ? 'Available' : 'Pending';
+                const statusColor = hospital.isVerified ? '#10B981' : '#F59E0B';
+                const statusBg = hospital.isVerified ? '#D1FAE5' : '#FEF3C7';
                 
                 return (
                 <Col xs={24} sm={12} lg={8} key={hospital.id}>
@@ -968,31 +971,24 @@ export default function BookAppointment() {
                       {/* Address */}
                       <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
                         <EnvironmentOutlined style={{ color: '#9CA3AF', fontSize: '16px', marginTop: 2, flexShrink: 0 }} />
-                        <div style={{ display: 'grid', gap: 2 }}>
                           <Text style={{ fontSize: '14px', color: '#374151', lineHeight: 1.4 }}>
-                            {hospital.address}
+                          {hospital.address}, {hospital.city}, {hospital.state}
                           </Text>
-                          <Text style={{ fontSize: '14px', color: '#374151', lineHeight: 1.4 }}>
-                            {hospital.city}, {hospital.state}
-                          </Text>
-                        </div>
                       </div>
 
                       {/* Established and Total Beds */}
-                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 12 }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                           <CalendarOutlined style={{ color: '#9CA3AF', fontSize: '16px' }} />
-                          <div style={{ display: 'grid', gap: 2 }}>
-                            <Text style={{ fontSize: '12px', color: '#6B7280', display: 'block' }}>Established</Text>
-                            <Text strong style={{ fontSize: '16px', color: '#111827' }}>{hospital.establishedYear || 'N/A'}</Text>
+                          <Text style={{ fontSize: '14px', color: '#374151' }}>
+                            Established {hospital.establishedYear || 'N/A'}
+                          </Text>
                           </div>
-                        </div>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                           <MedicineBoxOutlined style={{ color: '#9CA3AF', fontSize: '16px' }} />
-                          <div style={{ display: 'grid', gap: 2 }}>
-                            <Text style={{ fontSize: '12px', color: '#6B7280', display: 'block' }}>Total Beds</Text>
-                            <Text strong style={{ fontSize: '16px', color: '#111827' }}>{hospital.totalBeds || 0}</Text>
-                          </div>
+                          <Text style={{ fontSize: '14px', color: '#374151' }}>
+                            Total Beds {hospital.totalBeds || 0}
+                          </Text>
                         </div>
                       </div>
 
@@ -1049,9 +1045,9 @@ export default function BookAppointment() {
                           </div>
                         )}
                         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                          <ClockCircleOutlined style={{ color: hospital.operatingHours ? '#10B981' : '#EF4444', fontSize: '16px' }} />
-                          <Text style={{ fontSize: '14px', color: hospital.operatingHours ? '#10B981' : '#EF4444', fontWeight: 600 }}>
-                            {hospital.operatingHours || 'Hours not available'}
+                          <ClockCircleOutlined style={{ color: '#10B981', fontSize: '16px' }} />
+                          <Text style={{ fontSize: '14px', color: '#10B981', fontWeight: 600 }}>
+                            24/7
                           </Text>
                         </div>
                       </div>
@@ -1498,73 +1494,227 @@ export default function BookAppointment() {
       content: (
         <div>
           {selectedHospital && selectedDoctor && selectedDate && selectedSlot ? (
-            <Card
-              variant="borderless"
-              style={{
+            <div style={{ 
+              maxWidth: '600px', 
+              margin: '0 auto', 
+              padding: '24px',
+              height: '100vh',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 16,
+              justifyContent: 'center',
+            }}>
+              {/* Confirm Appointment Title Card */}
+              <div style={{ 
+                background: '#FFFFFF', 
                 borderRadius: 16,
-                border: '1px solid #e2e8f0',
-                boxShadow: '0 12px 32px rgba(15,23,42,0.08)',
-                padding: 24,
-              }}
-            >
-              <Space direction="vertical" size={20} style={{ width: '100%' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 16 }}>
-                  <div>
-                    <Text type="secondary" style={{ fontSize: 13 }}>Hospital</Text>
-                    <Title level={4} style={{ margin: '8px 0 4px' }}>{selectedHospital.name}</Title>
-                    <Text style={{ fontSize: 13, color: '#6b7280' }}>{selectedHospital.address}, {selectedHospital.city}</Text>
-                  </div>
-                  <div style={{ textAlign: 'right' }}>
-                    <Text type="secondary" style={{ fontSize: 13 }}>Doctor</Text>
-                    <Title level={4} style={{ margin: '8px 0 4px' }}>{selectedDoctor.fullName}</Title>
-                    <Text style={{ fontSize: 13, color: '#6b7280' }}>{selectedDoctor.specialty} • {selectedDoctor.experience} yrs</Text>
-                  </div>
+                padding: '20px',
+                border: '1px solid #E5E7EB',
+                boxShadow: '0 2px 8px rgba(0, 0, 0, 0.06)',
+                textAlign: 'center',
+              }}>
+                <Title level={3} style={{ margin: 0, fontSize: '24px', fontWeight: 700, color: '#111827' }}>
+                  Confirm Appointment
+                </Title>
                 </div>
 
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 16 }}>
-                  <div style={{ flex: '1 1 220px', padding: '16px 20px', borderRadius: 12, border: '1px solid #f0f2f5', background: '#f9fafb' }}>
-                    <Text type="secondary" style={{ fontSize: 12 }}>Date</Text>
-                    <div style={{ fontSize: 16, fontWeight: 600, marginTop: 6 }}>{selectedDate.format('dddd, DD/MM/YYYY')}</div>
+              {/* Main Appointment Info - Professional */}
+              <div style={{ 
+                background: '#FFFFFF', 
+                borderRadius: 16, 
+                padding: '24px',
+                border: '1px solid #E5E7EB',
+                boxShadow: '0 2px 8px rgba(0, 0, 0, 0.06)',
+              }}>
+                <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', paddingBottom: 16, borderBottom: '1px solid #E5E7EB' }}>
+                  <div style={{ flex: 1, textAlign: 'left' }}>
+                    <Text style={{ fontSize: '20px', fontWeight: 700, color: '#111827', display: 'block', lineHeight: 1.3, marginBottom: 6 }}>
+                      {formatTimeSlot12h(selectedSlot).split(' - ')[0]}
+                    </Text>
+                    <Text style={{ fontSize: '20px', fontWeight: 700, color: '#111827', display: 'block', lineHeight: 1.3 }}>
+                      {selectedDate.format('dddd, MMMM D, YYYY').toUpperCase()}
+                    </Text>
                   </div>
-                  <div style={{ flex: '1 1 220px', padding: '16px 20px', borderRadius: 12, border: '1px solid #f0f2f5', background: '#f9fafb' }}>
-                    <Text type="secondary" style={{ fontSize: 12 }}>Time</Text>
-                    <div style={{ fontSize: 16, fontWeight: 600, marginTop: 6 }}>{formatTimeSlot12h(selectedSlot)}</div>
+                  <div style={{ width: '1px', height: '50px', background: '#E5E7EB', margin: '0 16px' }} />
+                  <div style={{ flex: 1, textAlign: 'right' }}>
+                    <Text style={{ fontSize: '16px', fontWeight: 700, color: '#111827', display: 'block', lineHeight: 1.3, marginBottom: 6 }}>
+                      {selectedDoctor.fullName}
+                    </Text>
+                    <Text style={{ fontSize: '16px', fontWeight: 700, color: '#111827', display: 'block', lineHeight: 1.3 }}>
+                      {selectedHospital.name.toUpperCase()} | {selectedHospital.city}, {selectedHospital.state}
+                    </Text>
                   </div>
-                  <div style={{ flex: '1 1 220px', padding: '16px 20px', borderRadius: 12, border: '1px solid #f0f2f5', background: '#f9fafb' }}>
-                    <Text type="secondary" style={{ fontSize: 12 }}>Consultation Fee</Text>
-                    <div style={{ fontSize: 18, fontWeight: 600, marginTop: 6 }}>₹{selectedDoctor.consultationFee}</div>
                   </div>
                 </div>
 
                 {/* Priority Selection */}
-                <div style={{ marginTop: 16 }}>
-                  <Form.Item 
-                    label={<Text strong style={{ fontSize: 14 }}>Priority</Text>}
-                    name="priority"
-                    initialValue="normal"
-                    style={{ marginBottom: 0 }}
-                  >
-                    <Select
-                      style={{ width: '100%' }}
-                      options={[
-                        { value: 'normal', label: 'Normal' },
-                        { value: 'high', label: 'High' },
-                        { value: 'urgent', label: 'Urgent' },
-                      ]}
-                    />
-                  </Form.Item>
+              <div style={{ 
+                background: '#FFFFFF', 
+                borderRadius: 16, 
+                padding: '20px',
+                border: '1px solid #E5E7EB',
+                boxShadow: '0 2px 8px rgba(0, 0, 0, 0.06)',
+                marginBottom: 16,
+              }}>
+                <Text strong style={{ fontSize: 14, color: '#111827', marginBottom: 12, display: 'block', textAlign: 'center' }}>Priority</Text>
+                <div style={{ display: 'flex', gap: 8, width: '100%' }}>
+                  {[
+                    { value: 'normal', label: 'Normal', color: '#10B981', bgColor: '#D1FAE5', borderColor: '#10B981' },
+                    { value: 'high', label: 'High', color: '#F59E0B', bgColor: '#FEF3C7', borderColor: '#F59E0B' },
+                    { value: 'urgent', label: 'Urgent', color: '#EF4444', bgColor: '#FEE2E2', borderColor: '#EF4444' },
+                  ].map(option => {
+                    const isSelected = selectedPriority === option.value;
+                    
+                    return (
+                      <Button
+                        key={option.value}
+                        type="default"
+                        onClick={() => {
+                          setSelectedPriority(option.value);
+                          form.setFieldsValue({ priority: option.value });
+                        }}
+                        style={{
+                          flex: 1,
+                          height: '40px',
+                          borderRadius: '8px',
+                          border: `2px solid ${isSelected ? option.borderColor : '#E5E7EB'}`,
+                          background: isSelected ? option.bgColor : '#FFFFFF',
+                          color: isSelected ? option.color : '#6B7280',
+                          fontWeight: 600,
+                          fontSize: '13px',
+                        }}
+                      >
+                        {option.label}
+                      </Button>
+                    );
+                  })}
+                </div>
                 </div>
 
-                <div style={{ padding: '14px 18px', borderRadius: 12, background: '#ecfdf5', border: '1px solid #bbf7d0' }}>
-                  <Text style={{ fontSize: 13, color: '#047857' }}>
-                    Once you confirm, a receipt and status updates will be shared with you instantly.
+              {/* Payment Selection - Professional */}
+              <div style={{ 
+                background: '#FFFFFF', 
+                borderRadius: 16, 
+                padding: '20px',
+                border: '1px solid #E5E7EB',
+                boxShadow: '0 2px 8px rgba(0, 0, 0, 0.06)',
+                marginBottom: 16,
+              }}>
+                <Text strong style={{ fontSize: 14, color: '#111827', marginBottom: 12, display: 'block', textAlign: 'center' }}>
+                  Payment Method
+                  </Text>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 10, marginBottom: 16 }}>
+                  <Button
+                    type={selectedPaymentMethod === 'googlepay' ? 'primary' : 'default'}
+                    icon={<WalletOutlined />}
+                    onClick={() => setSelectedPaymentMethod('googlepay')}
+                    style={{
+                      height: '48px',
+                      borderRadius: '10px',
+                      fontSize: '13px',
+                      fontWeight: 600,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: 8,
+                    }}
+                  >
+                    Google Pay
+                  </Button>
+                  <Button
+                    type={selectedPaymentMethod === 'phonepe' ? 'primary' : 'default'}
+                    icon={<MobileOutlined />}
+                    onClick={() => setSelectedPaymentMethod('phonepe')}
+                    style={{
+                      height: '48px',
+                      borderRadius: '10px',
+                      fontSize: '13px',
+                      fontWeight: 600,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: 8,
+                    }}
+                  >
+                    PhonePe
+                  </Button>
+                  <Button
+                    type={selectedPaymentMethod === 'card' ? 'primary' : 'default'}
+                    icon={<CreditCardOutlined />}
+                    onClick={() => setSelectedPaymentMethod('card')}
+                    style={{
+                      height: '48px',
+                      borderRadius: '10px',
+                      fontSize: '13px',
+                      fontWeight: 600,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: 8,
+                    }}
+                  >
+                    Card
+                  </Button>
+                  <Button
+                    type={selectedPaymentMethod === 'cash' ? 'primary' : 'default'}
+                    icon={<BankOutlined />}
+                    onClick={() => setSelectedPaymentMethod('cash')}
+                    style={{
+                      height: '48px',
+                      borderRadius: '10px',
+                      fontSize: '13px',
+                      fontWeight: 600,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: 8,
+                    }}
+                  >
+                    Cash
+                  </Button>
+                </div>
+                <div style={{ 
+                  display: 'flex', 
+                  justifyContent: 'space-between', 
+                  alignItems: 'center', 
+                  paddingTop: 16, 
+                  borderTop: '1px solid #E5E7EB',
+                  paddingLeft: 4,
+                  paddingRight: 4,
+                }}>
+                  <Text style={{ fontSize: 14, color: '#6B7280', fontWeight: 500 }}>Consultation Fee</Text>
+                  <Text style={{ fontSize: '20px', fontWeight: 700, color: '#111827' }}>
+                    ₹{typeof selectedDoctor.consultationFee === 'string' 
+                      ? parseFloat(selectedDoctor.consultationFee).toFixed(2) 
+                      : (Number(selectedDoctor.consultationFee) || 0).toFixed(2)}
                   </Text>
                 </div>
-              </Space>
-            </Card>
+              </div>
+
+              {/* Confirm Button */}
+              <Button
+                type="primary"
+                size="large"
+                block
+                onClick={handleSubmit}
+                loading={loading}
+                disabled={!selectedPaymentMethod}
+                style={{
+                  height: '48px',
+                  borderRadius: '12px',
+                  fontSize: '15px',
+                  fontWeight: 600,
+                  marginTop: 'auto',
+                }}
+              >
+                {selectedPaymentMethod && ['googlepay', 'phonepe', 'card'].includes(selectedPaymentMethod) 
+                  ? 'Pay & Confirm Appointment' 
+                  : 'Confirm Appointment'}
+              </Button>
+                </div>
           ) : (
-            <Card style={{ borderRadius: 16, textAlign: 'center' }}>
-              <Title level={4}>Missing Details</Title>
+            <Card style={{ borderRadius: 16, textAlign: 'center', padding: '60px 20px' }}>
+              <Title level={4} style={{ color: '#6B7280', marginBottom: 8 }}>Missing Details</Title>
               <Text type="secondary">Please complete the previous steps to review your appointment.</Text>
             </Card>
           )}
@@ -1585,6 +1735,7 @@ export default function BookAppointment() {
           <Form.Item name="reason" initialValue="consultation" style={{ display: 'none' }}>
             <Input />
           </Form.Item>
+          {/* Hidden form field for priority - updated by color-coded buttons */}
           <Form.Item name="priority" initialValue="normal" style={{ display: 'none' }}>
             <Input />
           </Form.Item>
@@ -1675,20 +1826,19 @@ export default function BookAppointment() {
         {/* Desktop/Tablet Sidebar */}
         {!isMobile && (
           <Sider
-            width={260}
+            width={80}
             style={{
               position: 'fixed',
               top: 0,
               left: 0,
               height: '100vh',
-              width: 260,
+              width: 80,
               background: '#fff',
               boxShadow: '0 2px 16px rgba(26, 143, 227, 0.08)',
               display: 'flex',
               flexDirection: 'column',
               zIndex: 10,
-              borderLeft: '1px solid #E3F2FF',
-              borderBottom: '1px solid #E3F2FF',
+              borderRight: '1px solid #E5E7EB',
             }}
           >
             <PatientSidebar selectedMenuKey="appointments" />
@@ -1703,7 +1853,7 @@ export default function BookAppointment() {
             onClose={() => setMobileDrawerOpen(false)}
             open={mobileDrawerOpen}
             styles={{ body: { padding: 0 } }}
-            width={260}
+            width={80}
           >
             <PatientSidebar selectedMenuKey="appointments" onMenuClick={() => setMobileDrawerOpen(false)} />
           </Drawer>
@@ -1711,7 +1861,7 @@ export default function BookAppointment() {
 
         <Layout
           style={{
-            marginLeft: isMobile ? 0 : 260,
+            marginLeft: isMobile ? 0 : 80,
             minHeight: '100vh',
             background: '#F3F4F6',
             overflow: 'hidden',
@@ -1742,12 +1892,13 @@ export default function BookAppointment() {
           {currentStep === 0 && (
           <div style={{ 
             background: '#F3F4F6', 
-            padding: '16px 32px',
+            padding: '24px 32px 24px 32px',
           }}>
             <div style={{ 
               display: 'flex', 
               alignItems: 'center',
               position: 'relative',
+              marginBottom: '24px',
             }}>
               {/* Back Button - Left Aligned */}
               <div style={{ position: 'absolute', left: 0 }}>
@@ -1755,9 +1906,17 @@ export default function BookAppointment() {
                   icon={<ArrowLeftOutlined />} 
                   onClick={() => setLocation('/dashboard/patient')}
                   type="text"
-                  style={{ padding: 0, height: 'auto', fontSize: '14px', color: '#6B7280' }}
+                  style={{ 
+                    padding: 0, 
+                    height: 'auto', 
+                    fontSize: '14px', 
+                    color: '#6B7280',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '4px',
+                  }}
                 >
-                  Back
+                  ← Back
                 </Button>
               </div>
               
@@ -1771,20 +1930,14 @@ export default function BookAppointment() {
                 width: '100%',
                 flex: 1,
               }}>
-                <Title level={2} style={{ margin: 0, fontSize: '32px', fontWeight: 700, color: '#111827' }}>
+                <Title level={2} style={{ margin: 0, fontSize: '32px', fontWeight: 700, color: '#111827', lineHeight: 1.2 }}>
                   Select Hospital
                 </Title>
-                <Text style={{ fontSize: '16px', color: '#6B7280', marginTop: '4px' }}>
+                <Text style={{ fontSize: '16px', color: '#6B7280', marginTop: '8px' }}>
                   Choose a hospital in your region
                 </Text>
               </div>
             </div>
-            {/* Line Separator */}
-            <div style={{
-              height: '1px',
-              background: '#E5E7EB',
-              marginTop: '16px',
-            }} />
           </div>
         )}
 
@@ -1792,12 +1945,13 @@ export default function BookAppointment() {
           {currentStep === 1 && selectedHospital && (
           <div style={{ 
             background: '#F3F4F6', 
-            padding: '16px 32px',
+            padding: '24px 32px 24px 32px',
           }}>
             <div style={{ 
               display: 'flex', 
               alignItems: 'center',
               position: 'relative',
+              marginBottom: '24px',
             }}>
               {/* Back Button - Left Aligned */}
               <div style={{ position: 'absolute', left: 0 }}>
@@ -1805,9 +1959,17 @@ export default function BookAppointment() {
                   icon={<ArrowLeftOutlined />} 
                   onClick={handlePrevious}
                   type="text"
-                  style={{ padding: 0, height: 'auto', fontSize: '14px', color: '#6B7280' }}
+                  style={{ 
+                    padding: 0, 
+                    height: 'auto', 
+                    fontSize: '14px', 
+                    color: '#6B7280',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '4px',
+                  }}
                 >
-                  Back
+                  ← Back
                 </Button>
               </div>
               
@@ -1821,20 +1983,14 @@ export default function BookAppointment() {
                 width: '100%',
                 flex: 1,
               }}>
-                <Title level={2} style={{ margin: 0, fontSize: '32px', fontWeight: 700, color: '#111827' }}>
+                <Title level={2} style={{ margin: 0, fontSize: '32px', fontWeight: 700, color: '#111827', lineHeight: 1.2 }}>
                   Select Doctor
                 </Title>
-                <Text style={{ fontSize: '16px', color: '#6B7280', marginTop: '4px' }}>
+                <Text style={{ fontSize: '16px', color: '#6B7280', marginTop: '8px' }}>
                   {selectedHospital.name}
                 </Text>
               </div>
             </div>
-            {/* Line Separator */}
-            <div style={{
-              height: '1px',
-              background: '#E5E7EB',
-              marginTop: '16px',
-            }} />
           </div>
         )}
 
@@ -1842,12 +1998,13 @@ export default function BookAppointment() {
       {currentStep === 2 && selectedDoctor && selectedHospital && (
         <div style={{ 
           background: '#F3F4F6', 
-          padding: '16px 32px',
+          padding: '24px 32px 24px 32px',
         }}>
           <div style={{ 
             display: 'flex', 
             alignItems: 'center',
             position: 'relative',
+            marginBottom: '24px',
           }}>
             {/* Back Button - Left Aligned */}
             <div style={{ position: 'absolute', left: 0 }}>
@@ -1855,9 +2012,17 @@ export default function BookAppointment() {
                 icon={<ArrowLeftOutlined />} 
                 onClick={handlePrevious}
                 type="text"
-                style={{ padding: 0, height: 'auto', fontSize: '14px', color: '#6B7280' }}
+                style={{ 
+                  padding: 0, 
+                  height: 'auto', 
+                  fontSize: '14px', 
+                  color: '#6B7280',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '4px',
+                }}
               >
-                Back
+                ← Back
               </Button>
             </div>
             
@@ -1871,50 +2036,50 @@ export default function BookAppointment() {
               width: '100%',
               flex: 1,
             }}>
-              <Title level={2} style={{ margin: 0, fontSize: '32px', fontWeight: 700, color: '#111827' }}>
+              <Title level={2} style={{ margin: 0, fontSize: '32px', fontWeight: 700, color: '#111827', lineHeight: 1.2 }}>
                 Select Date & Time
               </Title>
-              <Text style={{ fontSize: '16px', color: '#6B7280', marginTop: '4px' }}>
+              <Text style={{ fontSize: '16px', color: '#6B7280', marginTop: '8px' }}>
                 {selectedDoctor.fullName} - {selectedHospital.name}
               </Text>
             </div>
           </div>
-          {/* Line Separator */}
-          <div style={{
-            height: '1px',
-            background: '#E5E7EB',
-            marginTop: '16px',
-          }} />
         </div>
       )}
 
-      {/* Standard Header for Confirm step */}
-      {currentStep === 3 && (
+
+      {/* Content */}
       <div style={{ 
-        background: '#fff', 
-        padding: '16px 24px',
-        borderBottom: '1px solid #f0f0f0',
-        boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
-      }}>
-        <Row justify="space-between" align="middle">
-          <Col>
-            <Space>
+            padding: (currentStep === 0 || currentStep === 1 || currentStep === 2) ? '0 32px 32px 32px' : '0', 
+            width: '100%', 
+            height: currentStep === 3 ? '100vh' : 'auto',
+            overflow: currentStep === 3 ? 'hidden' : 'auto',
+            background: '#F3F4F6',
+            position: 'relative',
+          }}>
+        <Spin spinning={loading} tip={loading ? (currentStep === 0 ? 'Loading hospitals...' : currentStep === 1 ? 'Loading doctors...' : 'Loading...') : undefined}>
+          {/* Back Button - Outside card, top left corner for step 3 */}
+          {currentStep === 3 && (
+            <div style={{ position: 'absolute', top: '16px', left: '24px', zIndex: 10 }}>
               <Button 
                 icon={<ArrowLeftOutlined />} 
                 onClick={handlePrevious}
                 type="text"
+                style={{ 
+                  padding: 0, 
+                  height: 'auto', 
+                  fontSize: '14px', 
+                  color: '#6B7280',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '4px',
+                }}
               >
-                Back
+                ← Back
               </Button>
-            </Space>
-          </Col>
-        </Row>
       </div>
       )}
 
-      {/* Content */}
-          <div style={{ padding: (currentStep === 0 || currentStep === 1 || currentStep === 2) ? '32px' : '32px 24px', maxWidth: '1320px', margin: '0 auto', width: '100%', minHeight: '400px' }}>
-        <Spin spinning={loading} tip={loading ? (currentStep === 0 ? 'Loading hospitals...' : currentStep === 1 ? 'Loading doctors...' : 'Loading...') : undefined}>
           {currentStep === 0 || currentStep === 1 || currentStep === 2 ? (
             <Form
               form={form}
@@ -1924,64 +2089,13 @@ export default function BookAppointment() {
               {steps[currentStep]?.content || <div style={{ textAlign: 'center', padding: '40px' }}><Text>Loading...</Text></div>}
             </Form>
           ) : (
-          <Card style={{ marginBottom: 24 }}>
-            <div style={{ textAlign: 'center', marginBottom: 32 }}>
-              <CalendarOutlined style={{ fontSize: '48px', color: '#1890ff', marginBottom: '16px' }} />
-              <Title level={2} style={{ margin: 0 }}>
-                {steps[currentStep].title}
-              </Title>
-              <Text type="secondary" style={{ fontSize: '16px' }}>
-                {steps[currentStep].icon}
-              </Text>
-            </div>
-
             <Form
               form={form}
               layout="vertical"
               requiredMark={false}
-              size="large"
             >
               {steps[currentStep].content}
             </Form>
-
-            <Divider />
-
-            <div style={{ textAlign: 'center' }}>
-              <Space size="large">
-                {currentStep > 0 && (
-                  <Button 
-                    onClick={handlePrevious}
-                    icon={<ArrowLeftOutlined />}
-                  >
-                    Previous Step
-                  </Button>
-                )}
-                
-                {currentStep < steps.length - 1 && (
-                  <Button 
-                    type="primary"
-                    onClick={handleNext}
-                    icon={<ArrowRightOutlined />}
-                  >
-                    Next Step (Manual)
-                  </Button>
-                )}
-                
-                {currentStep === steps.length - 1 && (
-                  <Button
-                    type="primary"
-                    size="large"
-                    onClick={handleSubmit}
-                    loading={loading}
-                    disabled={!selectedHospital || !selectedDoctor || !selectedDate || !selectedSlot}
-                    icon={<CheckCircleOutlined />}
-                  >
-                    🏥 Book Appointment
-                  </Button>
-                )}
-              </Space>
-            </div>
-          </Card>
           )}
         </Spin>
       </div>
@@ -1989,18 +2103,90 @@ export default function BookAppointment() {
     </Layout>
     </Layout>
 
-    {/* Payment Modal */}
-    <AppointmentPaymentModal
-      open={showPaymentModal}
+    {/* Receipt Modal for Online Payment - Compact */}
+    {showReceipt && receiptData && (
+      <Modal
+        title="Payment Receipt"
+        open={showReceipt}
       onCancel={() => {
-        setShowPaymentModal(false);
-        // Still redirect even if cancelled
+          setShowReceipt(false);
+          setReceiptData(null);
         setLocation('/dashboard/patient/appointments');
       }}
-      onSuccess={handlePaymentSuccess}
-      amount={consultationFee}
-      appointmentId={bookedAppointmentId || undefined}
-    />
+        footer={[
+          <Button key="close" type="primary" onClick={() => {
+            setShowReceipt(false);
+            setReceiptData(null);
+            setLocation('/dashboard/patient/appointments');
+          }}>
+            View My Appointments
+          </Button>
+        ]}
+        width={500}
+      >
+        <div style={{ padding: '12px 0' }}>
+          <div style={{ textAlign: 'center', marginBottom: 20 }}>
+            <CheckCircleOutlined style={{ fontSize: 48, color: '#52c41a', marginBottom: 12 }} />
+            <Title level={4} style={{ color: '#52c41a', marginBottom: 4, fontSize: '18px' }}>Payment Successful!</Title>
+            <Text type="secondary" style={{ fontSize: '12px' }}>Your appointment has been confirmed</Text>
+          </div>
+
+          <Divider style={{ margin: '16px 0' }} />
+
+          <div style={{ marginBottom: 16 }}>
+            <Text strong style={{ fontSize: 14, marginBottom: 12, display: 'block' }}>Appointment Details</Text>
+            <Row gutter={[12, 8]}>
+              <Col span={12}>
+                <Text type="secondary" style={{ fontSize: 12 }}>Appointment ID</Text>
+                <div style={{ fontWeight: 600, marginTop: 2, fontSize: 13 }}>#{receiptData.appointment.id || receiptData.appointment.appointment?.id}</div>
+              </Col>
+              <Col span={12}>
+                <Text type="secondary" style={{ fontSize: 12 }}>Date</Text>
+                <div style={{ fontWeight: 600, marginTop: 2, fontSize: 13 }}>{receiptData.date.format('DD/MM/YYYY')}</div>
+              </Col>
+              <Col span={12}>
+                <Text type="secondary" style={{ fontSize: 12 }}>Time</Text>
+                <div style={{ fontWeight: 600, marginTop: 2, fontSize: 13 }}>{formatTimeSlot12h(receiptData.slot)}</div>
+              </Col>
+              <Col span={12}>
+                <Text type="secondary" style={{ fontSize: 12 }}>Doctor</Text>
+                <div style={{ fontWeight: 600, marginTop: 2, fontSize: 13 }}>{receiptData.doctor.fullName}</div>
+              </Col>
+              <Col span={24}>
+                <Text type="secondary" style={{ fontSize: 12 }}>Hospital</Text>
+                <div style={{ fontWeight: 600, marginTop: 2, fontSize: 13 }}>{receiptData.hospital.name}</div>
+              </Col>
+            </Row>
+          </div>
+
+          <Divider style={{ margin: '16px 0' }} />
+
+          <div>
+            <Text strong style={{ fontSize: 14, marginBottom: 12, display: 'block' }}>Payment Details</Text>
+            <Row gutter={[12, 8]}>
+              <Col span={12}>
+                <Text type="secondary" style={{ fontSize: 12 }}>Transaction ID</Text>
+                <div style={{ fontWeight: 600, marginTop: 2, fontSize: 13 }}>{receiptData.payment.transactionId}</div>
+              </Col>
+              <Col span={12}>
+                <Text type="secondary" style={{ fontSize: 12 }}>Payment Method</Text>
+                <div style={{ fontWeight: 600, marginTop: 2, fontSize: 13 }}>{receiptData.payment.paymentMethod.toUpperCase()}</div>
+              </Col>
+              <Col span={12}>
+                <Text type="secondary" style={{ fontSize: 12 }}>Amount Paid</Text>
+                <div style={{ fontWeight: 600, marginTop: 2, fontSize: 16, color: '#52c41a' }}>
+                  ₹{receiptData.payment.amount.toFixed(2)}
+                </div>
+              </Col>
+              <Col span={12}>
+                <Text type="secondary" style={{ fontSize: 12 }}>Status</Text>
+                <div style={{ fontWeight: 600, marginTop: 2, fontSize: 13, color: '#52c41a' }}>Paid</div>
+              </Col>
+            </Row>
+          </div>
+        </div>
+      </Modal>
+    )}
     </>
   );
 }
