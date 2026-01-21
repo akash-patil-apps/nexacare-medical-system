@@ -230,6 +230,36 @@ export const bookAppointment = async (
       // Don't throw - appointment booking should succeed even if notification fails
     }
 
+    // Auto-create invoice and payment record for online payments
+    // Check appointment notes for online payment indicators
+    const appointmentNotes = appointment.notes || '';
+    const onlinePaymentMethods = ['googlepay', 'phonepe', 'card'];
+    const paymentMethodMatch = appointmentNotes.match(/Method:\s*([^|]+)/i);
+    const paymentMethod = paymentMethodMatch?.[1]?.trim().toLowerCase();
+    const hasPaymentInfo = appointmentNotes.includes('Payment:') || appointmentNotes.includes('Amount:');
+    
+    // Check if this is an online payment (has payment method in notes and payment info)
+    if (hasPaymentInfo && paymentMethod && onlinePaymentMethods.includes(paymentMethod)) {
+      try {
+        console.log('💳 Auto-creating invoice for online payment appointment:', appointment.id);
+        
+        // Create invoice automatically - billing service will extract payment from notes
+        const invoice = await billingService.createInvoice({
+          hospitalId: data.hospitalId,
+          patientId: data.patientId,
+          appointmentId: appointment.id,
+          actorUserId: user.id,
+          actorRole: user.role || 'PATIENT',
+        });
+        
+        console.log('✅ Invoice and payment record created automatically for online payment:', invoice.id);
+      } catch (invoiceError) {
+        // Log error but don't fail appointment booking
+        console.error('⚠️ Failed to auto-create invoice for online payment:', invoiceError);
+        // Appointment booking should still succeed even if invoice creation fails
+      }
+    }
+
     await emitAppointmentChanged(
       appointment.id,
       isWalkIn ? (isWalkInToday ? "checked-in" : "confirmed") : "created"

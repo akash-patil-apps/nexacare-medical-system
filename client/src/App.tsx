@@ -3,6 +3,7 @@ import { Router, Route, Switch, Redirect } from 'wouter';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { AuthProvider, useAuth } from './hooks/use-auth';
 import { MedicalThemeProvider } from './antd.config.tsx';
+import { ThemeProvider } from './contexts/ThemeContext';
 import { App as AntApp } from 'antd';
 
 // Import pages
@@ -77,9 +78,10 @@ function DashboardRedirect() {
 function App() {
   return (
     <QueryClientProvider client={queryClient}>
-      <MedicalThemeProvider>
-        <AntApp>
-          <AuthProvider>
+      <ThemeProvider>
+        <MedicalThemeProvider>
+          <AntApp>
+            <AuthProvider>
             <Router>
               <div className="medical-container">
                 <Switch>
@@ -127,6 +129,7 @@ function App() {
           </AuthProvider>
         </AntApp>
       </MedicalThemeProvider>
+      </ThemeProvider>
     </QueryClientProvider>
   );
 }

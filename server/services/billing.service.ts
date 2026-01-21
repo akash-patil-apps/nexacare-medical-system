@@ -7,6 +7,8 @@ import {
   appointments,
   doctors,
   hospitals,
+  patients,
+  users,
 } from '../../shared/schema';
 import { eq, and, sql, desc } from 'drizzle-orm';
 import * as auditService from './audit.service';
@@ -132,12 +134,17 @@ export const createInvoice = async (data: {
   // Extract payment details from appointment notes if appointment was pre-paid
   let prePaidAmount = 0;
   const appointmentNotes = apt.appointment?.notes || '';
-  const paymentStatus = apt.appointment?.paymentStatus;
   
-  // Check if appointment was paid online
-  if (paymentStatus?.toLowerCase() === 'paid' && appointmentNotes) {
-    // Try to extract payment amount from notes
-    // Format: "Payment: TXN123 | Method: card | Amount: ₹500 | Status: success"
+  // Check if appointment was paid online by looking for payment info in notes
+  // Format: "Payment: TXN123 | Method: card | Amount: ₹500 | Status: success"
+  const hasPaymentInfo = appointmentNotes.includes('Payment:') || appointmentNotes.includes('Amount:');
+  const onlinePaymentMethods = ['googlepay', 'phonepe', 'card', 'gpay', 'upi', 'online'];
+  const paymentMethodMatch = appointmentNotes.match(/Method:\s*([^|]+)/i);
+  const paymentMethod = paymentMethodMatch?.[1]?.trim().toLowerCase();
+  const isOnlinePayment = hasPaymentInfo && paymentMethod && onlinePaymentMethods.includes(paymentMethod);
+  
+  if (isOnlinePayment) {
+    // Try to extract payment amount from notes; if missing, fall back to consultation fee
     const paymentMatch = appointmentNotes.match(/Amount:\s*([^|]+)/i);
     if (paymentMatch) {
       const amountStr = paymentMatch[1].trim().replace(/[₹,\s]/g, '');
@@ -145,6 +152,13 @@ export const createInvoice = async (data: {
       if (!isNaN(parsedAmount) && parsedAmount > 0) {
         prePaidAmount = parsedAmount;
       }
+    }
+    // Fallback: if no amount parsed, use consultation fee as prepaid
+    if (prePaidAmount === 0) {
+      const consultationFee = apt.doctor?.consultationFee
+        ? parseFloat(apt.doctor.consultationFee.toString())
+        : 500;
+      prePaidAmount = consultationFee;
     }
   }
   
@@ -216,7 +230,7 @@ export const createInvoice = async (data: {
   );
   
   // If appointment was pre-paid, create payment record
-  if (prePaidAmount > 0 && initialPaidAmount > 0) {
+  if (isOnlinePayment && initialPaidAmount > 0) {
     try {
       // Extract payment method and reference from appointment notes
       let paymentMethod: 'cash' | 'card' | 'upi' | 'online' | 'gpay' | 'phonepe' = 'online';
@@ -605,6 +619,7 @@ export const getInvoiceById = async (invoiceId: number) => {
     throw new Error('Invoice not found');
   }
   
+  // Get invoice items
   const items = await retryDbOperation(
     async () => {
       return await db
@@ -619,6 +634,7 @@ export const getInvoiceById = async (invoiceId: number) => {
     }
   );
   
+  // Get payment records
   const paymentRecords = await retryDbOperation(
     async () => {
       return await db
@@ -634,10 +650,88 @@ export const getInvoiceById = async (invoiceId: number) => {
     }
   );
   
+  // Get patient information
+  let patientData = null;
+  if (invoice.patientId) {
+    const [patient] = await db
+      .select()
+      .from(patients)
+      .where(eq(patients.id, invoice.patientId))
+      .limit(1);
+    
+    if (patient && patient.userId) {
+      const [patientUser] = await db
+        .select({
+          fullName: users.fullName,
+          email: users.email,
+          mobileNumber: users.mobileNumber,
+        })
+        .from(users)
+        .where(eq(users.id, patient.userId))
+        .limit(1);
+      
+      if (patientUser) {
+        patientData = {
+          id: patient.id,
+          fullName: patientUser.fullName,
+          email: patientUser.email,
+          mobileNumber: patientUser.mobileNumber,
+        };
+      }
+    }
+  }
+  
+  // Get doctor information from appointment
+  let doctorData = null;
+  if (invoice.appointmentId) {
+    const [appointment] = await db
+      .select({
+        id: appointments.id,
+        patientId: appointments.patientId,
+        doctorId: appointments.doctorId,
+        hospitalId: appointments.hospitalId,
+        appointmentDate: appointments.appointmentDate,
+        appointmentTime: appointments.appointmentTime,
+        status: appointments.status,
+      })
+      .from(appointments)
+      .where(eq(appointments.id, invoice.appointmentId))
+      .limit(1);
+    
+    if (appointment && appointment.doctorId) {
+      const [doctor] = await db
+        .select()
+        .from(doctors)
+        .where(eq(doctors.id, appointment.doctorId))
+        .limit(1);
+      
+      if (doctor && doctor.userId) {
+        const [doctorUser] = await db
+          .select({
+            fullName: users.fullName,
+            email: users.email,
+          })
+          .from(users)
+          .where(eq(users.id, doctor.userId))
+          .limit(1);
+        
+        if (doctorUser) {
+          doctorData = {
+            id: doctor.id,
+            fullName: doctorUser.fullName,
+            specialty: doctor.specialty,
+          };
+        }
+      }
+    }
+  }
+  
   return {
     ...invoice,
     items,
     payments: paymentRecords,
+    patient: patientData,
+    doctor: doctorData,
   };
 };
 

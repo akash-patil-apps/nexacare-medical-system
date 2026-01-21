@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import React, { useState, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import {
   Card,
@@ -16,14 +16,14 @@ import {
   DatePicker,
   Layout,
   Drawer,
+  Popover,
+  Descriptions,
 } from 'antd';
 import {
   DollarOutlined,
   DownloadOutlined,
   ReloadOutlined,
   CalendarOutlined,
-  CreditCardOutlined,
-  WalletOutlined,
   UserOutlined,
   BellOutlined,
   SettingOutlined,
@@ -32,6 +32,7 @@ import {
   FileTextOutlined,
   BarChartOutlined,
   MenuUnfoldOutlined,
+  InfoCircleOutlined,
 } from '@ant-design/icons';
 import { apiRequest } from '../../lib/queryClient';
 import type { ColumnsType } from 'antd/es/table';
@@ -54,7 +55,7 @@ interface RevenueTransaction {
   receivedAt: string;
   invoiceNumber?: string;
   invoiceId?: number;
-  source: 'appointment' | 'ipd' | 'opd';
+  source: 'appointment' | 'ipd' | 'opd' | 'test' | 'pharmacy';
   sourceId?: number;
   patientId?: number;
   notes?: string;
@@ -70,7 +71,7 @@ export default function RevenueDetails() {
   const [paymentMethodFilter, setPaymentMethodFilter] = useState<string>('all');
   const [sourceFilter, setSourceFilter] = useState<string>('all');
   const [searchText, setSearchText] = useState<string>('');
-  const [selectedMenuKey] = useState<string>('revenue');
+  // const [selectedMenuKey] = useState<string>('revenue'); // Unused variable
 
   // Get notifications for TopHeader
   const { data: notifications = [] } = useQuery({
@@ -322,25 +323,25 @@ export default function RevenueDetails() {
 
   const columns: ColumnsType<RevenueTransaction> = [
     {
-      title: 'Date & Time',
+      title: <span style={{ color: '#FFFFFF' }}>Date & Time</span>,
       dataIndex: 'receivedAt',
       key: 'receivedAt',
       width: 180,
-      render: (date: string) => dayjs(date).format('DD MMM YYYY, hh:mm A'),
+      render: (date: string) => <span style={{ color: '#CCCCCC' }}>{dayjs(date).format('DD MMM YYYY, hh:mm A')}</span>,
       sorter: (a, b) => dayjs(a.receivedAt).unix() - dayjs(b.receivedAt).unix(),
     },
     {
-      title: 'Amount',
+      title: <span style={{ color: '#FFFFFF' }}>Amount</span>,
       dataIndex: 'amount',
       key: 'amount',
       width: 120,
       render: (amount: number) => (
-        <Text strong style={{ color: '#52c41a' }}>₹{amount.toFixed(2)}</Text>
+        <Text strong style={{ color: '#22C55E', fontSize: '16px' }}>₹{amount.toFixed(2)}</Text>
       ),
       sorter: (a, b) => a.amount - b.amount,
     },
     {
-      title: 'Payment Method',
+      title: <span style={{ color: '#FFFFFF' }}>Payment Method</span>,
       dataIndex: 'paymentMethod',
       key: 'paymentMethod',
       width: 120,
@@ -350,13 +351,15 @@ export default function RevenueDetails() {
           cash: 'green',
           card: 'purple',
           upi: 'orange',
+          gpay: 'blue',
+          phonepe: 'cyan',
           cheque: 'default',
         };
         return <Tag color={colors[method?.toLowerCase()] || 'default'}>{method?.toUpperCase() || 'N/A'}</Tag>;
       },
     },
     {
-      title: 'Source',
+      title: <span style={{ color: '#FFFFFF' }}>Source</span>,
       dataIndex: 'source',
       key: 'source',
       width: 120,
@@ -365,26 +368,28 @@ export default function RevenueDetails() {
           appointment: 'blue',
           ipd: 'red',
           opd: 'green',
+          test: 'orange',
+          pharmacy: 'purple',
         };
         return <Tag color={colors[source] || 'default'}>{source.toUpperCase()}</Tag>;
       },
     },
     {
-      title: 'Invoice',
+      title: <span style={{ color: '#FFFFFF' }}>Invoice</span>,
       dataIndex: 'invoiceNumber',
       key: 'invoiceNumber',
       width: 120,
-      render: (invoice: string) => invoice || 'N/A',
+      render: (invoice: string) => <span style={{ color: '#CCCCCC' }}>{invoice || 'N/A'}</span>,
     },
     {
-      title: 'Transaction ID',
+      title: <span style={{ color: '#FFFFFF' }}>Transaction ID</span>,
       dataIndex: 'transactionId',
       key: 'transactionId',
       width: 150,
-      render: (id: string) => id || '-',
+      render: (id: string) => <span style={{ color: '#CCCCCC' }}>{id || '-'}</span>,
     },
     {
-      title: 'Status',
+      title: <span style={{ color: '#FFFFFF' }}>Status</span>,
       dataIndex: 'status',
       key: 'status',
       width: 100,
@@ -398,13 +403,99 @@ export default function RevenueDetails() {
       },
     },
     {
-      title: 'Notes',
-      dataIndex: 'notes',
-      key: 'notes',
-      ellipsis: true,
-      render: (notes: string) => notes || '-',
+      title: <span style={{ color: '#FFFFFF' }}>Details</span>,
+      key: 'details',
+      width: 80,
+      fixed: 'right' as const,
+      render: (_: any, record: RevenueTransaction) => {
+        const popoverContent = (
+          <div style={{ maxWidth: '400px' }}>
+            <Descriptions
+              column={1}
+              size="small"
+              labelStyle={{ color: '#CCCCCC', fontWeight: 600, width: '140px' }}
+              contentStyle={{ color: '#FFFFFF' }}
+            >
+              <Descriptions.Item label="Transaction ID">
+                <Text style={{ color: '#FFFFFF', fontFamily: 'monospace' }}>{record.transactionId || 'N/A'}</Text>
+              </Descriptions.Item>
+              <Descriptions.Item label="Invoice Number">
+                <Text style={{ color: '#FFFFFF' }}>{record.invoiceNumber || 'N/A'}</Text>
+              </Descriptions.Item>
+              <Descriptions.Item label="Amount">
+                <Text strong style={{ color: '#22C55E', fontSize: '16px' }}>₹{record.amount.toFixed(2)}</Text>
+              </Descriptions.Item>
+              <Descriptions.Item label="Payment Method">
+                <Tag color={record.paymentMethod === 'cash' ? 'green' : record.paymentMethod === 'upi' ? 'orange' : 'blue'}>
+                  {record.paymentMethod?.toUpperCase() || 'N/A'}
+                </Tag>
+              </Descriptions.Item>
+              <Descriptions.Item label="Source">
+                <Tag color={
+                  record.source === 'appointment' ? 'blue' :
+                  record.source === 'test' ? 'orange' :
+                  record.source === 'pharmacy' ? 'purple' :
+                  record.source === 'ipd' ? 'red' : 'green'
+                }>
+                  {record.source?.toUpperCase() || 'N/A'}
+                </Tag>
+              </Descriptions.Item>
+              <Descriptions.Item label="Status">
+                <Tag color="green">{record.status?.toUpperCase() || 'COMPLETED'}</Tag>
+              </Descriptions.Item>
+              <Descriptions.Item label="Date & Time">
+                <Text style={{ color: '#FFFFFF' }}>
+                  {dayjs(record.receivedAt).format('DD MMM YYYY, hh:mm A')}
+                </Text>
+              </Descriptions.Item>
+              {record.notes && (
+                <Descriptions.Item label="Notes">
+                  <Text style={{ color: '#CCCCCC', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+                    {record.notes}
+                  </Text>
+                </Descriptions.Item>
+              )}
+            </Descriptions>
+          </div>
+        );
+
+        return (
+          <Popover
+            content={popoverContent}
+            title={
+              <span style={{ color: '#FFFFFF', fontWeight: 600 }}>
+                Transaction Details
+              </span>
+            }
+            overlayStyle={{ maxWidth: '450px' }}
+            overlayInnerStyle={{ 
+              background: '#2A2A2A', 
+              border: '1px solid #3A3A3A',
+              borderRadius: '8px',
+            }}
+            trigger="hover"
+            placement="left"
+          >
+            <InfoCircleOutlined 
+              style={{ 
+                color: '#1A8FE3', 
+                fontSize: '18px', 
+                cursor: 'pointer',
+                transition: 'color 0.2s',
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.color = '#4A9EFF';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.color = '#1A8FE3';
+              }}
+            />
+          </Popover>
+        );
+      },
     },
   ];
+
 
   const handleExport = () => {
     // TODO: Implement CSV/PDF export
@@ -412,7 +503,61 @@ export default function RevenueDetails() {
   };
 
   return (
-    <Layout style={{ minHeight: '100vh', background: '#F5F7FF' }}>
+    <>
+      <style>{`
+        /* Override medical-container padding for revenue page */
+        body:has(.revenue-details-wrapper) .medical-container {
+          padding: 0 !important;
+          display: block !important;
+          align-items: unset !important;
+          justify-content: unset !important;
+          background: transparent !important;
+          min-height: 100vh !important;
+        }
+        .dark-select-dropdown .ant-select-dropdown {
+          background: #2A2A2A !important;
+        }
+        .dark-select-dropdown .ant-select-item {
+          color: #FFFFFF !important;
+        }
+        .dark-select-dropdown .ant-select-item:hover {
+          background: #3A3A3A !important;
+        }
+        .dark-select-dropdown .ant-select-item-selected {
+          background: #3A3A3A !important;
+        }
+        .ant-table {
+          background: #2A2A2A !important;
+        }
+        .ant-table-thead > tr > th {
+          background: #2A2A2A !important;
+          border-bottom: 1px solid #3A3A3A !important;
+        }
+        .ant-table-tbody > tr > td {
+          background: #2A2A2A !important;
+          border-bottom: 1px solid #3A3A3A !important;
+        }
+        .ant-table-tbody > tr:hover > td {
+          background: #3A3A3A !important;
+        }
+        .ant-pagination {
+          color: #CCCCCC !important;
+        }
+        .ant-pagination-item {
+          background: #2A2A2A !important;
+          border-color: #3A3A3A !important;
+        }
+        .ant-pagination-item a {
+          color: #CCCCCC !important;
+        }
+        .ant-pagination-item-active {
+          background: #3A3A3A !important;
+        }
+        .ant-pagination-item-active a {
+          color: #FFFFFF !important;
+        }
+      `}</style>
+    <Layout className="revenue-details-wrapper" style={{ minHeight: '100vh', background: '#1A1A1A' }}>
       {/* Desktop/Tablet Sidebar */}
       {!isMobile && (
         <Sider
@@ -452,7 +597,7 @@ export default function RevenueDetails() {
         style={{
           marginLeft: siderWidth,
           minHeight: '100vh',
-          background: '#F5F7FF',
+          background: '#1A1A1A', // Dark background
           display: 'flex',
           flexDirection: 'column',
           height: '100vh',
@@ -485,7 +630,7 @@ export default function RevenueDetails() {
 
         <Content
           style={{
-            background: '#F5F7FF',
+            background: '#1A1A1A', // Dark background
             flex: 1,
             overflowY: 'auto',
             overflowX: 'hidden',
@@ -496,81 +641,95 @@ export default function RevenueDetails() {
               : isTablet 
                 ? '12px 16px 20px'
                 : '12px 16px 20px',
+            display: 'flex',
+            flexDirection: 'column',
             margin: 0,
             width: '100%',
           }}
         >
-          {/* Mobile Menu Button */}
-          {isMobile && (
-            <div style={{ display: 'flex', justifyContent: 'flex-start', alignItems: 'center', marginBottom: 16 }}>
-              <Button
-                type="text"
-                icon={<MenuUnfoldOutlined />}
-                onClick={() => setMobileDrawerOpen(true)}
-                style={{ fontSize: '18px' }}
-              />
-            </div>
-          )}
+          <div style={{ 
+            display: 'flex', 
+            flexDirection: 'column', 
+            flex: 1,
+            minHeight: 0,
+          }}>
+            {/* Mobile Menu Button */}
+            {isMobile && (
+              <div style={{ display: 'flex', justifyContent: 'flex-start', alignItems: 'center', marginBottom: 16 }}>
+                <Button
+                  type="text"
+                  icon={<MenuUnfoldOutlined />}
+                  onClick={() => setMobileDrawerOpen(true)}
+                  style={{ fontSize: '18px' }}
+                />
+              </div>
+            )}
 
-          <div style={{ paddingBottom: 24 }}>
-            <Space direction="vertical" size="large" style={{ width: '100%' }}>
         {/* Header */}
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <Title level={2} style={{ margin: 0 }}>
-            <DollarOutlined /> Revenue & Transactions
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
+              <Title level={2} style={{ margin: 0, color: '#FFFFFF' }}>
+                <DollarOutlined style={{ marginRight: 8 }} /> Revenue & Transactions
           </Title>
           <Space>
-            <Button icon={<ReloadOutlined />} onClick={() => { refetchStats(); refetchTransactions(); }}>
+                <Button 
+                  icon={<ReloadOutlined />} 
+                  onClick={() => { refetchStats(); refetchTransactions(); }}
+                  style={{ background: '#2A2A2A', borderColor: '#3A3A3A', color: '#FFFFFF' }}
+                >
               Refresh
             </Button>
-            <Button icon={<DownloadOutlined />} onClick={handleExport}>
+                <Button 
+                  icon={<DownloadOutlined />} 
+                  onClick={handleExport}
+                  style={{ background: '#2A2A2A', borderColor: '#3A3A3A', color: '#FFFFFF' }}
+                >
               Export
             </Button>
           </Space>
         </div>
 
         {/* Revenue Statistics */}
-        <Row gutter={[16, 16]}>
+            <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
           <Col xs={24} sm={12} md={6}>
-            <Card>
+            <Card style={{ background: '#2A2A2A', borderColor: '#3A3A3A' }}>
               <Statistic
-                title="Daily Revenue"
+                title={<span style={{ color: '#CCCCCC' }}>Daily Revenue</span>}
                 value={stats?.daily || 0}
                 prefix="₹"
-                valueStyle={{ color: '#3f8600' }}
+                valueStyle={{ color: '#22C55E', fontSize: '24px', fontWeight: 'bold' }}
                 loading={statsLoading}
               />
             </Card>
           </Col>
           <Col xs={24} sm={12} md={6}>
-            <Card>
+            <Card style={{ background: '#2A2A2A', borderColor: '#3A3A3A' }}>
               <Statistic
-                title="Weekly Revenue"
+                title={<span style={{ color: '#CCCCCC' }}>Weekly Revenue</span>}
                 value={stats?.weekly || 0}
                 prefix="₹"
-                valueStyle={{ color: '#1890ff' }}
+                valueStyle={{ color: '#3B82F6', fontSize: '24px', fontWeight: 'bold' }}
                 loading={statsLoading}
               />
             </Card>
           </Col>
           <Col xs={24} sm={12} md={6}>
-            <Card>
+            <Card style={{ background: '#2A2A2A', borderColor: '#3A3A3A' }}>
               <Statistic
-                title="Monthly Revenue"
+                title={<span style={{ color: '#CCCCCC' }}>Monthly Revenue</span>}
                 value={stats?.monthly || 0}
                 prefix="₹"
-                valueStyle={{ color: '#cf1322' }}
+                valueStyle={{ color: '#EF4444', fontSize: '24px', fontWeight: 'bold' }}
                 loading={statsLoading}
               />
             </Card>
           </Col>
           <Col xs={24} sm={12} md={6}>
-            <Card>
+            <Card style={{ background: '#2A2A2A', borderColor: '#3A3A3A' }}>
               <Statistic
-                title="Total Revenue"
+                title={<span style={{ color: '#CCCCCC' }}>Total Revenue</span>}
                 value={stats?.total || 0}
                 prefix="₹"
-                valueStyle={{ color: '#722ed1' }}
+                valueStyle={{ color: '#A855F7', fontSize: '24px', fontWeight: 'bold' }}
                 loading={statsLoading}
               />
             </Card>
@@ -578,40 +737,70 @@ export default function RevenueDetails() {
         </Row>
 
         {/* Revenue Breakdown */}
-        <Row gutter={[16, 16]}>
+            <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
           <Col xs={24} md={12}>
-            <Card title={<><CreditCardOutlined /> Revenue by Source</>}>
+            <Card 
+              title={
+                <span style={{ color: '#FFFFFF' }}>
+                  <FileTextOutlined style={{ marginRight: 8 }} /> Revenue by Source
+                </span>
+              }
+              style={{ background: '#2A2A2A', borderColor: '#3A3A3A' }}
+              headStyle={{ background: '#2A2A2A', borderBottom: '1px solid #3A3A3A' }}
+              bodyStyle={{ background: '#2A2A2A' }}
+            >
               <Space direction="vertical" style={{ width: '100%' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                  <Text>Appointments:</Text>
-                  <Text strong>₹{revenueBySource?.appointment?.toFixed(2) || '0.00'}</Text>
+                  <Text style={{ color: '#CCCCCC' }}>Appointments:</Text>
+                  <Text strong style={{ color: '#FFFFFF' }}>₹{revenueBySource?.appointment?.toFixed(2) || '0.00'}</Text>
                 </div>
                 <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                  <Text>IPD:</Text>
-                  <Text strong>₹{revenueBySource?.ipd?.toFixed(2) || '0.00'}</Text>
+                  <Text style={{ color: '#CCCCCC' }}>IPD:</Text>
+                  <Text strong style={{ color: '#FFFFFF' }}>₹{revenueBySource?.ipd?.toFixed(2) || '0.00'}</Text>
                 </div>
                 <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                  <Text>OPD:</Text>
-                  <Text strong>₹{revenueBySource?.opd?.toFixed(2) || '0.00'}</Text>
+                  <Text style={{ color: '#CCCCCC' }}>OPD:</Text>
+                  <Text strong style={{ color: '#FFFFFF' }}>₹{revenueBySource?.opd?.toFixed(2) || '0.00'}</Text>
                 </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', borderTop: '1px solid #f0f0f0', paddingTop: 8, marginTop: 8 }}>
-                  <Text strong>Total:</Text>
-                  <Text strong style={{ fontSize: 16 }}>₹{revenueBySource?.total?.toFixed(2) || '0.00'}</Text>
+                {(revenueBySource?.test || 0) > 0 && (
+                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <Text style={{ color: '#CCCCCC' }}>Tests:</Text>
+                    <Text strong style={{ color: '#FFFFFF' }}>₹{revenueBySource?.test?.toFixed(2) || '0.00'}</Text>
+                  </div>
+                )}
+                {(revenueBySource?.pharmacy || 0) > 0 && (
+                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <Text style={{ color: '#CCCCCC' }}>Pharmacy:</Text>
+                    <Text strong style={{ color: '#FFFFFF' }}>₹{revenueBySource?.pharmacy?.toFixed(2) || '0.00'}</Text>
+                  </div>
+                )}
+                <div style={{ display: 'flex', justifyContent: 'space-between', borderTop: '1px solid #3A3A3A', paddingTop: 8, marginTop: 8 }}>
+                  <Text strong style={{ color: '#FFFFFF' }}>Total:</Text>
+                  <Text strong style={{ fontSize: 16, color: '#FFFFFF' }}>₹{revenueBySource?.total?.toFixed(2) || '0.00'}</Text>
                 </div>
               </Space>
             </Card>
           </Col>
           <Col xs={24} md={12}>
-            <Card title={<><WalletOutlined /> Revenue by Payment Method</>}>
+            <Card 
+              title={
+                <span style={{ color: '#FFFFFF' }}>
+                  <FileTextOutlined style={{ marginRight: 8 }} /> Revenue by Payment Method
+                </span>
+              }
+              style={{ background: '#2A2A2A', borderColor: '#3A3A3A' }}
+              headStyle={{ background: '#2A2A2A', borderBottom: '1px solid #3A3A3A' }}
+              bodyStyle={{ background: '#2A2A2A' }}
+            >
               <Space direction="vertical" style={{ width: '100%' }}>
                 {revenueByMethod && Object.entries(revenueByMethod).map(([method, amount]: [string, any]) => (
                   <div key={method} style={{ display: 'flex', justifyContent: 'space-between' }}>
-                    <Text>{method.charAt(0).toUpperCase() + method.slice(1)}:</Text>
-                    <Text strong>₹{amount.toFixed(2)}</Text>
+                    <Text style={{ color: '#CCCCCC' }}>{method.charAt(0).toUpperCase() + method.slice(1)}:</Text>
+                    <Text strong style={{ color: '#FFFFFF' }}>₹{amount.toFixed(2)}</Text>
                   </div>
                 ))}
                 {(!revenueByMethod || Object.keys(revenueByMethod).length === 0) && (
-                  <Text type="secondary">No payment data available</Text>
+                  <Text style={{ color: '#888888' }}>No payment data available</Text>
                 )}
               </Space>
             </Card>
@@ -619,49 +808,59 @@ export default function RevenueDetails() {
         </Row>
 
         {/* Filters */}
-        <Card>
+            <Card 
+              style={{ background: '#2A2A2A', borderColor: '#3A3A3A', marginBottom: 24 }}
+              bodyStyle={{ background: '#2A2A2A' }}
+            >
           <Row gutter={[16, 16]}>
             <Col xs={24} sm={12} md={6}>
-              <Text strong>Date Range:</Text>
+              <Text strong style={{ color: '#FFFFFF' }}>Date Range:</Text>
               <RangePicker
                 style={{ width: '100%', marginTop: 8 }}
                 value={dateRange as any}
                 onChange={(dates) => setDateRange(dates as any)}
                 format="DD/MM/YYYY"
+                popupStyle={{ background: '#2A2A2A' }}
               />
             </Col>
             <Col xs={24} sm={12} md={6}>
-              <Text strong>Payment Method:</Text>
+              <Text strong style={{ color: '#FFFFFF' }}>Payment Method:</Text>
               <Select
                 style={{ width: '100%', marginTop: 8 }}
                 value={paymentMethodFilter}
                 onChange={setPaymentMethodFilter}
+                popupClassName="dark-select-dropdown"
               >
                 <Option value="all">All Methods</Option>
                 <Option value="online">Online</Option>
                 <Option value="cash">Cash</Option>
                 <Option value="card">Card</Option>
                 <Option value="upi">UPI</Option>
+                <Option value="gpay">Google Pay</Option>
+                <Option value="phonepe">PhonePe</Option>
                 <Option value="cheque">Cheque</Option>
               </Select>
             </Col>
             <Col xs={24} sm={12} md={6}>
-              <Text strong>Source:</Text>
+              <Text strong style={{ color: '#FFFFFF' }}>Source:</Text>
               <Select
                 style={{ width: '100%', marginTop: 8 }}
                 value={sourceFilter}
                 onChange={setSourceFilter}
+                popupClassName="dark-select-dropdown"
               >
                 <Option value="all">All Sources</Option>
                 <Option value="appointment">Appointments</Option>
                 <Option value="ipd">IPD</Option>
                 <Option value="opd">OPD</Option>
+                <Option value="test">Tests</Option>
+                <Option value="pharmacy">Pharmacy</Option>
               </Select>
             </Col>
             <Col xs={24} sm={12} md={6}>
-              <Text strong>Search:</Text>
+              <Text strong style={{ color: '#FFFFFF' }}>Search:</Text>
               <Input
-                style={{ marginTop: 8 }}
+                style={{ marginTop: 8, background: '#1A1A1A', borderColor: '#3A3A3A', color: '#FFFFFF' }}
                 placeholder="Invoice, Transaction ID, Notes..."
                 value={searchText}
                 onChange={(e) => setSearchText(e.target.value)}
@@ -672,7 +871,16 @@ export default function RevenueDetails() {
         </Card>
 
         {/* Transactions Table */}
-        <Card title={<><CalendarOutlined /> All Transactions</>}>
+            <Card 
+              title={
+                <span style={{ color: '#FFFFFF' }}>
+                  <CalendarOutlined style={{ marginRight: 8 }} /> All Transactions
+                </span>
+              }
+              style={{ background: '#2A2A2A', borderColor: '#3A3A3A' }}
+              headStyle={{ background: '#2A2A2A', borderBottom: '1px solid #3A3A3A' }}
+              bodyStyle={{ background: '#2A2A2A' }}
+            >
           <Table
             columns={columns}
             dataSource={filteredTransactions}
@@ -681,15 +889,16 @@ export default function RevenueDetails() {
             pagination={{
               pageSize: 50,
               showSizeChanger: true,
-              showTotal: (total) => `Total ${total} transactions`,
+                  showTotal: (total) => <span style={{ color: '#CCCCCC' }}>Total {total} transactions</span>,
             }}
             scroll={{ x: 1200 }}
+                style={{ background: '#2A2A2A' }}
           />
         </Card>
-            </Space>
-          </div>
+    </div>
         </Content>
       </Layout>
     </Layout>
+    </>
   );
 }

@@ -13,12 +13,13 @@ import {
   Col,
   Tag,
   Alert,
-  Radio,
 } from 'antd';
 import {
   ExperimentOutlined,
   UserOutlined,
   CalendarOutlined,
+  CloseOutlined,
+  FileTextOutlined,
 } from '@ant-design/icons';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import dayjs from 'dayjs';
@@ -288,58 +289,63 @@ export default function LabRequestModal({
 
   return (
     <Modal
-      title={
-        <Space>
-          <ExperimentOutlined style={{ fontSize: '20px', color: '#1D4ED8' }} />
-          <span>Request Lab Test</span>
-        </Space>
-      }
+      title={null}
       open={open}
       onCancel={onCancel}
+      footer={null}
       width={700}
       zIndex={3000}
+      centered
       getContainer={() => document.body}
       maskClosable={false}
-      footer={[
-        <Button key="cancel" onClick={onCancel}>
-          Cancel
-        </Button>,
-        <Button
-          key="submit"
-          type="primary"
-          onClick={handleSubmit}
-          loading={requestMutation.isPending}
-          icon={<ExperimentOutlined />}
-        >
-          Request Test
-        </Button>,
-      ]}
       destroyOnHidden
+      closeIcon={<CloseOutlined />}
+      styles={{
+        body: {
+          padding: '20px',
+          maxHeight: 'calc(100vh - 200px)',
+          overflow: 'hidden',
+        }
+      }}
     >
-      <Alert
-        message="Lab Request"
-        description="This will create a lab request that will appear in the lab technician's queue. The lab will process the request and upload results when ready."
-        type="info"
-        showIcon
-        style={{ marginBottom: 24 }}
-      />
+      {/* Custom Header */}
+      <div style={{ marginBottom: '16px', paddingBottom: '12px', borderBottom: '1px solid #E5E7EB' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
+          <ExperimentOutlined style={{ fontSize: '18px', color: '#1D4ED8' }} />
+          <Title level={4} style={{ margin: 0, fontSize: '18px', fontWeight: 600 }}>
+            Request Lab Test
+          </Title>
+        </div>
+        {patientId && (() => {
+          const selectedPatient = patients.find((p: any) => p.id === patientId || String(p.id) === String(patientId));
+          const patientName = selectedPatient?.fullName || selectedPatient?.name || fetchedPatient?.fullName || `Patient #${patientId}`;
+          return (
+            <Text type="secondary" style={{ fontSize: '13px', marginLeft: '26px' }}>
+              Patient: {patientName}
+            </Text>
+          );
+        })()}
+      </div>
 
       <Form
         form={form}
         layout="vertical"
         requiredMark={false}
+        style={{ marginBottom: 0 }}
       >
-        <Row gutter={16}>
+        <Row gutter={12}>
           <Col span={12}>
             <Form.Item
               name="patientId"
-              label="Patient"
+              label={<Text style={{ fontSize: '13px' }}>Patient</Text>}
               rules={[{ required: true, message: 'Please select a patient' }]}
+              style={{ marginBottom: '12px' }}
             >
               <Select
                 placeholder="Select patient"
                 showSearch
                 disabled={!!patientId}
+                size="small"
                 filterOption={(input, option) => {
                   const label = option?.label as string;
                   const children = option?.children as string;
@@ -368,12 +374,14 @@ export default function LabRequestModal({
           <Col span={12}>
             <Form.Item
               name="labId"
-              label="Preferred Lab (Optional)"
+              label={<Text style={{ fontSize: '13px' }}>Preferred Lab (Optional)</Text>}
+              style={{ marginBottom: '12px' }}
             >
               <Select
                 placeholder="Select lab"
                 allowClear
                 showSearch
+                size="small"
                 filterOption={(input, option) =>
                   (option?.children as string)?.toLowerCase().includes(input.toLowerCase())
                 }
@@ -397,46 +405,71 @@ export default function LabRequestModal({
 
         <Form.Item
           name="testName"
-          label="Test Name"
+          label={<Text style={{ fontSize: '13px' }}>Test Name</Text>}
           rules={[{ required: true, message: 'Please enter or select test name' }]}
+          style={{ marginBottom: '12px' }}
         >
           <Select
             placeholder="Select or type test name"
             showSearch
             allowClear
             mode="tags"
+            size="small"
             options={commonTests.map(test => ({ label: test, value: test }))}
           />
         </Form.Item>
 
         <Form.Item
           name="priority"
-          label="Priority"
+          label={<Text style={{ fontSize: '13px' }}>Priority</Text>}
           rules={[{ required: true, message: 'Please select priority' }]}
           initialValue="normal"
+          style={{ marginBottom: '12px' }}
         >
-          <Radio.Group>
-            <Radio.Button value="normal">
-              <Tag color="blue">Normal</Tag>
-            </Radio.Button>
-            <Radio.Button value="high">
-              <Tag color="orange">High</Tag>
-            </Radio.Button>
-            <Radio.Button value="urgent">
-              <Tag color="red">Urgent</Tag>
-            </Radio.Button>
-          </Radio.Group>
+          <div style={{ display: 'flex', gap: 8, width: '100%' }}>
+            {[
+              { value: 'normal', label: 'Normal', color: '#10B981', bgColor: '#D1FAE5', borderColor: '#10B981' },
+              { value: 'high', label: 'High', color: '#F59E0B', bgColor: '#FEF3C7', borderColor: '#F59E0B' },
+              { value: 'urgent', label: 'Urgent', color: '#EF4444', bgColor: '#FEE2E2', borderColor: '#EF4444' },
+            ].map(option => {
+              const isSelected = form.getFieldValue('priority') === option.value;
+              
+              return (
+                <Button
+                  key={option.value}
+                  type="default"
+                  onClick={() => {
+                    form.setFieldsValue({ priority: option.value });
+                  }}
+                  style={{
+                    flex: 1,
+                    height: '40px',
+                    borderRadius: '8px',
+                    border: `2px solid ${isSelected ? option.borderColor : '#E5E7EB'}`,
+                    background: isSelected ? option.bgColor : '#FFFFFF',
+                    color: isSelected ? option.color : '#6B7280',
+                    fontWeight: 600,
+                    fontSize: '13px',
+                  }}
+                >
+                  {option.label}
+                </Button>
+              );
+            })}
+          </div>
         </Form.Item>
 
-        <Row gutter={16}>
+        <Row gutter={12}>
           <Col span={12}>
             <Form.Item
               name="requestedDate"
-              label="Requested Date"
+              label={<Text style={{ fontSize: '13px' }}>Requested Date</Text>}
               rules={[{ required: true, message: 'Please select requested date' }]}
+              style={{ marginBottom: '12px' }}
             >
               <DatePicker
                 style={{ width: '100%' }}
+                size="small"
                 format="YYYY-MM-DD"
                 disabledDate={(current) => current && current < dayjs().startOf('day')}
               />
@@ -445,23 +478,52 @@ export default function LabRequestModal({
           <Col span={12}>
             <Form.Item
               name="notes"
-              label="Clinical Notes (Optional)"
+              label={<Text style={{ fontSize: '13px' }}>Clinical Notes (Optional)</Text>}
+              style={{ marginBottom: '12px' }}
             >
-              <Input placeholder="Reason for test, clinical findings..." />
+              <Input 
+                size="small"
+                placeholder="Reason for test, clinical findings..." 
+              />
             </Form.Item>
           </Col>
         </Row>
 
         <Form.Item
           name="instructions"
-          label="Special Instructions (Optional)"
+          label={<Text style={{ fontSize: '13px' }}>Special Instructions (Optional)</Text>}
+          style={{ marginBottom: 0 }}
         >
           <TextArea
-            rows={3}
+            rows={2}
+            size="small"
             placeholder="Any special instructions for the lab technician..."
           />
         </Form.Item>
       </Form>
+
+      {/* Footer */}
+      <div style={{ 
+        marginTop: '16px', 
+        paddingTop: '12px', 
+        borderTop: '1px solid #E5E7EB',
+        display: 'flex',
+        justifyContent: 'flex-end',
+        gap: '10px'
+      }}>
+        <Button size="small" onClick={onCancel}>
+          Cancel
+        </Button>
+        <Button
+          size="small"
+          type="primary"
+          onClick={handleSubmit}
+          loading={requestMutation.isPending}
+          icon={<ExperimentOutlined />}
+        >
+          Request Test
+        </Button>
+      </div>
     </Modal>
   );
 }

@@ -12,13 +12,13 @@ import {
   Typography,
   Select,
 } from 'antd';
-import { HeartOutlined, SaveOutlined } from '@ant-design/icons';
-import { useQueryClient } from '@tanstack/react-query';
+import { HeartOutlined, SaveOutlined, CloseOutlined, LineChartOutlined, EditOutlined } from '@ant-design/icons';
+import { useQueryClient, useQuery } from '@tanstack/react-query';
 import { getAuthToken } from '../../lib/auth';
 
 const { TextArea } = Input;
 const { Option } = Select;
-const { Text } = Typography;
+const { Text, Title } = Typography;
 
 interface VitalsEntryFormProps {
   open: boolean;
@@ -47,8 +47,34 @@ export const VitalsEntryForm: React.FC<VitalsEntryFormProps> = ({
   const queryClient = useQueryClient();
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  // Vitals state (matching prescription form pattern)
+  const [vitals, setVitals] = useState({
+    bp: '',
+    temp: '',
+    pulse: '',
+    spo2: '',
+    rr: '',
+    weight: '',
+    height: '',
+  });
+  const [isHeightEditable, setIsHeightEditable] = useState(false);
+
   // Get hospital ID - use prop if provided, otherwise fetch
   const [hospitalId, setHospitalId] = useState<number | null>(propHospitalId || null);
+
+  // Fetch patient data for height pre-fill
+  const { data: patientData } = useQuery({
+    queryKey: [`/api/patients/${patientId}/info`],
+    queryFn: async () => {
+      const token = getAuthToken();
+      const response = await fetch(`/api/patients/${patientId}/info`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!response.ok) return null;
+      return response.json();
+    },
+    enabled: !!patientId && open,
+  });
 
   React.useEffect(() => {
     // If hospitalId is provided as prop, use it
@@ -100,27 +126,49 @@ export const VitalsEntryForm: React.FC<VitalsEntryFormProps> = ({
     fetchHospital();
   }, [propHospitalId]);
 
+  // Initialize vitals from initialVitals or patient data
   React.useEffect(() => {
-    if (initialVitals && mode === 'edit') {
-      form.setFieldsValue({
-        temperature: initialVitals.temperature ? parseFloat(initialVitals.temperature) : undefined,
-        temperatureUnit: initialVitals.temperatureUnit || 'C',
-        bpSystolic: initialVitals.bpSystolic,
-        bpDiastolic: initialVitals.bpDiastolic,
-        pulse: initialVitals.pulse,
-        respirationRate: initialVitals.respirationRate,
-        spo2: initialVitals.spo2,
-        painScale: initialVitals.painScale,
-        weight: initialVitals.weight ? parseFloat(initialVitals.weight) : undefined,
-        height: initialVitals.height ? parseFloat(initialVitals.height) : undefined,
-        bmi: initialVitals.bmi ? parseFloat(initialVitals.bmi) : undefined,
-        bloodGlucose: initialVitals.bloodGlucose ? parseFloat(initialVitals.bloodGlucose) : undefined,
-        gcs: initialVitals.gcs,
-        urineOutput: initialVitals.urineOutput ? parseFloat(initialVitals.urineOutput) : undefined,
-        notes: initialVitals.notes,
-      });
+    if (open) {
+      if (initialVitals && mode === 'edit') {
+        // Format BP from systolic/diastolic
+        const bpValue = initialVitals.bpSystolic && initialVitals.bpDiastolic
+          ? `${initialVitals.bpSystolic}/${initialVitals.bpDiastolic}`
+          : '';
+        
+        setVitals({
+          bp: bpValue,
+          temp: initialVitals.temperature ? String(initialVitals.temperature) : '',
+          pulse: initialVitals.pulse ? String(initialVitals.pulse) : '',
+          spo2: initialVitals.spo2 ? String(initialVitals.spo2) : '',
+          rr: initialVitals.respirationRate ? String(initialVitals.respirationRate) : '',
+          weight: initialVitals.weight ? String(initialVitals.weight) : '',
+          height: initialVitals.height ? String(initialVitals.height) : '',
+        });
+        form.setFieldsValue({
+          notes: initialVitals.notes,
+        });
+      } else if (patientData?.patient?.height) {
+        // Pre-fill height from patient data
+        setVitals(prev => ({
+          ...prev,
+          height: String(patientData.patient.height),
+        }));
+        setIsHeightEditable(false);
+      } else {
+        // Reset vitals
+        setVitals({
+          bp: '',
+          temp: '',
+          pulse: '',
+          spo2: '',
+          rr: '',
+          weight: '',
+          height: '',
+        });
+        setIsHeightEditable(false);
+      }
     }
-  }, [initialVitals, mode, form]);
+  }, [open, initialVitals, mode, patientData, form]);
 
   const handleSubmit = async (values: any) => {
     if (!hospitalId) {
@@ -131,24 +179,89 @@ export const VitalsEntryForm: React.FC<VitalsEntryFormProps> = ({
     setIsSubmitting(true);
     try {
       const token = getAuthToken();
+      
+      // Parse BP from "120/80" format
+      let bpSystolic: number | undefined;
+      let bpDiastolic: number | undefined;
+      if (vitals.bp) {
+        const bpMatch = vitals.bp.match(/(\d+)\s*\/\s*(\d+)/);
+        if (bpMatch) {
+          bpSystolic = parseInt(bpMatch[1]);
+          bpDiastolic = parseInt(bpMatch[2]);
+        }
+      }
+
+      // Parse temperature
+      let temperature: number | undefined;
+      if (vitals.temp) {
+        temperature = parseFloat(vitals.temp);
+      }
+
+      const vitalsPayload: any = {
+        hospitalId,
+        patientId,
+        encounterId,
+        appointmentId,
+        bpSystolic,
+        bpDiastolic,
+        temperature,
+        temperatureUnit: 'C', // Always Celsius
+        pulse: vitals.pulse ? parseInt(vitals.pulse) : undefined,
+        spo2: vitals.spo2 ? parseInt(vitals.spo2) : undefined,
+        respirationRate: vitals.rr ? parseInt(vitals.rr) : undefined,
+        weight: vitals.weight ? parseFloat(vitals.weight) : undefined,
+        height: vitals.height ? parseFloat(vitals.height) : undefined,
+        notes: values.notes,
+      };
+
+      // Remove undefined values
+      Object.keys(vitalsPayload).forEach(key => {
+        if (vitalsPayload[key] === undefined) {
+          delete vitalsPayload[key];
+        }
+      });
+
       const response = await fetch('/api/clinical/vitals', {
         method: 'POST',
         headers: {
           Authorization: `Bearer ${token}`,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({
-          hospitalId,
-          patientId,
-          encounterId,
-          appointmentId,
-          ...values,
-        }),
+        body: JSON.stringify(vitalsPayload),
       });
 
       if (!response.ok) {
         const error = await response.json();
         throw new Error(error.message || 'Failed to save vitals');
+      }
+
+      // Update patient height/weight if provided
+      if (vitals.height || vitals.weight) {
+        const patientUpdatePayload: any = {};
+        if (vitals.height) {
+          patientUpdatePayload.height = parseFloat(vitals.height);
+        }
+        if (vitals.weight) {
+          patientUpdatePayload.weight = parseFloat(vitals.weight);
+        }
+
+        if (Object.keys(patientUpdatePayload).length > 0) {
+          try {
+            const updateResponse = await fetch(`/api/patients/${patientId}/profile`, {
+              method: 'PUT',
+              headers: {
+                Authorization: `Bearer ${token}`,
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify(patientUpdatePayload),
+            });
+            if (updateResponse.ok) {
+              console.log('✅ Patient height/weight updated');
+            }
+          } catch (updateError) {
+            console.warn('⚠️ Failed to update patient height/weight:', updateError);
+          }
+        }
       }
 
       message.success('Vitals recorded successfully');
@@ -164,19 +277,19 @@ export const VitalsEntryForm: React.FC<VitalsEntryFormProps> = ({
 
   const handleClose = () => {
     form.resetFields();
+    setVitals({
+      bp: '',
+      temp: '',
+      pulse: '',
+      spo2: '',
+      rr: '',
+      weight: '',
+      height: '',
+    });
+    setIsHeightEditable(false);
     onCancel();
   };
 
-  // Calculate BMI if weight and height are provided
-  const calculateBMI = () => {
-    const weight = form.getFieldValue('weight');
-    const height = form.getFieldValue('height');
-    if (weight && height && height > 0) {
-      const heightInMeters = height / 100; // Convert cm to meters
-      const bmi = weight / (heightInMeters * heightInMeters);
-      form.setFieldsValue({ bmi: parseFloat(bmi.toFixed(2)) });
-    }
-  };
 
   // Don't render if patientId is missing
   if (!patientId) {
@@ -185,252 +298,197 @@ export const VitalsEntryForm: React.FC<VitalsEntryFormProps> = ({
 
   return (
     <Modal
-      title={
-        <Space>
-          <HeartOutlined />
-          <span>Record Vitals</span>
-        </Space>
-      }
+      title={null}
       open={open}
       onCancel={handleClose}
-      width={750}
+      footer={null}
+      width={850}
       style={{ top: 20 }}
-      bodyStyle={{ 
-        padding: '12px 16px',
-        maxHeight: 'calc(100vh - 180px)',
-        overflowY: 'auto'
+      destroyOnHidden
+      closeIcon={<CloseOutlined />}
+      styles={{
+        body: {
+          padding: '24px',
+          maxHeight: 'calc(100vh - 120px)',
+          overflowY: 'auto'
+        }
       }}
-      footer={[
-        <Button key="cancel" onClick={handleClose}>
-          Cancel
-        </Button>,
-        <Button
-          key="submit"
-          type="primary"
-          onClick={() => form.submit()}
-          loading={isSubmitting}
-          icon={<SaveOutlined />}
-        >
-          Record Vitals
-        </Button>,
-      ]}
     >
+      {/* Custom Header */}
+      <div style={{ marginBottom: '24px', paddingBottom: '16px', borderBottom: '1px solid #E5E7EB' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
+          <LineChartOutlined style={{ fontSize: '20px', color: '#52c41a' }} />
+          <Title level={4} style={{ margin: 0, fontSize: '20px', fontWeight: 600 }}>
+            Record Vitals
+          </Title>
+        </div>
+        <div style={{ marginLeft: '28px' }}>
+          <Text type="secondary" style={{ fontSize: '14px', display: 'block', marginBottom: '4px' }}>
+            Enter patient vital signs and measurements
+          </Text>
+          {patientData?.patient?.user?.fullName && (
+            <Text strong style={{ fontSize: '14px', color: 'var(--text-primary)' }}>
+              Patient: {patientData.patient.user.fullName}
+              {patientData.patient.dateOfBirth && (() => {
+                const age = new Date().getFullYear() - new Date(patientData.patient.dateOfBirth).getFullYear();
+                return ` (${age}Y)`;
+              })()}
+            </Text>
+          )}
+        </div>
+      </div>
       <Form
         form={form}
         layout="vertical"
         onFinish={handleSubmit}
         style={{ marginBottom: 0 }}
       >
-        <Row gutter={[12, 8]}>
-          <Col span={8}>
-            <Form.Item
-              name="temperature"
-              label="Temp (°C)"
-              style={{ marginBottom: 8 }}
-            >
-              <InputNumber
-                style={{ width: '100%' }}
-                min={30}
-                max={45}
-                step={0.1}
-                placeholder="36.5"
-                size="small"
-              />
-            </Form.Item>
-          </Col>
-          <Col span={8}>
-            <Form.Item
-              name="bpSystolic"
-              label="BP Systolic"
-              style={{ marginBottom: 8 }}
-            >
-              <InputNumber
-                style={{ width: '100%' }}
-                min={50}
-                max={250}
-                placeholder="120"
-                size="small"
-              />
-            </Form.Item>
-          </Col>
-          <Col span={8}>
-            <Form.Item
-              name="bpDiastolic"
-              label="BP Diastolic"
-              style={{ marginBottom: 8 }}
-            >
-              <InputNumber
-                style={{ width: '100%' }}
-                min={30}
-                max={150}
-                placeholder="80"
-                size="small"
-              />
-            </Form.Item>
-          </Col>
-          <Col span={8}>
-            <Form.Item
-              name="pulse"
-              label="Pulse (bpm)"
-              style={{ marginBottom: 8 }}
-            >
-              <InputNumber
-                style={{ width: '100%' }}
-                min={30}
-                max={200}
-                placeholder="72"
-                size="small"
-              />
-            </Form.Item>
-          </Col>
-          <Col span={8}>
-            <Form.Item
-              name="respirationRate"
-              label="Respiration"
-              style={{ marginBottom: 8 }}
-            >
-              <InputNumber
-                style={{ width: '100%' }}
-                min={10}
-                max={40}
-                placeholder="16"
-                size="small"
-              />
-            </Form.Item>
-          </Col>
-          <Col span={8}>
-            <Form.Item
-              name="spo2"
-              label="SpO2 (%)"
-              style={{ marginBottom: 8 }}
-            >
-              <InputNumber
-                style={{ width: '100%' }}
-                min={70}
-                max={100}
-                placeholder="98"
-                size="small"
-              />
-            </Form.Item>
-          </Col>
-          <Col span={8}>
-            <Form.Item
-              name="painScale"
-              label="Pain (0-10)"
-              style={{ marginBottom: 8 }}
-            >
-              <InputNumber
-                style={{ width: '100%' }}
-                min={0}
-                max={10}
-                placeholder="0"
-                size="small"
-              />
-            </Form.Item>
-          </Col>
-          <Col span={8}>
-            <Form.Item
-              name="weight"
-              label="Weight (kg)"
-              style={{ marginBottom: 8 }}
-            >
-              <InputNumber
-                style={{ width: '100%' }}
-                min={1}
-                max={300}
-                step={0.1}
-                placeholder="70"
-                onBlur={calculateBMI}
-                size="small"
-              />
-            </Form.Item>
-          </Col>
-          <Col span={8}>
-            <Form.Item
-              name="height"
-              label="Height (cm)"
-              style={{ marginBottom: 8 }}
-            >
-              <InputNumber
-                style={{ width: '100%' }}
-                min={50}
-                max={250}
-                step={0.1}
-                placeholder="170"
-                onBlur={calculateBMI}
-                size="small"
-              />
-            </Form.Item>
-          </Col>
-          <Col span={8}>
-            <Form.Item
-              name="bmi"
-              label="BMI"
-              style={{ marginBottom: 8 }}
-            >
-              <InputNumber
-                style={{ width: '100%' }}
-                min={10}
-                max={50}
-                step={0.1}
-                disabled
-                placeholder="Auto"
-                size="small"
-              />
-            </Form.Item>
-          </Col>
-          <Col span={8}>
-            <Form.Item
-              name="bloodGlucose"
-              label="Glucose (mg/dL)"
-              style={{ marginBottom: 8 }}
-            >
-              <InputNumber
-                style={{ width: '100%' }}
-                min={50}
-                max={500}
-                placeholder="100"
-                size="small"
-              />
-            </Form.Item>
-          </Col>
-          <Col span={8}>
-            <Form.Item
-              name="gcs"
-              label="GCS (3-15)"
-              style={{ marginBottom: 8 }}
-            >
-              <InputNumber
-                style={{ width: '100%' }}
-                min={3}
-                max={15}
-                placeholder="15"
-                size="small"
-              />
-            </Form.Item>
-          </Col>
-          <Col span={8}>
-            <Form.Item
-              name="urineOutput"
-              label="Urine (ml)"
-              style={{ marginBottom: 8 }}
-            >
-              <InputNumber
-                style={{ width: '100%' }}
-                min={0}
-                max={5000}
-                placeholder="500"
-                size="small"
-              />
-            </Form.Item>
-          </Col>
-          <Col span={24}>
-            <Form.Item name="notes" label="Notes" style={{ marginBottom: 0 }}>
-              <TextArea rows={2} placeholder="Additional notes..." size="small" />
-            </Form.Item>
-          </Col>
-        </Row>
+        {/* Vitals Record Section (matching prescription form design) */}
+        <div style={{ 
+          border: '2px solid #D1FAE5', 
+          borderRadius: '8px', 
+          padding: '16px', 
+          marginBottom: '24px',
+          background: '#F0FDF4'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '16px' }}>
+            <LineChartOutlined style={{ color: '#10B981' }} />
+            <Text strong style={{ fontSize: '14px' }}>Vitals Record</Text>
+          </div>
+          <Row gutter={16}>
+            <Col span={6}>
+              <div>
+                <Text type="secondary" style={{ fontSize: '12px' }}>BP</Text>
+                <Input 
+                  placeholder="120/80" 
+                  value={vitals.bp}
+                  onChange={(e) => {
+                    let value = e.target.value.replace(/\D/g, ''); // Remove non-digits
+                    // Auto-format: if 4+ digits, add "/" after 3rd digit
+                    if (value.length > 3) {
+                      value = value.slice(0, 3) + '/' + value.slice(3, 5);
+                    }
+                    setVitals({ ...vitals, bp: value });
+                  }}
+                  maxLength={6}
+                  style={{ marginTop: '4px' }}
+                />
+                <Text type="secondary" style={{ fontSize: '11px', display: 'block', marginTop: '2px' }}>mmHg</Text>
+              </div>
+            </Col>
+            <Col span={6}>
+              <div>
+                <Text type="secondary" style={{ fontSize: '12px' }}>Temp</Text>
+                <Input 
+                  placeholder="37.0" 
+                  value={vitals.temp}
+                  onChange={(e) => setVitals({ ...vitals, temp: e.target.value })}
+                  style={{ marginTop: '4px' }}
+                />
+                <Text type="secondary" style={{ fontSize: '11px', display: 'block', marginTop: '2px' }}>°C</Text>
+              </div>
+            </Col>
+            <Col span={6}>
+              <div>
+                <Text type="secondary" style={{ fontSize: '12px' }}>Pulse</Text>
+                <Input 
+                  placeholder="72" 
+                  value={vitals.pulse}
+                  onChange={(e) => setVitals({ ...vitals, pulse: e.target.value })}
+                  style={{ marginTop: '4px' }}
+                />
+                <Text type="secondary" style={{ fontSize: '11px', display: 'block', marginTop: '2px' }}>bpm</Text>
+              </div>
+            </Col>
+            <Col span={6}>
+              <div>
+                <Text type="secondary" style={{ fontSize: '12px' }}>SpO2</Text>
+                <Input 
+                  placeholder="98" 
+                  value={vitals.spo2}
+                  onChange={(e) => setVitals({ ...vitals, spo2: e.target.value })}
+                  style={{ marginTop: '4px' }}
+                />
+                <Text type="secondary" style={{ fontSize: '11px', display: 'block', marginTop: '2px' }}>%</Text>
+              </div>
+            </Col>
+          </Row>
+          <Row gutter={16} style={{ marginTop: '12px' }}>
+            <Col span={6}>
+              <div>
+                <Text type="secondary" style={{ fontSize: '12px' }}>RR</Text>
+                <Input 
+                  placeholder="16" 
+                  value={vitals.rr}
+                  onChange={(e) => setVitals({ ...vitals, rr: e.target.value })}
+                  style={{ marginTop: '4px' }}
+                />
+                <Text type="secondary" style={{ fontSize: '11px', display: 'block', marginTop: '2px' }}>/min</Text>
+              </div>
+            </Col>
+            <Col span={6}>
+              <div>
+                <Text type="secondary" style={{ fontSize: '12px' }}>Weight</Text>
+                <Input 
+                  placeholder="70" 
+                  value={vitals.weight}
+                  onChange={(e) => setVitals({ ...vitals, weight: e.target.value })}
+                  style={{ marginTop: '4px' }}
+                />
+                <Text type="secondary" style={{ fontSize: '11px', display: 'block', marginTop: '2px' }}>kg</Text>
+              </div>
+            </Col>
+            <Col span={6}>
+              <div>
+                <Text type="secondary" style={{ fontSize: '12px' }}>Height</Text>
+                <Input 
+                  placeholder="170" 
+                  value={vitals.height}
+                  onChange={(e) => setVitals({ ...vitals, height: e.target.value })}
+                  disabled={!isHeightEditable && patientData?.patient?.height}
+                  style={{ marginTop: '4px' }}
+                  suffix={
+                    patientData?.patient?.height && !isHeightEditable ? (
+                      <EditOutlined 
+                        onClick={() => setIsHeightEditable(true)}
+                        style={{ cursor: 'pointer', color: '#1890ff' }}
+                      />
+                    ) : null
+                  }
+                />
+                <Text type="secondary" style={{ fontSize: '11px', display: 'block', marginTop: '2px' }}>cm</Text>
+              </div>
+            </Col>
+          </Row>
+        </div>
+
+        {/* Notes Section */}
+        <Form.Item name="notes" label="Notes" style={{ marginBottom: 0 }}>
+          <TextArea rows={2} placeholder="Additional notes..." />
+        </Form.Item>
       </Form>
+
+      {/* Footer */}
+      <div style={{ 
+        marginTop: '24px', 
+        paddingTop: '16px', 
+        borderTop: '1px solid #E5E7EB',
+        display: 'flex',
+        justifyContent: 'flex-end',
+        gap: '12px'
+      }}>
+        <Button onClick={handleClose}>
+          Cancel
+        </Button>
+        <Button
+          type="primary"
+          onClick={() => form.submit()}
+          loading={isSubmitting}
+          icon={<SaveOutlined />}
+        >
+          Record Vitals
+        </Button>
+      </div>
     </Modal>
   );
 };

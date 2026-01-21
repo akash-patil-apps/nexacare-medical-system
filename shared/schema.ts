@@ -223,6 +223,7 @@ export const receptionists = pgTable("receptionists", {
 // Appointments
 export const appointments = pgTable("appointments", {
   id: serial("id").primaryKey(),
+  referenceNumber: varchar("reference_number", { length: 50 }), // Standardized ID: APP00002101261107
   patientId: integer("patient_id").references(() => patients.id).notNull(),
   doctorId: integer("doctor_id").references(() => doctors.id).notNull(),
   hospitalId: integer("hospital_id").references(() => hospitals.id).notNull(),

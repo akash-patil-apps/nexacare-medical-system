@@ -247,8 +247,80 @@ export const medicalTheme: ThemeConfig = {
 
 // Export the theme provider component
 export const MedicalThemeProvider = ({ children }: { children: React.ReactNode }) => {
+  const [themeMode, setThemeMode] = React.useState<'light' | 'dark'>(() => {
+    const savedTheme = localStorage.getItem('theme') as 'light' | 'dark';
+    if (savedTheme === 'light' || savedTheme === 'dark') {
+      return savedTheme;
+    }
+    if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+      return 'dark';
+    }
+    return 'light';
+  });
+
+  React.useEffect(() => {
+    const updateTheme = () => {
+      const currentTheme = document.documentElement.getAttribute('data-theme') as 'light' | 'dark';
+      if (currentTheme === 'light' || currentTheme === 'dark') {
+        setThemeMode(currentTheme);
+      }
+    };
+
+    // Listen for theme changes
+    const observer = new MutationObserver(updateTheme);
+    observer.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ['data-theme'],
+    });
+
+    updateTheme();
+
+    return () => observer.disconnect();
+  }, []);
+
+  // Create dark theme variant
+  const darkTheme: ThemeConfig = {
+    ...medicalTheme,
+    token: {
+      ...medicalTheme.token,
+      colorBgContainer: '#1F2937',
+      colorBgElevated: '#374151',
+      colorBgLayout: '#111827',
+      colorText: '#E5E7EB',
+      colorTextSecondary: '#9CA3AF',
+      colorTextTertiary: '#6B7280',
+      colorBorder: '#374151',
+      colorBorderSecondary: '#4B5563',
+    },
+    components: {
+      ...medicalTheme.components,
+      Layout: {
+        ...medicalTheme.components?.Layout,
+        headerBg: '#1F2937',
+        siderBg: '#1F2937',
+        bodyBg: '#111827',
+      },
+      Card: {
+        ...medicalTheme.components?.Card,
+        headerBg: '#374151',
+      },
+      Table: {
+        ...medicalTheme.components?.Table,
+        headerBg: '#374151',
+        headerColor: '#E5E7EB',
+        rowHoverBg: '#374151',
+        borderColor: '#4B5563',
+      },
+      Menu: {
+        ...medicalTheme.components?.Menu,
+        itemSelectedBg: '#1E3A8A',
+        itemHoverBg: '#374151',
+      },
+    },
+  };
+
   return (
-    <ConfigProvider theme={medicalTheme}>
+    <ConfigProvider theme={themeMode === 'dark' ? darkTheme : medicalTheme}>
       {children}
     </ConfigProvider>
   );
