@@ -23,7 +23,6 @@ import {
 } from '@ant-design/icons';
 import { useAuth } from '../../hooks/use-auth';
 import { useLocation } from 'wouter';
-import { useTheme } from '../../contexts/ThemeContext';
 import { NotificationBell } from '../notifications/NotificationBell';
 
 const { Text } = Typography;
@@ -49,7 +48,7 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
   const { logout } = useAuth();
   const [location, setLocation] = useLocation();
   const [searchQuery, setSearchQuery] = useState('');
-  const { theme, toggleTheme } = useTheme();
+  const [isDarkMode, setIsDarkMode] = useState(false);
 
   const handleSearch = (value: string) => {
     setSearchQuery(value);
@@ -86,8 +85,8 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
   return (
     <div
       style={{
-        background: 'var(--bg-primary)',
-        borderBottom: '1px solid var(--border-default)',
+        background: '#fff',
+        borderBottom: '1px solid #E5E7EB',
         padding: '0 16px', // Reduced from 24px to save space
         height: '56px', // Reduced from 64px
         display: 'flex',
@@ -96,7 +95,7 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
         position: 'sticky',
         top: 0,
         zIndex: 100,
-        boxShadow: 'var(--shadow-sm)',
+        boxShadow: '0 1px 4px rgba(0,0,0,0.04)',
       }}
     >
       {/* Left: Breadcrumb */}
@@ -148,10 +147,10 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
         {/* Dark Mode Toggle */}
         <Button
           type="text"
-          icon={theme === 'dark' ? <SunOutlined /> : <MoonOutlined />}
+          icon={isDarkMode ? <SunOutlined /> : <MoonOutlined />}
           style={{ color: '#8C8C8C', fontSize: '18px' }}
-          onClick={toggleTheme}
-          title={theme === 'dark' ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
+          onClick={() => setIsDarkMode(!isDarkMode)}
+          title={isDarkMode ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
         />
 
         {/* Messages */}
