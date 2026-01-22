@@ -74,36 +74,83 @@ export default function LabRequestModal({
         ? patientsData 
         : []);
 
-  // Fetch patient details if patientId is provided but not in the list
+  // Always fetch patient details when patientId is provided to ensure we have the full name
   const [fetchedPatient, setFetchedPatient] = useState<any>(null);
   
   useEffect(() => {
     if (patientId && open) {
-      const patientInList = basePatients.find((p: any) => p.id === patientId || String(p.id) === String(patientId));
-      if (!patientInList) {
-        // Fetch patient details
-        const fetchPatient = async () => {
-          try {
-            const token = localStorage.getItem('auth-token');
-            const response = await fetch(`/api/patients/${patientId}`, {
+      // Always fetch patient details to ensure we have the full name
+      const fetchPatient = async () => {
+        try {
+          const token = localStorage.getItem('auth-token');
+          // Try the reception endpoint first (more comprehensive)
+          let response = await fetch(`/api/reception/patients/${patientId}/info`, {
+            headers: {
+              'Authorization': `Bearer ${token}`
+            }
+          });
+          
+          // If that fails, try the regular patients endpoint
+          if (!response.ok) {
+            response = await fetch(`/api/patients/${patientId}`, {
               headers: {
                 'Authorization': `Bearer ${token}`
               }
             });
-            if (response.ok) {
-              const patientData = await response.json();
-              if (patientData.patient) {
-                const patient = patientData.patient;
-                setFetchedPatient({
-                  id: patient.id,
-                  fullName: patient.user?.fullName || patient.name || `Patient #${patient.id}`,
-                  name: patient.user?.fullName || patient.name || `Patient #${patient.id}`,
-                  mobileNumber: patient.user?.mobileNumber
-                });
-              }
+          }
+          
+          if (response.ok) {
+            const patientData = await response.json();
+            // Handle different response formats
+            const patient = patientData.patient || patientData;
+            const user = patient?.user || patientData?.user;
+            
+            if (patient) {
+              setFetchedPatient({
+                id: patient.id || patientId,
+                fullName: user?.fullName || patient.fullName || patient.name || `Patient #${patient.id || patientId}`,
+                name: user?.fullName || patient.fullName || patient.name || `Patient #${patient.id || patientId}`,
+                mobileNumber: user?.mobileNumber || patient.mobileNumber
+              });
+            } else {
+              // Fallback to placeholder
+              setFetchedPatient({
+                id: patientId,
+                fullName: `Patient #${patientId}`,
+                name: `Patient #${patientId}`,
+              });
             }
-          } catch (error) {
-            console.error('Error fetching patient:', error);
+          } else {
+            // If both endpoints fail, check if patient is in basePatients list
+            const patientInList = basePatients.find((p: any) => p.id === patientId || String(p.id) === String(patientId));
+            if (patientInList) {
+              setFetchedPatient({
+                id: patientInList.id,
+                fullName: patientInList.fullName || patientInList.name || `Patient #${patientInList.id}`,
+                name: patientInList.fullName || patientInList.name || `Patient #${patientInList.id}`,
+                mobileNumber: patientInList.mobileNumber
+              });
+            } else {
+              // Fallback to placeholder
+              setFetchedPatient({
+                id: patientId,
+                fullName: `Patient #${patientId}`,
+                name: `Patient #${patientId}`,
+              });
+            }
+          }
+        } catch (error) {
+          console.error('Error fetching patient:', error);
+          // Check if patient is in basePatients list as fallback
+          const patientInList = basePatients.find((p: any) => p.id === patientId || String(p.id) === String(patientId));
+          if (patientInList) {
+            setFetchedPatient({
+              id: patientInList.id,
+              fullName: patientInList.fullName || patientInList.name || `Patient #${patientInList.id}`,
+              name: patientInList.fullName || patientInList.name || `Patient #${patientInList.id}`,
+              mobileNumber: patientInList.mobileNumber
+            });
+          } else {
             // Fallback to placeholder
             setFetchedPatient({
               id: patientId,
@@ -111,11 +158,9 @@ export default function LabRequestModal({
               name: `Patient #${patientId}`,
             });
           }
-        };
-        fetchPatient();
-      } else {
-        setFetchedPatient(null);
-      }
+        }
+      };
+      fetchPatient();
     } else {
       setFetchedPatient(null);
     }
@@ -317,8 +362,13 @@ export default function LabRequestModal({
           </Title>
         </div>
         {patientId && (() => {
+          // Prioritize fetchedPatient (most reliable), then selectedPatient from list, then fallback
           const selectedPatient = patients.find((p: any) => p.id === patientId || String(p.id) === String(patientId));
-          const patientName = selectedPatient?.fullName || selectedPatient?.name || fetchedPatient?.fullName || `Patient #${patientId}`;
+          const patientName = fetchedPatient?.fullName || 
+                             fetchedPatient?.name || 
+                             selectedPatient?.fullName || 
+                             selectedPatient?.name || 
+                             `Patient #${patientId}`;
           return (
             <Text type="secondary" style={{ fontSize: '13px', marginLeft: '26px' }}>
               Patient: {patientName}

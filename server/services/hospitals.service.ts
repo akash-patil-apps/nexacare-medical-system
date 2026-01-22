@@ -11,12 +11,7 @@ import { labs } from '../../shared/schema';
  */
 export const getAllHospitals = async () => {
   try {
-    console.log('🏥 Fetching all hospitals from database...');
     const result = await db.select().from(hospitals);
-    console.log(`✅ Found ${result.length} hospitals in database`);
-    if (result.length > 0) {
-      console.log('📍 Sample cities:', [...new Set(result.slice(0, 10).map(h => h.city))]);
-    }
     return result;
   } catch (error) {
     console.error('❌ Error fetching hospitals:', error);
@@ -59,8 +54,6 @@ export const getHospitalById = async (hospitalId: number) => {
  */
 export const getHospitalStats = async (hospitalId: number) => {
   try {
-    console.log(`📊 Fetching stats for hospital ${hospitalId}`);
-    
     // Get total doctors in hospital
     const doctorsList = await db
       .select({ id: doctors.id })
@@ -135,8 +128,6 @@ export const getHospitalStats = async (hospitalId: number) => {
       .innerJoin(invoices, eq(payments.invoiceId, invoices.id))
       .where(eq(invoices.hospitalId, hospitalId));
     
-    console.log(`💰 Found ${allPayments.length} total payments for hospital ${hospitalId}`);
-    
     // Calculate daily revenue (today) - reuse existing 'today' variable
     const tomorrow = new Date(today);
     tomorrow.setDate(tomorrow.getDate() + 1);
@@ -147,14 +138,9 @@ export const getHospitalStats = async (hospitalId: number) => {
         const paymentDate = new Date(p.receivedAt);
         paymentDate.setHours(0, 0, 0, 0);
         const isToday = paymentDate.getTime() >= today.getTime() && paymentDate.getTime() < tomorrow.getTime();
-        if (isToday) {
-          console.log(`✅ Daily payment: ₹${p.amount} on ${paymentDate.toISOString()}`);
-        }
         return isToday;
       })
       .reduce((sum, p) => sum + parseFloat(p.amount.toString()), 0);
-    
-    console.log(`💰 Daily revenue: ₹${dailyRevenue}`);
     
     // Calculate weekly revenue (this week, Sunday to Saturday) - reuse existing 'now' variable
     const dayOfWeek = now.getDay(); // 0 = Sunday, 6 = Saturday
@@ -196,7 +182,6 @@ export const getHospitalStats = async (hospitalId: number) => {
       weeklyRevenue,
     };
     
-    console.log(`✅ Hospital stats calculated:`, stats);
     return stats;
   } catch (error) {
     console.error('❌ Error calculating hospital stats:', error);

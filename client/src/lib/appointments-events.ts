@@ -48,7 +48,6 @@ export function subscribeToAppointmentEvents(handlers: Handlers) {
       es.onopen = () => {
         // Reset retry count on successful connection
         retryCount = 0;
-        console.log('✅ SSE: Connected to appointment events');
       };
 
       es.onmessage = (msg) => {
@@ -56,8 +55,6 @@ export function subscribeToAppointmentEvents(handlers: Handlers) {
           const data = JSON.parse(msg.data || "{}");
           if (data?.type === "appointment.changed") {
             handlers.onEvent(data as AppointmentEvent);
-          } else if (data?.type === "connected") {
-            console.log('✅ SSE: Server confirmed connection');
           }
         } catch (e) {
           // ignore bad messages

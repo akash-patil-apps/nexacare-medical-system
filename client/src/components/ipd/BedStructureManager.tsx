@@ -397,20 +397,6 @@ export const BedStructureManager: React.FC = () => {
       acc[bed.status] = (acc[bed.status] || 0) + 1;
       return acc;
     }, {});
-    
-    console.log('📊 BedStructureManager - Structure data:', {
-      floorsCount: floors.length,
-      wardsCount: wards.length,
-      roomsCount: rooms.length,
-      bedsCount: beds.length,
-      bedStatusBreakdown,
-      allBeds: beds.map((b: any) => ({
-        id: b.id,
-        bedNumber: b.bedNumber,
-        status: b.status,
-        roomId: b.roomId,
-      })),
-    });
   }
   
   // Enrich wards with floor information (if not already included)

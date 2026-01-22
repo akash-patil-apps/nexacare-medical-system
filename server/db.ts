@@ -62,7 +62,6 @@ EXCEPTION
   WHEN duplicate_object THEN NULL;
 END $$;
 `);
-    console.log('✅ DB ensured reschedule columns exist on appointments');
   } catch (e) {
     // Best-effort: don't crash server if migrations/DDL are restricted.
     console.warn('⚠️ Could not ensure reschedule columns (continuing):', e);

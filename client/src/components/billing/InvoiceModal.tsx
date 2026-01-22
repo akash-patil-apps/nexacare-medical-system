@@ -18,6 +18,7 @@ import {
 } from 'antd';
 import { DollarOutlined, FileTextOutlined, CheckCircleOutlined } from '@ant-design/icons';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { CopyIcon } from '../common/CopyIcon';
 
 const { TextArea } = Input;
 const { Title, Text } = Typography;
@@ -373,8 +374,6 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({
             }
           }
           
-          console.log('📅 Payment date for online payment:', paymentDate);
-          
           const paymentNotes = `Online payment completed during booking. Transaction: ${paymentReference}, Method: ${paymentDetails.method || 'online'}, Amount: ₹${paymentAmount}`;
 
           const paymentResponse = await fetch(`/api/billing/opd/invoices/${invoice.id}/payments`, {
@@ -648,9 +647,12 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({
                 </div>
                 <Divider style={{ margin: '8px 0' }} />
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <Text type="secondary">Transaction ID:</Text>
-                    <Text strong>{paymentDetails.transactionId}</Text>
+                    <Space>
+                      <Text strong>{paymentDetails.transactionId}</Text>
+                      <CopyIcon text={paymentDetails.transactionId} label="Transaction ID" />
+                    </Space>
                   </div>
                   <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                     <Text type="secondary">Payment Method:</Text>

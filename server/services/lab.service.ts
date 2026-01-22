@@ -256,8 +256,6 @@ export const confirmLabRecommendation = async (reportId: number) => {
 
 // Get recommended lab tests for a patient (for receptionist to see)
 export const getRecommendedLabTestsForPatient = async (patientId: number) => {
-  console.log(`🔬 Fetching recommended lab reports for patient ID: ${patientId}`);
-  
   // Select all fields from labReports (priority might not exist in schema, so we'll handle it safely)
   const reports = await db
     .select()
@@ -267,8 +265,6 @@ export const getRecommendedLabTestsForPatient = async (patientId: number) => {
       eq(labReports.status, 'recommended')
     ))
     .orderBy(desc(labReports.createdAt));
-
-  console.log(`✅ Found ${reports.length} recommended lab reports for patient ${patientId}`);
 
   // Enrich with doctor names
   const enrichedReports = await Promise.all(
@@ -313,6 +309,5 @@ export const getRecommendedLabTestsForPatient = async (patientId: number) => {
     })
   );
 
-  console.log(`✅ Enriched ${enrichedReports.length} reports with doctor names`);
   return enrichedReports;
 };

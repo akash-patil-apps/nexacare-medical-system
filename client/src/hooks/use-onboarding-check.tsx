@@ -70,7 +70,6 @@ export function useOnboardingCheck() {
         (Date.now() - parseInt(completedTimestamp)) < 10 * 60 * 1000; // 10 minutes
       
       if (justCompleted === 'true' || wasRecentlyCompleted) {
-        console.log('✅ Onboarding just completed or was recently completed, skipping redirect check');
         // Still check the status, but don't redirect
         if (onboardingStatus.isCompleted || onboardingStatus.isComplete) {
           // If status is actually complete, clear the flags
@@ -84,13 +83,6 @@ export function useOnboardingCheck() {
       const isCompleted = onboardingStatus.isCompleted === true || onboardingStatus.isComplete === true;
       
       if (!isCompleted) {
-        console.log('⚠️ Onboarding not completed, redirecting to onboarding page');
-        console.log('⚠️ Status details:', {
-          isCompleted: onboardingStatus.isCompleted,
-          isComplete: onboardingStatus.isComplete,
-          hasProfile: onboardingStatus.hasProfile,
-          profile: onboardingStatus.profile,
-        });
         // Redirect to appropriate onboarding based on role
         const onboardingRoutes: Record<string, string> = {
           patient: '/onboarding/patient',
@@ -107,8 +99,6 @@ export function useOnboardingCheck() {
         if (onboardingRoute) {
           setLocation(onboardingRoute);
         }
-      } else {
-        console.log('✅ Onboarding is completed, no redirect needed');
       }
     }
   }, [onboardingStatus, isLoading, userRole, setLocation]);

@@ -15,8 +15,6 @@ export const bookAppointment = async (
   data: Omit<InsertAppointment, 'id' | 'createdAt' | 'status'>,
   user: { id: number; mobileNumber: string; role: string; fullName: string }
 ) => {
-  console.log(`📅 Creating appointment for patient ${data.patientId} with doctor ${data.doctorId}`);
-  
   try {
     // Walk-in appointments are automatically confirmed (receptionist is confirming at booking time)
     const appointmentType = data.type || 'online';
@@ -41,19 +39,6 @@ export const bookAppointment = async (
     // - Walk-in for FUTURE DATE => patient not present => confirmed (no token, no check-in)
     const isWalkInToday = isWalkIn && appointmentDayStr === todayISTStr;
     const initialStatus = isWalkIn ? (isWalkInToday ? 'checked-in' : 'confirmed') : 'pending';
-    
-    console.log('📅 Appointment data being inserted:', {
-      patientId: data.patientId,
-      doctorId: data.doctorId,
-      hospitalId: data.hospitalId,
-      appointmentDate: data.appointmentDate,
-      appointmentTime: data.appointmentTime,
-      timeSlot: data.timeSlot,
-      reason: data.reason,
-      type: appointmentType,
-      status: initialStatus,
-      createdBy: user.id
-    });
 
     const appointment = await db.transaction(async (tx) => {
       // Convert appointmentDate to Date object if it's a string
@@ -77,14 +62,19 @@ export const bookAppointment = async (
         throw new Error(`appointmentDate must be a Date object or valid date string, got: ${typeof data.appointmentDate}`);
       }
 
+      // Validate required fields (appointmentTime and timeSlot are NOT NULL in schema)
+      if (!data.appointmentTime || !data.timeSlot || !data.reason) {
+        throw new Error(`Missing required fields: ${!data.appointmentTime ? 'appointmentTime ' : ''}${!data.timeSlot ? 'timeSlot ' : ''}${!data.reason ? 'reason' : ''}`);
+      }
+
       const appointmentValues: any = {
       patientId: data.patientId,
       doctorId: data.doctorId,
       hospitalId: data.hospitalId,
       appointmentDate: appointmentDateValue,
-      appointmentTime: data.appointmentTime || null,
-      timeSlot: data.timeSlot || null,
-      reason: data.reason || null,
+      appointmentTime: data.appointmentTime, // Required, never null
+      timeSlot: data.timeSlot, // Required, never null
+      reason: data.reason, // Required, never null
         status: initialStatus,
         type: appointmentType,
       priority: data.priority || 'normal',
@@ -157,11 +147,18 @@ export const bookAppointment = async (
       }
 
       // Non-walk-in: simple insert
+      try {
       const [created] = await tx.insert(appointments).values(appointmentValues).returning();
       return created;
+      } catch (e: any) {
+        const errorMsg = e?.message || String(e);
+        // Check for common database constraint violations
+        if (errorMsg.includes('violates') || errorMsg.includes('constraint') || errorMsg.includes('foreign key')) {
+          throw new Error(`Database constraint violation: ${errorMsg}`);
+        }
+        throw new Error(`Failed to create appointment: ${errorMsg}`);
+      }
     });
-
-    console.log(`✅ Appointment created: ${appointment.id} with status: ${appointment.status}`);
 
     // Notify receptionists when a patient creates a PENDING appointment (so they can confirm)
     // Best-effort: appointment booking must succeed even if notification fails.
@@ -252,7 +249,7 @@ export const bookAppointment = async (
           actorRole: user.role || 'PATIENT',
         });
         
-        console.log('✅ Invoice and payment record created automatically for online payment:', invoice.id);
+        // Invoice and payment record created automatically for online payment
       } catch (invoiceError) {
         // Log error but don't fail appointment booking
         console.error('⚠️ Failed to auto-create invoice for online payment:', invoiceError);
@@ -267,7 +264,14 @@ export const bookAppointment = async (
     return appointment;
   } catch (error) {
     console.error('Error creating appointment:', error);
-    throw new Error('Failed to create appointment');
+    // Preserve the original error message for debugging
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    console.error('Error details:', {
+      message: errorMessage,
+      stack: error instanceof Error ? error.stack : undefined,
+      error: error
+    });
+    throw new Error(`Failed to create appointment: ${errorMessage}`);
   }
 };
 
@@ -450,14 +454,6 @@ export const getAppointmentsByDoctor = async (doctorId: number) => {
         };
       })
     );
-
-    console.log(`✅ Returning ${enrichedAppointments.length} enriched appointments for doctor ${doctorId}`);
-    console.log(`📋 Sample appointments:`, enrichedAppointments.slice(0, 3).map(a => ({
-      id: a.id,
-      patient: a.patientName,
-      status: a.status,
-      date: a.appointmentDate
-    })));
     
     return enrichedAppointments;
   } catch (error) {
@@ -544,7 +540,6 @@ export const getAppointmentsByPatient = async (patientId: number) => {
  * Get all appointments for a specific hospital.
  */
 export const getAppointmentsByHospital = async (hospitalId: number) => {
-  console.log(`📅 Fetching appointments for hospital ${hospitalId}`);
   try {
     // Get all appointments for the hospital with hospital name
     const baseSelect = {
@@ -596,8 +591,6 @@ export const getAppointmentsByHospital = async (hospitalId: number) => {
         throw e;
       }
     }
-
-    console.log(`📋 Found ${appointmentsData.length} appointments for hospital`);
 
     // Enrich with patient and doctor information
     const enrichedAppointments = await Promise.all(
@@ -668,7 +661,6 @@ export const getAppointmentsByHospital = async (hospitalId: number) => {
       })
     );
 
-    console.log(`✅ Returning ${enrichedAppointments.length} enriched appointments`);
     return enrichedAppointments;
   } catch (error) {
     console.error('Error fetching hospital appointments:', error);
@@ -946,7 +938,7 @@ export const cancelAppointment = async (appointmentId: number, userId: number, c
         console.error('Error processing refund:', refundError);
         // Continue with cancellation even if refund fails
       }
-    } else {
+        } else {
       // Before confirmation: full refund
       try {
         // Find invoice for this appointment
@@ -999,8 +991,8 @@ export const cancelAppointment = async (appointmentId: number, userId: number, c
       }
     }
     
-    const currentNotes = existingAppointment.notes || '';
-    updateData.notes = currentNotes ? `${currentNotes}\n${cancellationNote}` : cancellationNote;
+      const currentNotes = existingAppointment.notes || '';
+      updateData.notes = currentNotes ? `${currentNotes}\n${cancellationNote}` : cancellationNote;
     
     const [result] = await db
       .update(appointments)
@@ -1113,7 +1105,7 @@ export const confirmAppointmentByReceptionist = async (appointmentId: number, re
     
     console.log(`📋 Current appointment status: ${existingAppointment.status}`);
     
-    // Assign temporary token on confirmation (before check-in)
+    // Assign token based on booking order (createdAt) for this doctor/date
     // Convert appointmentDate to a proper date string for SQL comparison
     let appointmentDateStr: string;
     const rawDate = existingAppointment.appointmentDate;
@@ -1125,10 +1117,13 @@ export const confirmAppointmentByReceptionist = async (appointmentId: number, re
       appointmentDateStr = new Date(rawDate).toISOString().slice(0, 10);
     }
 
-    // Get max temp token for this doctor/date
-    const maxTempTokenRow = await db
+    // Get all appointments for this doctor/date, ordered by booking time (createdAt)
+    // This ensures tokens are assigned based on who booked first, not who checked in first
+    const allAppointmentsForDate = await db
       .select({
-        maxTempToken: sql<number>`COALESCE(MAX(${appointments.tempTokenNumber}), 0)`,
+        id: appointments.id,
+        createdAt: appointments.createdAt,
+        tokenNumber: appointments.tokenNumber,
       })
       .from(appointments)
       .where(
@@ -1136,12 +1131,26 @@ export const confirmAppointmentByReceptionist = async (appointmentId: number, re
           eq(appointments.doctorId, existingAppointment.doctorId),
           sql`DATE(${appointments.appointmentDate}) = DATE(${sql.raw(`'${appointmentDateStr}'`)})`,
         ),
-      );
+      )
+      .orderBy(appointments.createdAt);
 
-    const maxTempToken = maxTempTokenRow?.[0]?.maxTempToken ?? 0;
-    const nextTempToken = maxTempToken + 1;
+    // Find the position of this appointment in the booking order
+    const appointmentIndex = allAppointmentsForDate.findIndex(apt => apt.id === appointmentId);
+    if (appointmentIndex === -1) {
+      throw new Error('Appointment not found in date group');
+    }
+
+    // Count how many appointments before this one already have tokens assigned
+    const appointmentsBefore = allAppointmentsForDate.slice(0, appointmentIndex);
+    const maxAssignedToken = appointmentsBefore.reduce((max, apt) => {
+      return Math.max(max, apt.tokenNumber || 0);
+    }, 0);
+
+    // The next token should be maxAssignedToken + 1
+    // This ensures tokens are assigned based on booking order (createdAt)
+    const nextToken = maxAssignedToken + 1;
     
-    // Update appointment status to confirmed and assign temporary token
+    // Update appointment status to confirmed and assign token based on booking order
     // Use SQL NOW() for timestamp compatibility with PostgreSQL
     const [result] = await db
       .update(appointments)
@@ -1149,7 +1158,7 @@ export const confirmAppointmentByReceptionist = async (appointmentId: number, re
         status: 'confirmed',
         receptionistId,
         confirmedAt: sql`NOW()`,
-        tempTokenNumber: nextTempToken, // Assign temporary token on confirmation
+        tokenNumber: nextToken, // Assign token based on booking order (createdAt)
       })
       .where(eq(appointments.id, appointmentId))
       .returning();
@@ -1257,27 +1266,37 @@ export const checkInAppointment = async (appointmentId: number, receptionistId: 
         );
       }
 
-      // If already tokened (shouldn't happen if status is confirmed, but safe), keep idempotent.
+      // If already tokened (should have been assigned on confirmation), keep idempotent.
       if ((existingAppointment as any).tokenNumber) {
+        // Token already assigned, just update status if needed
+        const existingStatus = (existingAppointment.status || '').toString();
+        if (existingStatus === 'confirmed') {
+          const [updated] = await tx
+            .update(appointments)
+            .set({
+              status: 'checked-in',
+              checkedInAt: (existingAppointment as any).checkedInAt ? (existingAppointment as any).checkedInAt : sql`NOW()`,
+            })
+            .where(eq(appointments.id, appointmentId))
+            .returning();
+          return updated as any;
+        }
         return existingAppointment as any;
       }
 
-      // Allocate next token for the same doctor on the same appointment date.
-      // Concurrency-safe via unique index + retries.
+      // Token should have been assigned on confirmation, but if not, assign based on booking order
       const existingStatus = (existingAppointment.status || '').toString();
       const existingNotes = (existingAppointment as any).notes || '';
 
       // Convert appointmentDate to a proper date string for SQL comparison
       let appointmentDateStr: string;
       const rawDate = existingAppointment.appointmentDate;
-      console.log('🔍 Raw appointmentDate type:', typeof rawDate, 'value:', rawDate);
       
       if (rawDate instanceof Date) {
         appointmentDateStr = rawDate.toISOString().slice(0, 10);
       } else if (typeof rawDate === 'string') {
         appointmentDateStr = rawDate.slice(0, 10);
       } else {
-        // Handle other types (might be a Drizzle date object)
         const dateObj = new Date(rawDate);
         if (isNaN(dateObj.getTime())) {
           throw new Error(`Invalid appointment date: ${rawDate}`);
@@ -1285,60 +1304,71 @@ export const checkInAppointment = async (appointmentId: number, receptionistId: 
         appointmentDateStr = dateObj.toISOString().slice(0, 10);
       }
       
-      console.log('🔍 Converted appointmentDateStr:', appointmentDateStr);
-
-      for (let attempt = 0; attempt < 5; attempt++) {
-        // Use a parameterized query with proper date string
-        // Format: YYYY-MM-DD for PostgreSQL DATE comparison
-        const maxTokenRow = await tx
+      // Get all appointments for this doctor/date, ordered by booking time (createdAt)
+      const allAppointmentsForDate = await tx
           .select({
-            maxToken: sql<number>`COALESCE(MAX(${appointments.tokenNumber}), 0)`,
+          id: appointments.id,
+          createdAt: appointments.createdAt,
+          tokenNumber: appointments.tokenNumber,
           })
           .from(appointments)
           .where(
             and(
               eq(appointments.doctorId, existingAppointment.doctorId),
-              // Use CAST with raw SQL string to ensure proper date handling
               sql`DATE(${appointments.appointmentDate}) = ${sql.raw(`'${appointmentDateStr}'::date`)}`,
             ),
-          );
+        )
+        .orderBy(appointments.createdAt);
 
-        const maxToken = maxTokenRow?.[0]?.maxToken ?? 0;
-        const nextToken = maxToken + 1;
-        const tempToken = (existingAppointment as any).tempTokenNumber;
+      // Find the position of this appointment in the booking order
+      const appointmentIndex = allAppointmentsForDate.findIndex(apt => apt.id === appointmentId);
+      if (appointmentIndex === -1) {
+        throw new Error('Appointment not found in date group');
+      }
 
-        // Check if patient is late (appointment time has passed)
-        const appointmentTime = existingAppointment.appointmentTime || '';
-        const now = new Date();
-        let appointmentDateTime: Date;
-        try {
-          appointmentDateTime = new Date(`${appointmentDateStr}T${appointmentTime}`);
-          if (isNaN(appointmentDateTime.getTime())) {
-            // Fallback: use appointment date only
-            appointmentDateTime = new Date(appointmentDateStr);
-          }
-        } catch {
+      // Count how many appointments before this one already have tokens assigned
+      const appointmentsBefore = allAppointmentsForDate.slice(0, appointmentIndex);
+      const maxAssignedToken = appointmentsBefore.reduce((max, apt) => {
+        return Math.max(max, apt.tokenNumber || 0);
+      }, 0);
+
+      // The next token should be maxAssignedToken + 1
+      const nextToken = maxAssignedToken + 1;
+
+      // Check if patient is late (appointment time has passed)
+      const appointmentTime = existingAppointment.appointmentTime || '';
+      const now = new Date();
+      let appointmentDateTime: Date;
+      try {
+        appointmentDateTime = new Date(`${appointmentDateStr}T${appointmentTime}`);
+        if (isNaN(appointmentDateTime.getTime())) {
+          // Fallback: use appointment date only
           appointmentDateTime = new Date(appointmentDateStr);
         }
-        const isLate = now > appointmentDateTime;
+      } catch {
+        appointmentDateTime = new Date(appointmentDateStr);
+      }
+      const isLate = now > appointmentDateTime;
 
-        const checkInNote = `Real Token: ${nextToken}${tempToken ? ` (was Temp Token: ${tempToken})` : ''}${isLate ? ' - Late arrival' : ''}`;
-        const updatedNotes =
-          existingNotes && /Real Token:\s*\d+/i.test(existingNotes) ? existingNotes : (existingNotes ? `${existingNotes}\n${checkInNote}` : checkInNote);
+      const checkInNote = `Token: ${nextToken}${isLate ? ' - Late arrival' : ''}`;
+      const updatedNotes =
+        existingNotes && /Token:\s*\d+/i.test(existingNotes) ? existingNotes : (existingNotes ? `${existingNotes}\n${checkInNote}` : checkInNote);
 
+      // Concurrency-safe token assignment via unique index + retry
+      for (let attempt = 0; attempt < 5; attempt++) {
         try {
           const [updated] = await tx
-      .update(appointments)
-      .set({
-              // If we're coming from confirmed, set checked-in; otherwise keep current status (backfill token).
+            .update(appointments)
+            .set({
+              // If we're coming from confirmed, set checked-in; otherwise keep current status.
               status: existingStatus === 'confirmed' ? 'checked-in' : existingStatus,
-        notes: updatedNotes,
+              notes: updatedNotes,
               receptionistId,
-              tokenNumber: nextToken, // Assign real token on check-in
+              tokenNumber: nextToken, // Assign token based on booking order
               checkedInAt: (existingAppointment as any).checkedInAt ? (existingAppointment as any).checkedInAt : sql`NOW()`,
-      })
-      .where(eq(appointments.id, appointmentId))
-      .returning();
+            })
+            .where(eq(appointments.id, appointmentId))
+            .returning();
 
           if (!updated) {
             throw new Error('Failed to update appointment');

@@ -72,9 +72,15 @@ router.post('/', authorizeRoles('PATIENT', 'ADMIN', 'RECEPTIONIST'), async (req:
     res.status(201).json(appointment);
   } catch (err) {
     console.error('Book appointment error:', err);
+    const errorMessage = err instanceof Error ? err.message : String(err);
+    console.error('Error details:', {
+      message: errorMessage,
+      stack: err instanceof Error ? err.stack : undefined,
+      body: req.body
+    });
     res.status(400).json({ 
       message: 'Failed to book appointment',
-      error: err instanceof Error ? err.message : 'Unknown error'
+      error: errorMessage
     });
   }
 });

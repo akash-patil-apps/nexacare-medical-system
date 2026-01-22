@@ -107,20 +107,6 @@ export const IpdEncountersList: React.FC<IpdEncountersListProps> = ({
   const displayEncounters = showAllEncounters 
     ? encounters // Show all encounters including discharged
     : encounters.filter((e) => e.status === 'admitted' || e.status === 'transferred'); // Only active encounters
-  
-  console.log('📋 IpdEncountersList - Total encounters:', encounters.length);
-  console.log('📋 IpdEncountersList - Display encounters:', displayEncounters.length);
-  console.log('📋 IpdEncountersList - Show all encounters:', showAllEncounters);
-  console.log('📋 IpdEncountersList - Encounter statuses:', encounters.map(e => ({ id: e.id, status: e.status, patient: e.patient?.user?.fullName })));
-  if (doctorId) {
-    console.log('📋 IpdEncountersList - Doctor ID filter:', doctorId);
-    console.log('📋 IpdEncountersList - Doctor IDs in encounters:', encounters.map(e => ({
-      id: e.id,
-      admittingDoctorId: e.admittingDoctorId,
-      attendingDoctorId: e.attendingDoctorId,
-      patient: e.patient?.user?.fullName
-    })));
-  }
 
   const getStatusColor = (status: string) => {
     switch (status) {

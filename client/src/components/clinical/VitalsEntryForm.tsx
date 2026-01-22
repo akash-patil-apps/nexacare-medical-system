@@ -255,9 +255,6 @@ export const VitalsEntryForm: React.FC<VitalsEntryFormProps> = ({
               },
               body: JSON.stringify(patientUpdatePayload),
             });
-            if (updateResponse.ok) {
-              console.log('✅ Patient height/weight updated');
-            }
           } catch (updateError) {
             console.warn('⚠️ Failed to update patient height/weight:', updateError);
           }

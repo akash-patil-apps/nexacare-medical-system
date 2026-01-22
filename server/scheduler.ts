@@ -1,6 +1,7 @@
 // server/scheduler.ts
-// In-process scheduler for medicine reminders
+// In-process scheduler for medicine reminders and follow-up reminders
 import * as medicineReminderService from './services/medicine-reminder.service';
+import * as followupReminderService from './services/followup-reminder.service';
 
 const REMINDER_CHECK_INTERVAL_MS = 30 * 60 * 1000; // 30 minutes
 
@@ -13,12 +14,8 @@ let reminderInterval: NodeJS.Timeout | null = null;
 export function startMedicineReminderScheduler() {
   // Don't start if already running
   if (reminderInterval) {
-    console.log('⚠️ Medicine reminder scheduler already running');
     return;
   }
-
-  console.log('🕐 Starting medicine reminder scheduler...');
-  console.log(`   Interval: ${REMINDER_CHECK_INTERVAL_MS / 1000 / 60} minutes`);
 
   // Run immediately on start
   runMedicineReminderCheck();
@@ -27,8 +24,6 @@ export function startMedicineReminderScheduler() {
   reminderInterval = setInterval(() => {
     runMedicineReminderCheck();
   }, REMINDER_CHECK_INTERVAL_MS);
-
-  console.log('✅ Medicine reminder scheduler started');
 }
 
 /**
@@ -47,14 +42,9 @@ export function stopMedicineReminderScheduler() {
  */
 async function runMedicineReminderCheck() {
   try {
-    const startTime = Date.now();
-    console.log(`\n🔔 [${new Date().toISOString()}] Running medicine reminder check...`);
-    
     await medicineReminderService.sendDailyMedicineReminders();
-    
-    const duration = Date.now() - startTime;
-    console.log(`✅ Medicine reminder check completed in ${duration}ms\n`);
+    await followupReminderService.sendFollowUpReminders();
   } catch (error) {
-    console.error('❌ Error in medicine reminder check:', error);
+    console.error('❌ Error in reminder check:', error);
   }
 }

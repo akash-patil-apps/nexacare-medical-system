@@ -404,7 +404,6 @@ export async function getReceptionistContext(receptionistUserId: number) {
  * Similar to getDoctorByUserId - fetches receptionist data and hospital name
  */
 export async function getReceptionistByUserId(userId: number) {
-  console.log(`👤 Fetching receptionist by user ID ${userId}`);
   try {
     // First, get the receptionist data
     const [receptionistData] = await db
@@ -435,12 +434,6 @@ export async function getReceptionistByUserId(userId: number) {
       ...receptionistData,
       hospitalName,
     };
-    
-    console.log(`✅ Receptionist profile fetched:`, { 
-      id: receptionist.id, 
-      hospitalId: receptionist.hospitalId, 
-      hospitalName: receptionist.hospitalName 
-    });
     
     return receptionist;
   } catch (error: any) {

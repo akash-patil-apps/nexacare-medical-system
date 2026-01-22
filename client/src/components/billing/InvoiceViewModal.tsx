@@ -13,6 +13,7 @@ import {
 import { FileTextOutlined, PrinterOutlined, DownloadOutlined } from '@ant-design/icons';
 import { useQuery } from '@tanstack/react-query';
 import dayjs from 'dayjs';
+import { CopyIcon } from '../common/CopyIcon';
 
 const { Title, Text } = Typography;
 
@@ -158,7 +159,10 @@ export const InvoiceViewModal: React.FC<InvoiceViewModalProps> = ({
         {/* Invoice Header */}
         <Descriptions column={2} size="small" style={{ marginBottom: 24 }}>
           <Descriptions.Item label="Invoice Number">
-            <Text strong>#{invoice.invoiceNumber || invoice.id}</Text>
+            <Space>
+              <Text strong>#{invoice.invoiceNumber || invoice.id}</Text>
+              <CopyIcon text={String(invoice.invoiceNumber || invoice.id)} label="Invoice Number" />
+            </Space>
           </Descriptions.Item>
           <Descriptions.Item label="Invoice Date">
             {dayjs(invoice.createdAt).format('DD/MM/YYYY HH:mm')}
@@ -167,7 +171,10 @@ export const InvoiceViewModal: React.FC<InvoiceViewModalProps> = ({
             {invoice.patient?.fullName || invoice.patientName || 'N/A'}
           </Descriptions.Item>
           <Descriptions.Item label="Appointment ID">
-            {invoice.appointmentId ? `#${invoice.appointmentId}` : 'N/A'}
+            <Space>
+              <Text>{invoice.appointmentId ? `#${invoice.appointmentId}` : 'N/A'}</Text>
+              {invoice.appointmentId && <CopyIcon text={String(invoice.appointmentId)} label="Appointment ID" />}
+            </Space>
           </Descriptions.Item>
           <Descriptions.Item label="Doctor">
             {invoice.doctor?.fullName || invoice.doctorName || 'N/A'}

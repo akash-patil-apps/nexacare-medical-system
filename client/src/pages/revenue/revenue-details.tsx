@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import {
   Card,
@@ -19,6 +19,7 @@ import {
   Popover,
   Descriptions,
 } from 'antd';
+import { Tabs } from 'antd';
 import {
   DollarOutlined,
   DownloadOutlined,
@@ -34,6 +35,7 @@ import {
   MenuUnfoldOutlined,
   InfoCircleOutlined,
 } from '@ant-design/icons';
+import { CopyIcon } from '../../components/common/CopyIcon';
 import { apiRequest } from '../../lib/queryClient';
 import type { ColumnsType } from 'antd/es/table';
 import dayjs, { type Dayjs } from 'dayjs';
@@ -41,6 +43,7 @@ import { useAuth } from '../../hooks/use-auth';
 import { useResponsive } from '../../hooks/use-responsive';
 import { useLocation } from 'wouter';
 import { TopHeader } from '../../components/layout/TopHeader';
+import { getISTStartOfDay, isSameDayIST } from '../../lib/timezone';
 
 const { Title, Text } = Typography;
 const { RangePicker } = DatePicker;
@@ -71,6 +74,7 @@ export default function RevenueDetails() {
   const [paymentMethodFilter, setPaymentMethodFilter] = useState<string>('all');
   const [sourceFilter, setSourceFilter] = useState<string>('all');
   const [searchText, setSearchText] = useState<string>('');
+  const [activeTransactionTab, setActiveTransactionTab] = useState<string>('today');
   // const [selectedMenuKey] = useState<string>('revenue'); // Unused variable
 
   // Get notifications for TopHeader
@@ -299,8 +303,14 @@ export default function RevenueDetails() {
     queryKey: ['/api/revenue/transactions', dateRange, paymentMethodFilter, sourceFilter],
     queryFn: async () => {
       const params = new URLSearchParams();
-      if (dateRange[0]) params.append('startDate', dateRange[0].toISOString());
-      if (dateRange[1]) params.append('endDate', dateRange[1].toISOString());
+      if (dateRange[0]) {
+        const startDate = dayjs(dateRange[0]).startOf('day').toISOString();
+        params.append('startDate', startDate);
+      }
+      if (dateRange[1]) {
+        const endDate = dayjs(dateRange[1]).endOf('day').toISOString();
+        params.append('endDate', endDate);
+      }
       if (paymentMethodFilter !== 'all') params.append('paymentMethod', paymentMethodFilter);
       if (sourceFilter !== 'all') params.append('source', sourceFilter);
       params.append('limit', '1000');
@@ -308,6 +318,7 @@ export default function RevenueDetails() {
       const res = await apiRequest('GET', `/api/revenue/transactions?${params.toString()}`);
       return res.json();
     },
+    enabled: true, // Always enabled
   });
 
   // Filter transactions by search text
@@ -320,6 +331,111 @@ export default function RevenueDetails() {
       t.notes?.toLowerCase().includes(search)
     );
   }) || [];
+
+  // Group transactions by date (like appointments table) - using IST
+  const transactionsByDate = useMemo(() => {
+    const today = getISTStartOfDay();
+    const tomorrow = new Date(today);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    
+    const groups: Record<string, RevenueTransaction[]> = {
+      today: [],
+      tomorrow: [],
+    };
+    
+    filteredTransactions.forEach((t: RevenueTransaction) => {
+      if (!t.receivedAt) return;
+      
+      const transactionDate = new Date(t.receivedAt);
+      const transactionDayIST = getISTStartOfDay(transactionDate);
+      
+      const dateKey = transactionDayIST.getTime();
+      const todayKey = today.getTime();
+      const tomorrowKey = tomorrow.getTime();
+      
+      if (dateKey === todayKey) {
+        groups.today.push(t);
+      } else if (dateKey === tomorrowKey) {
+        groups.tomorrow.push(t);
+      } else {
+        const dateStr = dayjs(transactionDayIST).format('YYYY-MM-DD');
+        if (!groups[dateStr]) {
+          groups[dateStr] = [];
+        }
+        groups[dateStr].push(t);
+      }
+    });
+    
+    // Sort each group by time (newest first)
+    Object.keys(groups).forEach(key => {
+      groups[key].sort((a, b) => {
+        return dayjs(b.receivedAt).unix() - dayjs(a.receivedAt).unix();
+      });
+    });
+    
+    return groups;
+  }, [filteredTransactions]);
+
+  // Get transactions for active tab
+  const transactionsToShow = useMemo(() => {
+    return transactionsByDate[activeTransactionTab] || [];
+  }, [activeTransactionTab, transactionsByDate]);
+
+  // Generate tab items for transactions
+  const transactionTabs = useMemo(() => {
+    const tabs: Array<{ key: string; label: string; count: number }> = [];
+    
+    if (transactionsByDate.today && transactionsByDate.today.length > 0) {
+      tabs.push({ 
+        key: 'today', 
+        label: `Today (${transactionsByDate.today.length})`, 
+        count: transactionsByDate.today.length 
+      });
+    }
+    
+    if (transactionsByDate.tomorrow && transactionsByDate.tomorrow.length > 0) {
+      tabs.push({ 
+        key: 'tomorrow', 
+        label: `Tomorrow (${transactionsByDate.tomorrow.length})`, 
+        count: transactionsByDate.tomorrow.length 
+      });
+    }
+    
+    Object.keys(transactionsByDate)
+      .filter(key => key !== 'today' && key !== 'tomorrow')
+      .sort((a, b) => dayjs(b).unix() - dayjs(a).unix()) // Descending (newest first)
+      .forEach(dateKey => {
+        const count = transactionsByDate[dateKey]?.length || 0;
+        if (count > 0) {
+          const date = dayjs(dateKey);
+          tabs.push({ 
+            key: dateKey, 
+            label: `${date.format('DD MMM')} (${count})`, 
+            count 
+          });
+        }
+      });
+    
+    // If no tabs, add empty today tab
+    if (tabs.length === 0) {
+      tabs.push({ key: 'today', label: 'Today (0)', count: 0 });
+    }
+    
+    return tabs;
+  }, [transactionsByDate]);
+
+  // Update active tab if current tab has no transactions
+  useEffect(() => {
+    if (transactionTabs.length > 0 && !transactionsByDate[activeTransactionTab]) {
+      // Find first tab with transactions
+      const firstTabWithData = transactionTabs.find(tab => tab.count > 0);
+      if (firstTabWithData) {
+        setActiveTransactionTab(firstTabWithData.key);
+      } else if (transactionTabs.length > 0) {
+        setActiveTransactionTab(transactionTabs[0].key);
+      }
+    }
+  }, [transactionTabs, transactionsByDate, activeTransactionTab]);
 
   const columns: ColumnsType<RevenueTransaction> = [
     {
@@ -378,15 +494,15 @@ export default function RevenueDetails() {
       title: <span style={{ color: '#FFFFFF' }}>Invoice</span>,
       dataIndex: 'invoiceNumber',
       key: 'invoiceNumber',
-      width: 120,
-      render: (invoice: string) => <span style={{ color: '#CCCCCC' }}>{invoice || 'N/A'}</span>,
+      width: 180,
+      render: (invoice: string) => <span style={{ color: '#CCCCCC', fontFamily: 'monospace', fontSize: '12px' }}>{invoice || 'N/A'}</span>,
     },
     {
       title: <span style={{ color: '#FFFFFF' }}>Transaction ID</span>,
       dataIndex: 'transactionId',
       key: 'transactionId',
-      width: 150,
-      render: (id: string) => <span style={{ color: '#CCCCCC' }}>{id || '-'}</span>,
+      width: 200,
+      render: (id: string) => <span style={{ color: '#CCCCCC', fontFamily: 'monospace', fontSize: '12px' }}>{id || '-'}</span>,
     },
     {
       title: <span style={{ color: '#FFFFFF' }}>Status</span>,
@@ -417,10 +533,20 @@ export default function RevenueDetails() {
               contentStyle={{ color: '#FFFFFF' }}
             >
               <Descriptions.Item label="Transaction ID">
-                <Text style={{ color: '#FFFFFF', fontFamily: 'monospace' }}>{record.transactionId || 'N/A'}</Text>
+                <Space>
+                  <Text style={{ color: '#FFFFFF', fontFamily: 'monospace' }}>{record.transactionId || 'N/A'}</Text>
+                  {record.transactionId && record.transactionId !== 'N/A' && (
+                    <CopyIcon text={record.transactionId} label="Transaction ID" style={{ color: '#FFFFFF' }} />
+                  )}
+                </Space>
               </Descriptions.Item>
               <Descriptions.Item label="Invoice Number">
-                <Text style={{ color: '#FFFFFF' }}>{record.invoiceNumber || 'N/A'}</Text>
+                <Space>
+                  <Text style={{ color: '#FFFFFF' }}>{record.invoiceNumber || 'N/A'}</Text>
+                  {record.invoiceNumber && record.invoiceNumber !== 'N/A' && (
+                    <CopyIcon text={record.invoiceNumber} label="Invoice Number" style={{ color: '#FFFFFF' }} />
+                  )}
+                </Space>
               </Descriptions.Item>
               <Descriptions.Item label="Amount">
                 <Text strong style={{ color: '#22C55E', fontSize: '16px' }}>₹{record.amount.toFixed(2)}</Text>
@@ -505,6 +631,16 @@ export default function RevenueDetails() {
   return (
     <>
       <style>{`
+        .date-header-row {
+          background: #1A1A1A !important;
+        }
+        .date-header-row:hover {
+          background: #1A1A1A !important;
+        }
+        .date-header-row td {
+          border-bottom: 1px solid #3A3A3A !important;
+          padding: 12px 16px !important;
+        }
         /* Override medical-container padding for revenue page */
         body:has(.revenue-details-wrapper) .medical-container {
           padding: 0 !important;
@@ -793,14 +929,22 @@ export default function RevenueDetails() {
               bodyStyle={{ background: '#2A2A2A' }}
             >
               <Space direction="vertical" style={{ width: '100%' }}>
-                {revenueByMethod && Object.entries(revenueByMethod).map(([method, amount]: [string, any]) => (
-                  <div key={method} style={{ display: 'flex', justifyContent: 'space-between' }}>
-                    <Text style={{ color: '#CCCCCC' }}>{method.charAt(0).toUpperCase() + method.slice(1)}:</Text>
-                    <Text strong style={{ color: '#FFFFFF' }}>₹{amount.toFixed(2)}</Text>
-                  </div>
-                ))}
-                {(!revenueByMethod || Object.keys(revenueByMethod).length === 0) && (
+                {revenueByMethod && Object.entries(revenueByMethod)
+                  .filter(([method, amount]: [string, any]) => method !== 'total' && amount > 0)
+                  .map(([method, amount]: [string, any]) => (
+                    <div key={method} style={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <Text style={{ color: '#CCCCCC' }}>{method.charAt(0).toUpperCase() + method.slice(1)}:</Text>
+                      <Text strong style={{ color: '#FFFFFF' }}>₹{amount.toFixed(2)}</Text>
+                    </div>
+                  ))}
+                {(!revenueByMethod || Object.keys(revenueByMethod).filter(key => key !== 'total').length === 0) && (
                   <Text style={{ color: '#888888' }}>No payment data available</Text>
+                )}
+                {revenueByMethod && revenueByMethod.total !== undefined && (
+                  <div style={{ display: 'flex', justifyContent: 'space-between', borderTop: '1px solid #3A3A3A', paddingTop: 8, marginTop: 8 }}>
+                    <Text strong style={{ color: '#FFFFFF' }}>Total:</Text>
+                    <Text strong style={{ fontSize: 16, color: '#FFFFFF' }}>₹{revenueByMethod.total.toFixed(2)}</Text>
+                  </div>
                 )}
               </Space>
             </Card>
@@ -881,9 +1025,23 @@ export default function RevenueDetails() {
               headStyle={{ background: '#2A2A2A', borderBottom: '1px solid #3A3A3A' }}
               bodyStyle={{ background: '#2A2A2A' }}
             >
+          <Tabs
+            activeKey={activeTransactionTab}
+            onChange={setActiveTransactionTab}
+            items={transactionTabs.map(tab => ({
+              key: tab.key,
+              label: tab.label,
+            }))}
+            style={{ marginBottom: 16 }}
+            tabBarStyle={{ 
+              background: '#2A2A2A',
+              borderBottom: '1px solid #3A3A3A',
+              marginBottom: 0
+            }}
+          />
           <Table
             columns={columns}
-            dataSource={filteredTransactions}
+            dataSource={transactionsToShow}
             loading={transactionsLoading}
             rowKey="id"
             pagination={{

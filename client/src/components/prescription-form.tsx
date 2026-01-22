@@ -16,7 +16,8 @@ import {
   Popconfirm,
   App,
   InputNumber,
-  DatePicker
+  DatePicker,
+  Tabs
 } from 'antd';
 import { 
   PlusOutlined, 
@@ -33,6 +34,7 @@ import { getAuthToken, getUserFromToken } from "../lib/auth";
 import type { Medication } from "../../../shared/schema";
 import dayjs from "dayjs";
 import prescriptionIcon from '../assets/images/prescription.png';
+import { PrescriptionPreview } from './prescription/PrescriptionPreview';
 
 const { Title, Text } = Typography;
 const { Option } = Select;
@@ -128,6 +130,33 @@ export default function PrescriptionForm({
   // Patient data state
   const [patientData, setPatientData] = useState<any>(null);
   const [isHeightEditable, setIsHeightEditable] = useState(false);
+  
+  // Prescription details state
+  const [chiefComplaints, setChiefComplaints] = useState<string[]>(['']);
+  const [clinicalFindings, setClinicalFindings] = useState<string[]>(['']);
+  const [advice, setAdvice] = useState<string[]>(['']);
+  const [activeTab, setActiveTab] = useState<string>('form');
+  
+  // Fetch lab tests for patient
+  const { data: labTests } = useQuery({
+    queryKey: ['/api/labs/reports', patientId],
+    queryFn: async () => {
+      if (!patientId) return [];
+      const token = getAuthToken();
+      const response = await fetch(`/api/labs/reports?patientId=${patientId}`, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+        },
+      });
+      if (!response.ok) return [];
+      const data = await response.json();
+      // Filter for recommended/pending tests
+      return data.filter((test: any) => 
+        test.status === 'recommended' || test.status === 'pending'
+      );
+    },
+    enabled: !!patientId && isOpen,
+  });
 
   // Fetch patients for doctor to select from
   const { data: patients } = useQuery({
@@ -193,10 +222,6 @@ export default function PrescriptionForm({
         const sorted = medicines.sort((a: any, b: any) => 
           (a.name || '').localeCompare(b.name || '')
         );
-        console.log('✅ Medicines loaded:', sorted.length, 'items');
-        if (sorted.length > 0) {
-          console.log('📦 Sample medicines:', sorted.slice(0, 3).map((m: any) => m.name));
-        }
         return sorted;
       } catch (error: any) {
         console.error('❌ Error fetching medicines:', error);
@@ -324,9 +349,27 @@ export default function PrescriptionForm({
       // Don't send doctorId - backend will get it from the authenticated user
       const { doctorId: _, ...cleanData } = data;
       
+      // Build instructions JSON with chief complaints, clinical findings, and advice
+      const instructionsData: any = {};
+      if (chiefComplaints.filter(c => c.trim()).length > 0) {
+        instructionsData.chiefComplaints = chiefComplaints.filter(c => c.trim());
+      }
+      if (clinicalFindings.filter(f => f.trim()).length > 0) {
+        instructionsData.clinicalFindings = clinicalFindings.filter(f => f.trim());
+      }
+      if (advice.filter(a => a.trim()).length > 0) {
+        instructionsData.advice = advice.filter(a => a.trim());
+      }
+      if (cleanData.instructions) {
+        instructionsData.additionalNotes = cleanData.instructions;
+      }
+      
       const requestBody: any = {
         ...cleanData,
         medications: JSON.stringify(medications),
+        instructions: Object.keys(instructionsData).length > 0 
+          ? JSON.stringify(instructionsData) 
+          : cleanData.instructions || null,
         patientId: cleanData.patientId || patientId,
         hospitalId: cleanData.hospitalId || hospitalId,
       };
@@ -335,7 +378,6 @@ export default function PrescriptionForm({
       const finalAppointmentId = cleanData.appointmentId || appointmentId;
       if (finalAppointmentId) {
         requestBody.appointmentId = finalAppointmentId;
-        console.log('📋 Creating prescription with appointmentId:', finalAppointmentId);
       } else {
         console.warn('⚠️ WARNING: Creating prescription without appointmentId!');
       }
@@ -399,8 +441,6 @@ export default function PrescriptionForm({
     },
     onSuccess: async (data: any) => {
       message.success('Prescription created successfully!');
-      console.log('✅ Prescription created:', data);
-      console.log('📋 Created prescription appointmentId:', data?.appointmentId || 'NOT SET');
       
       // Save vitals if any are provided
       if (vitals.bp || vitals.temp || vitals.pulse || vitals.spo2 || vitals.rr || vitals.weight || vitals.height) {
@@ -459,7 +499,6 @@ export default function PrescriptionForm({
             });
             
             if (vitalsResponse.ok) {
-              console.log('✅ Vitals saved successfully');
             } else {
               console.warn('⚠️ Failed to save vitals:', await vitalsResponse.text());
             }
@@ -475,10 +514,6 @@ export default function PrescriptionForm({
             
             // Note: Patient profile update is handled by backend when vitals are saved
             // The vitals chart stores the latest values, and patient profile can be updated separately if needed
-            if (Object.keys(patientUpdatePayload).length > 0) {
-              console.log('📝 Patient vitals to update:', patientUpdatePayload);
-              // Backend can handle patient profile updates if needed
-            }
           }
         } catch (error) {
           console.error('❌ Error saving vitals:', error);
@@ -496,7 +531,6 @@ export default function PrescriptionForm({
       // Force immediate refetch with await to ensure it completes
       try {
         await queryClient.refetchQueries({ queryKey: ['/api/prescriptions/doctor'] });
-        console.log('✅ Prescriptions refetched after creation');
       } catch (error) {
         console.error('❌ Error refetching prescriptions:', error);
       }
@@ -741,6 +775,14 @@ export default function PrescriptionForm({
             </div>
           </div>
         </div>
+        <Tabs
+          activeKey={activeTab}
+          onChange={setActiveTab}
+          items={[
+            {
+              key: 'form',
+              label: 'Prescription Form',
+              children: (
         <Form
           form={form}
           layout="vertical"
@@ -1243,18 +1285,113 @@ export default function PrescriptionForm({
                   <Text type="secondary">No medications added yet. Fill the form above and press Enter or select medicine from dropdown</Text>
                 </div>
               </div>
+                          )}
+                        </div>
+
+          {/* Chief Complaints */}
+          <div style={{ marginBottom: '24px' }}>
+            <Text strong style={{ display: 'block', marginBottom: '8px' }}>Chief Complaints</Text>
+            {chiefComplaints.map((complaint, idx) => (
+              <Input
+                key={idx}
+                value={complaint}
+                onChange={(e) => {
+                  const updated = [...chiefComplaints];
+                  updated[idx] = e.target.value;
+                  setChiefComplaints(updated);
+                }}
+                placeholder={`Complaint ${idx + 1} (e.g., FEVER WITH CHILLS (4 DAYS))`}
+                style={{ marginBottom: '8px' }}
+                onPressEnter={() => {
+                  if (idx === chiefComplaints.length - 1 && chiefComplaints[chiefComplaints.length - 1]) {
+                    setChiefComplaints([...chiefComplaints, '']);
+                  }
+                }}
+              />
+            ))}
+            {chiefComplaints[chiefComplaints.length - 1] && (
+              <Button
+                type="dashed"
+                onClick={() => setChiefComplaints([...chiefComplaints, ''])}
+                style={{ width: '100%', marginTop: '8px' }}
+              >
+                + Add Another Complaint
+              </Button>
             )}
           </div>
 
-          {/* General Instructions */}
+          {/* Clinical Findings */}
+          <div style={{ marginBottom: '24px' }}>
+            <Text strong style={{ display: 'block', marginBottom: '8px' }}>Clinical Findings</Text>
+            {clinicalFindings.map((finding, idx) => (
+              <Input
+                key={idx}
+                value={finding}
+                onChange={(e) => {
+                  const updated = [...clinicalFindings];
+                  updated[idx] = e.target.value;
+                  setClinicalFindings(updated);
+                }}
+                placeholder={`Finding ${idx + 1} (e.g., THESE ARE TEST FINDINGS FOR A TEST PATIENT)`}
+                style={{ marginBottom: '8px' }}
+                onPressEnter={() => {
+                  if (idx === clinicalFindings.length - 1 && clinicalFindings[clinicalFindings.length - 1]) {
+                    setClinicalFindings([...clinicalFindings, '']);
+                  }
+                }}
+              />
+            ))}
+            {clinicalFindings[clinicalFindings.length - 1] && (
+              <Button
+                type="dashed"
+                onClick={() => setClinicalFindings([...clinicalFindings, ''])}
+                style={{ width: '100%', marginTop: '8px' }}
+              >
+                + Add Another Finding
+              </Button>
+            )}
+          </div>
+
+          {/* General Instructions / Advice */}
+          <div style={{ marginBottom: '24px' }}>
+            <Text strong style={{ display: 'block', marginBottom: '8px' }}>Advice</Text>
+            {advice.map((item, idx) => (
+              <Input
+                key={idx}
+                value={item}
+                onChange={(e) => {
+                  const updated = [...advice];
+                  updated[idx] = e.target.value;
+                  setAdvice(updated);
+                }}
+                placeholder={`Advice ${idx + 1} (e.g., TAKE BED REST)`}
+                style={{ marginBottom: '8px' }}
+                onPressEnter={() => {
+                  if (idx === advice.length - 1 && advice[advice.length - 1]) {
+                    setAdvice([...advice, '']);
+                  }
+                }}
+              />
+            ))}
+            {advice[advice.length - 1] && (
+              <Button
+                type="dashed"
+                onClick={() => setAdvice([...advice, ''])}
+                style={{ width: '100%', marginTop: '8px' }}
+              >
+                + Add Another Advice
+              </Button>
+            )}
+          </div>
+
           <Form.Item
             name="instructions"
-            label={<Text strong>General Instructions</Text>}
+            label={<Text strong>Additional Notes (Optional)</Text>}
             style={{ marginBottom: '24px' }}
           >
             <TextArea
-              rows={3}
-              placeholder="Enter general instructions for the patient (e.g., Rest, avoid cold drinks, etc.)"
+              rows={2}
+              placeholder="Any additional notes or instructions"
             />
           </Form.Item>
 
@@ -1302,6 +1439,56 @@ export default function PrescriptionForm({
             </div>
           </Form.Item>
         </Form>
+              ),
+            },
+            {
+              key: 'preview',
+              label: 'Preview',
+              children: (
+                <PrescriptionPreview
+                  hospitalName={resolvedHospitals?.find((h: any) => h.id === (hospitalId || form.getFieldValue('hospitalId')))?.name}
+                  hospitalAddress={resolvedHospitals?.find((h: any) => h.id === (hospitalId || form.getFieldValue('hospitalId')))?.address}
+                  doctorName={(() => {
+                    const token = getAuthToken();
+                    const user = token ? getUserFromToken() : null;
+                    return user?.fullName || 'Dr. Unknown';
+                  })()}
+                  doctorQualification="M.S."
+                  doctorRegNo="MMC 2018"
+                  patientId={patientId || form.getFieldValue('patientId')}
+                  patientName={(() => {
+                    const patient = selectedPatientOption || fallbackPatientOption || (patientData?.user);
+                    return patient?.fullName || patient?.name || patientName || 'Unknown';
+                  })()}
+                  patientGender={patientData?.user?.gender || 'M'}
+                  patientAge={(() => {
+                    if (patientData?.patient?.dateOfBirth) {
+                      const dob = dayjs(patientData.patient.dateOfBirth);
+                      return dayjs().diff(dob, 'year');
+                    }
+                    return undefined;
+                  })()}
+                  patientMobile={patientData?.user?.mobileNumber}
+                  patientAddress={patientData?.user?.address}
+                  weight={vitals.weight ? parseFloat(vitals.weight) : patientData?.patient?.weight}
+                  height={vitals.height ? parseFloat(vitals.height) : patientData?.patient?.height}
+                  bp={vitals.bp}
+                  date={new Date()}
+                  chiefComplaints={chiefComplaints.filter(c => c.trim())}
+                  clinicalFindings={clinicalFindings.filter(f => f.trim())}
+                  diagnosis={form.getFieldValue('diagnosis')}
+                  medications={medications}
+                  labTests={labTests?.map((test: any) => ({
+                    testName: test.testName,
+                    testType: test.testType,
+                  })) || []}
+                  advice={advice.filter(a => a.trim())}
+                  followUpDate={form.getFieldValue('followUpDate')}
+                />
+              ),
+            },
+          ]}
+        />
       </Modal>
 
       {/* Medication Form Modal */}

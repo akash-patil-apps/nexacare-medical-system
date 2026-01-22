@@ -63,8 +63,6 @@ export default function PatientOnboarding() {
       return res.json();
     },
     onSuccess: async (data) => {
-      console.log('✅ Patient onboarding completed successfully:', data);
-      
       // Invalidate and refetch onboarding status query
       const userRole = localStorage.getItem('userRole') || 'patient';
       await queryClient.invalidateQueries({ queryKey: ['onboarding-status', userRole] });
@@ -90,8 +88,6 @@ export default function PatientOnboarding() {
           console.error('Failed to fetch updated status:', err);
         }
       }
-      
-      console.log('🔄 Updated onboarding status after completion:', updatedStatus);
 
       // Set localStorage flag to prevent redirect loop
       localStorage.setItem('onboarding-just-completed', 'true');
@@ -101,13 +97,11 @@ export default function PatientOnboarding() {
       
       // Redirect after a short delay
       setTimeout(() => {
-        console.log('🔄 Redirecting to dashboard...');
         setLocation('/dashboard/patient');
         
         // Clear the flag after redirect
         setTimeout(() => {
           localStorage.removeItem('onboarding-just-completed');
-          console.log('✅ Onboarding completion flag cleared');
         }, 5000);
       }, 500);
     },
@@ -156,8 +150,6 @@ export default function PatientOnboarding() {
       // Get all form values
       const allValues = form.getFieldsValue(true);
       
-      console.log('📋 Raw form values:', allValues);
-      
       // Convert DatePicker Dayjs object to ISO string for backend
       let dateOfBirthFormatted = null;
       if (allValues.dateOfBirth) {
@@ -185,8 +177,6 @@ export default function PatientOnboarding() {
       
       // Remove the temporary field
       delete transformedValues.emergencyRelationOther;
-      
-      console.log('✅ All validation passed. Submitting onboarding data:', transformedValues);
       
       // Validate that required fields are present
       if (!transformedValues.dateOfBirth || !transformedValues.gender) {

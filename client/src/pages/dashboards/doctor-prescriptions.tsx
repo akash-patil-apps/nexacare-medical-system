@@ -47,8 +47,11 @@ import { formatDate } from '../../lib/utils';
 import { TopHeader } from '../../components/layout/TopHeader';
 import { useResponsive } from '../../hooks/use-responsive';
 import { useLocation } from 'wouter';
+import { CopyIcon } from '../../components/common/CopyIcon';
 import { Drawer, Button } from 'antd';
 import { MenuUnfoldOutlined } from '@ant-design/icons';
+import { PrescriptionPreview } from '../../components/prescription/PrescriptionPreview';
+import dayjs from 'dayjs';
 
 const { Content, Sider } = Layout;
 const { Title, Text } = Typography;
@@ -61,8 +64,30 @@ export default function DoctorPrescriptionsPage() {
   const { isMobile, isTablet } = useResponsive();
   const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false);
   const [isPrescriptionModalOpen, setIsPrescriptionModalOpen] = useState(false);
-  const [selectedPrescription, setSelectedPrescription] = useState(null);
+  const [selectedPrescription, setSelectedPrescription] = useState<any>(null);
   const [isViewModalOpen, setIsViewModalOpen] = useState(false);
+  
+  // Fetch lab tests for selected prescription
+  const { data: labTests } = useQuery({
+    queryKey: ['/api/labs/reports', selectedPrescription?.patientId],
+    queryFn: async () => {
+      if (!selectedPrescription?.patientId) return [];
+      const token = localStorage.getItem('auth-token');
+      const response = await fetch(`/api/labs/reports?patientId=${selectedPrescription.patientId}`, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+        },
+      });
+      if (!response.ok) return [];
+      const data = await response.json();
+      // Filter for tests related to this prescription/appointment
+      return data.filter((test: any) => 
+        test.appointmentId === selectedPrescription.appointmentId ||
+        (test.status === 'recommended' || test.status === 'pending')
+      );
+    },
+    enabled: !!selectedPrescription?.patientId,
+  });
 
   // Get notifications for TopHeader
   const { data: notifications = [] } = useQuery({
@@ -310,7 +335,13 @@ export default function DoctorPrescriptionsPage() {
       title: 'ID',
       dataIndex: 'id',
       key: 'id',
-      width: 80,
+      width: 100,
+      render: (id: number) => (
+        <Space>
+          <Text>#{id}</Text>
+          <CopyIcon text={String(id)} label="Prescription ID" size={12} />
+        </Space>
+      ),
     },
     {
       title: 'Patient',
@@ -597,108 +628,68 @@ export default function DoctorPrescriptionsPage() {
                 Close
                       </Button>
             ]}
-            width={700}
+            width={900}
           >
-            {selectedPrescription && (
-              <div>
-                <Row gutter={[16, 16]} style={{ marginBottom: '24px' }}>
-                  <Col span={12}>
-                    <Text strong>Prescription ID:</Text> #{selectedPrescription.id}
-                  </Col>
-                  <Col span={12}>
-                    <Text strong>Date:</Text> {formatDate(selectedPrescription.createdAt)}
-                    </Col>
-                </Row>
-                
-                <Row gutter={[16, 16]} style={{ marginBottom: '24px' }}>
-                  <Col span={12}>
-                    <Text strong>Patient:</Text> {selectedPrescription.patient?.fullName || 'Unknown'}
-                    </Col>
-                  <Col span={12}>
-                    <Text strong>Status:</Text> 
-                    <Tag color={selectedPrescription.isActive ? 'green' : 'red'} style={{ marginLeft: '8px' }}>
-                      {selectedPrescription.isActive ? 'Active' : 'Inactive'}
-                    </Tag>
-                    </Col>
-                  </Row>
-                  
-                <div style={{ marginBottom: '24px' }}>
-                  <Text strong>Diagnosis:</Text>
-                  <div style={{ marginTop: '8px', padding: '12px', background: '#f5f5f5', borderRadius: '6px' }}>
-                    {selectedPrescription.diagnosis}
-                  </div>
-                </div>
+            {selectedPrescription && (() => {
+              // Parse medications
+              let medications: any[] = [];
+              try {
+                medications = JSON.parse(selectedPrescription.medications);
+                if (!Array.isArray(medications)) medications = [];
+              } catch {
+                medications = [];
+              }
 
-                <div style={{ marginBottom: '24px' }}>
-                  <Text strong>Medications:</Text>
-                  <div style={{ marginTop: '8px' }}>
-                    {(() => {
-                      try {
-                        const medications = JSON.parse(selectedPrescription.medications);
-                        return Array.isArray(medications) ? (
-                    <List
-                            dataSource={medications}
-                            renderItem={(med: any) => (
-                        <List.Item>
-                                <Card size="small" style={{ width: '100%' }}>
-                                  <Row gutter={[16, 8]}>
-                                    <Col span={24}>
-                                      <Text strong style={{ fontSize: '16px' }}>{med.name}</Text>
-                                    </Col>
-                                    <Col span={12}>
-                                      <Text strong>Dosage:</Text> {med.dosage} {med.unit}
-                                    </Col>
-                                    <Col span={12}>
-                                      <Text strong>Frequency:</Text> {med.frequency}
-                                    </Col>
-                                    <Col span={12}>
-                                      <Text strong>Timing:</Text> {med.timing}
-                                    </Col>
-                                    <Col span={12}>
-                                      <Text strong>Duration:</Text> {med.duration}
-                                    </Col>
-                                    {med.instructions && (
-                                      <Col span={24}>
-                                        <Text strong>Instructions:</Text> {med.instructions}
-                                      </Col>
-                                    )}
-                                  </Row>
-                                </Card>
-                        </List.Item>
-                      )}
-                    />
-                        ) : (
-                          <div style={{ padding: '12px', background: '#f5f5f5', borderRadius: '6px' }}>
-                            {selectedPrescription.medications}
-                          </div>
-                        );
-                      } catch {
-                        return (
-                          <div style={{ padding: '12px', background: '#f5f5f5', borderRadius: '6px' }}>
-                            {selectedPrescription.medications}
-                          </div>
-                        );
-                      }
-                    })()}
-                  </div>
-                </div>
+              // Parse instructions to extract chief complaints, clinical findings, advice
+              let chiefComplaints: string[] = [];
+              let clinicalFindings: string[] = [];
+              let advice: string[] = [];
+              
+              try {
+                if (selectedPrescription.instructions) {
+                  const parsed = JSON.parse(selectedPrescription.instructions);
+                  if (parsed.chiefComplaints) chiefComplaints = parsed.chiefComplaints;
+                  if (parsed.clinicalFindings) clinicalFindings = parsed.clinicalFindings;
+                  if (parsed.advice) advice = parsed.advice;
+                }
+              } catch {
+                // If not JSON, treat as plain text advice
+                if (selectedPrescription.instructions) {
+                  advice = [selectedPrescription.instructions];
+                }
+              }
 
-                {selectedPrescription.instructions && (
-                  <div style={{ marginBottom: '24px' }}>
-                    <Text strong>General Instructions:</Text>
-                    <div style={{ marginTop: '8px', padding: '12px', background: '#f5f5f5', borderRadius: '6px' }}>
-                      {selectedPrescription.instructions}
-                    </div>
-            </div>
-                )}
-
-                {selectedPrescription.followUpDate && (
-                  <div>
-                    <Text strong>Follow-up Date:</Text> {formatDate(selectedPrescription.followUpDate)}
-                  </div>
-                )}
-              </div>
-            )}
+              return (
+                <PrescriptionPreview
+                  hospitalName={selectedPrescription.hospital?.name}
+                  hospitalAddress={selectedPrescription.hospital?.address}
+                  doctorName={selectedPrescription.doctor?.fullName || 'Dr. Unknown'}
+                  doctorQualification="M.S."
+                  doctorRegNo="MMC 2018"
+                  patientId={selectedPrescription.patientId}
+                  patientName={selectedPrescription.patient?.fullName || 'Unknown'}
+                  patientGender={selectedPrescription.patient?.user?.gender || 'M'}
+                  patientAge={selectedPrescription.patient?.user?.dateOfBirth 
+                    ? dayjs().diff(dayjs(selectedPrescription.patient.user.dateOfBirth), 'year')
+                    : undefined}
+                  patientMobile={selectedPrescription.patient?.user?.mobileNumber}
+                  patientAddress={selectedPrescription.patient?.user?.address}
+                  weight={selectedPrescription.patient?.weight}
+                  height={selectedPrescription.patient?.height}
+                  date={selectedPrescription.createdAt}
+                  chiefComplaints={chiefComplaints}
+                  clinicalFindings={clinicalFindings}
+                  diagnosis={selectedPrescription.diagnosis}
+                  medications={medications}
+                  labTests={labTests?.map((test: any) => ({
+                    testName: test.testName,
+                    testType: test.testType,
+                  })) || []}
+                  advice={advice}
+                  followUpDate={selectedPrescription.followUpDate}
+                />
+              );
+            })()}
           </Modal>
           </div>
         </Content>

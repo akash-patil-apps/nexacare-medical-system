@@ -8,7 +8,8 @@ import * as doctorsService from "../services/doctors.service";
 import * as patientsService from "../services/patients.service";
 import { insertPrescriptionSchema } from "../../shared/schema";
 import { NotificationService } from "../services/localNotification.service";
-import * as medicineReminderService from "../services/medicine-reminder.service"; 
+import * as medicineReminderService from "../services/medicine-reminder.service";
+import * as followupReminderService from "../services/followup-reminder.service"; 
 
 const router = Router();
 
@@ -69,6 +70,17 @@ router.post(
           } catch (reminderError) {
             console.error('Failed to schedule medicine reminders:', reminderError);
             // Don't fail the request if reminder scheduling fails
+          }
+          
+          // Schedule follow-up reminder if follow-up date is set
+          if (parsed.followUpDate) {
+            try {
+              await followupReminderService.scheduleFollowUpReminder(result.id);
+              console.log(`✅ Follow-up reminder scheduled for prescription ${result.id}`);
+            } catch (followupError) {
+              console.error('Failed to schedule follow-up reminder:', followupError);
+              // Don't fail the request if reminder scheduling fails
+            }
           }
         }
       } catch (notifError) {
@@ -160,6 +172,18 @@ router.put(
         req.body
       );
       if (!updated) return res.status(404).json({ message: "Prescription not found or unauthorized" });
+      
+      // Schedule follow-up reminder if follow-up date is set
+      if (req.body.followUpDate) {
+        try {
+          await followupReminderService.scheduleFollowUpReminder(prescriptionId);
+          console.log(`✅ Follow-up reminder scheduled for prescription ${prescriptionId}`);
+        } catch (followupError) {
+          console.error('Failed to schedule follow-up reminder:', followupError);
+          // Don't fail the request if reminder scheduling fails
+        }
+      }
+      
       res.json(updated);
     } catch (err: any) {
       console.error("Update prescription error:", err);

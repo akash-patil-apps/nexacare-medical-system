@@ -21,46 +21,73 @@ interface Medication {
  * Parse frequency string to reminder times
  * Returns array of times in HH:mm format
  */
-function parseFrequencyToTimes(frequency: string, timing: string): string[] {
+function parseFrequencyToTimes(frequency: string, timing: string, dosage?: string): string[] {
   const freq = frequency.toLowerCase().trim();
   const timingLower = timing.toLowerCase().trim();
+  const dosageStr = dosage?.trim() || '';
+  
+  // Check for dosage format like "1-0-1" or "1-1-1" (morning-afternoon-night)
+  const dosagePattern = /^(\d+)-(\d+)-(\d+)$/;
+  const dosageMatch = dosageStr.match(dosagePattern);
+  
+  if (dosageMatch) {
+    const [, morning, afternoon, night] = dosageMatch;
+    const times: string[] = [];
+    
+    // Morning: 9 AM
+    if (morning !== '0') {
+      times.push('09:00');
+    }
+    
+    // Afternoon: 2 PM
+    if (afternoon !== '0') {
+      times.push('14:00');
+    }
+    
+    // Night: 8 PM
+    if (night !== '0') {
+      times.push('20:00');
+    }
+    
+    return times;
+  }
   
   // Common frequencies
   if (freq.includes('qid') || freq.includes('4 times') || freq === '4x') {
-    // 4 times daily: 8 AM, 12 PM, 6 PM, 10 PM
-    return ['08:00', '12:00', '18:00', '22:00'];
+    // 4 times daily: 9 AM, 2 PM, 6 PM, 10 PM
+    return ['09:00', '14:00', '18:00', '22:00'];
   } else if (freq.includes('tid') || freq.includes('3 times') || freq === '3x') {
-    // 3 times daily: 8 AM, 2 PM, 8 PM
-    return ['08:00', '14:00', '20:00'];
+    // 3 times daily: 9 AM, 2 PM, 8 PM
+    return ['09:00', '14:00', '20:00'];
   } else if (freq.includes('bid') || freq.includes('2 times') || freq === '2x' || freq === 'twice') {
-    // 2 times daily: 8 AM, 8 PM
-    return ['08:00', '20:00'];
+    // 2 times daily: 9 AM, 8 PM
+    return ['09:00', '20:00'];
   } else if (freq.includes('qd') || freq.includes('once daily') || freq === '1x' || freq === 'once') {
-    // Once daily: 8 AM (or based on timing)
+    // Once daily: 9 AM (or based on timing)
     if (timingLower.includes('morning')) {
-      return ['08:00'];
+      return ['09:00'];
     } else if (timingLower.includes('evening') || timingLower.includes('night')) {
       return ['20:00'];
     } else if (timingLower.includes('afternoon')) {
       return ['14:00'];
     }
-    return ['08:00']; // Default to morning
+    return ['09:00']; // Default to morning
   } else if (freq.includes('q8h') || freq.includes('every 8 hours')) {
-    // Every 8 hours: 8 AM, 4 PM, 12 AM
-    return ['08:00', '16:00', '00:00'];
+    // Every 8 hours: 9 AM, 5 PM, 1 AM
+    return ['09:00', '17:00', '01:00'];
   } else if (freq.includes('q12h') || freq.includes('every 12 hours')) {
-    // Every 12 hours: 8 AM, 8 PM
-    return ['08:00', '20:00'];
+    // Every 12 hours: 9 AM, 9 PM
+    return ['09:00', '21:00'];
   } else if (freq.includes('q6h') || freq.includes('every 6 hours')) {
-    // Every 6 hours: 6 AM, 12 PM, 6 PM, 12 AM
-    return ['06:00', '12:00', '18:00', '00:00'];
+    // Every 6 hours: 9 AM, 3 PM, 9 PM, 3 AM
+    return ['09:00', '15:00', '21:00', '03:00'];
   } else if (freq.includes('prn') || freq.includes('as needed')) {
     // PRN - no scheduled reminders
     return [];
   }
   
   // Default: once daily in morning
-  return ['08:00'];
+  return ['09:00'];
 }
 
 /**
@@ -71,7 +98,7 @@ function calculateReminderSchedule(
   prescriptionStartDate: Date,
   durationDays: number
 ): Date[] {
-  const times = parseFrequencyToTimes(medication.frequency, medication.timing);
+  const times = parseFrequencyToTimes(medication.frequency, medication.timing, medication.dosage);
   if (times.length === 0) {
     return []; // PRN medications
   }
@@ -240,7 +267,7 @@ export async function sendDailyMedicineReminders() {
       for (const medication of medications) {
         if (medication.frequency?.toLowerCase().includes('prn')) continue;
         
-        const times = parseFrequencyToTimes(medication.frequency, medication.timing);
+        const times = parseFrequencyToTimes(medication.frequency, medication.timing, medication.dosage);
         
         for (const time of times) {
           const [hours, minutes] = time.split(':').map(Number);
@@ -283,8 +310,6 @@ export async function sendDailyMedicineReminders() {
         }
       }
     }
-    
-    console.log('✅ Daily medicine reminders processed');
   } catch (error) {
     console.error('Failed to send daily medicine reminders:', error);
   }

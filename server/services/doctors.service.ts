@@ -31,7 +31,6 @@ export const getAllDoctors = async () => {
     .from(doctors)
     .where(() => true);
   
-  console.log(`📋 Found ${result.length} doctors`);
   return result;
 };
 
@@ -191,7 +190,6 @@ export const getDoctorByUserId = async (userId: number) => {
  * Get doctors in a hospital.
  */
 export const getDoctorsByHospital = async (hospitalId: number) => {
-  console.log(`👨‍⚕️ Fetching doctors for hospital ${hospitalId}`);
   try {
     // Validate hospitalId
     if (!hospitalId || isNaN(hospitalId) || hospitalId <= 0) {
@@ -222,8 +220,6 @@ export const getDoctorsByHospital = async (hospitalId: number) => {
       .from(doctors)
       .where(eq(doctors.hospitalId, hospitalId));
     
-    console.log(`📋 Found ${doctorsData.length} doctors in database for hospital ${hospitalId}`);
-    
     // If no doctors found, return empty array
     if (!doctorsData || doctorsData.length === 0) {
       console.log(`⚠️ No doctors found for hospital ${hospitalId}`);
@@ -245,8 +241,6 @@ export const getDoctorsByHospital = async (hospitalId: number) => {
             };
           }
 
-          console.log(`🔍 Looking up user for doctor ${doctor.id}, userId: ${doctor.userId}`);
-          
           // Use the exact same pattern as appointments.service.ts - select only fullName (single field)
           let fullName: string | null = null;
           let mobileNumber: string | null = null;
@@ -261,9 +255,6 @@ export const getDoctorsByHospital = async (hospitalId: number) => {
             
             if (userResult) {
               fullName = userResult.fullName || null;
-              console.log(`✅ User data found for doctor ${doctor.id}:`, { fullName });
-            } else {
-              console.warn(`⚠️ User with ID ${doctor.userId} not found for doctor ${doctor.id}`);
             }
             
             // Try to get mobileNumber separately (only if we need it, skip for now to avoid errors)
@@ -300,7 +291,6 @@ export const getDoctorsByHospital = async (hospitalId: number) => {
       })
     );
     
-    console.log(`✅ Successfully enriched ${enrichedDoctors.length} doctors`);
     return enrichedDoctors;
   } catch (error: any) {
     console.error(`❌ Error fetching doctors for hospital ${hospitalId}:`, error);
@@ -313,13 +303,11 @@ export const getDoctorsByHospital = async (hospitalId: number) => {
  * Get doctors by specialty.
  */
 export const getDoctorsBySpecialty = async (specialty: string) => {
-  console.log(`👨‍⚕️ Fetching doctors with specialty: ${specialty}`);
   const result = await db
     .select()
     .from(doctors)
     .where(eq(doctors.specialty, specialty));
   
-  console.log(`📋 Found ${result.length} doctors with specialty ${specialty}`);
   return result;
 };
 
@@ -345,13 +333,11 @@ export const verifyDoctor = async (doctorId: number) => {
  * Get all doctors marked as available.
  */
 export const getAvailableDoctors = async () => {
-  console.log(`👨‍⚕️ Fetching available doctors`);
   const result = await db
     .select()
     .from(doctors)
     .where(eq(doctors.isAvailable, true));
   
-  console.log(`📋 Found ${result.length} available doctors`);
   return result;
 };
 
@@ -411,14 +397,12 @@ export const getDoctorAppointments = async (doctorId: number) => {
  * Search doctors by name or specialty.
  */
 export const searchDoctors = async (query: string) => {
-  console.log(`👨‍⚕️ Searching doctors with query: ${query}`);
   // Search is handled via joins with users table for name search
   // For now, return all doctors (can be enhanced later with proper search)
   const result = await db
     .select()
     .from(doctors);
   
-  console.log(`📋 Found ${result.length} doctors matching search`);
   return result;
 };
 

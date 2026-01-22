@@ -36,13 +36,10 @@ export class NotificationService {
     this.notifications.push(notification);
     
     if (this.isDevelopmentMode) {
-      // Development mode: Log to console
-      console.log(`📱 SMS to ${recipient}: ${message}`);
-      console.log(`⏰ Sent at: ${new Date().toLocaleTimeString()}`);
+      // Development mode: Log to console (silent)
     } else {
       // Production mode: Integrate with SMS provider (Twilio, AWS SNS, etc.)
       // TODO: Implement actual SMS sending
-      console.log(`📱 SMS sent to ${recipient}`);
     }
     
     return true;
@@ -62,11 +59,7 @@ export class NotificationService {
     this.notifications.push(notification);
     
     if (this.isDevelopmentMode) {
-      // Development mode: Log to console
-      console.log(`📧 Email to ${recipient}`);
-      console.log(`📋 Subject: ${subject}`);
-      console.log(`📄 Body: ${body}`);
-      console.log(`⏰ Sent at: ${new Date().toLocaleTimeString()}`);
+      // Development mode: Log to console (silent)
     } else {
       // Production mode: Integrate with email provider (SendGrid, AWS SES, etc.)
       // TODO: Implement actual email sending

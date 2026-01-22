@@ -16,51 +16,37 @@ export function authenticateToken(req: AuthenticatedRequest, res: Response, next
   const authHeader = req.headers['authorization'];
   const token = authHeader && authHeader.split(' ')[1];
 
-  console.log('🔐 Auth middleware - Auth header:', authHeader);
-  console.log('🔐 Auth middleware - Token:', token ? `${token.substring(0, 20)}...` : 'none');
-  console.log('🔐 Auth middleware - JWT_SECRET:', JWT_SECRET ? 'present' : 'missing');
-
   if (!token) {
-    console.log('❌ Auth middleware - No token provided');
     return res.status(401).json({ message: 'Access token required' });
   }
 
   try {
     const decoded = jwt.verify(token, JWT_SECRET) as any;
-    console.log('✅ Auth middleware - Token decoded successfully:', decoded);
     req.user = decoded;
     next();
   } catch (error) {
-    console.log('❌ Auth middleware - Token verification failed:', error);
+    console.error('❌ Auth middleware - Token verification failed:', error);
     return res.status(403).json({ message: 'Invalid or expired token' });
   }
 }
 
 export function authorizeRoles(...roles: string[]) {
   return (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
-    console.log('🔐 Role authorization - Required roles:', roles);
-    console.log('🔐 Role authorization - User:', req.user);
-    
     if (!req.user) {
-      console.log('❌ Role authorization - No user found');
       return res.status(401).json({ message: 'Authentication required' });
     }
 
-    console.log('🔐 Role authorization - User role:', req.user.role);
-    
     // Convert to lowercase for case-insensitive comparison
     const userRole = req.user.role.toLowerCase();
     const allowedRoles = roles.map(role => role.toLowerCase());
-    console.log('🔐 Role authorization - Role check (case-insensitive):', allowedRoles.includes(userRole));
 
     if (!allowedRoles.includes(userRole)) {
-      console.log('❌ Role authorization - Insufficient permissions. User role:', req.user.role, 'Required:', roles);
+      console.error('❌ Role authorization - Insufficient permissions. User role:', req.user.role, 'Required:', roles);
       return res.status(403).json({ 
         message: `Access denied. This action requires one of the following roles: ${roles.join(', ')}. Your current role is: ${req.user.role}` 
       });
     }
 
-    console.log('✅ Role authorization - Access granted');
     next();
   };
 }

@@ -22,6 +22,8 @@ import {
   EyeOutlined,
 } from '@ant-design/icons';
 import { apiRequest } from '../../lib/queryClient';
+import { PrescriptionPreview } from '../../components/prescription/PrescriptionPreview';
+import dayjs from 'dayjs';
 
 const { Title, Text } = Typography;
 
@@ -283,36 +285,65 @@ export default function PharmacyDispensing() {
           setSelectedPrescription(null);
         }}
         footer={null}
-        width={700}
+        width={900}
       >
-        {selectedPrescription && (
-          <Descriptions column={1} bordered>
-            <Descriptions.Item label="Prescription ID">
-              #{selectedPrescription.id}
-            </Descriptions.Item>
-            <Descriptions.Item label="Patient">
-              {selectedPrescription.patient?.fullName || 'N/A'}
-            </Descriptions.Item>
-            <Descriptions.Item label="Doctor">
-              {selectedPrescription.doctor?.fullName || 'N/A'}
-            </Descriptions.Item>
-            <Descriptions.Item label="Diagnosis">
-              {selectedPrescription.diagnosis}
-            </Descriptions.Item>
-            <Descriptions.Item label="Medications">
-              <div>
-                {getMedications().map((med: any, idx: number) => (
-                  <div key={idx} style={{ marginBottom: 8 }}>
-                    <Text strong>{med.medicineName}</Text> - {med.dosage} {med.unit}, {med.frequency}
-                  </div>
-                ))}
-              </div>
-            </Descriptions.Item>
-            <Descriptions.Item label="Instructions">
-              {selectedPrescription.instructions || 'N/A'}
-            </Descriptions.Item>
-          </Descriptions>
-        )}
+        {selectedPrescription && (() => {
+          // Parse medications
+          let medications: any[] = [];
+          try {
+            medications = JSON.parse(selectedPrescription.medications);
+            if (!Array.isArray(medications)) medications = [];
+          } catch {
+            medications = [];
+          }
+
+          // Parse instructions to extract chief complaints, clinical findings, advice
+          let chiefComplaints: string[] = [];
+          let clinicalFindings: string[] = [];
+          let advice: string[] = [];
+          
+          try {
+            if (selectedPrescription.instructions) {
+              const parsed = JSON.parse(selectedPrescription.instructions);
+              if (parsed.chiefComplaints) chiefComplaints = parsed.chiefComplaints;
+              if (parsed.clinicalFindings) clinicalFindings = parsed.clinicalFindings;
+              if (parsed.advice) advice = parsed.advice;
+            }
+          } catch {
+            // If not JSON, treat as plain text advice
+            if (selectedPrescription.instructions) {
+              advice = [selectedPrescription.instructions];
+            }
+          }
+
+          return (
+            <PrescriptionPreview
+              hospitalName={selectedPrescription.hospital?.name}
+              hospitalAddress={selectedPrescription.hospital?.address}
+              doctorName={selectedPrescription.doctor?.fullName || 'Dr. Unknown'}
+              doctorQualification="M.S."
+              doctorRegNo="MMC 2018"
+              patientId={selectedPrescription.patientId}
+              patientName={selectedPrescription.patient?.fullName || 'Unknown'}
+              patientGender={selectedPrescription.patient?.user?.gender || 'M'}
+              patientAge={selectedPrescription.patient?.user?.dateOfBirth 
+                ? dayjs().diff(dayjs(selectedPrescription.patient.user.dateOfBirth), 'year')
+                : undefined}
+              patientMobile={selectedPrescription.patient?.user?.mobileNumber}
+              patientAddress={selectedPrescription.patient?.user?.address}
+              weight={selectedPrescription.patient?.weight}
+              height={selectedPrescription.patient?.height}
+              date={selectedPrescription.createdAt}
+              chiefComplaints={chiefComplaints}
+              clinicalFindings={clinicalFindings}
+              diagnosis={selectedPrescription.diagnosis}
+              medications={medications}
+              labTests={[]}
+              advice={advice}
+              followUpDate={selectedPrescription.followUpDate}
+            />
+          );
+        })()}
       </Modal>
 
       {/* Dispense Modal */}

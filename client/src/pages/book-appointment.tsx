@@ -50,6 +50,7 @@ import { useAuth } from '../hooks/use-auth';
 import { useLocation } from 'wouter';
 import { useQueryClient } from '@tanstack/react-query';
 import dayjs from 'dayjs';
+import { CopyIcon } from '../components/common/CopyIcon';
 import { PatientSidebar } from '../components/layout/PatientSidebar';
 import { useResponsive } from '../hooks/use-responsive';
 import { formatTimeSlot12h, parseTimeTo24h } from '../lib/time';
@@ -142,10 +143,6 @@ export default function BookAppointment() {
     }
   }, [selectedCity]);
 
-  // Debug doctors state
-  useEffect(() => {
-    console.log('🔍 Doctors state changed:', doctors.length, doctors);
-  }, [doctors]);
 
   const loadUserCity = async () => {
     try {
@@ -174,12 +171,6 @@ export default function BookAppointment() {
       const data = await response.json();
       const allHospitals = data.hospitals || [];
       
-      console.log('🏥 All hospitals loaded:', allHospitals.length);
-      console.log('🏙️ Selected city:', selectedCity);
-      if (allHospitals.length > 0) {
-        console.log('📍 Sample hospital cities:', allHospitals.slice(0, 5).map((h: Hospital) => h.city));
-      }
-      
       // Filter hospitals by selected city (case-insensitive)
       const cityFilteredHospitals = selectedCity 
         ? allHospitals.filter((hospital: Hospital) => {
@@ -188,8 +179,6 @@ export default function BookAppointment() {
             return hospitalCity === selectedCityLower;
           })
         : allHospitals;
-      
-      console.log('✅ Filtered hospitals:', cityFilteredHospitals.length);
       setHospitals(cityFilteredHospitals);
       
       // Extract all unique specialties from hospitals
@@ -223,7 +212,6 @@ export default function BookAppointment() {
   const loadDoctorsByHospital = async (hospitalId: number) => {
     try {
       setLoading(true);
-      console.log(`🔍 Loading doctors for hospital ${hospitalId}`);
       const response = await fetch(`/api/doctors/hospital/${hospitalId}`);
       
       if (!response.ok) {
@@ -231,17 +219,13 @@ export default function BookAppointment() {
       }
       
       const data = await response.json();
-      console.log('📋 Doctors API response:', data);
-      console.log('📋 Doctors count:', data?.length || 0);
       
       const doctorsList = Array.isArray(data) ? data : [];
       setDoctors(doctorsList);
-      console.log('✅ Doctors state updated:', doctorsList.length, 'doctors');
       
       // Auto-advance to doctor selection step after doctors are loaded
       if (doctorsList.length > 0) {
         setTimeout(() => {
-          console.log('🚀 Auto-advancing to doctor selection step (step 1)');
           setCurrentStep(1);
         }, 500);
       } else {
@@ -257,9 +241,7 @@ export default function BookAppointment() {
   };
 
   const handleHospitalSelect = (hospitalId: number) => {
-    console.log(`🏥 Hospital selected: ${hospitalId}`);
     const hospital = filteredHospitals.find(h => h.id === hospitalId);
-    console.log('🏥 Selected hospital:', hospital);
     
     // Set hospital first, then load doctors
     if (hospital) {
@@ -335,7 +317,6 @@ export default function BookAppointment() {
         }
       });
       
-      console.log('📊 Bookings per slot:', bookings);
       return bookings;
     } catch (error) {
       console.error('Error fetching booked appointments:', error);
@@ -491,14 +472,12 @@ export default function BookAppointment() {
       if (selectedDate) {
         const filteredSlots = slots.filter(slot => !isSlotInPast(slot, selectedDate));
         setAvailableSlots(filteredSlots);
-        console.log(`📅 Filtered slots after doctor select: ${filteredSlots.length} available (${slots.length - filteredSlots.length} past slots hidden)`);
       } else {
         setAvailableSlots(slots);
       }
       
       // Auto-advance to date & time selection step
       setTimeout(() => {
-        console.log('🚀 Auto-advancing to date & time selection step (step 2)');
         setCurrentStep(2);
       }, 500);
     }
@@ -561,12 +540,6 @@ export default function BookAppointment() {
       // If current time equals end time, still allow booking (slot is still active)
       const hasEnded = now.isAfter(slotEndDateTime);
       
-      if (hasEnded) {
-        console.log(`⏰ Filtering out ended slot: ${slot} (ended at ${slotEndDateTime.format('HH:mm')}, current time: ${now.format('HH:mm')})`);
-      } else {
-        console.log(`✅ Slot still available: ${slot} (ends at ${slotEndDateTime.format('HH:mm')}, current time: ${now.format('HH:mm')})`);
-      }
-      
       return hasEnded;
     } catch (error) {
       console.error('Error checking if slot is in past:', error, 'slot:', slot);
@@ -588,13 +561,11 @@ export default function BookAppointment() {
       const filteredSlots = allSlots.filter(slot => !isSlotInPast(slot, date));
       
       setAvailableSlots(filteredSlots);
-      console.log(`📅 Filtered slots: ${filteredSlots.length} available (${allSlots.length - filteredSlots.length} past slots hidden)`);
       
       // Fetch booked appointments for this doctor and date
       const dateStr = date.format('YYYY-MM-DD');
       const bookings = await fetchBookedAppointments(selectedDoctor.id, dateStr);
       setSlotBookings(bookings);
-      console.log('📅 Booked appointments for', dateStr, ':', bookings);
     }
   };
 
@@ -604,7 +575,6 @@ export default function BookAppointment() {
     
             // Auto-advance to patient details step
             setTimeout(() => {
-              console.log('🚀 Auto-advancing to patient details step (step 3)');
               setCurrentStep(3);
             }, 500);
   };
@@ -694,12 +664,6 @@ export default function BookAppointment() {
       }
 
       setLoading(true);
-      console.log('🚀 Starting appointment booking...');
-      console.log('🏥 Selected hospital:', selectedHospital?.id);
-      console.log('👨‍⚕️ Selected doctor:', selectedDoctor?.id);
-      console.log('📅 Selected date:', selectedDate?.format('YYYY-MM-DD'));
-      console.log('⏰ Selected slot:', selectedSlot);
-      console.log('💳 Payment method:', selectedPaymentMethod);
       
       // Validate required fields
       if (!selectedHospital || !selectedDoctor || !selectedDate || !selectedSlot) {
@@ -759,10 +723,7 @@ export default function BookAppointment() {
         paymentStatus: selectedPaymentMethod && ['googlepay', 'phonepe', 'card'].includes(selectedPaymentMethod) ? 'paid' : 'pending',
       };
 
-      console.log('📤 Sending appointment data:', appointmentData);
-      
       const token = localStorage.getItem('auth-token');
-      console.log('🔐 Frontend token:', token ? `${token.substring(0, 20)}...` : 'none');
 
       const response = await fetch('/api/appointments', {
         method: 'POST',
@@ -773,12 +734,8 @@ export default function BookAppointment() {
         body: JSON.stringify(appointmentData)
       });
 
-      console.log('📥 Response status:', response.status);
-      console.log('📥 Response ok:', response.ok);
-
       if (response.ok) {
         const result = await response.json();
-        console.log('✅ Appointment booked successfully:', result);
         
         // Play booking success sound
         playNotificationSound('booking');
@@ -807,7 +764,9 @@ export default function BookAppointment() {
       } else {
         const errorData = await response.json();
         console.error('❌ Booking failed:', errorData);
-        message.error(errorData.message || 'Failed to book appointment');
+        // Show the actual error message from backend if available
+        const errorMessage = errorData.error || errorData.message || 'Failed to book appointment';
+        message.error(errorMessage);
       }
     } catch (error) {
       console.error('❌ Error booking appointment:', error);
@@ -1744,8 +1703,6 @@ export default function BookAppointment() {
     }
   ];
 
-  console.log('🎯 Current step:', currentStep, 'Selected hospital:', selectedHospital?.name, 'Doctors count:', doctors.length);
-
   return (
     <>
       <style>{`
@@ -2166,7 +2123,10 @@ export default function BookAppointment() {
             <Row gutter={[12, 8]}>
               <Col span={12}>
                 <Text type="secondary" style={{ fontSize: 12 }}>Transaction ID</Text>
-                <div style={{ fontWeight: 600, marginTop: 2, fontSize: 13 }}>{receiptData.payment.transactionId}</div>
+                <div style={{ fontWeight: 600, marginTop: 2, fontSize: 13, display: 'flex', alignItems: 'center', gap: 8 }}>
+                  {receiptData.payment.transactionId}
+                  <CopyIcon text={receiptData.payment.transactionId} label="Transaction ID" size={12} />
+                </div>
               </Col>
               <Col span={12}>
                 <Text type="secondary" style={{ fontSize: 12 }}>Payment Method</Text>

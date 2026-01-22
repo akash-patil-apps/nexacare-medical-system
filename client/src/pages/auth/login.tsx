@@ -35,7 +35,6 @@ export default function Login() {
   const loginMutation = useMutation({
     mutationFn: authApi.login,
     onSuccess: (data) => {
-      console.log('🔍 Login success - data:', data);
       setAuthToken(data.token);
       message.success(`Welcome back, ${data.user.fullName}!`);
       
@@ -65,7 +64,6 @@ export default function Login() {
       return response.json();
     },
     onSuccess: (data, mobileNumber) => {
-      console.log('🔍 OTP sent successfully:', data);
       // Preserve mobile number in OTP form
       otpForm.setFieldsValue({ mobileNumber });
       setOtpSent(true);
@@ -92,7 +90,6 @@ export default function Login() {
       return response.json();
     },
     onSuccess: (data) => {
-      console.log('🔍 OTP verification success:', data);
       setAuthToken(data.token);
       message.success(`Welcome, ${data.user.fullName}!`);
       

@@ -71,7 +71,6 @@ export default function DoctorOnboarding() {
       return res.json();
     },
     onSuccess: async (data) => {
-      console.log('✅ Doctor onboarding completed successfully:', data);
 
       const userRole = localStorage.getItem('userRole') || 'doctor';
       await queryClient.invalidateQueries({ queryKey: ['onboarding-status', userRole] });

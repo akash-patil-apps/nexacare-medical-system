@@ -462,11 +462,16 @@ export const getRevenueByPaymentMethod = async (hospitalId: number, startDate?: 
   // Group by payment method
   const byMethod: Record<string, number> = {};
 
+  let total = 0;
   filteredPayments.forEach((p) => {
     const method = p.payment.method || 'unknown';
     const amount = parseFloat(p.payment.amount.toString());
     byMethod[method] = (byMethod[method] || 0) + amount;
+    total += amount;
   });
 
-  return byMethod;
+  return {
+    ...byMethod,
+    total,
+  };
 };

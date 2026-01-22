@@ -43,6 +43,7 @@ import { subscribeToAppointmentEvents } from '../../lib/appointments-events';
 import { playNotificationSound } from '../../lib/notification-sounds';
 import dayjs from 'dayjs';
 import { getISTNow, getISTStartOfDay, isSameDayIST, toIST } from '../../lib/timezone';
+import { PrescriptionPreview } from '../../components/prescription/PrescriptionPreview';
 
 const { Content, Sider } = Layout;
 const { Title, Text } = Typography;
@@ -1130,38 +1131,65 @@ export default function PatientAppointments() {
             Close
           </Button>
         ]}
-        width={700}
+        width={900}
       >
-        {selectedPrescription ? (
-          <Space direction="vertical" size="middle" style={{ width: '100%' }}>
-            <div>
-              <Text strong>Diagnosis: </Text>
-              <Text>{selectedPrescription.diagnosis || 'N/A'}</Text>
-            </div>
-            {selectedPrescription.instructions && (
-              <div>
-                <Text strong>Instructions: </Text>
-                <Text>{selectedPrescription.instructions}</Text>
-              </div>
-            )}
-            <div>
-              <Text strong>Medications:</Text>
-              <div style={{ marginTop: 8 }}>
-                {renderMedications(selectedPrescription)}
-              </div>
-            </div>
-            {selectedPrescription.createdAt && (
-              <div>
-                <Text type="secondary">
-                  Issued on:{' '}
-                  {dayjs(selectedPrescription.createdAt).isValid()
-                    ? dayjs(selectedPrescription.createdAt).format('DD MMM YYYY, hh:mm A')
-                    : selectedPrescription.createdAt}
-                </Text>
-              </div>
-            )}
-          </Space>
-        ) : (
+        {selectedPrescription ? (() => {
+          // Parse medications
+          let medications: any[] = [];
+          try {
+            medications = JSON.parse(selectedPrescription.medications);
+            if (!Array.isArray(medications)) medications = [];
+          } catch {
+            medications = [];
+          }
+
+          // Parse instructions to extract chief complaints, clinical findings, advice
+          let chiefComplaints: string[] = [];
+          let clinicalFindings: string[] = [];
+          let advice: string[] = [];
+          
+          try {
+            if (selectedPrescription.instructions) {
+              const parsed = JSON.parse(selectedPrescription.instructions);
+              if (parsed.chiefComplaints) chiefComplaints = parsed.chiefComplaints;
+              if (parsed.clinicalFindings) clinicalFindings = parsed.clinicalFindings;
+              if (parsed.advice) advice = parsed.advice;
+            }
+          } catch {
+            // If not JSON, treat as plain text advice
+            if (selectedPrescription.instructions) {
+              advice = [selectedPrescription.instructions];
+            }
+          }
+
+          return (
+            <PrescriptionPreview
+              hospitalName={selectedPrescription.hospital?.name}
+              hospitalAddress={selectedPrescription.hospital?.address}
+              doctorName={selectedPrescription.doctor?.fullName || 'Dr. Unknown'}
+              doctorQualification="M.S."
+              doctorRegNo="MMC 2018"
+              patientId={selectedPrescription.patientId}
+              patientName={user?.fullName || 'Unknown'}
+              patientGender={user?.gender || 'M'}
+              patientAge={user?.dateOfBirth 
+                ? dayjs().diff(dayjs(user.dateOfBirth), 'year')
+                : undefined}
+              patientMobile={user?.mobileNumber}
+              patientAddress={user?.address}
+              weight={selectedPrescription.patient?.weight}
+              height={selectedPrescription.patient?.height}
+              date={selectedPrescription.createdAt}
+              chiefComplaints={chiefComplaints}
+              clinicalFindings={clinicalFindings}
+              diagnosis={selectedPrescription.diagnosis}
+              medications={medications}
+              labTests={[]}
+              advice={advice}
+              followUpDate={selectedPrescription.followUpDate}
+            />
+          );
+        })() : (
           <Text>No prescription found.</Text>
         )}
       </Modal>
