@@ -1,5 +1,5 @@
 import React from 'react';
-import { Router, Route, Switch, Redirect } from 'wouter';
+import { Router, Route, Switch, Redirect, useLocation } from 'wouter';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { AuthProvider, useAuth } from './hooks/use-auth';
 import { MedicalThemeProvider } from './antd.config.tsx';
@@ -10,6 +10,7 @@ import Login from './pages/auth/login';
 import Register from './pages/auth/register';
 import RegisterWithRole from './pages/auth/register-with-role';
 import OtpVerification from './pages/auth/otp-verification';
+import ForgotPassword from './pages/auth/forgot-password';
 import PatientDashboard from './pages/dashboards/patient-dashboard';
 import PatientAppointments from './pages/dashboards/patient-appointments';
 import PatientPrescriptions from './pages/dashboards/patient-prescriptions';
@@ -74,6 +75,42 @@ function DashboardRedirect() {
   }
 }
 
+// Wrapper component that conditionally applies medical-container class
+function AppWrapper({ children }: { children: React.ReactNode }) {
+  const [location] = useLocation();
+  
+  // Routes that should NOT have medical-container wrapper
+  const noContainerRoutes = [
+    '/',
+    '/login',
+    '/register',
+    '/register/with-role',
+    '/otp-verification',
+    '/onboarding/patient',
+    '/onboarding/hospital',
+    '/onboarding/nurse',
+    '/onboarding/pharmacist',
+    '/onboarding/radiology-technician',
+    '/onboarding/doctor',
+    '/onboarding/receptionist',
+    '/onboarding/lab',
+  ];
+  
+  // Check if current location matches any no-container route (exact match or starts with)
+  const isNoContainerRoute = noContainerRoutes.some(route => {
+    if (route === '/') {
+      return location === '/' || location === '';
+    }
+    return location === route || location.startsWith(route + '/');
+  });
+  
+  if (!isNoContainerRoute) {
+    return <div className="medical-container">{children}</div>;
+  }
+  
+  return <>{children}</>;
+}
+
 function App() {
   return (
     <QueryClientProvider client={queryClient}>
@@ -81,7 +118,7 @@ function App() {
         <AntApp>
           <AuthProvider>
             <Router>
-              <div className="medical-container">
+              <AppWrapper>
                 <Switch>
                   {/* Auth Routes */}
                   <Route path="/" component={Login} />
@@ -89,6 +126,7 @@ function App() {
                   <Route path="/register" component={Register} />
                   <Route path="/register/with-role" component={RegisterWithRole} />
                   <Route path="/otp-verification" component={OtpVerification} />
+                  <Route path="/forgot-password" component={ForgotPassword} />
                   
                   {/* Onboarding Routes */}
                   <Route path="/onboarding/patient" component={PatientOnboarding} />
@@ -122,7 +160,7 @@ function App() {
                   {/* Catch all route */}
                   <Route component={NotFound} />
                 </Switch>
-              </div>
+              </AppWrapper>
             </Router>
           </AuthProvider>
         </AntApp>

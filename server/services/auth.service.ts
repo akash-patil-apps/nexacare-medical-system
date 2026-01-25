@@ -205,3 +205,60 @@ export const loginUser = async ({
 
   return { user, token };
 };
+
+/**
+ * Send OTP for password reset - checks if user exists first
+ */
+export const sendPasswordResetOtp = async (mobileNumber: string) => {
+  // Check if user exists
+  const [user] = await db
+    .select()
+    .from(users)
+    .where(eq(users.mobileNumber, mobileNumber))
+    .limit(1);
+
+  if (!user) {
+    throw new Error('User not found with this mobile number');
+  }
+
+  // Send OTP (reuse existing sendOtp function)
+  const result = await sendOtp(mobileNumber, user.role);
+  return { ...result, mobileNumber };
+};
+
+/**
+ * Verify OTP for password reset
+ */
+export const verifyPasswordResetOtp = async (mobileNumber: string, otp: string) => {
+  // Verify OTP (reuse existing verifyOtp function)
+  const result = await verifyOtp(mobileNumber, otp);
+  return result;
+};
+
+/**
+ * Reset password after OTP verification
+ */
+export const resetPassword = async (mobileNumber: string, newPassword: string) => {
+  // Find user
+  const [user] = await db
+    .select()
+    .from(users)
+    .where(eq(users.mobileNumber, mobileNumber))
+    .limit(1);
+
+  if (!user) {
+    throw new Error('User not found');
+  }
+
+  // Hash new password
+  const hashedPassword = await hashPassword(newPassword);
+
+  // Update password in database
+  await db
+    .update(users)
+    .set({ password: hashedPassword })
+    .where(eq(users.mobileNumber, mobileNumber));
+
+  console.log(`✅ Password reset successfully for ${mobileNumber}`);
+  return { success: true, message: 'Password reset successfully' };
+};

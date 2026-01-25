@@ -22,6 +22,7 @@ import {
   CheckCircleOutlined
 } from '@ant-design/icons';
 import { setAuthToken } from "../../lib/auth";
+import { OTPInput } from "../../components/common/OTPInput";
 
 const { Title, Text } = Typography;
 const { Step } = Steps;
@@ -31,6 +32,7 @@ export default function OtpVerification() {
   const [form] = Form.useForm();
   const [currentStep, setCurrentStep] = useState(0);
   const [isLoading, setIsLoading] = useState(false);
+  const [otpValue, setOtpValue] = useState('');
   const [registrationData, setRegistrationData] = useState({
     mobileNumber: "",
     role: "",
@@ -174,18 +176,28 @@ export default function OtpVerification() {
 
                   <Form.Item
                     name="otp"
-                    label="Enter OTP"
                     rules={[
                       { required: true, message: 'Please enter the OTP' },
                       { pattern: /^[0-9]{6}$/, message: 'Please enter a valid 6-digit OTP' }
                     ]}
                   >
-                <Input
-                      prefix={<SecurityScanOutlined />}
-                      placeholder="Enter 6-digit OTP"
-                      className="medical-input"
-                  maxLength={6}
-                />
+                    <OTPInput
+                      length={6}
+                      value={otpValue}
+                      onChange={(value) => {
+                        setOtpValue(value);
+                        form.setFieldsValue({ otp: value });
+                      }}
+                      onComplete={(value) => {
+                        setOtpValue(value);
+                        form.setFieldsValue({ otp: value });
+                        // Auto-submit when OTP is complete
+                        setTimeout(() => {
+                          form.submit();
+                        }, 100);
+                      }}
+                      mobileNumber={registrationData.mobileNumber}
+                    />
                   </Form.Item>
 
                   <Form.Item>

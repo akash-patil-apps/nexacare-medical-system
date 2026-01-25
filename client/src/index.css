@@ -146,7 +146,7 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: var(--spacing-2xl) var(--spacing-lg);
+  padding: 0;
 }
 
 /* Remove padding and background for dashboard pages */
@@ -158,6 +158,11 @@ body:has(.pharmacy-dispensing-wrapper) .medical-container {
   display: block !important;
   align-items: unset !important;
   justify-content: unset !important;
+}
+
+/* Remove padding for login page */
+.login-page-container.medical-container {
+  padding: 0 !important;
 }
 
 .medical-container__inner {

@@ -8,6 +8,9 @@ import {
   loginUser,
   sendLoginOtp,
   loginUserWithOtp,
+  sendPasswordResetOtp,
+  verifyPasswordResetOtp,
+  resetPassword,
 } from '../services/auth.service';
 import {
   registrationSchema,
@@ -150,6 +153,92 @@ router.post('/login', async (req, res) => {
     console.error('Login error:', error);
     res.status(400).json({ 
       message: error instanceof Error ? error.message : 'Login failed',
+      error: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+});
+
+// Send OTP for password reset
+router.post('/password-reset/otp/send', async (req, res) => {
+  try {
+    const { mobileNumber } = req.body;
+    
+    if (!mobileNumber) {
+      return res.status(400).json({ message: 'Mobile number is required' });
+    }
+
+    if (typeof mobileNumber !== 'string' || mobileNumber.length < 10 || mobileNumber.length > 15) {
+      return res.status(400).json({ message: 'Invalid mobile number format' });
+    }
+
+    const result = await sendPasswordResetOtp(mobileNumber);
+    res.json(result);
+  } catch (error) {
+    console.error('Send password reset OTP error:', error);
+    res.status(400).json({ 
+      message: error instanceof Error ? error.message : 'Failed to send OTP',
+      error: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+});
+
+// Verify OTP for password reset
+router.post('/password-reset/otp/verify', async (req, res) => {
+  try {
+    const { mobileNumber, otp } = req.body;
+    
+    if (!mobileNumber || !otp) {
+      return res.status(400).json({ 
+        message: 'Missing required fields',
+        missingFields: !mobileNumber ? ['mobileNumber'] : ['otp']
+      });
+    }
+
+    if (typeof otp !== 'string' || otp.length !== 6 || !/^[0-9]{6}$/.test(otp)) {
+      return res.status(400).json({ message: 'Invalid OTP format. Must be 6 digits' });
+    }
+
+    if (typeof mobileNumber !== 'string' || mobileNumber.length < 10 || mobileNumber.length > 15) {
+      return res.status(400).json({ message: 'Invalid mobile number format' });
+    }
+
+    const result = await verifyPasswordResetOtp(mobileNumber, otp);
+    res.json(result);
+  } catch (error) {
+    console.error('Password reset OTP verification error:', error);
+    res.status(400).json({ 
+      message: error instanceof Error ? error.message : 'OTP verification failed',
+      error: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+});
+
+// Reset password after OTP verification
+router.post('/password-reset/reset', async (req, res) => {
+  try {
+    const { mobileNumber, newPassword } = req.body;
+    
+    if (!mobileNumber || !newPassword) {
+      return res.status(400).json({ 
+        message: 'Missing required fields',
+        missingFields: !mobileNumber ? ['mobileNumber'] : ['newPassword']
+      });
+    }
+
+    if (typeof newPassword !== 'string' || newPassword.length < 6) {
+      return res.status(400).json({ message: 'Password must be at least 6 characters' });
+    }
+
+    if (typeof mobileNumber !== 'string' || mobileNumber.length < 10 || mobileNumber.length > 15) {
+      return res.status(400).json({ message: 'Invalid mobile number format' });
+    }
+
+    const result = await resetPassword(mobileNumber, newPassword);
+    res.json(result);
+  } catch (error) {
+    console.error('Password reset error:', error);
+    res.status(400).json({ 
+      message: error instanceof Error ? error.message : 'Password reset failed',
       error: error instanceof Error ? error.message : 'Unknown error'
     });
   }
