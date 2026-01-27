@@ -1,6 +1,6 @@
 // server/services/pharmacy-dispensing.service.ts
 import { db } from "../db";
-import { dispensations, dispensationItems, prescriptions, patients, doctors, users } from "../../shared/schema";
+import { dispensations, dispensationItems, prescriptions, patients, doctors, users, hospitals } from "../../shared/schema";
 import { eq, and, sql, desc } from "drizzle-orm";
 import { reduceStock } from "./pharmacy-inventory.service";
 
@@ -14,13 +14,13 @@ export const getPendingPrescriptions = async (hospitalId: number) => {
       .select({
         prescription: prescriptions,
         patient: patients,
+        patientUser: users,
         doctor: doctors,
-        doctorUser: users,
       })
       .from(prescriptions)
       .leftJoin(patients, eq(prescriptions.patientId, patients.id))
+      .leftJoin(users, eq(patients.userId, users.id))
       .leftJoin(doctors, eq(prescriptions.doctorId, doctors.id))
-      .leftJoin(users, eq(doctors.userId, users.id))
       .where(
         and(
           eq(prescriptions.hospitalId, hospitalId),
@@ -33,30 +33,76 @@ export const getPendingPrescriptions = async (hospitalId: number) => {
       )
       .orderBy(desc(prescriptions.createdAt));
 
-    // Parse medications from JSON for each prescription
-    const withItems = pending.map((p) => {
-      let medications: any[] = [];
-      try {
-        medications = JSON.parse(p.prescription.medications || '[]');
-      } catch (e) {
-        console.error('Error parsing medications:', e);
-      }
+    // Enrich with doctor user data and hospital data
+    const enriched = await Promise.all(
+      pending.map(async (p) => {
+        let doctorUser = null;
+        if (p.doctor?.userId) {
+          const [doctorUserData] = await db
+            .select({ fullName: users.fullName })
+            .from(users)
+            .where(eq(users.id, p.doctor.userId))
+            .limit(1);
+          if (doctorUserData) {
+            doctorUser = doctorUserData;
+          }
+        }
 
-      return {
-        ...p.prescription,
-        patient: p.patient ? {
-          id: p.patient.id,
-          fullName: p.patient.fullName,
-        } : null,
-        doctor: p.doctorUser ? {
-          id: p.doctor.id,
-          fullName: p.doctorUser.fullName,
-        } : null,
-        items: medications, // Use parsed medications as items
-      };
-    });
+        // Get hospital data
+        let hospitalData = null;
+        if (p.prescription.hospitalId) {
+          const [hospital] = await db
+            .select({
+              id: hospitals.id,
+              name: hospitals.name,
+              address: hospitals.address,
+            })
+            .from(hospitals)
+            .where(eq(hospitals.id, p.prescription.hospitalId))
+            .limit(1);
+          if (hospital) {
+            hospitalData = hospital;
+          }
+        }
 
-    return withItems;
+        let medications: any[] = [];
+        try {
+          medications = JSON.parse(p.prescription.medications || '[]');
+        } catch (e) {
+          console.error('Error parsing medications:', e);
+        }
+
+        return {
+          ...p.prescription,
+          patient: p.patient ? {
+            id: p.patient.id,
+            fullName: p.patientUser?.fullName || null,
+            userId: p.patient.userId,
+            gender: p.patientUser?.gender || p.patient.gender,
+            dateOfBirth: p.patientUser?.dateOfBirth || p.patient.dateOfBirth,
+            mobileNumber: p.patientUser?.mobileNumber,
+            address: p.patientUser?.address,
+            weight: p.patient.weight,
+            height: p.patient.height,
+            user: p.patientUser ? {
+              fullName: p.patientUser.fullName,
+              gender: p.patientUser.gender,
+              dateOfBirth: p.patientUser.dateOfBirth,
+              mobileNumber: p.patientUser.mobileNumber,
+              address: p.patientUser.address,
+            } : null,
+          } : null,
+          doctor: p.doctor && doctorUser ? {
+            id: p.doctor.id,
+            fullName: doctorUser.fullName,
+          } : null,
+          hospital: hospitalData,
+          items: medications, // Use parsed medications as items
+        };
+      })
+    );
+
+    return enriched;
   } catch (error) {
     console.error("Error fetching pending prescriptions:", error);
     throw error;
@@ -68,14 +114,15 @@ export const getPendingPrescriptions = async (hospitalId: number) => {
  */
 export const createDispensation = async (data: {
   hospitalId: number;
-  prescriptionId: number;
+  prescriptionId?: number | null;
   patientId: number;
   encounterId?: number;
   appointmentId?: number;
   items: Array<{
-    prescriptionItemId: number;
+    prescriptionItemId?: number | null;
     inventoryId: number;
     quantity: number;
+    medicineName?: string;
   }>;
   dispensedByUserId: number;
 }) => {
@@ -85,7 +132,7 @@ export const createDispensation = async (data: {
       .insert(dispensations)
       .values({
         hospitalId: data.hospitalId,
-        prescriptionId: data.prescriptionId,
+        prescriptionId: data.prescriptionId || null,
         patientId: data.patientId,
         encounterId: data.encounterId,
         appointmentId: data.appointmentId,
@@ -98,23 +145,25 @@ export const createDispensation = async (data: {
 
     let totalAmount = 0;
 
-    // Get prescription to extract medicine names
-    const [prescription] = await db
-      .select()
-      .from(prescriptions)
-      .where(eq(prescriptions.id, data.prescriptionId))
-      .limit(1);
-
-    if (!prescription) {
-      throw new Error("Prescription not found");
-    }
-
-    // Parse medications JSON
+    // Get prescription to extract medicine names (if prescriptionId provided)
     let prescriptionMedications: Array<{ medicineName: string; unit: string }> = [];
-    try {
-      prescriptionMedications = JSON.parse(prescription.medications || "[]");
-    } catch (e) {
-      console.error("Error parsing prescription medications:", e);
+    if (data.prescriptionId) {
+      const [prescription] = await db
+        .select()
+        .from(prescriptions)
+        .where(eq(prescriptions.id, data.prescriptionId))
+        .limit(1);
+
+      if (!prescription) {
+        throw new Error("Prescription not found");
+      }
+
+      // Parse medications JSON
+      try {
+        prescriptionMedications = JSON.parse(prescription.medications || "[]");
+      } catch (e) {
+        console.error("Error parsing prescription medications:", e);
+      }
     }
 
     // Create dispensation items and reduce stock
@@ -125,7 +174,7 @@ export const createDispensation = async (data: {
 
       // Find matching prescription medication (if available)
       const prescriptionMed = prescriptionMedications.find(
-        (m, idx) => idx === item.prescriptionItemId || m.medicineName === inventory.medicine?.name
+        (m, idx) => idx === (item.prescriptionItemId || 0) || m.medicineName === inventory.medicine?.name
       );
 
       // Calculate price
@@ -142,7 +191,7 @@ export const createDispensation = async (data: {
         dispensationId: dispensation.id,
         prescriptionItemId: item.prescriptionItemId || null,
         inventoryId: item.inventoryId,
-        medicineName: prescriptionMed?.medicineName || inventory.medicine?.name || "Unknown",
+        medicineName: item.medicineName || prescriptionMed?.medicineName || inventory.medicine?.name || "Unknown",
         quantity: item.quantity,
         unit: prescriptionMed?.unit || inventory.unit,
         batchNumber: inventory.batchNumber,

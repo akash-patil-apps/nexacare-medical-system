@@ -10,6 +10,7 @@ import {
   Modal,
   Form,
   InputNumber,
+  Select,
   message,
   Row,
   Col,
@@ -26,6 +27,7 @@ import { PrescriptionPreview } from '../../components/prescription/PrescriptionP
 import dayjs from 'dayjs';
 
 const { Title, Text } = Typography;
+const { Option } = Select;
 
 export default function PharmacyDispensing() {
   const queryClient = useQueryClient();
@@ -316,6 +318,23 @@ export default function PharmacyDispensing() {
             }
           }
 
+          // Get patient data with fallbacks
+          const patientName = selectedPrescription.patient?.fullName 
+            || selectedPrescription.patient?.user?.fullName 
+            || 'Unknown';
+          const patientGender = selectedPrescription.patient?.user?.gender 
+            || selectedPrescription.patient?.gender 
+            || 'M';
+          const patientDateOfBirth = selectedPrescription.patient?.user?.dateOfBirth 
+            || selectedPrescription.patient?.dateOfBirth;
+          const patientAge = patientDateOfBirth 
+            ? dayjs().diff(dayjs(patientDateOfBirth), 'year')
+            : undefined;
+          const patientMobile = selectedPrescription.patient?.user?.mobileNumber 
+            || selectedPrescription.patient?.mobileNumber;
+          const patientAddress = selectedPrescription.patient?.user?.address 
+            || selectedPrescription.patient?.address;
+
           return (
             <PrescriptionPreview
               hospitalName={selectedPrescription.hospital?.name}
@@ -324,13 +343,11 @@ export default function PharmacyDispensing() {
               doctorQualification="M.S."
               doctorRegNo="MMC 2018"
               patientId={selectedPrescription.patientId}
-              patientName={selectedPrescription.patient?.fullName || 'Unknown'}
-              patientGender={selectedPrescription.patient?.user?.gender || 'M'}
-              patientAge={selectedPrescription.patient?.user?.dateOfBirth 
-                ? dayjs().diff(dayjs(selectedPrescription.patient.user.dateOfBirth), 'year')
-                : undefined}
-              patientMobile={selectedPrescription.patient?.user?.mobileNumber}
-              patientAddress={selectedPrescription.patient?.user?.address}
+              patientName={patientName}
+              patientGender={patientGender}
+              patientAge={patientAge}
+              patientMobile={patientMobile}
+              patientAddress={patientAddress}
               weight={selectedPrescription.patient?.weight}
               height={selectedPrescription.patient?.height}
               date={selectedPrescription.createdAt}
@@ -398,10 +415,10 @@ export default function PharmacyDispensing() {
                       >
                         <Select placeholder="Select batch">
                           {availableInventory.map((inv: any) => (
-                            <Select.Option key={inv.id} value={inv.id}>
+                            <Option key={inv.id} value={inv.id}>
                               Batch: {inv.batchNumber} | Stock: {inv.quantity} {inv.unit} | Expiry:{' '}
                               {new Date(inv.expiryDate).toLocaleDateString()}
-                            </Select.Option>
+                            </Option>
                           ))}
                         </Select>
                       </Form.Item>

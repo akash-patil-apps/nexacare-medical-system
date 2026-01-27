@@ -857,8 +857,7 @@ export default function PrescriptionForm({
             <Col span={12}>
               <Form.Item
                 name="diagnosis"
-                label={<Text strong>Diagnosis *</Text>}
-                rules={[{ required: true, message: 'Please enter diagnosis' }]}
+                label={<Text strong>Diagnosis</Text>}
               >
                 <Input placeholder="e.g., Upper Respiratory Tract Infection" />
               </Form.Item>

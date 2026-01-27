@@ -24,6 +24,8 @@ import {
   DatePicker,
   InputNumber,
   App,
+  Row,
+  Col,
 } from 'antd';
 import {
   UserOutlined,
@@ -38,6 +40,7 @@ import {
   ShoppingCartOutlined,
   PlusOutlined,
   EditOutlined,
+  DeleteOutlined,
 } from '@ant-design/icons';
 import { useAuth } from '../../hooks/use-auth';
 import { useResponsive } from '../../hooks/use-responsive';
@@ -78,37 +81,8 @@ export default function PharmacistDashboard() {
   const shownNotificationIdsRef = useRef<Set<number>>(new Set());
   const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false);
   const [selectedMenuKey, setSelectedMenuKey] = useState<string>('dashboard');
-
-  // Redirect if not authenticated
-  if (!isLoading && !user) {
-    return <Redirect to="/login" />;
-  }
-
-  // Redirect if user doesn't have PHARMACIST role
-  if (!isLoading && user) {
-    const userRole = user.role?.toUpperCase();
-    if (userRole !== 'PHARMACIST') {
-      message.warning('You do not have access to this dashboard');
-      switch (userRole) {
-        case 'PATIENT':
-          return <Redirect to="/dashboard/patient" />;
-        case 'DOCTOR':
-          return <Redirect to="/dashboard/doctor" />;
-        case 'RECEPTIONIST':
-          return <Redirect to="/dashboard/receptionist" />;
-        case 'HOSPITAL':
-          return <Redirect to="/dashboard/hospital" />;
-        case 'LAB':
-          return <Redirect to="/dashboard/lab" />;
-        case 'NURSE':
-          return <Redirect to="/dashboard/nurse" />;
-        case 'RADIOLOGY_TECHNICIAN':
-          return <Redirect to="/dashboard/radiology-technician" />;
-        default:
-          return <Redirect to="/login" />;
-      }
-    }
-  }
+  const [nonConsultingDispenseModalOpen, setNonConsultingDispenseModalOpen] = useState(false);
+  const [nonConsultingDispenseForm] = Form.useForm();
 
   // Get pharmacist profile
   const { data: pharmacistProfile, isLoading: isLoadingProfile } = useQuery({
@@ -131,7 +105,7 @@ export default function PharmacistDashboard() {
 
       return response.json();
     },
-    enabled: !!user && user.role?.toUpperCase() === 'PHARMACIST',
+    enabled: !!user && user?.role?.toUpperCase() === 'PHARMACIST',
   });
 
   // Get notifications for pharmacist
@@ -149,74 +123,8 @@ export default function PharmacistDashboard() {
     refetchOnWindowFocus: true,
   });
 
-  // Show floating notifications for unread notifications
-  useEffect(() => {
-    if (!notifications || notifications.length === 0) return;
-
-    const unread = notifications.filter((n: any) => !n.isRead);
-    
-    unread.forEach((notif: any) => {
-      const notifId = Number(notif.id);
-      
-      // Only show if we haven't shown this notification before
-      if (!shownNotificationIdsRef.current.has(notifId)) {
-        shownNotificationIdsRef.current.add(notifId);
-        
-        const type = (notif.type || '').toLowerCase();
-        let notificationType: 'info' | 'success' | 'warning' | 'error' = 'info';
-        if (type.includes('cancel') || type.includes('reject') || type.includes('critical')) notificationType = 'error';
-        else if (type.includes('confirm') || type.includes('complete') || type.includes('ready')) notificationType = 'success';
-        else if (type.includes('pending') || type.includes('resched') || type.includes('processing')) notificationType = 'warning';
-        
-        // Show as floating notification in top right
-        notificationApi[notificationType]({
-          message: notif.title || 'Notification',
-          description: notif.message,
-          placement: 'topRight',
-          duration: 10, // Auto-dismiss after 10 seconds
-          key: `notif-${notifId}`,
-          onClick: () => {
-            // Mark as read when clicked
-            const token = localStorage.getItem('auth-token');
-            if (token) {
-              fetch(`/api/notifications/read/${notifId}`, {
-                method: 'POST',
-                headers: { Authorization: `Bearer ${token}` },
-              }).then(() => {
-                queryClient.invalidateQueries({ queryKey: ['/api/notifications/me'] });
-              });
-            }
-          },
-          onClose: () => {
-            // Mark as read when closed
-            const token = localStorage.getItem('auth-token');
-            if (token) {
-              fetch(`/api/notifications/read/${notifId}`, {
-                method: 'POST',
-                headers: { Authorization: `Bearer ${token}` },
-              }).then(() => {
-                queryClient.invalidateQueries({ queryKey: ['/api/notifications/me'] });
-              });
-            }
-          },
-        });
-      }
-    });
-  }, [notifications, notificationApi, queryClient]);
-
-  // Get hospital name from pharmacist profile
-  const hospitalName = useMemo(() => {
-    if (pharmacistProfile?.hospitalName) {
-      return pharmacistProfile.hospitalName;
-    }
-    if (pharmacistProfile?.hospital?.name) {
-      return pharmacistProfile.hospital.name;
-    }
-    return null;
-  }, [pharmacistProfile?.hospitalName, pharmacistProfile?.hospital?.name]);
-
-  // Get prescriptions for dispensing (real data)
-  const { data: prescriptions = [], isLoading: isLoadingPrescriptions } = useQuery({
+  // Get prescriptions for dispensing (real data) - with real-time polling
+  const { data: prescriptions = [], isLoading: isLoadingPrescriptions, refetch: refetchPrescriptions } = useQuery({
     queryKey: ['/api/prescriptions', 'pharmacist'],
     queryFn: async () => {
       const token = localStorage.getItem('auth-token');
@@ -235,7 +143,21 @@ export default function PharmacistDashboard() {
       return response.json();
     },
     enabled: !!pharmacistProfile,
+    refetchInterval: 10000, // Poll every 10 seconds for new prescriptions
+    refetchIntervalInBackground: true,
+    refetchOnWindowFocus: true,
   });
+
+  // Get hospital name from pharmacist profile
+  const hospitalName = useMemo(() => {
+    if (pharmacistProfile?.hospitalName) {
+      return pharmacistProfile.hospitalName;
+    }
+    if (pharmacistProfile?.hospital?.name) {
+      return pharmacistProfile.hospital.name;
+    }
+    return null;
+  }, [pharmacistProfile?.hospitalName, pharmacistProfile?.hospital?.name]);
 
   // Calculate KPIs from real data
   const kpis = useMemo(() => {
@@ -292,6 +214,146 @@ export default function PharmacistDashboard() {
     ];
   }, [prescriptions]);
 
+  // Compute user ID and initials for TopHeader
+  const userId = useMemo(() => {
+    if (user?.id) {
+      const year = new Date().getFullYear();
+      const idNum = String(user.id).padStart(3, '0');
+      return `PHA-${year}-${idNum}`;
+    }
+    return 'PHA-2024-001';
+  }, [user?.id]);
+
+  const userInitials = useMemo(() => {
+    if (user?.fullName) {
+      const names = user.fullName.split(' ');
+      if (names.length >= 2) {
+        return `${names[0][0]}${names[1][0]}`.toUpperCase();
+      }
+      return user.fullName.substring(0, 2).toUpperCase();
+    }
+    return 'PH';
+  }, [user?.fullName]);
+
+  // Show floating notifications for unread notifications
+  useEffect(() => {
+    if (!notifications || notifications.length === 0) return;
+
+    const unread = notifications.filter((n: any) => !n.isRead);
+    
+    unread.forEach((notif: any) => {
+      const notifId = Number(notif.id);
+      
+      // Only show if we haven't shown this notification before
+      if (!shownNotificationIdsRef.current.has(notifId)) {
+        shownNotificationIdsRef.current.add(notifId);
+        
+        const type = (notif.type || '').toLowerCase();
+        let notificationType: 'info' | 'success' | 'warning' | 'error' = 'info';
+        if (type.includes('cancel') || type.includes('reject') || type.includes('critical')) notificationType = 'error';
+        else if (type.includes('confirm') || type.includes('complete') || type.includes('ready') || type.includes('prescription')) notificationType = 'success';
+        else if (type.includes('pending') || type.includes('resched') || type.includes('processing')) notificationType = 'warning';
+        
+        // If it's a prescription notification, play sound and refetch prescriptions
+        if (type.includes('prescription')) {
+          playNotificationSound('prescription');
+          refetchPrescriptions();
+        }
+        
+        // Show as floating notification in top right
+        notificationApi[notificationType]({
+          message: notif.title || 'Notification',
+          description: notif.message,
+          placement: 'topRight',
+          duration: 10, // Auto-dismiss after 10 seconds
+          key: `notif-${notifId}`,
+          onClick: () => {
+            // Mark as read when clicked
+            const token = localStorage.getItem('auth-token');
+            if (token) {
+              fetch(`/api/notifications/read/${notifId}`, {
+                method: 'POST',
+                headers: { Authorization: `Bearer ${token}` },
+              }).then(() => {
+                queryClient.invalidateQueries({ queryKey: ['/api/notifications/me'] });
+              });
+            }
+            // If prescription notification, navigate to dispensing
+            if (type.includes('prescription')) {
+              setSelectedMenuKey('dispensing');
+            }
+          },
+          onClose: () => {
+            // Mark as read when closed
+            const token = localStorage.getItem('auth-token');
+            if (token) {
+              fetch(`/api/notifications/read/${notifId}`, {
+                method: 'POST',
+                headers: { Authorization: `Bearer ${token}` },
+              }).then(() => {
+                queryClient.invalidateQueries({ queryKey: ['/api/notifications/me'] });
+              });
+            }
+          },
+        });
+      }
+    });
+  }, [notifications, notificationApi, queryClient, refetchPrescriptions]);
+
+  // Redirect if not authenticated
+  if (!isLoading && !user) {
+    return <Redirect to="/login" />;
+  }
+
+  // Redirect if user doesn't have PHARMACIST role
+  if (!isLoading && user) {
+    const userRole = user.role?.toUpperCase();
+    if (userRole !== 'PHARMACIST') {
+      message.warning('You do not have access to this dashboard');
+      switch (userRole) {
+        case 'PATIENT':
+          return <Redirect to="/dashboard/patient" />;
+        case 'DOCTOR':
+          return <Redirect to="/dashboard/doctor" />;
+        case 'RECEPTIONIST':
+          return <Redirect to="/dashboard/receptionist" />;
+        case 'HOSPITAL':
+          return <Redirect to="/dashboard/hospital" />;
+        case 'LAB':
+          return <Redirect to="/dashboard/lab" />;
+        case 'NURSE':
+          return <Redirect to="/dashboard/nurse" />;
+        case 'RADIOLOGY_TECHNICIAN':
+          return <Redirect to="/dashboard/radiology-technician" />;
+        default:
+          return <Redirect to="/login" />;
+      }
+    }
+  }
+
+  // Track previous prescription count for notifications
+  const previousPrescriptionCountRef = useRef<number>(0);
+
+  // Listen for new prescriptions and show notifications
+  useEffect(() => {
+    if (prescriptions.length > previousPrescriptionCountRef.current) {
+      const newCount = prescriptions.length - previousPrescriptionCountRef.current;
+      if (newCount > 0) {
+        // Play notification sound
+        playNotificationSound('prescription');
+        
+        // Show notification
+        notificationApi.success({
+          message: 'New Prescription Available',
+          description: `${newCount} new prescription${newCount > 1 ? 's' : ''} ${newCount > 1 ? 'are' : 'is'} ready for dispensing.`,
+          placement: 'topRight',
+          duration: 5,
+        });
+      }
+    }
+    previousPrescriptionCountRef.current = prescriptions.length;
+  }, [prescriptions.length, notificationApi]);
+
   // Quick actions for pharmacists
   const quickActions = [
     {
@@ -300,6 +362,13 @@ export default function PharmacistDashboard() {
       icon: <MedicineBoxOutlined />,
       action: () => setSelectedMenuKey('dispensing'),
       color: pharmacistTheme.primary,
+    },
+    {
+      title: 'Non-Consulting Patient',
+      description: 'Dispense medicine without prescription',
+      icon: <PlusOutlined />,
+      action: () => setNonConsultingDispenseModalOpen(true),
+      color: '#3B82F6',
     },
     {
       title: 'Check Inventory',
@@ -701,24 +770,8 @@ export default function PharmacistDashboard() {
         <TopHeader
           userName={user?.fullName || 'Pharmacist'}
           userRole="Pharmacist"
-          userId={useMemo(() => {
-            if (user?.id) {
-              const year = new Date().getFullYear();
-              const idNum = String(user.id).padStart(3, '0');
-              return `PHA-${year}-${idNum}`;
-            }
-            return 'PHA-2024-001';
-          }, [user?.id])}
-          userInitials={useMemo(() => {
-            if (user?.fullName) {
-              const names = user.fullName.split(' ');
-              if (names.length >= 2) {
-                return `${names[0][0]}${names[1][0]}`.toUpperCase();
-              }
-              return user.fullName.substring(0, 2).toUpperCase();
-            }
-            return 'PH';
-          }, [user?.fullName])}
+          userId={userId}
+          userInitials={userInitials}
           notificationCount={0}
         />
 
@@ -756,7 +809,524 @@ export default function PharmacistDashboard() {
         </Content>
       </Layout>
     </Layout>
+
+    {/* Non-Consulting Patient Dispense Modal */}
+    <Modal
+      title="Dispense Medicine for Non-Consulting Patient"
+      open={nonConsultingDispenseModalOpen}
+      onCancel={() => {
+        setNonConsultingDispenseModalOpen(false);
+        nonConsultingDispenseForm.resetFields();
+      }}
+      footer={null}
+      width={800}
+    >
+      <NonConsultingDispenseForm
+        form={nonConsultingDispenseForm}
+        pharmacistProfile={pharmacistProfile}
+        onCancel={() => {
+          setNonConsultingDispenseModalOpen(false);
+          nonConsultingDispenseForm.resetFields();
+        }}
+        onResetPatientSearch={() => {
+          // Reset handled in component
+        }}
+        onSuccess={() => {
+          setNonConsultingDispenseModalOpen(false);
+          nonConsultingDispenseForm.resetFields();
+          queryClient.invalidateQueries({ queryKey: ['/api/prescriptions', 'pharmacist'] });
+          queryClient.invalidateQueries({ queryKey: ['/api/pharmacy/dispensing'] });
+          queryClient.invalidateQueries({ queryKey: ['/api/pharmacy/inventory'] });
+        }}
+        onResetPatientSearch={() => {
+          setPatientSearchMobile('');
+          setSearchedPatient(null);
+        }}
+      />
+    </Modal>
     </div>
     </>
+  );
+}
+
+// Fuzzy matching function for medicine search (same as prescription form)
+function fuzzyMatch(searchTerm: string, target: string): boolean {
+  if (!searchTerm || !target) return false;
+  const search = searchTerm.toLowerCase();
+  const text = target.toLowerCase();
+  let searchIndex = 0;
+  let textIndex = 0;
+  while (searchIndex < search.length && textIndex < text.length) {
+    if (search[searchIndex] === text[textIndex]) {
+      searchIndex++;
+    }
+    textIndex++;
+  }
+  return searchIndex === search.length;
+}
+
+// Non-Consulting Patient Dispense Form Component
+function NonConsultingDispenseForm({ 
+  form, 
+  pharmacistProfile, 
+  onSuccess,
+  onCancel,
+  onResetPatientSearch
+}: { 
+  form: any; 
+  pharmacistProfile: any; 
+  onSuccess: () => void;
+  onCancel: () => void;
+  onResetPatientSearch?: () => void;
+}) {
+  const [selectedMedicines, setSelectedMedicines] = useState<Array<{
+    medicineId: number;
+    medicineName: string;
+    inventoryId: number | null;
+    quantity: number;
+    availableStock: number;
+    unit: string;
+    frequency?: string;
+  }>>([]);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [currentMedicine, setCurrentMedicine] = useState<{
+    medicineId: number | null;
+    medicineName: string;
+    inventoryId: number | null;
+    quantity: number;
+    frequency: string;
+  }>({
+    medicineId: null,
+    medicineName: '',
+    inventoryId: null,
+    quantity: 1,
+    frequency: '',
+  });
+  const [patientSearchMobile, setPatientSearchMobile] = useState('');
+  const [searchedPatient, setSearchedPatient] = useState<any>(null);
+  const [isSearchingPatient, setIsSearchingPatient] = useState(false);
+
+  // Fetch medicines catalog (like doctors do)
+  const { data: medicinesData = [], isLoading: isLoadingMedicines } = useQuery({
+    queryKey: ['/api/medicines'],
+    queryFn: async () => {
+      const token = localStorage.getItem('auth-token');
+      const response = await fetch('/api/medicines', {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (!response.ok) return [];
+      const data = await response.json();
+      const medicines = Array.isArray(data) ? data : (data?.medicines || []);
+      return medicines.sort((a: any, b: any) => (a.name || '').localeCompare(b.name || ''));
+    },
+  });
+
+  // Fetch inventory
+  const { data: inventory = [], isLoading: isLoadingInventory } = useQuery({
+    queryKey: ['/api/pharmacy/inventory'],
+    queryFn: async () => {
+      const token = localStorage.getItem('auth-token');
+      const response = await fetch('/api/pharmacy/inventory', {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (!response.ok) return [];
+      return response.json();
+    },
+  });
+
+  // Get available inventory for selected medicine
+  const availableInventoryForMedicine = useMemo(() => {
+    if (!currentMedicine.medicineId) return [];
+    const selectedMed = medicinesData.find((m: any) => m.id === currentMedicine.medicineId);
+    if (!selectedMed) return [];
+    
+    // Match by medicineCatalogId (inventory uses medicineCatalogId, not medicineId)
+    // The inventory response has: { ...inventory, medicine: { id, name, ... } }
+    return inventory.filter((inv: any) => {
+      const medicineCatalogId = inv.medicineCatalogId || inv.medicine?.id;
+      const stockQty = inv.quantity || inv.stockQuantity || 0;
+      return medicineCatalogId === selectedMed.id && stockQty > 0;
+    });
+  }, [currentMedicine.medicineId, inventory, medicinesData]);
+
+  const handleAddMedicine = () => {
+    if (!currentMedicine.medicineId || !currentMedicine.medicineName) {
+      message.error('Please select a medicine');
+      return;
+    }
+    if (!currentMedicine.inventoryId) {
+      message.error('Please select inventory for the medicine');
+      return;
+    }
+    if (currentMedicine.quantity <= 0) {
+      message.error('Please enter a valid quantity');
+      return;
+    }
+
+    const selectedInv = availableInventoryForMedicine.find((inv: any) => inv.id === currentMedicine.inventoryId);
+    if (!selectedInv) {
+      message.error('Selected inventory not found');
+      return;
+    }
+
+    if (currentMedicine.quantity > selectedInv.stockQuantity) {
+      message.error(`Quantity cannot exceed available stock (${selectedInv.stockQuantity})`);
+      return;
+    }
+
+    setSelectedMedicines([...selectedMedicines, {
+      medicineId: currentMedicine.medicineId,
+      medicineName: currentMedicine.medicineName,
+      inventoryId: currentMedicine.inventoryId,
+      quantity: currentMedicine.quantity,
+      availableStock: selectedInv.quantity || selectedInv.stockQuantity || 0,
+      unit: selectedInv.unit || '',
+      frequency: currentMedicine.frequency || '',
+    }]);
+
+    // Reset current medicine
+    setCurrentMedicine({
+      medicineId: null,
+      medicineName: '',
+      inventoryId: null,
+      quantity: 1,
+      frequency: '',
+    });
+    message.success('Medicine added');
+  };
+
+  const handleRemoveMedicine = (index: number) => {
+    setSelectedMedicines(selectedMedicines.filter((_, i) => i !== index));
+  };
+
+  const handleMedicineSelect = (medicineName: string) => {
+    const medicine = medicinesData.find((m: any) => m.name === medicineName);
+    if (medicine) {
+      setCurrentMedicine({
+        ...currentMedicine,
+        medicineId: medicine.id,
+        medicineName: medicine.name,
+        inventoryId: null, // Reset inventory when medicine changes
+      });
+    }
+  };
+
+  // Reset patient search when canceling
+  const handleCancel = () => {
+    setPatientSearchMobile('');
+    setSearchedPatient(null);
+    if (onResetPatientSearch) {
+      onResetPatientSearch();
+    }
+    onCancel();
+  };
+
+  const handleSubmit = async (values: any) => {
+    if (!values.patientName || !values.mobileNumber) {
+      message.error('Please enter patient name and mobile number');
+      return;
+    }
+
+    if (selectedMedicines.length === 0) {
+      message.error('Please add at least one medicine');
+      return;
+    }
+
+    if (selectedMedicines.some(m => !m.inventoryId || m.quantity <= 0)) {
+      message.error('Please select inventory and quantity for all medicines');
+      return;
+    }
+
+    setIsSubmitting(true);
+    try {
+      const token = localStorage.getItem('auth-token');
+      const response = await fetch('/api/pharmacy/dispensing/non-consulting', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          patientName: values.patientName,
+          mobileNumber: values.mobileNumber,
+          hospitalId: pharmacistProfile?.hospitalId,
+          items: selectedMedicines.map(m => ({
+            inventoryId: m.inventoryId,
+            quantity: m.quantity,
+            medicineName: m.medicineName,
+          })),
+        }),
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.message || 'Failed to dispense medicine');
+      }
+
+      message.success('Medicine dispensed successfully');
+      setSelectedMedicines([]);
+      onSuccess();
+    } catch (error: any) {
+      message.error(error.message || 'Failed to dispense medicine');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  return (
+    <Form
+      form={form}
+      layout="vertical"
+      onFinish={handleSubmit}
+    >
+      <Row gutter={16}>
+        <Col span={24}>
+          <Form.Item
+            label="Search Patient by Mobile Number"
+            required
+          >
+            <Space.Compact style={{ width: '100%' }}>
+              <Input
+                placeholder="Enter mobile number to search"
+                value={patientSearchMobile}
+                onChange={(e) => setPatientSearchMobile(e.target.value.replace(/\D/g, ''))}
+                maxLength={10}
+                onPressEnter={handleSearchPatient}
+                disabled={isSearchingPatient}
+              />
+              <Button 
+                type="primary" 
+                onClick={handleSearchPatient}
+                loading={isSearchingPatient}
+              >
+                Search
+              </Button>
+            </Space.Compact>
+          </Form.Item>
+        </Col>
+      </Row>
+
+      {searchedPatient && (
+        <Alert
+          message={`Patient Found: ${searchedPatient.name}`}
+          type="success"
+          showIcon
+          style={{ marginBottom: 16 }}
+          closable
+          onClose={() => setSearchedPatient(null)}
+        />
+      )}
+
+      <Row gutter={16}>
+        <Col span={12}>
+          <Form.Item
+            name="patientName"
+            label="Patient Name"
+            rules={[{ required: true, message: 'Please enter patient name' }]}
+          >
+            <Input 
+              placeholder="Enter patient name" 
+              disabled={!!searchedPatient}
+            />
+          </Form.Item>
+        </Col>
+        <Col span={12}>
+          <Form.Item
+            name="mobileNumber"
+            label="Mobile Number"
+            rules={[
+              { required: true, message: 'Please enter mobile number' },
+              { pattern: /^[0-9]{10}$/, message: 'Please enter a valid 10-digit mobile number' }
+            ]}
+          >
+            <Input 
+              placeholder="Enter mobile number" 
+              maxLength={10}
+              disabled={!!searchedPatient}
+            />
+          </Form.Item>
+        </Col>
+      </Row>
+
+      <Divider>Medicines</Divider>
+
+      {/* Medicine Selection Form */}
+      <Card size="small" style={{ marginBottom: 16, background: '#F9FAFB' }}>
+        <Row gutter={16} align="middle">
+          <Col span={10}>
+            <Form.Item label="Search Medicine" required>
+              <Select
+                showSearch
+                placeholder="Search or select medicine... (try: prctm for Paracetamol)"
+                loading={isLoadingMedicines}
+                value={currentMedicine.medicineName || undefined}
+                onChange={handleMedicineSelect}
+                optionFilterProp="label"
+                filterOption={(input, option) => {
+                  const label = String(option?.label || '').toLowerCase();
+                  const value = String(option?.value || '').toLowerCase();
+                  const searchTerm = input.toLowerCase().trim();
+                  if (!searchTerm) return true;
+                  if (label.includes(searchTerm) || value.includes(searchTerm)) return true;
+                  return fuzzyMatch(searchTerm, label) || fuzzyMatch(searchTerm, value);
+                }}
+                popupMatchSelectWidth={true}
+                notFoundContent={
+                  isLoadingMedicines 
+                    ? <span>Loading medicines...</span> 
+                    : medicinesData.length === 0
+                      ? <span>No medicines available</span>
+                      : <span>No medicines found matching your search</span>
+                }
+              >
+                {medicinesData.map((med: any) => (
+                  <Select.Option key={med.id} value={med.name} label={med.name}>
+                    {med.name}
+                  </Select.Option>
+                ))}
+              </Select>
+            </Form.Item>
+          </Col>
+          <Col span={6}>
+            <Form.Item label="Inventory" required>
+              {currentMedicine.medicineId ? (
+                <Select
+                  placeholder="Select inventory"
+                  value={currentMedicine.inventoryId || undefined}
+                  onChange={(value) => {
+                    const selectedInv = availableInventoryForMedicine.find((inv: any) => inv.id === value);
+                    setCurrentMedicine({
+                      ...currentMedicine,
+                      inventoryId: value,
+                      quantity: 1,
+                    });
+                  }}
+                  loading={isLoadingInventory}
+                  onKeyDown={handleKeyPress}
+                >
+                  {availableInventoryForMedicine.length > 0 ? (
+                    availableInventoryForMedicine.map((inv: any) => (
+                      <Select.Option key={inv.id} value={inv.id}>
+                        Stock: {inv.quantity || inv.stockQuantity || 0} {inv.unit} | Batch: {inv.batchNumber || 'N/A'}
+                      </Select.Option>
+                    ))
+                  ) : (
+                    <Select.Option disabled value="">
+                      No inventory available for this medicine
+                    </Select.Option>
+                  )}
+                </Select>
+              ) : (
+                <Input placeholder="Select medicine first" disabled />
+              )}
+            </Form.Item>
+          </Col>
+          <Col span={4}>
+            <Form.Item label="Quantity" required>
+              <InputNumber
+                min={1}
+                max={availableInventoryForMedicine.find((inv: any) => inv.id === currentMedicine.inventoryId)?.quantity || availableInventoryForMedicine.find((inv: any) => inv.id === currentMedicine.inventoryId)?.stockQuantity || 1}
+                value={currentMedicine.quantity}
+                onChange={(value) => setCurrentMedicine({ ...currentMedicine, quantity: value || 1 })}
+                style={{ width: '100%' }}
+                disabled={!currentMedicine.inventoryId}
+                onPressEnter={handleKeyPress}
+              />
+            </Form.Item>
+          </Col>
+          <Col span={6}>
+            <Form.Item label="Frequency (Optional)">
+              <Input
+                placeholder="e.g., 1-0-1, Twice daily"
+                value={currentMedicine.frequency}
+                onChange={(e) => setCurrentMedicine({ ...currentMedicine, frequency: e.target.value })}
+                onPressEnter={handleKeyPress}
+              />
+            </Form.Item>
+          </Col>
+          <Col span={2}>
+            <Button
+              type="primary"
+              icon={<PlusOutlined />}
+              onClick={handleAddMedicine}
+              style={{ marginTop: 30 }}
+              disabled={!currentMedicine.medicineId || !currentMedicine.inventoryId}
+            >
+              Add
+            </Button>
+          </Col>
+        </Row>
+      </Card>
+
+      {selectedMedicines.length > 0 ? (
+        <div style={{ marginBottom: 16 }}>
+          {selectedMedicines.map((medicine, index) => (
+            <Card key={index} size="small" style={{ marginBottom: 8 }}>
+              <Row gutter={16} align="middle">
+                <Col span={14}>
+                  <Text strong>{medicine.medicineName}</Text>
+                  <div style={{ fontSize: '12px', color: '#6B7280', marginTop: '4px' }}>
+                    Quantity: {medicine.quantity} {medicine.unit} | Available: {medicine.availableStock} {medicine.unit}
+                    {medicine.frequency && <span> | Frequency: {medicine.frequency}</span>}
+                  </div>
+                </Col>
+                <Col span={8} style={{ textAlign: 'right' }}>
+                  <Button
+                    type="text"
+                    danger
+                    icon={<DeleteOutlined />}
+                    onClick={() => handleRemoveMedicine(index)}
+                  >
+                    Remove
+                  </Button>
+                </Col>
+              </Row>
+            </Card>
+          ))}
+        </div>
+      ) : (
+        <div style={{ 
+          border: '2px dashed #D1D5DB', 
+          borderRadius: '8px', 
+          padding: '40px',
+          textAlign: 'center',
+          background: '#FFFFFF',
+          marginBottom: 16
+        }}>
+          <MedicineBoxOutlined style={{ fontSize: '32px', color: '#9CA3AF', marginBottom: '8px' }} />
+          <div>
+            <Text type="secondary">No medicines added yet. Select medicine above and click Add</Text>
+          </div>
+        </div>
+      )}
+
+      <Form.Item>
+        <Space>
+          <Button
+            type="primary"
+            htmlType="submit"
+            loading={isSubmitting}
+            disabled={selectedMedicines.length === 0}
+          >
+            Dispense Medicine
+          </Button>
+          <Button onClick={() => {
+            setSelectedMedicines([]);
+            setCurrentMedicine({
+              medicineId: null,
+              medicineName: '',
+              inventoryId: null,
+              quantity: 1,
+              frequency: '',
+            });
+            setPatientSearchMobile('');
+            setSearchedPatient(null);
+            handleCancel();
+          }}>
+            Cancel
+          </Button>
+        </Space>
+      </Form.Item>
+    </Form>
   );
 }

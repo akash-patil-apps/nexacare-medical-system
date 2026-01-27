@@ -107,6 +107,7 @@ export default function ReceptionistDashboard() {
   const [isWalkInModalOpen, setIsWalkInModalOpen] = useState(false);
   const [isWalkInSubmitting, setIsWalkInSubmitting] = useState(false);
   const [walkInForm] = Form.useForm();
+  const [walkInBookingSuccess, setWalkInBookingSuccess] = useState(false);
   const [isRejectModalOpen, setIsRejectModalOpen] = useState(false);
   const [selectedAppointmentForRejection, setSelectedAppointmentForRejection] = useState<number | null>(null);
   const [rejectionForm] = Form.useForm();
@@ -398,6 +399,119 @@ export default function ReceptionistDashboard() {
       }
     });
   }, [notifications, notificationApi, queryClient, appointments]);
+
+  // Reset appointmentBookingStep when entering appointment booking section
+  useEffect(() => {
+    if ((walkInStep === 2 && foundUser) || (walkInStep === 4 && foundPatient)) {
+      // Reset to step 0 (doctor selection) when entering appointment booking
+      if (appointmentBookingStep !== 0 && appointmentBookingStep !== 1 && appointmentBookingStep !== 2) {
+        setAppointmentBookingStep(0);
+      }
+    }
+  }, [walkInStep, foundUser, foundPatient]);
+
+  // Auto-scroll to payment section when step changes to 2 and slot is selected
+  useEffect(() => {
+    if (appointmentBookingStep === 2 && selectedSlot) {
+      console.log('🟡 useEffect triggered - Payment section should render', {
+        step: appointmentBookingStep,
+        slot: selectedSlot,
+        doctor: selectedDoctor ? 'yes' : 'no'
+      });
+      
+      // Wait for DOM to update - use multiple attempts to ensure rendering
+      let attempts = 0;
+      const maxAttempts = 10;
+      
+      const tryScroll = () => {
+        attempts++;
+        console.log(`🟡 Attempt ${attempts} to find payment section`);
+        
+        const paymentSection = document.getElementById('payment-section-walkin') || 
+                               document.querySelector('[data-payment-section]');
+        
+        if (paymentSection) {
+          console.log('✅ Payment section FOUND in DOM!', {
+            offsetTop: paymentSection.offsetTop,
+            offsetHeight: paymentSection.offsetHeight,
+            display: window.getComputedStyle(paymentSection).display,
+            visibility: window.getComputedStyle(paymentSection).visibility,
+            opacity: window.getComputedStyle(paymentSection).opacity
+          });
+          
+          const container = document.getElementById('appointment-booking-container') ||
+                           paymentSection.closest('[style*="overflowY"]') as HTMLElement ||
+                           paymentSection.closest('.ant-modal-body') as HTMLElement;
+          
+          if (container) {
+            const section = paymentSection as HTMLElement;
+            const containerRect = container.getBoundingClientRect();
+            const sectionRect = section.getBoundingClientRect();
+            
+            // Force visibility first
+            section.style.setProperty('display', 'block', 'important');
+            section.style.setProperty('visibility', 'visible', 'important');
+            section.style.setProperty('opacity', '1', 'important');
+            section.style.setProperty('height', 'auto', 'important');
+            section.style.setProperty('max-height', 'none', 'important');
+            
+            // Calculate scroll position
+            const scrollTop = container.scrollTop + (sectionRect.top - containerRect.top) - 40;
+            
+            console.log('📊 Scroll calculation:', {
+              containerScrollTop: container.scrollTop,
+              sectionOffsetTop: section.offsetTop,
+              sectionRectTop: sectionRect.top,
+              containerRectTop: containerRect.top,
+              calculatedScrollTop: scrollTop,
+              containerScrollHeight: container.scrollHeight,
+              containerClientHeight: container.clientHeight
+            });
+            
+            // Scroll the container
+            container.scrollTo({
+              top: Math.max(0, scrollTop),
+              behavior: attempts === 1 ? 'smooth' : 'auto'
+            });
+            
+            // Also try scrollIntoView
+            setTimeout(() => {
+              section.scrollIntoView({ 
+                behavior: 'smooth', 
+                block: 'start', 
+                inline: 'nearest' 
+              });
+            }, 100);
+            
+            console.log('✅ Payment section scrolled into view');
+          } else {
+            console.warn('⚠️ Container not found, using scrollIntoView');
+            paymentSection.scrollIntoView({ behavior: 'smooth', block: 'start', inline: 'nearest' });
+          }
+        } else if (attempts < maxAttempts) {
+          console.warn(`⚠️ Payment section not found yet, retrying... (${attempts}/${maxAttempts})`);
+          setTimeout(tryScroll, 200);
+        } else {
+          console.error('❌ Payment section not found after', maxAttempts, 'attempts');
+          console.error('Current state:', {
+            step: appointmentBookingStep,
+            slot: selectedSlot,
+            doctor: selectedDoctor ? 'yes' : 'no',
+            walkInStep,
+            foundUser: !!foundUser,
+            foundPatient: !!foundPatient
+          });
+        }
+      };
+      
+      // Start with delays to allow React to render
+      setTimeout(tryScroll, 100);
+      setTimeout(tryScroll, 300);
+      setTimeout(tryScroll, 600);
+      setTimeout(tryScroll, 1000);
+      setTimeout(tryScroll, 1500);
+    }
+  }, [appointmentBookingStep, selectedSlot, selectedDoctor, walkInStep, foundUser, foundPatient]);
 
   // Detect new appointments and play sounds
   useEffect(() => {
@@ -2441,6 +2555,8 @@ export default function ReceptionistDashboard() {
       const appointment = responseBody.appointment || responseBody;
       const appointmentId = appointment.id || responseBody.id;
 
+      // Show success message in modal
+      setWalkInBookingSuccess(true);
       message.success('Walk-in appointment booked successfully!');
       
       // Open invoice modal to create invoice and collect payment
@@ -2461,11 +2577,17 @@ export default function ReceptionistDashboard() {
           doctorSpecialty: selectedDoctor?.specialty,
           doctorConsultationFee: selectedDoctor?.consultationFee,
         });
-        // Don't close modal yet - let user complete invoice/payment
-        // closeWalkInModal();
-        setIsWalkInModalOpen(false); // Just hide the walk-in modal, invoice will show
+        // Close modal after showing success message (2 seconds delay)
+        setTimeout(() => {
+          setIsWalkInModalOpen(false);
+          setWalkInBookingSuccess(false);
+        }, 2000);
       } else {
-        closeWalkInModal();
+        // Close modal after showing success message (2 seconds delay)
+        setTimeout(() => {
+          closeWalkInModal();
+          setWalkInBookingSuccess(false);
+        }, 2000);
       }
 
       await Promise.all([refetchWalkIns(), refetchAppointments()]);
@@ -2493,6 +2615,7 @@ export default function ReceptionistDashboard() {
     setSlotBookings({});
     setAppointmentBookingStep(0);
     setSelectedPaymentMethod(null);
+    setWalkInBookingSuccess(false);
     walkInForm.resetFields();
     walkInForm.setFieldsValue({
       priority: 'normal',
@@ -3727,10 +3850,11 @@ export default function ReceptionistDashboard() {
             styles={{ 
               body: { 
                 padding: '24px 32px', 
-                maxHeight: '85vh', 
+                maxHeight: '90vh', 
                 overflow: 'hidden',
                 display: 'flex',
-                flexDirection: 'column'
+                flexDirection: 'column',
+                position: 'relative'
               } 
             }}
           >
@@ -4015,7 +4139,47 @@ export default function ReceptionistDashboard() {
 
             {/* Step 2 (existing) or Step 4 (new): Appointment Booking - Redesigned to match patient dashboard */}
             {((walkInStep === 2 && foundUser) || (walkInStep === 4 && foundPatient)) ? (
-              <div style={{ paddingRight: 8, overflowY: 'auto', flex: 1 }}>
+              <div 
+                id="appointment-booking-container"
+                style={{ 
+                  paddingRight: 8, 
+                  overflowY: 'auto', 
+                  overflowX: 'hidden',
+                  flex: 1, 
+                  minHeight: 0,
+                  maxHeight: 'calc(90vh - 200px)',
+                  position: 'relative',
+                  WebkitOverflowScrolling: 'touch'
+                }}
+              >
+                {walkInBookingSuccess ? (
+                  <div style={{ 
+                    display: 'flex', 
+                    flexDirection: 'column', 
+                    alignItems: 'center', 
+                    justifyContent: 'center', 
+                    padding: '60px 20px',
+                    textAlign: 'center',
+                    minHeight: '400px'
+                  }}>
+                    <CheckCircleOutlined style={{ 
+                      fontSize: '64px', 
+                      color: '#52C41A', 
+                      marginBottom: '24px',
+                      opacity: 1,
+                      transition: 'opacity 0.3s ease-in'
+                    }} />
+                    <Title level={3} style={{ color: '#52C41A', marginBottom: '16px' }}>
+                      Appointment Booked Successfully!
+                    </Title>
+                    <Text style={{ fontSize: '16px', color: '#666', marginBottom: '8px' }}>
+                      The appointment has been confirmed.
+                    </Text>
+                    <Text type="secondary" style={{ fontSize: '14px' }}>
+                      This window will close automatically...
+                    </Text>
+                  </div>
+                ) : (
                 <Form
                   layout="vertical"
                   form={walkInForm}
@@ -4071,8 +4235,8 @@ export default function ReceptionistDashboard() {
                     }
                   />
 
-                  {/* Step 0: Doctor Selection */}
-                  {appointmentBookingStep === 0 && (
+                  {/* Step 0: Doctor Selection - Always show first */}
+                  {(appointmentBookingStep === 0 || (!selectedDoctor && appointmentBookingStep !== 1 && appointmentBookingStep !== 2)) && (
                   <div style={{ marginBottom: 32 }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
                       <Title level={5} style={{ margin: 0 }}>Select Doctor</Title>
@@ -4292,9 +4456,9 @@ export default function ReceptionistDashboard() {
                       </Form.Item>
                     </div>
 
-                      {/* Time Slot Selection */}
-                      {selectedDate && (
-                    <div style={{ marginBottom: 32 }}>
+                      {/* Time Slot Selection - Only show in step 1 */}
+                      {selectedDate && appointmentBookingStep === 1 && (
+                    <div data-time-slot-section style={{ marginBottom: 32 }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
                         <Title level={5} style={{ margin: 0 }}>Select Time Slot</Title>
                         {selectedSlot && (
@@ -4347,6 +4511,27 @@ export default function ReceptionistDashboard() {
                                       handleSlotSelect(slot);
                                       // Move to payment step after selecting slot
                                       setAppointmentBookingStep(2);
+                                      // Force re-render and scroll
+                                      setTimeout(() => {
+                                        const paymentSection = document.querySelector('[data-payment-section]');
+                                        if (paymentSection) {
+                                          // Scroll within the modal container
+                                          const scrollContainer = paymentSection.closest('[style*="overflowY"]') || 
+                                                                  paymentSection.closest('.ant-modal-body') ||
+                                                                  paymentSection.parentElement;
+                                          if (scrollContainer) {
+                                            const container = scrollContainer as HTMLElement;
+                                            const section = paymentSection as HTMLElement;
+                                            const scrollTop = container.scrollTop + section.offsetTop - 20;
+                                            container.scrollTo({
+                                              top: scrollTop,
+                                              behavior: 'smooth'
+                                            });
+                                          } else {
+                                            paymentSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                                          }
+                                        }
+                                      }, 300);
                                     }
                                   }}
                                   disabled={isDisabled}
@@ -4408,179 +4593,8 @@ export default function ReceptionistDashboard() {
                     </div>
                   )}
 
-                      {/* Step 2: Payment Selection - Show when slot is selected */}
-                      {appointmentBookingStep === 2 && selectedSlot && (
-                    <div style={{ marginBottom: 32 }}>
-                      <Title level={5} style={{ marginBottom: 16 }}>Appointment Details</Title>
-                          <Card variant="borderless" style={{ borderRadius: '12px', border: '1px solid #e2e8f0', marginBottom: 24 }}>
-                      <Row gutter={16}>
-                        <Col span={12}>
-                          <Form.Item
-                            label="Visit Reason"
-                            name="reason"
-                          >
-                                  <Input placeholder="Reason for visit (optional)" />
-                          </Form.Item>
-                        </Col>
-                        <Col span={12}>
-                                <Form.Item label="Priority" name="priority" initialValue="normal">
-                                  <div style={{ display: 'flex', gap: 8, width: '100%' }}>
-                                    {[
-                                      { value: 'normal', label: 'Normal', color: '#10B981', bgColor: '#D1FAE5', borderColor: '#10B981' },
-                                      { value: 'high', label: 'High', color: '#F59E0B', bgColor: '#FEF3C7', borderColor: '#F59E0B' },
-                                      { value: 'urgent', label: 'Urgent', color: '#EF4444', bgColor: '#FEE2E2', borderColor: '#EF4444' },
-                                    ].map(option => {
-                                      const currentPriority = walkInForm.getFieldValue('priority') || 'normal';
-                                      const isSelected = currentPriority === option.value;
-                                      
-                                      return (
-                                        <Button
-                                          key={option.value}
-                                          type="default"
-                                          onClick={() => {
-                                            walkInForm.setFieldsValue({ priority: option.value });
-                                          }}
-                                          style={{
-                                            flex: 1,
-                                            height: '40px',
-                                            borderRadius: '8px',
-                                            border: `2px solid ${isSelected ? option.borderColor : '#E5E7EB'}`,
-                                            background: isSelected ? option.bgColor : '#FFFFFF',
-                                            color: isSelected ? option.color : '#6B7280',
-                                            fontWeight: 600,
-                                            fontSize: '13px',
-                                          }}
-                                        >
-                                          {option.label}
-                                        </Button>
-                                      );
-                                    })}
-                                  </div>
-                          </Form.Item>
-                        </Col>
-                      </Row>
-                          </Card>
-
-                          {/* Payment Selection - Matching book-appointment.tsx style */}
-                          <Card variant="borderless" style={{ borderRadius: '12px', border: '1px solid #e2e8f0', marginBottom: 24 }}>
-                            <Text strong style={{ fontSize: 14, color: '#111827', marginBottom: 12, display: 'block', textAlign: 'center' }}>
-                              Payment Method
-                            </Text>
-                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 10, marginBottom: 16 }}>
-                              <Button
-                                type={selectedPaymentMethod === 'googlepay' ? 'primary' : 'default'}
-                                icon={<WalletOutlined />}
-                                onClick={() => setSelectedPaymentMethod('googlepay')}
-                                style={{
-                                  height: '48px',
-                                  borderRadius: '10px',
-                                  fontSize: '13px',
-                                  fontWeight: 600,
-                                  display: 'flex',
-                                  alignItems: 'center',
-                                  justifyContent: 'center',
-                                  gap: 8,
-                                }}
-                              >
-                                Google Pay
-                              </Button>
-                              <Button
-                                type={selectedPaymentMethod === 'phonepe' ? 'primary' : 'default'}
-                                icon={<MobileOutlined />}
-                                onClick={() => setSelectedPaymentMethod('phonepe')}
-                                style={{
-                                  height: '48px',
-                                  borderRadius: '10px',
-                                  fontSize: '13px',
-                                  fontWeight: 600,
-                                  display: 'flex',
-                                  alignItems: 'center',
-                                  justifyContent: 'center',
-                                  gap: 8,
-                                }}
-                              >
-                                PhonePe
-                              </Button>
-                              <Button
-                                type={selectedPaymentMethod === 'card' ? 'primary' : 'default'}
-                                icon={<CreditCardOutlined />}
-                                onClick={() => setSelectedPaymentMethod('card')}
-                                style={{
-                                  height: '48px',
-                                  borderRadius: '10px',
-                                  fontSize: '13px',
-                                  fontWeight: 600,
-                                  display: 'flex',
-                                  alignItems: 'center',
-                                  justifyContent: 'center',
-                                  gap: 8,
-                                }}
-                              >
-                                Card
-                              </Button>
-                              <Button
-                                type={selectedPaymentMethod === 'cash' ? 'primary' : 'default'}
-                                icon={<BankOutlined />}
-                                onClick={() => setSelectedPaymentMethod('cash')}
-                                style={{
-                                  height: '48px',
-                                  borderRadius: '10px',
-                                  fontSize: '13px',
-                                  fontWeight: 600,
-                                  display: 'flex',
-                                  alignItems: 'center',
-                                  justifyContent: 'center',
-                                  gap: 8,
-                                }}
-                              >
-                                Cash
-                              </Button>
-                    </div>
-                            <div style={{ 
-                              display: 'flex', 
-                              justifyContent: 'space-between', 
-                              alignItems: 'center', 
-                              paddingTop: 16, 
-                              borderTop: '1px solid #E5E7EB',
-                              paddingLeft: 4,
-                              paddingRight: 4,
-                            }}>
-                              <Text style={{ fontSize: 14, color: '#6B7280', fontWeight: 500 }}>Consultation Fee</Text>
-                              <Text style={{ fontSize: '20px', fontWeight: 700, color: '#111827' }}>
-                                ₹{selectedDoctor ? (typeof selectedDoctor.consultationFee === 'string' 
-                                  ? parseFloat(selectedDoctor.consultationFee).toFixed(2) 
-                                  : (Number(selectedDoctor.consultationFee) || 0).toFixed(2)) : '0.00'}
-                              </Text>
-                            </div>
-                          </Card>
-
-                      {/* Navigation Buttons */}
-                          <Space style={{ width: '100%', justifyContent: 'space-between', marginTop: 24 }}>
-                            <Button 
-                              onClick={() => {
-                                setAppointmentBookingStep(1);
-                                setSelectedPaymentMethod(null);
-                              }}
-                            >
-                              Back
-                            </Button>
-                            <Button
-                              type="primary"
-                              htmlType="submit"
-                              loading={isWalkInSubmitting}
-                              size="large"
-                              disabled={!selectedDoctor || !selectedDate || !selectedSlot || !selectedPaymentMethod}
-                            >
-                              {selectedPaymentMethod && ['googlepay', 'phonepe', 'card'].includes(selectedPaymentMethod) 
-                                ? 'Pay & Book Appointment' 
-                                : 'Book Appointment'}
-                            </Button>
-                          </Space>
-                        </div>
-                      )}
-
-                      {/* Navigation Buttons for Step 1 (Date/Time) */}
-                      {appointmentBookingStep === 1 && (
+                      {/* Navigation Buttons for Step 1 (Date/Time) - Only show if no slot selected yet */}
+                      {appointmentBookingStep === 1 && !selectedSlot && (
                   <Space style={{ width: '100%', justifyContent: 'space-between', marginTop: 24 }}>
                         <Button 
                           onClick={() => {
@@ -4601,6 +4615,12 @@ export default function ReceptionistDashboard() {
                             onClick={() => {
                               if (selectedSlot) {
                                 setAppointmentBookingStep(2);
+                                setTimeout(() => {
+                                  const paymentSection = document.querySelector('[data-payment-section]');
+                                  if (paymentSection) {
+                                    paymentSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                                  }
+                                }, 100);
                               }
                             }}
                     >
@@ -4610,7 +4630,249 @@ export default function ReceptionistDashboard() {
                       )}
                     </div>
                   )}
+
+                  {/* Step 2: Payment Selection - Show when slot is selected */}
+                  {appointmentBookingStep === 2 && selectedSlot && (
+                    <div 
+                      data-payment-section 
+                      id="payment-section-walkin"
+                      style={{ 
+                        marginBottom: 32, 
+                        marginTop: 24, 
+                        paddingTop: 24, 
+                        paddingBottom: 24,
+                        borderTop: '2px solid #e2e8f0', 
+                        borderBottom: '2px solid #e2e8f0',
+                        borderLeft: '2px solid #e2e8f0',
+                        borderRight: '2px solid #e2e8f0',
+                        background: '#ffffff',
+                        minHeight: '500px',
+                        borderRadius: '12px',
+                        padding: '32px',
+                        position: 'relative',
+                        zIndex: 1000,
+                        display: 'block',
+                        visibility: 'visible',
+                        opacity: 1,
+                        width: '100%',
+                        boxSizing: 'border-box',
+                        transform: 'translateZ(0)'
+                      }}
+                    >
+                      {/* Selected Time Slot Summary */}
+                      <Card variant="borderless" style={{ borderRadius: '12px', border: '1px solid #e2e8f0', marginBottom: 24, background: '#F0FDF4' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <div>
+                            <Text type="secondary" style={{ fontSize: 12, display: 'block', marginBottom: 4 }}>Selected Time Slot</Text>
+                            <Text strong style={{ fontSize: 16, color: '#111827' }}>
+                              {selectedDate?.format('DD MMM YYYY')} at {formatTimeSlot12h(selectedSlot)}
+                            </Text>
+                          </div>
+                          <Button 
+                            size="small" 
+                            type="link"
+                            onClick={() => {
+                              setAppointmentBookingStep(1);
+                              // Keep the slot selected so user can see it and change if needed
+                              setTimeout(() => {
+                                const timeSlotSection = document.querySelector('[data-time-slot-section]');
+                                if (timeSlotSection) {
+                                  timeSlotSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                                }
+                              }, 100);
+                            }}
+                          >
+                            Change Time
+                          </Button>
+                        </div>
+                      </Card>
+                      
+                      <Title level={5} style={{ marginBottom: 16 }}>Appointment Details</Title>
+                      <Card variant="borderless" style={{ borderRadius: '12px', border: '1px solid #e2e8f0', marginBottom: 24 }}>
+                        <Row gutter={16}>
+                          <Col span={12}>
+                            <Form.Item
+                              label="Visit Reason"
+                              name="reason"
+                            >
+                              <Input placeholder="Reason for visit (optional)" />
+                            </Form.Item>
+                          </Col>
+                          <Col span={12}>
+                            <Form.Item label="Priority" name="priority" initialValue="normal">
+                              <div style={{ display: 'flex', gap: 8, width: '100%' }}>
+                                {[
+                                  { value: 'normal', label: 'Normal', color: '#10B981', bgColor: '#D1FAE5', borderColor: '#10B981' },
+                                  { value: 'high', label: 'High', color: '#F59E0B', bgColor: '#FEF3C7', borderColor: '#F59E0B' },
+                                  { value: 'urgent', label: 'Urgent', color: '#EF4444', bgColor: '#FEE2E2', borderColor: '#EF4444' },
+                                ].map(option => {
+                                  const currentPriority = walkInForm.getFieldValue('priority') || 'normal';
+                                  const isSelected = currentPriority === option.value;
+                                  
+                                  return (
+                                    <Button
+                                      key={option.value}
+                                      type="default"
+                                      onClick={() => {
+                                        walkInForm.setFieldsValue({ priority: option.value });
+                                      }}
+                                      style={{
+                                        flex: 1,
+                                        height: '40px',
+                                        borderRadius: '8px',
+                                        border: `2px solid ${isSelected ? option.borderColor : '#E5E7EB'}`,
+                                        background: isSelected ? option.bgColor : '#FFFFFF',
+                                        color: isSelected ? option.color : '#6B7280',
+                                        fontWeight: 600,
+                                        fontSize: '13px',
+                                      }}
+                                    >
+                                      {option.label}
+                                    </Button>
+                                  );
+                                })}
+                              </div>
+                            </Form.Item>
+                          </Col>
+                        </Row>
+                      </Card>
+
+                      {/* Payment Selection */}
+                      <Card variant="borderless" style={{ borderRadius: '12px', border: '1px solid #e2e8f0', marginBottom: 24 }}>
+                        <Text strong style={{ fontSize: 14, color: '#111827', marginBottom: 12, display: 'block', textAlign: 'center' }}>
+                          Payment Method
+                        </Text>
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 10, marginBottom: 16 }}>
+                          <Button
+                            type={selectedPaymentMethod === 'googlepay' ? 'primary' : 'default'}
+                            icon={<WalletOutlined />}
+                            onClick={() => setSelectedPaymentMethod('googlepay')}
+                            style={{
+                              height: '48px',
+                              borderRadius: '10px',
+                              fontSize: '13px',
+                              fontWeight: 600,
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              gap: 8,
+                            }}
+                          >
+                            Google Pay
+                          </Button>
+                          <Button
+                            type={selectedPaymentMethod === 'phonepe' ? 'primary' : 'default'}
+                            icon={<MobileOutlined />}
+                            onClick={() => setSelectedPaymentMethod('phonepe')}
+                            style={{
+                              height: '48px',
+                              borderRadius: '10px',
+                              fontSize: '13px',
+                              fontWeight: 600,
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              gap: 8,
+                            }}
+                          >
+                            PhonePe
+                          </Button>
+                          <Button
+                            type={selectedPaymentMethod === 'card' ? 'primary' : 'default'}
+                            icon={<CreditCardOutlined />}
+                            onClick={() => setSelectedPaymentMethod('card')}
+                            style={{
+                              height: '48px',
+                              borderRadius: '10px',
+                              fontSize: '13px',
+                              fontWeight: 600,
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              gap: 8,
+                            }}
+                          >
+                            Card
+                          </Button>
+                          <Button
+                            type={selectedPaymentMethod === 'cash' ? 'primary' : 'default'}
+                            icon={<BankOutlined />}
+                            onClick={() => setSelectedPaymentMethod('cash')}
+                            style={{
+                              height: '48px',
+                              borderRadius: '10px',
+                              fontSize: '13px',
+                              fontWeight: 600,
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              gap: 8,
+                            }}
+                          >
+                            Cash
+                          </Button>
+                        </div>
+                        <div style={{ 
+                          display: 'flex', 
+                          justifyContent: 'space-between', 
+                          alignItems: 'center', 
+                          paddingTop: 16, 
+                          borderTop: '1px solid #E5E7EB',
+                          paddingLeft: 4,
+                          paddingRight: 4,
+                        }}>
+                          <Text style={{ fontSize: 14, color: '#6B7280', fontWeight: 500 }}>Consultation Fee</Text>
+                          <Text style={{ fontSize: '20px', fontWeight: 700, color: '#111827' }}>
+                            ₹{selectedDoctor ? (typeof selectedDoctor.consultationFee === 'string' 
+                              ? parseFloat(selectedDoctor.consultationFee).toFixed(2) 
+                              : (Number(selectedDoctor.consultationFee) || 0).toFixed(2)) : '0.00'}
+                          </Text>
+                        </div>
+                      </Card>
+
+                      {/* Navigation Buttons */}
+                      <Space style={{ width: '100%', justifyContent: 'space-between', marginTop: 24 }}>
+                        <Button 
+                          onClick={() => {
+                            setAppointmentBookingStep(1);
+                            setSelectedPaymentMethod(null);
+                            setTimeout(() => {
+                              const timeSlotSection = document.querySelector('[data-time-slot-section]');
+                              if (timeSlotSection) {
+                                timeSlotSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                              }
+                            }, 100);
+                          }}
+                        >
+                          Back to Time Selection
+                        </Button>
+                        <Button
+                          type="primary"
+                          htmlType="submit"
+                          loading={isWalkInSubmitting}
+                          size="large"
+                          disabled={!selectedDoctor || !selectedDate || !selectedSlot || !selectedPaymentMethod}
+                        >
+                          {selectedPaymentMethod && ['googlepay', 'phonepe', 'card'].includes(selectedPaymentMethod) 
+                            ? 'Pay & Book Appointment' 
+                            : 'Book Appointment'}
+                        </Button>
+                      </Space>
+                    </div>
+                  )}
+
+                  {/* Show message if step 2 but payment section conditions not met */}
+                  {appointmentBookingStep === 2 && !selectedSlot && (
+                    <Alert
+                      message="Please select a time slot"
+                      description="Click on an available time slot above to proceed to payment."
+                      type="warning"
+                      showIcon
+                      style={{ marginTop: 24 }}
+                    />
+                  )}
                 </Form>
+                )}
               </div>
             ) : null}
           </Modal>

@@ -58,14 +58,22 @@ export default function PharmacyInventory() {
   });
 
   // Fetch medicines for dropdown
-  const { data: medicines = [] } = useQuery({
+  const { data: medicines = [], isLoading: isLoadingMedicines, error: medicinesError } = useQuery({
     queryKey: ['/api/medicines'],
     queryFn: async () => {
-      const res = await fetch('/api/medicines?limit=500');
-      const data = await res.json();
-      // Ensure we always return an array
-      return Array.isArray(data) ? data : [];
+      try {
+        const res = await apiRequest('GET', '/api/medicines?limit=500');
+        const data = await res.json();
+        // Ensure we always return an array
+        return Array.isArray(data) ? data : [];
+      } catch (error: any) {
+        console.error('Error fetching medicines:', error);
+        // Return empty array on error to prevent component crash
+        return [];
+      }
     },
+    retry: 2,
+    retryDelay: 1000,
   });
 
   // Fetch alerts
@@ -263,6 +271,15 @@ export default function PharmacyInventory() {
           </div>
 
           {/* Alerts */}
+          {medicinesError && (
+            <Alert
+              message="Failed to load medicines"
+              description="Please refresh the page or try again later."
+              type="error"
+              showIcon
+              closable
+            />
+          )}
           {(lowStockAlerts.length > 0 || expiryAlerts.length > 0) && (
             <Alert
               message={`${lowStockAlerts.length} low stock items, ${expiryAlerts.length} expiring soon`}
@@ -325,18 +342,24 @@ export default function PharmacyInventory() {
             rules={[{ required: true, message: 'Please select a medicine' }]}
           >
             <Select
-              placeholder="Select medicine"
+              placeholder={isLoadingMedicines ? "Loading medicines..." : "Select medicine"}
               showSearch
               optionFilterProp="children"
               filterOption={(input, option) =>
                 String(option?.children).toLowerCase().includes(input.toLowerCase())
               }
+              loading={isLoadingMedicines}
+              disabled={isLoadingMedicines || !!medicinesError}
             >
-              {Array.isArray(medicines) ? medicines.map((med: any) => (
+              {Array.isArray(medicines) && medicines.length > 0 ? medicines.map((med: any) => (
                 <Option key={med.id} value={med.id}>
                   {med.name}
                 </Option>
-              )) : null}
+              )) : (
+                <Option disabled value="">
+                  {medicinesError ? "Error loading medicines" : "No medicines available"}
+                </Option>
+              )}
             </Select>
           </Form.Item>
 

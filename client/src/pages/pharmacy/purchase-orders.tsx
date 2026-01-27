@@ -60,13 +60,20 @@ export default function PurchaseOrders() {
   });
 
   // Fetch medicines
-  const { data: medicines = [] } = useQuery({
+  const { data: medicines = [], isLoading: isLoadingMedicines, error: medicinesError } = useQuery({
     queryKey: ['/api/medicines'],
     queryFn: async () => {
-      const res = await fetch('/api/medicines?limit=500');
-      const data = await res.json();
-      return Array.isArray(data) ? data : [];
+      try {
+        const res = await apiRequest('GET', '/api/medicines?limit=500');
+        const data = await res.json();
+        return Array.isArray(data) ? data : [];
+      } catch (error: any) {
+        console.error('Error fetching medicines:', error);
+        return [];
+      }
     },
+    retry: 2,
+    retryDelay: 1000,
   });
 
   // Create PO mutation

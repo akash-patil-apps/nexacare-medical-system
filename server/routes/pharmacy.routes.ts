@@ -388,17 +388,127 @@ router.post(
 
       const dispensation = await dispensingService.createDispensation({
         hospitalId,
-        prescriptionId: req.body.prescriptionId,
+        prescriptionId: req.body.prescriptionId || null, // Optional for non-consulting patients
         patientId: req.body.patientId,
         encounterId: req.body.encounterId,
         appointmentId: req.body.appointmentId,
-        items: req.body.items,
+        items: req.body.items.map((item: any) => ({
+          prescriptionItemId: item.prescriptionItemId || null,
+          inventoryId: item.inventoryId,
+          quantity: item.quantity,
+          medicineName: item.medicineName || null,
+        })),
         dispensedByUserId: req.user.id,
       });
 
       res.json(dispensation);
     } catch (error: any) {
       console.error("Error creating dispensation:", error);
+      res.status(400).json({ message: error.message || "Failed to create dispensation" });
+    }
+  }
+);
+
+// Create dispensation for non-consulting patient (without prescription)
+router.post(
+  "/dispensing/non-consulting",
+  authenticateToken,
+  authorizeRoles("PHARMACIST", "HOSPITAL", "ADMIN"),
+  async (req: AuthenticatedRequest, res) => {
+    try {
+      const hospitalId = await getHospitalId(req);
+      if (!req.user?.id) {
+        return res.status(401).json({ message: "User not authenticated" });
+      }
+
+      const { patientName, mobileNumber, items } = req.body;
+
+      if (!patientName || !mobileNumber) {
+        return res.status(400).json({ message: "Patient name and mobile number are required" });
+      }
+
+      if (!items || !Array.isArray(items) || items.length === 0) {
+        return res.status(400).json({ message: "At least one medicine item is required" });
+      }
+
+      // Create or find patient record for non-consulting patient
+      const { db } = await import("../db");
+      const { users, patients, dispensations } = await import("../../shared/schema");
+      const { eq, ilike } = await import("drizzle-orm");
+      const { hashPassword } = await import("../services/auth.service");
+
+      // Check if user exists with this mobile number
+      const trimmedMobile = mobileNumber.trim().replace(/\D/g, '');
+      let [existingUser] = await db
+        .select()
+        .from(users)
+        .where(ilike(users.mobileNumber, `%${trimmedMobile}%`))
+        .limit(1);
+
+      // If user doesn't exist, create a minimal user and patient record
+      if (!existingUser) {
+        const generatedEmail = `${trimmedMobile}@nonconsulting.nexacare.local`;
+        const passwordToHash = `NonConsulting@${trimmedMobile.slice(-4)}`;
+        const hashedPassword = await hashPassword(passwordToHash);
+
+        [existingUser] = await db
+          .insert(users)
+          .values({
+            fullName: patientName,
+            mobileNumber: trimmedMobile,
+            email: generatedEmail,
+            password: hashedPassword,
+            role: 'patient',
+            isVerified: true,
+          })
+          .returning();
+      }
+
+      // Check if patient profile exists
+      let [patient] = await db
+        .select()
+        .from(patients)
+        .where(eq(patients.userId, existingUser.id))
+        .limit(1);
+
+      if (!patient) {
+        [patient] = await db
+          .insert(patients)
+          .values({
+            userId: existingUser.id,
+            emergencyContact: trimmedMobile,
+            emergencyContactName: patientName,
+            emergencyRelation: 'Self',
+            createdAt: new Date(),
+          })
+          .returning();
+      }
+
+      // Create dispensation without prescriptionId
+      const dispensation = await dispensingService.createDispensation({
+        hospitalId,
+        prescriptionId: null, // No prescription for non-consulting patients
+        patientId: patient.id,
+        items: items.map((item: any) => ({
+          prescriptionItemId: null,
+          inventoryId: item.inventoryId,
+          quantity: item.quantity,
+          medicineName: item.medicineName || null,
+        })),
+        dispensedByUserId: req.user.id,
+      });
+
+      // Add note about non-consulting patient
+      await db
+        .update(dispensations)
+        .set({
+          notes: `Non-consulting patient: ${patientName} (${mobileNumber})`,
+        })
+        .where(eq(dispensations.id, dispensation.id));
+
+      res.json(dispensation);
+    } catch (error: any) {
+      console.error("Error creating non-consulting dispensation:", error);
       res.status(400).json({ message: error.message || "Failed to create dispensation" });
     }
   }

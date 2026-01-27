@@ -87,6 +87,29 @@ router.post(
         console.error('Failed to send prescription notification:', notifError);
         // Don't fail the request if notification fails
       }
+
+      // Send notification to pharmacists in the same hospital
+      try {
+        const { getPharmacistsByHospital } = await import('../services/pharmacists.service');
+        const hospitalPharmacists = await getPharmacistsByHospital(parsed.hospitalId);
+        
+        for (const pharmacistData of hospitalPharmacists) {
+          if (pharmacistData.user?.id) {
+            await NotificationService.createNotification({
+              userId: pharmacistData.user.id,
+              type: 'prescription',
+              title: 'New Prescription Ready for Dispensing',
+              message: `A new prescription (ID: ${result.id}) is ready for dispensing.`,
+              relatedId: result.id,
+              relatedType: 'prescription',
+            });
+            console.log(`✅ Prescription notification sent to pharmacist ${pharmacistData.user.id}`);
+          }
+        }
+      } catch (pharmacistNotifError) {
+        console.error('Failed to send prescription notification to pharmacists:', pharmacistNotifError);
+        // Don't fail the request if pharmacist notification fails
+      }
       
       res.status(201).json(result);
     } catch (err) {
