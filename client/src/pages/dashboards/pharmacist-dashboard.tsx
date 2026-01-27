@@ -83,6 +83,7 @@ export default function PharmacistDashboard() {
   const [selectedMenuKey, setSelectedMenuKey] = useState<string>('dashboard');
   const [nonConsultingDispenseModalOpen, setNonConsultingDispenseModalOpen] = useState(false);
   const [nonConsultingDispenseForm] = Form.useForm();
+  const previousPrescriptionCountRef = useRef<number>(0);
 
   // Get pharmacist profile
   const { data: pharmacistProfile, isLoading: isLoadingProfile } = useQuery({
@@ -330,9 +331,6 @@ export default function PharmacistDashboard() {
       }
     }
   }
-
-  // Track previous prescription count for notifications
-  const previousPrescriptionCountRef = useRef<number>(0);
 
   // Listen for new prescriptions and show notifications
   useEffect(() => {
@@ -828,19 +826,12 @@ export default function PharmacistDashboard() {
           setNonConsultingDispenseModalOpen(false);
           nonConsultingDispenseForm.resetFields();
         }}
-        onResetPatientSearch={() => {
-          // Reset handled in component
-        }}
         onSuccess={() => {
           setNonConsultingDispenseModalOpen(false);
           nonConsultingDispenseForm.resetFields();
           queryClient.invalidateQueries({ queryKey: ['/api/prescriptions', 'pharmacist'] });
           queryClient.invalidateQueries({ queryKey: ['/api/pharmacy/dispensing'] });
           queryClient.invalidateQueries({ queryKey: ['/api/pharmacy/inventory'] });
-        }}
-        onResetPatientSearch={() => {
-          setPatientSearchMobile('');
-          setSearchedPatient(null);
         }}
       />
     </Modal>
@@ -870,14 +861,12 @@ function NonConsultingDispenseForm({
   form, 
   pharmacistProfile, 
   onSuccess,
-  onCancel,
-  onResetPatientSearch
+  onCancel
 }: { 
   form: any; 
   pharmacistProfile: any; 
   onSuccess: () => void;
   onCancel: () => void;
-  onResetPatientSearch?: () => void;
 }) {
   const [selectedMedicines, setSelectedMedicines] = useState<Array<{
     medicineId: number;
@@ -940,12 +929,17 @@ function NonConsultingDispenseForm({
     const selectedMed = medicinesData.find((m: any) => m.id === currentMedicine.medicineId);
     if (!selectedMed) return [];
     
-    // Match by medicineCatalogId (inventory uses medicineCatalogId, not medicineId)
-    // The inventory response has: { ...inventory, medicine: { id, name, ... } }
+    // Inventory API returns flat structure: { ...inventoryFields, medicine: {...}, isExpired, etc }
+    // Match by medicineCatalogId (from inventory) with medicine.id (from catalog)
     return inventory.filter((inv: any) => {
-      const medicineCatalogId = inv.medicineCatalogId || inv.medicine?.id;
-      const stockQty = inv.quantity || inv.stockQuantity || 0;
-      return medicineCatalogId === selectedMed.id && stockQty > 0;
+      // The inventory has medicineCatalogId field directly
+      const medicineCatalogId = inv.medicineCatalogId;
+      const stockQty = inv.quantity || 0;
+      
+      // Match medicine by ID
+      const matches = medicineCatalogId === selectedMed.id;
+      
+      return matches && stockQty > 0;
     });
   }, [currentMedicine.medicineId, inventory, medicinesData]);
 
@@ -969,8 +963,9 @@ function NonConsultingDispenseForm({
       return;
     }
 
-    if (currentMedicine.quantity > selectedInv.stockQuantity) {
-      message.error(`Quantity cannot exceed available stock (${selectedInv.stockQuantity})`);
+    const maxStock = selectedInv.quantity || 0;
+    if (currentMedicine.quantity > maxStock) {
+      message.error(`Quantity cannot exceed available stock (${maxStock})`);
       return;
     }
 
@@ -979,7 +974,7 @@ function NonConsultingDispenseForm({
       medicineName: currentMedicine.medicineName,
       inventoryId: currentMedicine.inventoryId,
       quantity: currentMedicine.quantity,
-      availableStock: selectedInv.quantity || selectedInv.stockQuantity || 0,
+      availableStock: selectedInv.quantity || 0,
       unit: selectedInv.unit || '',
       frequency: currentMedicine.frequency || '',
     }]);
@@ -1011,13 +1006,79 @@ function NonConsultingDispenseForm({
     }
   };
 
+  // Search patient by mobile number only
+  const handleSearchPatient = async () => {
+    if (!patientSearchMobile || patientSearchMobile.length !== 10) {
+      message.warning('Please enter a valid 10-digit mobile number');
+      return;
+    }
+
+    setIsSearchingPatient(true);
+    try {
+      const token = localStorage.getItem('auth-token');
+      const response = await fetch(`/api/reception/patients/lookup?mobile=${patientSearchMobile}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        if (data.user && data.patient) {
+          // Patient found in database - use their data
+          setSearchedPatient({
+            name: data.user.fullName,
+            mobile: data.user.mobileNumber,
+          });
+          form.setFieldsValue({
+            patientName: data.user.fullName,
+            mobileNumber: data.user.mobileNumber,
+          });
+          message.success(`Patient found: ${data.user.fullName}`);
+        } else if (data.user && !data.patient) {
+          // User exists but no patient profile - allow manual entry
+          setSearchedPatient(null);
+          form.setFieldsValue({
+            mobileNumber: patientSearchMobile,
+            patientName: data.user.fullName || '', // Pre-fill name if available
+          });
+          message.info('User found but no patient profile. Please enter patient name.');
+        } else {
+          // Patient not found in database - allow manual entry (non-consulting patient)
+          setSearchedPatient(null);
+          form.setFieldsValue({
+            mobileNumber: patientSearchMobile,
+            patientName: '', // Clear name so user can enter manually
+          });
+          message.info('Patient not registered. Please enter patient name manually.');
+        }
+      } else {
+        // API error - allow manual entry
+        setSearchedPatient(null);
+        form.setFieldsValue({
+          mobileNumber: patientSearchMobile,
+          patientName: '', // Clear name so user can enter manually
+        });
+        message.info('Patient not registered. Please enter patient name manually.');
+      }
+    } catch (error: any) {
+      console.error('Error searching patient:', error);
+      // On error, allow manual entry
+      setSearchedPatient(null);
+      form.setFieldsValue({
+        mobileNumber: patientSearchMobile,
+        patientName: '', // Clear name so user can enter manually
+      });
+      message.info('Could not search patient. Please enter details manually.');
+    } finally {
+      setIsSearchingPatient(false);
+    }
+  };
+
+
   // Reset patient search when canceling
   const handleCancel = () => {
     setPatientSearchMobile('');
     setSearchedPatient(null);
-    if (onResetPatientSearch) {
-      onResetPatientSearch();
-    }
+    form.resetFields();
     onCancel();
   };
 
@@ -1161,6 +1222,12 @@ function NonConsultingDispenseForm({
                 loading={isLoadingMedicines}
                 value={currentMedicine.medicineName || undefined}
                 onChange={handleMedicineSelect}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && currentMedicine.medicineId && currentMedicine.inventoryId) {
+                    e.preventDefault();
+                    handleAddMedicine();
+                  }
+                }}
                 optionFilterProp="label"
                 filterOption={(input, option) => {
                   const label = String(option?.label || '').toLowerCase();
@@ -1202,12 +1269,22 @@ function NonConsultingDispenseForm({
                     });
                   }}
                   loading={isLoadingInventory}
-                  onKeyDown={handleKeyPress}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && currentMedicine.medicineId && currentMedicine.inventoryId) {
+                      e.preventDefault();
+                      handleAddMedicine();
+                    }
+                  }}
+                  showSearch
+                  filterOption={(input, option) => {
+                    const text = String(option?.children || '').toLowerCase();
+                    return text.includes(input.toLowerCase());
+                  }}
                 >
                   {availableInventoryForMedicine.length > 0 ? (
                     availableInventoryForMedicine.map((inv: any) => (
                       <Select.Option key={inv.id} value={inv.id}>
-                        Stock: {inv.quantity || inv.stockQuantity || 0} {inv.unit} | Batch: {inv.batchNumber || 'N/A'}
+                        Stock: {inv.quantity || 0} {inv.unit || ''} | Batch: {inv.batchNumber || 'N/A'}
                       </Select.Option>
                     ))
                   ) : (
@@ -1225,12 +1302,16 @@ function NonConsultingDispenseForm({
             <Form.Item label="Quantity" required>
               <InputNumber
                 min={1}
-                max={availableInventoryForMedicine.find((inv: any) => inv.id === currentMedicine.inventoryId)?.quantity || availableInventoryForMedicine.find((inv: any) => inv.id === currentMedicine.inventoryId)?.stockQuantity || 1}
+                max={availableInventoryForMedicine.find((inv: any) => inv.id === currentMedicine.inventoryId)?.quantity || 1}
                 value={currentMedicine.quantity}
                 onChange={(value) => setCurrentMedicine({ ...currentMedicine, quantity: value || 1 })}
                 style={{ width: '100%' }}
                 disabled={!currentMedicine.inventoryId}
-                onPressEnter={handleKeyPress}
+                onPressEnter={(e) => {
+                  if (currentMedicine.medicineId && currentMedicine.inventoryId) {
+                    handleAddMedicine();
+                  }
+                }}
               />
             </Form.Item>
           </Col>
@@ -1240,7 +1321,11 @@ function NonConsultingDispenseForm({
                 placeholder="e.g., 1-0-1, Twice daily"
                 value={currentMedicine.frequency}
                 onChange={(e) => setCurrentMedicine({ ...currentMedicine, frequency: e.target.value })}
-                onPressEnter={handleKeyPress}
+                onPressEnter={(e) => {
+                  if (currentMedicine.medicineId && currentMedicine.inventoryId) {
+                    handleAddMedicine();
+                  }
+                }}
               />
             </Form.Item>
           </Col>

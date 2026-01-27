@@ -27,7 +27,6 @@ import { PrescriptionPreview } from '../../components/prescription/PrescriptionP
 import dayjs from 'dayjs';
 
 const { Title, Text } = Typography;
-const { Option } = Select;
 
 export default function PharmacyDispensing() {
   const queryClient = useQueryClient();
@@ -98,12 +97,17 @@ export default function PharmacyDispensing() {
     const items = medications.map((med: any, index: number) => {
       const inventoryId = values[`inventory_${index}`];
       const quantity = values[`quantity_${index}`] || med.quantity || 1;
+      
+      // Ensure inventoryId is a valid number
+      const parsedInventoryId = inventoryId ? Number(inventoryId) : null;
+      const parsedQuantity = Number(quantity) || 1;
+      
       return {
         prescriptionItemId: index,
-        inventoryId,
-        quantity: parseInt(quantity),
+        inventoryId: parsedInventoryId,
+        quantity: parsedQuantity,
       };
-    }).filter((item: any) => item.inventoryId); // Filter out items without inventory selected
+    }).filter((item: any) => item.inventoryId && !isNaN(item.inventoryId) && !isNaN(item.quantity)); // Filter out items without valid inventory selected
 
     if (items.length === 0) {
       message.error('Please select inventory for at least one medicine');
@@ -245,9 +249,14 @@ export default function PharmacyDispensing() {
 
   // Get available inventory for a medicine
   const getAvailableInventory = (medicineName: string) => {
-    return inventory.filter((inv: any) =>
-      inv.medicine?.name?.toLowerCase().includes(medicineName.toLowerCase())
-    );
+    if (!medicineName || typeof medicineName !== 'string') {
+      return [];
+    }
+    const searchName = medicineName.toLowerCase().trim();
+    return inventory.filter((inv: any) => {
+      const invMedicineName = inv.medicine?.name || inv.name || '';
+      return typeof invMedicineName === 'string' && invMedicineName.toLowerCase().includes(searchName);
+    });
   };
 
   return (
@@ -415,10 +424,10 @@ export default function PharmacyDispensing() {
                       >
                         <Select placeholder="Select batch">
                           {availableInventory.map((inv: any) => (
-                            <Option key={inv.id} value={inv.id}>
+                            <Select.Option key={inv.id} value={inv.id}>
                               Batch: {inv.batchNumber} | Stock: {inv.quantity} {inv.unit} | Expiry:{' '}
                               {new Date(inv.expiryDate).toLocaleDateString()}
-                            </Option>
+                            </Select.Option>
                           ))}
                         </Select>
                       </Form.Item>

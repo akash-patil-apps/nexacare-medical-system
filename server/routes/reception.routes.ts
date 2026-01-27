@@ -57,7 +57,7 @@ router.get(
 router.get(
   '/patients/lookup',
   authenticateToken,
-  authorizeRoles('receptionist'),
+  authorizeRoles('receptionist', 'PHARMACIST'),
   async (req: AuthenticatedRequest, res) => {
     try {
       const mobileNumber = String(req.query.mobile || '').trim();

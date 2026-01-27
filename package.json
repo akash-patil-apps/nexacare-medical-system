@@ -29,7 +29,8 @@
     "cleanup-and-reseed": "tsx scripts/cleanup-and-reseed.ts",
     "verify-mobile-numbers": "tsx scripts/verify-mobile-numbers.ts",
     "check-appointment-data": "tsx scripts/check-appointment-data.ts",
-    "test:cron": "tsx scripts/test-cron-endpoint.ts"
+    "test:cron": "tsx scripts/test-cron-endpoint.ts",
+    "add-inventory": "tsx scripts/add-inventory-and-test-data.ts"
   },
   "dependencies": {
     "@neondatabase/serverless": "^1.0.1",

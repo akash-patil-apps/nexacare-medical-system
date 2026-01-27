@@ -80,9 +80,14 @@ router.get(
   authorizeRoles("PHARMACIST", "HOSPITAL", "ADMIN"),
   async (req: AuthenticatedRequest, res) => {
     try {
+      const inventoryId = parseInt(req.params.id);
+      if (isNaN(inventoryId)) {
+        return res.status(400).json({ message: "Invalid inventory ID" });
+      }
+      
       const hospitalId = await getHospitalId(req);
       const inventory = await inventoryService.getInventoryById(
-        parseInt(req.params.id),
+        inventoryId,
         hospitalId
       );
       res.json(inventory);
