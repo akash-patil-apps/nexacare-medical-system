@@ -4,6 +4,7 @@ import { authenticateToken, authorizeRoles, type AuthenticatedRequest } from '..
 import { db } from '../db';
 import { eq } from 'drizzle-orm';
 import { receptionists, hospitals, doctors, nurses } from '../../shared/schema';
+import { logAuditEvent } from '../services/audit.service';
 
 const router = Router();
 
@@ -285,6 +286,31 @@ router.post('/vitals', authorizeRoles('DOCTOR', 'NURSE', 'ADMIN', 'HOSPITAL', 'R
       notes,
       recordedAt: recordedAt ? new Date(recordedAt) : undefined,
     });
+
+    // Audit: vitals recorded
+    try {
+      await logAuditEvent({
+        hospitalId,
+        patientId,
+        actorUserId: req.user.id,
+        actorRole: req.user.role || 'UNKNOWN',
+        action: 'VITALS_RECORDED',
+        entityType: 'vitals_chart',
+        entityId: vital.id,
+        after: {
+          temperature,
+          bpSystolic,
+          bpDiastolic,
+          pulse,
+          respirationRate,
+          spo2,
+          painScale,
+        },
+        summary: `Vitals recorded for patient ${patientId}`,
+      });
+    } catch (auditError) {
+      console.error('⚠️ Failed to log vitals audit event:', auditError);
+    }
 
     res.json(vital);
   } catch (err: any) {

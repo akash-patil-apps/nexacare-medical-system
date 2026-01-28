@@ -15,7 +15,9 @@ import {
   message,
   Empty,
   Drawer,
-  Spin
+  Spin,
+  Form,
+  DatePicker
 } from 'antd';
 import { 
   CalendarOutlined, 
@@ -27,7 +29,11 @@ import {
   EyeOutlined,
   EditOutlined,
   MenuUnfoldOutlined,
-  ArrowRightOutlined
+  ArrowRightOutlined,
+  ReloadOutlined,
+  MedicineBoxOutlined,
+  ExperimentOutlined,
+  HeartOutlined
 } from '@ant-design/icons';
 import { useAuth } from '../../hooks/use-auth';
 import { useLocation } from 'wouter';
@@ -44,6 +50,7 @@ import { playNotificationSound } from '../../lib/notification-sounds';
 import dayjs from 'dayjs';
 import { getISTNow, getISTStartOfDay, isSameDayIST, toIST } from '../../lib/timezone';
 import { PrescriptionPreview } from '../../components/prescription/PrescriptionPreview';
+import LabReportViewerModal from '../../components/modals/lab-report-viewer-modal';
 
 const { Content, Sider } = Layout;
 const { Title, Text } = Typography;
@@ -100,13 +107,29 @@ export default function PatientAppointments() {
   const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false);
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [prescriptionsByAppointment, setPrescriptionsByAppointment] = useState<Record<number, any>>({});
+  const [labReportsByAppointment, setLabReportsByAppointment] = useState<Record<number, any[]>>({});
+  const [vitalsByAppointment, setVitalsByAppointment] = useState<Record<number, any[]>>({});
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState('all');
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedAppointment, setSelectedAppointment] = useState<Appointment | null>(null);
   const [selectedPrescription, setSelectedPrescription] = useState<any | null>(null);
+  const [selectedLabReport, setSelectedLabReport] = useState<any | null>(null);
+  const [selectedVitals, setSelectedVitals] = useState<any | null>(null);
   const [isViewModalOpen, setIsViewModalOpen] = useState(false);
   const [isPrescriptionModalOpen, setIsPrescriptionModalOpen] = useState(false);
+  const [isLabReportModalOpen, setIsLabReportModalOpen] = useState(false);
+  const [isVitalsModalOpen, setIsVitalsModalOpen] = useState(false);
+  
+  // Reschedule request state
+  const [isRescheduleRequestModalOpen, setIsRescheduleRequestModalOpen] = useState(false);
+  const [appointmentForReschedule, setAppointmentForReschedule] = useState<Appointment | null>(null);
+  const [rescheduleRequestForm] = Form.useForm();
+  const [rescheduleRequestSelectedDate, setRescheduleRequestSelectedDate] = useState<dayjs.Dayjs | null>(null);
+  const [rescheduleRequestAvailableSlots, setRescheduleRequestAvailableSlots] = useState<string[]>([]);
+  const [rescheduleRequestSlotBookings, setRescheduleRequestSlotBookings] = useState<Record<string, number>>({});
+  const [isSubmittingRescheduleRequest, setIsSubmittingRescheduleRequest] = useState(false);
+  const [rescheduleRequests, setRescheduleRequests] = useState<any[]>([]);
 
   const parseLocalDateTime = (dateStr?: string, timeStr?: string): Date | null => {
     if (!dateStr) return null;
@@ -198,16 +221,26 @@ export default function PatientAppointments() {
           'Authorization': `Bearer ${token}`
         }
       });
-      // Also load patient prescriptions to infer checked-in/completed
-      const rxResponse = await fetch('/api/prescriptions/patient', {
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
-      });
+      // Also load patient prescriptions, lab reports, and vitals
+      const [rxResponse, labReportsResponse, vitalsResponse] = await Promise.all([
+        fetch('/api/prescriptions/patient', {
+          headers: { 'Authorization': `Bearer ${token}` }
+        }),
+        fetch('/api/labs/patient/reports', {
+          headers: { 'Authorization': `Bearer ${token}` }
+        }),
+        fetch('/api/clinical/vitals', {
+          headers: { 'Authorization': `Bearer ${token}` }
+        })
+      ]);
 
       if (response.ok) {
         const data = await response.json();
         const rxData = rxResponse.ok ? await rxResponse.json() : [];
+        const labReportsData = labReportsResponse.ok ? await labReportsResponse.json() : [];
+        const vitalsData = vitalsResponse.ok ? await vitalsResponse.json() : [];
+
+        // Map prescriptions by appointment
         const rxByAppointment: Record<number, boolean> = {};
         const rxMap: Record<number, any> = {};
         (rxData || []).forEach((rx: any) => {
@@ -218,6 +251,66 @@ export default function PatientAppointments() {
           }
         });
         setPrescriptionsByAppointment(rxMap);
+
+        // Map lab reports by appointment (via lab orders)
+        // First, fetch lab orders for the patient to link reports to appointments
+        const labReportsMap: Record<number, any[]> = {};
+        try {
+          // Get patient ID from user
+          const patientRes = await fetch('/api/patients/me', {
+            headers: { 'Authorization': `Bearer ${token}` }
+          });
+          if (patientRes.ok) {
+            const patientData = await patientRes.json();
+            const patientId = patientData?.id;
+            
+            if (patientId) {
+              // Fetch all lab orders for this patient
+              const ordersRes = await fetch(`/api/lab-workflow/orders?patientId=${patientId}`, {
+                headers: { 'Authorization': `Bearer ${token}` }
+              });
+              if (ordersRes.ok) {
+                const orders = await ordersRes.json();
+                // Create a map: appointmentId -> orderIds
+                const appointmentToOrderIds: Record<number, number[]> = {};
+                (orders || []).forEach((order: any) => {
+                  if (order.appointmentId) {
+                    if (!appointmentToOrderIds[order.appointmentId]) {
+                      appointmentToOrderIds[order.appointmentId] = [];
+                    }
+                    appointmentToOrderIds[order.appointmentId].push(order.id);
+                  }
+                });
+                
+                // Map reports to appointments via order IDs
+                Object.keys(appointmentToOrderIds).forEach((aptIdStr) => {
+                  const aptId = Number(aptIdStr);
+                  const orderIds = appointmentToOrderIds[aptId];
+                  const reportsForAppointment = (labReportsData || []).filter((report: any) =>
+                    orderIds.includes(report.labOrderId)
+                  );
+                  if (reportsForAppointment.length > 0) {
+                    labReportsMap[aptId] = reportsForAppointment;
+                  }
+                });
+              }
+            }
+          }
+        } catch (e) {
+          console.warn('Failed to map lab reports to appointments:', e);
+        }
+        setLabReportsByAppointment(labReportsMap);
+
+        // Map vitals by appointment
+        const vitalsMap: Record<number, any[]> = {};
+        (vitalsData || []).forEach((vital: any) => {
+          const aptId = vital.appointmentId || vital.appointment_id;
+          if (aptId) {
+            if (!vitalsMap[aptId]) vitalsMap[aptId] = [];
+            vitalsMap[aptId].push(vital);
+          }
+        });
+        setVitalsByAppointment(vitalsMap);
 
         // Transform API data to match our interface and derive status
         const nowIST = getISTNow();
@@ -292,7 +385,217 @@ export default function PatientAppointments() {
 
   useEffect(() => {
     loadAppointments();
+    loadRescheduleRequests();
   }, []);
+
+  // Load reschedule requests for patient
+  const loadRescheduleRequests = async () => {
+    try {
+      const token = localStorage.getItem('auth-token');
+      const response = await fetch('/api/appointments/reschedule-requests/my', {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+      if (response.ok) {
+        const data = await response.json();
+        setRescheduleRequests(data || []);
+      }
+    } catch (error) {
+      console.error('Error loading reschedule requests:', error);
+    }
+  };
+
+  // Fetch doctor slots for reschedule request
+  const fetchDoctorSlotsForReschedule = async (doctorId: number, date: string) => {
+    try {
+      const token = localStorage.getItem('auth-token');
+      const response = await fetch(`/api/appointments/doctor/${doctorId}/date/${date}`, {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+      if (!response.ok) return [];
+      const appointments = await response.json();
+      const appointmentsList = Array.isArray(appointments) ? appointments : [];
+      
+      // Get doctor details to get available slots
+      const doctorResponse = await fetch(`/api/doctors/${doctorId}`, {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+      if (!doctorResponse.ok) return [];
+      const doctor = await doctorResponse.json();
+      
+      // Get available slots from doctor
+      const getDoctorSlots = (doc: any): string[] => {
+        if (doc.availableSlots) {
+          try {
+            const slots = typeof doc.availableSlots === 'string' 
+              ? JSON.parse(doc.availableSlots) 
+              : doc.availableSlots;
+            return Array.isArray(slots) ? slots : [];
+          } catch {
+            return [];
+          }
+        }
+        return [];
+      };
+      
+      const allSlots = getDoctorSlots(doctor);
+      
+      // Count bookings per slot
+      const bookings: Record<string, number> = {};
+      appointmentsList.forEach((apt: any) => {
+        const slot = apt.timeSlot || apt.appointmentTime;
+        if (slot) {
+          const normalizedSlot = slot.trim();
+          bookings[normalizedSlot] = (bookings[normalizedSlot] || 0) + 1;
+        }
+      });
+      
+      // Filter out past slots and fully booked slots (max 5 per slot)
+      const now = dayjs();
+      const filteredSlots = allSlots.filter((slot: string) => {
+        const slotTime = parseTimeTo24h(slot);
+        if (!slotTime) return false;
+        const slotDateTime = rescheduleRequestSelectedDate?.hour(slotTime.hours24).minute(slotTime.minutes);
+        if (slotDateTime && slotDateTime.isBefore(now)) return false;
+        const bookingCount = bookings[slot] || 0;
+        return bookingCount < 5; // Max 5 patients per slot
+      });
+      
+      setRescheduleRequestAvailableSlots(filteredSlots);
+      setRescheduleRequestSlotBookings(bookings);
+      return filteredSlots;
+    } catch (error) {
+      console.error('Error fetching doctor slots:', error);
+      setRescheduleRequestAvailableSlots([]);
+      setRescheduleRequestSlotBookings({});
+      return [];
+    }
+  };
+
+  // Handle reschedule request date change
+  const handleRescheduleRequestDateChange = async (date: dayjs.Dayjs | null) => {
+    setRescheduleRequestSelectedDate(date);
+    if (date && appointmentForReschedule) {
+      // Extract doctor ID from appointment (we'll need to fetch it)
+      const appointment = appointments.find(a => a.id === appointmentForReschedule.id);
+      if (appointment) {
+        // We need doctor ID - fetch appointment details
+        const token = localStorage.getItem('auth-token');
+        try {
+          const response = await fetch(`/api/appointments/${appointment.id}`, {
+            headers: {
+              'Authorization': `Bearer ${token}`
+            }
+          });
+          if (response.ok) {
+            const aptData = await response.json();
+            const doctorId = aptData.doctorId || aptData.doctor?.id;
+            if (doctorId) {
+              const dateStr = date.format('YYYY-MM-DD');
+              await fetchDoctorSlotsForReschedule(doctorId, dateStr);
+            }
+          }
+        } catch (error) {
+          console.error('Error fetching appointment details:', error);
+        }
+      }
+    } else {
+      setRescheduleRequestAvailableSlots([]);
+      setRescheduleRequestSlotBookings({});
+    }
+  };
+
+  // Open reschedule request modal
+  const openRescheduleRequestModal = async (appointment: Appointment) => {
+    // Check if appointment is eligible for reschedule
+    const status = appointment.status?.toLowerCase() || '';
+    if (status === 'cancelled' || status === 'completed' || status === 'in_consultation') {
+      message.warning('This appointment cannot be rescheduled');
+      return;
+    }
+
+    // Check if appointment is in the past
+    const appointmentDate = appointment.appointmentDate 
+      ? (typeof appointment.appointmentDate === 'string' 
+          ? dayjs(appointment.appointmentDate) 
+          : dayjs(new Date(appointment.appointmentDate)))
+      : null;
+    
+    if (appointmentDate && appointmentDate.isBefore(dayjs())) {
+      message.warning('Cannot reschedule past appointments');
+      return;
+    }
+
+    // Check if there's already a pending reschedule request
+    const existingRequest = rescheduleRequests.find(
+      (req: any) => req.appointmentId === appointment.id && req.status === 'requested'
+    );
+    if (existingRequest) {
+      message.info('You already have a pending reschedule request for this appointment');
+      return;
+    }
+
+    setAppointmentForReschedule(appointment);
+    rescheduleRequestForm.resetFields();
+    setRescheduleRequestSelectedDate(null);
+    setRescheduleRequestAvailableSlots([]);
+    setRescheduleRequestSlotBookings({});
+    setIsRescheduleRequestModalOpen(true);
+  };
+
+  // Handle reschedule request submission
+  const handleRescheduleRequestSubmit = async (values: any) => {
+    if (!appointmentForReschedule) return;
+    
+    try {
+      setIsSubmittingRescheduleRequest(true);
+      const token = localStorage.getItem('auth-token');
+      const dateStr = values.appointmentDate?.format ? values.appointmentDate.format('YYYY-MM-DD') : dayjs(values.appointmentDate).format('YYYY-MM-DD');
+      const timeSlot = values.timeSlot;
+
+      if (!dateStr || !timeSlot) {
+        message.error('Please select a date and time slot');
+        return;
+      }
+
+      const response = await fetch(`/api/appointments/${appointmentForReschedule.id}/reschedule-request`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          newDate: dateStr,
+          newTimeSlot: timeSlot,
+          reasonNote: values.reasonNote || 'Patient requested reschedule',
+        }),
+      });
+
+      if (response.ok) {
+        message.success('Reschedule request submitted successfully. Receptionist will review and notify you.');
+        playNotificationSound('confirmation');
+        setIsRescheduleRequestModalOpen(false);
+        setAppointmentForReschedule(null);
+        rescheduleRequestForm.resetFields();
+        await loadRescheduleRequests();
+        await loadAppointments();
+        queryClient.invalidateQueries({ queryKey: ['/api/appointments/my'] });
+      } else {
+        const error = await response.json();
+        message.error(error.message || 'Failed to submit reschedule request');
+      }
+    } catch (error: any) {
+      console.error('Error submitting reschedule request:', error);
+      message.error(error.message || 'Failed to submit reschedule request');
+    } finally {
+      setIsSubmittingRescheduleRequest(false);
+    }
+  };
 
   // Real-time: server pushes appointment updates (no polling).
   useEffect(() => {
@@ -342,7 +645,9 @@ export default function PatientAppointments() {
       if (!matchesFilter || !matchesSearch) return;
       
       // Get appointment slot end time
-      const appointmentDateRaw = appointment.appointmentDate || '';
+      // Normalize date to YYYY-MM-DD for parsing (slice if full ISO string)
+      const rawDate = appointment.appointmentDate || '';
+      const appointmentDateRaw = rawDate.includes('T') ? rawDate.slice(0, 10) : rawDate;
       const appointmentTimeRaw = appointment.appointmentTime || appointment.timeSlot || '';
       
       if (!appointmentDateRaw || !appointmentTimeRaw) {
@@ -605,11 +910,28 @@ export default function PatientAppointments() {
         const isCancelled = effectiveStatus === 'cancelled';
         const cancellationReason = isCancelled ? getCancellationReason(record.notes) : null;
         
+        // Check for reschedule request status
+        const rescheduleRequest = rescheduleRequests.find(
+          (req: any) => req.appointmentId === record.id
+        );
+        
         return (
           <Space direction="vertical" size={0}>
             <Tag color={getStatusColor(effectiveStatus)}>
               {effectiveStatus.toUpperCase()}
             </Tag>
+            {rescheduleRequest && (
+              <Tag 
+                color={
+                  rescheduleRequest.status === 'requested' ? 'orange' :
+                  rescheduleRequest.status === 'approved' ? 'green' :
+                  rescheduleRequest.status === 'rejected' ? 'red' : 'default'
+                }
+                style={{ marginTop: '4px' }}
+              >
+                Reschedule: {rescheduleRequest.status}
+              </Tag>
+            )}
             {isCancelled && cancellationReason && (
               <Text type="secondary" style={{ fontSize: '11px', display: 'block', marginTop: '4px', fontStyle: 'italic' }}>
                 Reason: {cancellationReason}
@@ -632,34 +954,115 @@ export default function PatientAppointments() {
     {
       title: 'Actions',
       key: 'actions',
-      render: (record: Appointment) => (
-        <Space>
-          <Button 
-            size="small" 
-            icon={<EyeOutlined />}
-            onClick={() => handleViewAppointment(record)}
-          >
-            View
-          </Button>
-          {(record.status === 'pending' || record.status === 'confirmed') && (
-            <Popconfirm
-              title="Cancel Appointment"
-              description={
-                record.confirmedAt
-                  ? "This appointment has been confirmed. A 10% cancellation fee will be deducted, and 90% of the booking amount will be refunded. Are you sure you want to cancel?"
-                  : "This appointment has not been confirmed yet. You will receive a full refund. Are you sure you want to cancel?"
-              }
-              onConfirm={() => handleCancelAppointment(record.id, record)}
-              okText="Yes, Cancel"
-              cancelText="No"
+      render: (record: Appointment) => {
+        // Determine if this appointment is already in the past based on slot end time (IST)
+        const nowIST = getISTNow();
+        const rawDate = record.appointmentDate || '';
+        const dateStr = rawDate.includes('T') ? rawDate.slice(0, 10) : rawDate;
+        const timeStr = record.appointmentTime || record.timeSlot || '';
+
+        let isPastByTime = false;
+        if (dateStr && timeStr) {
+          const slotEndLocal = getSlotEndTime(dateStr, timeStr);
+          const slotEndIST = toIST(slotEndLocal);
+          if (slotEndIST) {
+            isPastByTime = slotEndIST.getTime() < nowIST.getTime();
+          }
+        }
+
+        const canModify =
+          !isPastByTime &&
+          (record.status === 'pending' || record.status === 'confirmed');
+
+        // For past appointments, show prescription/lab/vitals icons if available
+        const hasPrescription = !!prescriptionsByAppointment[record.id];
+        const hasLabReports = (labReportsByAppointment[record.id] || []).length > 0;
+        const hasVitals = (vitalsByAppointment[record.id] || []).length > 0;
+
+        return (
+          <Space>
+            <Button
+              size="small"
+              icon={<EyeOutlined />}
+              onClick={() => handleViewAppointment(record)}
             >
-              <Button size="small" danger icon={<DeleteOutlined />}>
-                Cancel
-              </Button>
-            </Popconfirm>
-          )}
-        </Space>
-      ),
+              View
+            </Button>
+            {canModify ? (
+              <>
+                <Button
+                  size="small"
+                  icon={<ReloadOutlined />}
+                  onClick={() => openRescheduleRequestModal(record)}
+                >
+                  Reschedule
+                </Button>
+                <Popconfirm
+                  title="Cancel Appointment"
+                  description={
+                    record.confirmedAt
+                      ? "This appointment has been confirmed. A 10% cancellation fee will be deducted, and 90% of the booking amount will be refunded. Are you sure you want to cancel?"
+                      : "This appointment has not been confirmed yet. You will receive a full refund. Are you sure you want to cancel?"
+                  }
+                  onConfirm={() => handleCancelAppointment(record.id, record)}
+                  okText="Yes, Cancel"
+                  cancelText="No"
+                >
+                  <Button size="small" danger icon={<DeleteOutlined />}>
+                    Cancel
+                  </Button>
+                </Popconfirm>
+              </>
+            ) : (
+              // Past appointments: show prescription/lab/vitals icons
+              <>
+                {hasPrescription && (
+                  <Button
+                    size="small"
+                    type="primary"
+                    icon={<MedicineBoxOutlined />}
+                    onClick={() => {
+                      setSelectedAppointment(record);
+                      handleViewPrescription();
+                    }}
+                    title="View Prescription"
+                  />
+                )}
+                {hasLabReports && (
+                  <Button
+                    size="small"
+                    type="primary"
+                    icon={<ExperimentOutlined />}
+                    onClick={() => {
+                      const reports = labReportsByAppointment[record.id];
+                      if (reports && reports.length > 0) {
+                        setSelectedLabReport(reports[0]); // Show first report, or could show list
+                        setIsLabReportModalOpen(true);
+                      }
+                    }}
+                    title={`View Lab Reports (${labReportsByAppointment[record.id].length})`}
+                  />
+                )}
+                {hasVitals && (
+                  <Button
+                    size="small"
+                    type="primary"
+                    icon={<HeartOutlined />}
+                    onClick={() => {
+                      const vitals = vitalsByAppointment[record.id];
+                      if (vitals && vitals.length > 0) {
+                        setSelectedVitals(vitals[0]); // Show first vital entry, or could show list
+                        setIsVitalsModalOpen(true);
+                      }
+                    }}
+                    title={`View Vitals (${vitalsByAppointment[record.id].length})`}
+                  />
+                )}
+              </>
+            )}
+          </Space>
+        );
+      },
     },
   ];
 
@@ -1068,7 +1471,11 @@ export default function PatientAppointments() {
             </div>
             <div>
               <Text strong>Date: </Text>
-              <Text>{selectedAppointment.appointmentDate}</Text>
+              <Text>
+                {dayjs(selectedAppointment.appointmentDate).isValid()
+                  ? dayjs(selectedAppointment.appointmentDate).format('DD MMM YYYY')
+                  : selectedAppointment.appointmentDate}
+              </Text>
             </div>
             <div>
               <Text strong>Time: </Text>
@@ -1118,6 +1525,127 @@ export default function PatientAppointments() {
               </div>
             )}
           </Space>
+        )}
+      </Modal>
+
+      {/* Reschedule Request Modal */}
+      <Modal
+        title="Request Appointment Reschedule"
+        open={isRescheduleRequestModalOpen}
+        onCancel={() => {
+          setIsRescheduleRequestModalOpen(false);
+          setAppointmentForReschedule(null);
+          rescheduleRequestForm.resetFields();
+          setRescheduleRequestSelectedDate(null);
+          setRescheduleRequestAvailableSlots([]);
+          setRescheduleRequestSlotBookings({});
+        }}
+        footer={null}
+        width={600}
+      >
+        {appointmentForReschedule && (
+          <Form
+            form={rescheduleRequestForm}
+            layout="vertical"
+            onFinish={handleRescheduleRequestSubmit}
+          >
+            <Space direction="vertical" size="middle" style={{ width: '100%', marginBottom: 16 }}>
+              <div>
+                <Text strong>Current Appointment:</Text>
+                <div style={{ marginTop: 8 }}>
+                  <Text>Doctor: {appointmentForReschedule.doctorName}</Text>
+                  <br />
+                  <Text>Date: {appointmentForReschedule.appointmentDate}</Text>
+                  <br />
+                  <Text>Time: {appointmentForReschedule.timeSlot || appointmentForReschedule.appointmentTime}</Text>
+                </div>
+              </div>
+            </Space>
+
+            <Form.Item
+              name="appointmentDate"
+              label="New Appointment Date"
+              rules={[{ required: true, message: 'Please select a date' }]}
+            >
+              <DatePicker
+                style={{ width: '100%' }}
+                format="YYYY-MM-DD"
+                disabledDate={(current) => {
+                  // Can't select past dates
+                  return current && current < dayjs().startOf('day');
+                }}
+                onChange={(date) => {
+                  handleRescheduleRequestDateChange(date);
+                  rescheduleRequestForm.setFieldsValue({ timeSlot: undefined });
+                }}
+                placeholder="Select new date"
+              />
+            </Form.Item>
+
+            <Form.Item
+              name="timeSlot"
+              label="New Time Slot"
+              rules={[{ required: true, message: 'Please select a time slot' }]}
+            >
+              <Select
+                placeholder="Select time slot"
+                disabled={!rescheduleRequestSelectedDate || rescheduleRequestAvailableSlots.length === 0}
+                loading={rescheduleRequestAvailableSlots.length === 0 && rescheduleRequestSelectedDate !== null}
+              >
+                {rescheduleRequestAvailableSlots.map((slot) => {
+                  const bookingCount = rescheduleRequestSlotBookings[slot] || 0;
+                  const isFullyBooked = bookingCount >= 5;
+                  const isAlmostFull = bookingCount >= 3;
+                  
+                  return (
+                    <Select.Option key={slot} value={slot} disabled={isFullyBooked}>
+                      <Space>
+                        <span>{formatTimeSlot12h(slot)}</span>
+                        {isFullyBooked && <Tag color="red">Full</Tag>}
+                        {isAlmostFull && !isFullyBooked && <Tag color="orange">Almost Full</Tag>}
+                        {!isFullyBooked && !isAlmostFull && <Tag color="green">Available</Tag>}
+                      </Space>
+                    </Select.Option>
+                  );
+                })}
+              </Select>
+            </Form.Item>
+
+            <Form.Item
+              name="reasonNote"
+              label="Reason for Reschedule (Optional)"
+            >
+              <Input.TextArea
+                rows={3}
+                placeholder="Please provide a reason for rescheduling..."
+                maxLength={500}
+              />
+            </Form.Item>
+
+            <Form.Item>
+              <Space>
+                <Button
+                  type="primary"
+                  htmlType="submit"
+                  loading={isSubmittingRescheduleRequest}
+                >
+                  Submit Request
+                </Button>
+                <Button
+                  onClick={() => {
+                    setIsRescheduleRequestModalOpen(false);
+                    setAppointmentForReschedule(null);
+                    rescheduleRequestForm.resetFields();
+                    setRescheduleRequestSelectedDate(null);
+                    setRescheduleRequestAvailableSlots([]);
+                    setRescheduleRequestSlotBookings({});
+                  }}
+                >
+                  Cancel
+                </Button>
+              </Space>
+            </Form.Item>
+          </Form>
         )}
       </Modal>
 
@@ -1191,6 +1719,106 @@ export default function PatientAppointments() {
           );
         })() : (
           <Text>No prescription found.</Text>
+        )}
+      </Modal>
+
+      {/* Lab Report Viewer Modal */}
+      <LabReportViewerModal
+        open={isLabReportModalOpen}
+        onCancel={() => {
+          setIsLabReportModalOpen(false);
+          setSelectedLabReport(null);
+        }}
+        report={selectedLabReport}
+      />
+
+      {/* Vitals Viewer Modal */}
+      <Modal
+        title="Vitals Record"
+        open={isVitalsModalOpen}
+        onCancel={() => {
+          setIsVitalsModalOpen(false);
+          setSelectedVitals(null);
+        }}
+        footer={[
+          <Button key="close" onClick={() => {
+            setIsVitalsModalOpen(false);
+            setSelectedVitals(null);
+          }}>
+            Close
+          </Button>
+        ]}
+        width={700}
+      >
+        {selectedVitals ? (
+          <Space direction="vertical" size="middle" style={{ width: '100%' }}>
+            <div>
+              <Text strong>Recorded At: </Text>
+              <Text>{dayjs(selectedVitals.recordedAt).format('DD MMM YYYY, hh:mm A')}</Text>
+            </div>
+            <div>
+              <Text strong>Temperature: </Text>
+              <Text>{selectedVitals.temperature ? `${selectedVitals.temperature}°${selectedVitals.temperatureUnit || 'C'}` : 'N/A'}</Text>
+            </div>
+            <div>
+              <Text strong>Blood Pressure: </Text>
+              <Text>
+                {selectedVitals.bpSystolic && selectedVitals.bpDiastolic
+                  ? `${selectedVitals.bpSystolic}/${selectedVitals.bpDiastolic} mmHg`
+                  : 'N/A'}
+              </Text>
+            </div>
+            <div>
+              <Text strong>Pulse: </Text>
+              <Text>{selectedVitals.pulse ? `${selectedVitals.pulse} bpm` : 'N/A'}</Text>
+            </div>
+            <div>
+              <Text strong>Respiration Rate: </Text>
+              <Text>{selectedVitals.respirationRate ? `${selectedVitals.respirationRate} /min` : 'N/A'}</Text>
+            </div>
+            <div>
+              <Text strong>SpO2: </Text>
+              <Text>{selectedVitals.spo2 ? `${selectedVitals.spo2}%` : 'N/A'}</Text>
+            </div>
+            {selectedVitals.weight && (
+              <div>
+                <Text strong>Weight: </Text>
+                <Text>{selectedVitals.weight} kg</Text>
+              </div>
+            )}
+            {selectedVitals.height && (
+              <div>
+                <Text strong>Height: </Text>
+                <Text>{selectedVitals.height} cm</Text>
+              </div>
+            )}
+            {selectedVitals.bmi && (
+              <div>
+                <Text strong>BMI: </Text>
+                <Text>{selectedVitals.bmi}</Text>
+              </div>
+            )}
+            {selectedVitals.bloodGlucose && (
+              <div>
+                <Text strong>Blood Glucose: </Text>
+                <Text>{selectedVitals.bloodGlucose} mg/dL</Text>
+              </div>
+            )}
+            {selectedVitals.painScale !== null && selectedVitals.painScale !== undefined && (
+              <div>
+                <Text strong>Pain Scale: </Text>
+                <Text>{selectedVitals.painScale}/10</Text>
+              </div>
+            )}
+            {selectedVitals.notes && (
+              <div>
+                <Text strong>Notes: </Text>
+                <Text>{selectedVitals.notes}</Text>
+              </div>
+            )}
+          </Space>
+        ) : (
+          <Text>No vitals data found.</Text>
         )}
       </Modal>
     </>

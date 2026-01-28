@@ -3,7 +3,8 @@ import * as ipdService from '../services/ipd.service';
 import { authenticateToken, authorizeRoles, type AuthenticatedRequest } from '../middleware/auth';
 import { db } from '../db';
 import { eq } from 'drizzle-orm';
-import { receptionists, hospitals, doctors, nurses } from '../../shared/schema';
+import { receptionists, hospitals, doctors, nurses, rooms, beds } from '../../shared/schema';
+import { logAuditEvent } from '../services/audit.service';
 
 const router = Router();
 
@@ -133,6 +134,31 @@ router.post('/rooms', authorizeRoles('ADMIN', 'HOSPITAL', 'RECEPTIONIST'), async
     }
 
     const room = await ipdService.createRoom({ wardId, roomNumber, roomName, category, capacity, amenities });
+
+    // Audit: room created
+    try {
+      const hospitalId = await getHospitalId(req.user);
+      await logAuditEvent({
+        hospitalId,
+        actorUserId: req.user!.id,
+        actorRole: req.user!.role || 'UNKNOWN',
+        action: 'ROOM_CREATED',
+        entityType: 'room',
+        entityId: room.id,
+        after: {
+          wardId,
+          roomNumber,
+          roomName,
+          category,
+          capacity,
+          amenities,
+        },
+        summary: `Room ${roomNumber} created in ward ${wardId}`,
+      });
+    } catch (auditError) {
+      console.error('⚠️ Failed to log room creation audit event:', auditError);
+    }
+
     res.json(room);
   } catch (err: any) {
     console.error('❌ Create room error:', err);
@@ -164,6 +190,31 @@ router.patch('/rooms/:roomId', authorizeRoles('ADMIN', 'HOSPITAL', 'RECEPTIONIST
       capacity,
       amenities,
     });
+
+    // Audit: room updated (store only after state for now)
+    try {
+      const hospitalId = await getHospitalId(req.user);
+      await logAuditEvent({
+        hospitalId,
+        actorUserId: req.user!.id,
+        actorRole: req.user!.role || 'UNKNOWN',
+        action: 'ROOM_UPDATED',
+        entityType: 'room',
+        entityId: room.id,
+        after: {
+          wardId: room.wardId,
+          roomNumber: room.roomNumber,
+          roomName: room.roomName,
+          category: room.category,
+          capacity: room.capacity,
+          amenities: room.amenities,
+        },
+        summary: `Room ${room.roomNumber} updated`,
+      });
+    } catch (auditError) {
+      console.error('⚠️ Failed to log room update audit event:', auditError);
+    }
+
     res.json(room);
   } catch (err: any) {
     console.error('❌ Update room error:', err);
@@ -181,6 +232,31 @@ router.post('/beds', authorizeRoles('ADMIN', 'HOSPITAL', 'RECEPTIONIST'), async 
     }
 
     const bed = await ipdService.createBed({ roomId, bedNumber, bedName, bedType, equipment, notes });
+
+    // Audit: bed created by admin/hospital/receptionist
+    try {
+      const hospitalId = await getHospitalId(req.user);
+      await logAuditEvent({
+        hospitalId,
+        actorUserId: req.user!.id,
+        actorRole: req.user!.role || 'UNKNOWN',
+        action: 'BED_CREATED',
+        entityType: 'bed',
+        entityId: bed.id,
+        after: {
+          roomId,
+          bedNumber,
+          bedName,
+          bedType,
+          equipment,
+          notes,
+        },
+        summary: `Bed ${bedNumber} created in room ${roomId}`,
+      });
+    } catch (auditError) {
+      console.error('⚠️ Failed to log bed creation audit event:', auditError);
+    }
+
     res.json(bed);
   } catch (err: any) {
     console.error('❌ Create bed error:', err);
@@ -211,6 +287,30 @@ router.patch('/beds/:bedId', authorizeRoles('ADMIN', 'HOSPITAL', 'RECEPTIONIST')
       equipment,
       notes,
     });
+
+    // Audit: bed updated (non-status fields)
+    try {
+      const hospitalId = await getHospitalId(req.user);
+      await logAuditEvent({
+        hospitalId,
+        actorUserId: req.user!.id,
+        actorRole: req.user!.role || 'UNKNOWN',
+        action: 'BED_UPDATED',
+        entityType: 'bed',
+        entityId: bed.id,
+        after: {
+          bedNumber: bed.bedNumber,
+          bedName: bed.bedName,
+          bedType: bed.bedType,
+          equipment: bed.equipment,
+          notes: bed.notes,
+        },
+        summary: `Bed ${bed.bedNumber} updated`,
+      });
+    } catch (auditError) {
+      console.error('⚠️ Failed to log bed update audit event:', auditError);
+    }
+
     res.json(bed);
   } catch (err: any) {
     console.error('❌ Update bed error:', err);
@@ -227,11 +327,49 @@ router.patch('/beds/:bedId/status', authorizeRoles('ADMIN', 'HOSPITAL', 'RECEPTI
       return res.status(400).json({ message: 'status is required' });
     }
 
+    // Fetch current bed state for 'before'
+    const [existingBed] = await db
+      .select()
+      .from(beds)
+      .where(eq(beds.id, +bedId))
+      .limit(1);
+
     const bed = await ipdService.updateBedStatus(+bedId, status, {
       blockedReason,
       blockedUntil: blockedUntil ? new Date(blockedUntil) : undefined,
       lastCleanedAt: lastCleanedAt ? new Date(lastCleanedAt) : undefined,
     });
+
+    // Audit: bed status updated
+    try {
+      const hospitalId = await getHospitalId(req.user);
+      await logAuditEvent({
+        hospitalId,
+        actorUserId: req.user!.id,
+        actorRole: req.user!.role || 'UNKNOWN',
+        action: 'BED_STATUS_UPDATED',
+        entityType: 'bed',
+        entityId: bed.id,
+        before: existingBed
+          ? {
+              status: existingBed.status,
+              blockedReason: (existingBed as any).blockedReason,
+              blockedUntil: (existingBed as any).blockedUntil,
+              lastCleanedAt: (existingBed as any).lastCleanedAt,
+            }
+          : undefined,
+        after: {
+          status: bed.status,
+          blockedReason: (bed as any).blockedReason,
+          blockedUntil: (bed as any).blockedUntil,
+          lastCleanedAt: (bed as any).lastCleanedAt,
+        },
+        summary: `Bed ${bed.bedNumber} status changed to ${bed.status}`,
+      });
+    } catch (auditError) {
+      console.error('⚠️ Failed to log bed status update audit event:', auditError);
+    }
+
     res.json(bed);
   } catch (err: any) {
     console.error('❌ Update bed status error:', err);
@@ -242,7 +380,40 @@ router.patch('/beds/:bedId/status', authorizeRoles('ADMIN', 'HOSPITAL', 'RECEPTI
 router.patch('/beds/:bedId/clean', authorizeRoles('ADMIN', 'HOSPITAL', 'RECEPTIONIST'), async (req: AuthenticatedRequest, res) => {
   try {
     const { bedId } = req.params;
+    // Fetch current bed state for 'before'
+    const [existingBed] = await db
+      .select()
+      .from(beds)
+      .where(eq(beds.id, +bedId))
+      .limit(1);
+
     const bed = await ipdService.markBedCleaned(+bedId);
+
+    // Audit: bed cleaned (status implicitly updated via service)
+    try {
+      const hospitalId = await getHospitalId(req.user);
+      await logAuditEvent({
+        hospitalId,
+        actorUserId: req.user!.id,
+        actorRole: req.user!.role || 'UNKNOWN',
+        action: 'BED_STATUS_UPDATED',
+        entityType: 'bed',
+        entityId: bed.id,
+        before: existingBed
+          ? {
+              status: existingBed.status,
+              lastCleanedAt: (existingBed as any).lastCleanedAt,
+            }
+          : undefined,
+        after: {
+          status: bed.status,
+          lastCleanedAt: (bed as any).lastCleanedAt,
+        },
+        summary: `Bed ${bed.bedNumber} marked as cleaned`,
+      });
+    } catch (auditError) {
+      console.error('⚠️ Failed to log bed cleaned audit event:', auditError);
+    }
     res.json(bed);
   } catch (err: any) {
     console.error('❌ Mark bed cleaned error:', err);

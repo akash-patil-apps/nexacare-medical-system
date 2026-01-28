@@ -12,6 +12,7 @@ import {
   users,
 } from "../../shared/schema";
 import { eq, and, sql, desc, inArray } from "drizzle-orm";
+import { logAuditEvent } from "./audit.service";
 
 /**
  * Create lab order
@@ -362,6 +363,8 @@ export const releaseLabReport = async (data: {
       .where(eq(labReports.labOrderId, data.labOrderId))
       .limit(1);
 
+    let reportId: number | undefined;
+
     if (existingReport.length > 0) {
       // Update existing report
       await db
@@ -374,24 +377,29 @@ export const releaseLabReport = async (data: {
           releasedAt: new Date(),
         })
         .where(eq(labReports.id, existingReport[0].id));
+      reportId = existingReport[0].id;
     } else {
       // Create new report
-      await db.insert(labReports).values({
-        labOrderId: data.labOrderId,
-        patientId: order.patientId,
-        doctorId: order.doctorId,
-        labId: order.hospitalId, // Using hospitalId as labId for now
-        testName: orderItems.map((i) => i.testName).join(", "),
-        testType: "Laboratory",
-        results: resultsJson,
-        normalRanges,
-        reportDate: new Date(),
-        reportUrl: `mock://lab-report-${data.labOrderId}.pdf`, // Mock URL
-        status: "completed",
-        releasedByUserId: data.releasedByUserId,
-        releasedAt: new Date(),
-        createdAt: new Date(),
-      });
+      const [inserted] = await db
+        .insert(labReports)
+        .values({
+          labOrderId: data.labOrderId,
+          patientId: order.patientId,
+          doctorId: order.doctorId,
+          labId: order.hospitalId, // Using hospitalId as labId for now
+          testName: orderItems.map((i) => i.testName).join(", "),
+          testType: "Laboratory",
+          results: resultsJson,
+          normalRanges,
+          reportDate: new Date(),
+          reportUrl: `mock://lab-report-${data.labOrderId}.pdf`, // Mock URL
+          status: "completed",
+          releasedByUserId: data.releasedByUserId,
+          releasedAt: new Date(),
+          createdAt: new Date(),
+        })
+        .returning();
+      reportId = inserted.id;
     }
 
     // Update order and items status
@@ -409,6 +417,28 @@ export const releaseLabReport = async (data: {
         status: "completed",
       })
       .where(eq(labOrderItems.labOrderId, data.labOrderId));
+
+    // Best-effort audit log for lab report release
+    try {
+      await logAuditEvent({
+        hospitalId: (order as any).hospitalId || undefined,
+        patientId: (order as any).patientId || undefined,
+        actorUserId: data.releasedByUserId,
+        actorRole: "LAB",
+        action: "LAB_REPORT_RELEASED",
+        entityType: "lab_report",
+        entityId: reportId,
+        before: {
+          orderStatus: (order as any).status,
+        },
+        after: {
+          orderStatus: "completed",
+        },
+        summary: `Lab report for order #${data.labOrderId} released`,
+      });
+    } catch (auditError) {
+      console.error("⚠️ Failed to log lab report release audit event:", auditError);
+    }
 
     return { success: true };
   } catch (error) {

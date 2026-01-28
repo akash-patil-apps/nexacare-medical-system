@@ -1,5 +1,5 @@
-// Local SMS service for NexaCare Medical System
-// Shows SMS content immediately without external services
+// SMS service for NexaCare Medical System
+// Supports Twilio integration with fallback to mock mode
 
 export interface SMSData {
   to: string;
@@ -7,9 +7,35 @@ export interface SMSData {
   type?: 'otp' | 'appointment' | 'prescription' | 'lab_report' | 'notification' | 'reminder';
 }
 
+interface SMSConfig {
+  provider: 'twilio' | 'mock';
+  twilioAccountSid?: string;
+  twilioAuthToken?: string;
+  twilioFromNumber?: string;
+}
+
 export class SMSService {
   private static instance: SMSService;
   private smsMessages: SMSData[] = [];
+  private config: SMSConfig;
+
+  constructor() {
+    // Load configuration from environment variables
+    this.config = {
+      provider: (process.env.SMS_PROVIDER as 'twilio' | 'mock') || 'mock',
+      twilioAccountSid: process.env.TWILIO_ACCOUNT_SID,
+      twilioAuthToken: process.env.TWILIO_AUTH_TOKEN,
+      twilioFromNumber: process.env.TWILIO_FROM_NUMBER,
+    };
+
+    // Validate Twilio config if provider is twilio
+    if (this.config.provider === 'twilio') {
+      if (!this.config.twilioAccountSid || !this.config.twilioAuthToken || !this.config.twilioFromNumber) {
+        console.warn('⚠️  Twilio SMS provider selected but credentials missing. Falling back to mock mode.');
+        this.config.provider = 'mock';
+      }
+    }
+  }
 
   static getInstance(): SMSService {
     if (!SMSService.instance) {
@@ -18,18 +44,70 @@ export class SMSService {
     return SMSService.instance;
   }
 
-  // Send SMS (local only - no external service)
-  async sendSMS(smsData: SMSData): Promise<{ success: boolean; smsId: string }> {
+  // Send SMS via Twilio or mock
+  async sendSMS(smsData: SMSData): Promise<{ success: boolean; smsId: string; error?: string }> {
     const smsId = `sms_${Date.now()}`;
     
-    // Store SMS locally
+    // Store SMS locally for tracking
     this.smsMessages.push({
       ...smsData,
       type: smsData.type || 'notification'
     });
 
-    // Log to console
-    console.log(`\n📱 SMS Generated:`);
+    // Send via Twilio if configured
+    if (this.config.provider === 'twilio') {
+      try {
+        return await this.sendViaTwilio(smsData, smsId);
+      } catch (error: any) {
+        console.error('❌ Twilio SMS error:', error);
+        // Fallback to mock on error
+        return this.sendViaMock(smsData, smsId);
+      }
+    }
+
+    // Send via mock (console log)
+    return this.sendViaMock(smsData, smsId);
+  }
+
+  // Send SMS via Twilio
+  private async sendViaTwilio(smsData: SMSData, smsId: string): Promise<{ success: boolean; smsId: string; error?: string }> {
+    try {
+      // Dynamic import to avoid requiring twilio package if not installed
+      const twilio = await import('twilio').catch(() => {
+        throw new Error('Twilio package not installed. Run: npm install twilio');
+      });
+
+      const client = twilio.default(
+        this.config.twilioAccountSid!,
+        this.config.twilioAuthToken!
+      );
+
+      const message = await client.messages.create({
+        body: smsData.message,
+        from: this.config.twilioFromNumber!,
+        to: smsData.to,
+      });
+
+      console.log(`\n📱 SMS Sent via Twilio:`);
+      console.log(`📞 To: ${smsData.to}`);
+      console.log(`💬 Message: ${smsData.message.substring(0, 50)}...`);
+      console.log(`🆔 Twilio SID: ${message.sid}`);
+      console.log(`🎯 Type: ${smsData.type || 'notification'}`);
+      console.log(`⏰ Sent: ${new Date().toLocaleString()}\n`);
+
+      return {
+        success: true,
+        smsId,
+      };
+    } catch (error: any) {
+      console.error('❌ Twilio SMS error:', error.message);
+      throw error;
+    }
+  }
+
+  // Send SMS via mock (console log)
+  private sendViaMock(smsData: SMSData, smsId: string): { success: boolean; smsId: string } {
+    console.log(`\n📱 SMS Generated (Mock Mode):`);
     console.log(`📞 To: ${smsData.to}`);
     console.log(`💬 Message: ${smsData.message}`);
     console.log(`🎯 Type: ${smsData.type || 'notification'}`);

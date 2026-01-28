@@ -284,7 +284,12 @@ router.patch('/:appointmentId/cancel', async (req: AuthenticatedRequest, res) =>
     const appointment = await appointmentService.cancelAppointment(
       +req.params.appointmentId, 
       req.user?.id || 1,
-      cancellationReason
+      cancellationReason,
+      {
+        actorRole: req.user?.role,
+        ipAddress: req.ip || req.socket.remoteAddress || undefined,
+        userAgent: req.get('user-agent') || undefined,
+      }
     );
     res.json(appointment);
   } catch (err: any) {
@@ -379,7 +384,7 @@ router.patch('/:appointmentId/reschedule', authorizeRoles('RECEPTIONIST'), async
     const appointment = await appointmentService.rescheduleAppointment(
       +req.params.appointmentId,
       { appointmentDate, appointmentTime, timeSlot, rescheduleReason },
-      { userId: req.user?.id || 0, receptionistId: receptionist[0].id },
+      { userId: req.user?.id || 0, receptionistId: receptionist[0].id, actorRole: req.user?.role },
     );
     res.json(appointment);
   } catch (err: any) {
@@ -412,6 +417,165 @@ router.get('/date-range/:startDate/:endDate', async (req, res) => {
   } catch (err) {
     console.error('Get appointments by date range error:', err);
     res.status(400).json({ message: 'Failed to fetch appointments' });
+  }
+});
+
+// ============================================
+// PATIENT-INITIATED RESCHEDULE REQUESTS
+// ============================================
+
+// Create reschedule request (patient)
+router.post('/:appointmentId/reschedule-request', authorizeRoles('PATIENT'), async (req: AuthenticatedRequest, res) => {
+  try {
+    const { appointmentId } = req.params;
+    const { newDate, newTimeSlot, reasonNote } = req.body;
+
+    if (!newDate || !newTimeSlot) {
+      return res.status(400).json({ message: 'newDate and newTimeSlot are required' });
+    }
+
+    if (!req.user?.id) {
+      return res.status(401).json({ message: 'User not authenticated' });
+    }
+
+    const rescheduleRequestsService = await import('../services/appointment-reschedule-requests.service');
+    const rescheduleRequest = await rescheduleRequestsService.createRescheduleRequest({
+      appointmentId: +appointmentId,
+      requestedByUserId: req.user.id,
+      newDate,
+      newTimeSlot,
+      reasonNote,
+    });
+
+    res.status(201).json(rescheduleRequest);
+  } catch (err: any) {
+    console.error('❌ Create reschedule request error:', err);
+    res.status(400).json({
+      message: err.message || 'Failed to create reschedule request',
+      error: err.toString(),
+    });
+  }
+});
+
+// Get patient's reschedule requests
+router.get('/reschedule-requests/my', authorizeRoles('PATIENT'), async (req: AuthenticatedRequest, res) => {
+  try {
+    if (!req.user?.id) {
+      return res.status(401).json({ message: 'User not authenticated' });
+    }
+
+    const rescheduleRequestsService = await import('../services/appointment-reschedule-requests.service');
+    const requests = await rescheduleRequestsService.getPatientRescheduleRequests(req.user.id);
+    res.json(requests);
+  } catch (err: any) {
+    console.error('❌ Get patient reschedule requests error:', err);
+    res.status(400).json({
+      message: err.message || 'Failed to fetch reschedule requests',
+      error: err.toString(),
+    });
+  }
+});
+
+// Get reschedule requests (receptionist/hospital admin)
+router.get('/reschedule-requests', authorizeRoles('RECEPTIONIST', 'HOSPITAL', 'ADMIN'), async (req: AuthenticatedRequest, res) => {
+  try {
+    // Get hospital ID from user
+    let hospitalId: number | undefined;
+    
+    if (req.user?.role === 'RECEPTIONIST') {
+      const receptionist = await db.select().from(receptionists).where(eq(receptionists.userId, req.user.id)).limit(1);
+      if (receptionist.length > 0) {
+        hospitalId = receptionist[0].hospitalId;
+      }
+    } else if (req.user?.role === 'HOSPITAL' || req.user?.role === 'ADMIN') {
+      const hospital = await db.select().from(hospitals).where(eq(hospitals.userId, req.user.id)).limit(1);
+      if (hospital.length > 0) {
+        hospitalId = hospital[0].id;
+      }
+    }
+
+    const { status, dateFrom, dateTo } = req.query;
+    const filters: any = {};
+    if (hospitalId) filters.hospitalId = hospitalId;
+    if (status) filters.status = status as string;
+    if (dateFrom) filters.dateFrom = new Date(dateFrom as string);
+    if (dateTo) filters.dateTo = new Date(dateTo as string);
+
+    const rescheduleRequestsService = await import('../services/appointment-reschedule-requests.service');
+    const requests = await rescheduleRequestsService.getRescheduleRequests(filters);
+    res.json(requests);
+  } catch (err: any) {
+    console.error('❌ Get reschedule requests error:', err);
+    res.status(400).json({
+      message: err.message || 'Failed to fetch reschedule requests',
+      error: err.toString(),
+    });
+  }
+});
+
+// Approve reschedule request (receptionist)
+router.patch('/reschedule-requests/:requestId/approve', authorizeRoles('RECEPTIONIST', 'ADMIN'), async (req: AuthenticatedRequest, res) => {
+  try {
+    const { requestId } = req.params;
+    
+    if (!req.user?.id) {
+      return res.status(401).json({ message: 'User not authenticated' });
+    }
+
+    // Get receptionist ID
+    const receptionist = await db
+      .select()
+      .from(receptionists)
+      .where(eq(receptionists.userId, req.user.id))
+      .limit(1);
+
+    const rescheduleRequestsService = await import('../services/appointment-reschedule-requests.service');
+    const result = await rescheduleRequestsService.approveRescheduleRequest({
+      rescheduleRequestId: +requestId,
+      reviewedByUserId: req.user.id,
+      receptionistId: receptionist.length > 0 ? receptionist[0].id : undefined,
+      actorRole: req.user.role,
+    });
+
+    res.json(result);
+  } catch (err: any) {
+    console.error('❌ Approve reschedule request error:', err);
+    res.status(400).json({
+      message: err.message || 'Failed to approve reschedule request',
+      error: err.toString(),
+    });
+  }
+});
+
+// Reject reschedule request (receptionist)
+router.patch('/reschedule-requests/:requestId/reject', authorizeRoles('RECEPTIONIST', 'ADMIN'), async (req: AuthenticatedRequest, res) => {
+  try {
+    const { requestId } = req.params;
+    const { rejectionReason } = req.body;
+
+    if (!rejectionReason) {
+      return res.status(400).json({ message: 'rejectionReason is required' });
+    }
+
+    if (!req.user?.id) {
+      return res.status(401).json({ message: 'User not authenticated' });
+    }
+
+    const rescheduleRequestsService = await import('../services/appointment-reschedule-requests.service');
+    const result = await rescheduleRequestsService.rejectRescheduleRequest({
+      rescheduleRequestId: +requestId,
+      reviewedByUserId: req.user.id,
+      rejectionReason,
+      actorRole: req.user.role,
+    });
+
+    res.json(result);
+  } catch (err: any) {
+    console.error('❌ Reject reschedule request error:', err);
+    res.status(400).json({
+      message: err.message || 'Failed to reject reschedule request',
+      error: err.toString(),
+    });
   }
 });
 

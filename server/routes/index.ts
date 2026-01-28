@@ -36,6 +36,12 @@ import ipdWorkflowRoutes from "./ipd-workflow.routes";
 import hospitalChargesRoutes from "./hospital-charges.routes";
 import revenueRoutes from "./revenue.routes";
 import cronRoutes from "./cron.routes";
+import reportingRoutes from "./reporting.routes";
+import paymentGatewayRoutes from "./payment-gateway.routes";
+import storageRoutes from "./storage.routes";
+import analyticsRoutes from "./analytics.routes";
+import auditRoutes from "./audit.routes";
+import insuranceRoutes from "./insurance.routes";
 
 
 const router = Router();
@@ -80,6 +86,12 @@ export async function registerRoutes(app: Express) {
   app.use("/api/hospital-charges", hospitalChargesRoutes);
   app.use("/api/revenue", revenueRoutes);
   app.use("/api/cron", cronRoutes);
+  app.use("/api/reports", reportingRoutes);
+  app.use("/api/payments", paymentGatewayRoutes);
+  app.use("/api/storage", storageRoutes);
+  app.use("/api/analytics", analyticsRoutes);
+  app.use("/api/audit", auditRoutes);
+  app.use("/api/insurance", insuranceRoutes);
   
   // NOTE: /api/prescriptions/my should use /api/prescriptions/patient for patients
   // The prescriptions router handles all prescription endpoints

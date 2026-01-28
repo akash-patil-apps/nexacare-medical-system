@@ -252,6 +252,30 @@ export const appointments = pgTable("appointments", {
   createdAt: timestamp("created_at").defaultNow(),
 });
 
+// Appointment Reschedule Requests - For patient-initiated reschedule requests
+export const appointmentReschedules = pgTable("appointment_reschedules", {
+  id: serial("id").primaryKey(),
+  appointmentId: integer("appointment_id").references(() => appointments.id).notNull(),
+  requestedByRole: text("requested_by_role").notNull(), // PATIENT, RECEPTIONIST, HOSPITAL
+  requestedByUserId: integer("requested_by_user_id").references(() => users.id).notNull(),
+  oldDate: timestamp("old_date"), // Original appointment date
+  oldTimeSlot: text("old_time_slot"), // Original time slot
+  newDate: timestamp("new_date"), // Requested new date
+  newTimeSlot: text("new_time_slot"), // Requested new time slot
+  status: text("status").default("requested").notNull(), // requested, approved, rejected, applied
+  reasonCategory: text("reason_category"), // patient_requested, doctor_unavailable, clinic_timing_change, overbooked, other
+  reasonNote: text("reason_note"), // Free text reason
+  reviewedByUserId: integer("reviewed_by_user_id").references(() => users.id), // Receptionist who reviewed
+  reviewedAt: timestamp("reviewed_at"),
+  rejectionReason: text("rejection_reason"), // If rejected, why
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at"),
+}, (table) => {
+  return {
+    appointmentUnique: unique().on(table.appointmentId), // One active request per appointment
+  };
+});
+
 // Prescriptions
 export const prescriptions = pgTable("prescriptions", {
   id: serial("id").primaryKey(),
@@ -276,6 +300,69 @@ export const prescriptionAudits = pgTable("prescription_audits", {
   action: text("action").notNull(), // created | updated | extended
   message: text("message").notNull(), // human readable summary
   createdAt: timestamp("created_at").defaultNow(),
+});
+
+// Insurance Providers - master list (can be global or hospital-specific)
+export const insuranceProviders = pgTable("insurance_providers", {
+  id: serial("id").primaryKey(),
+  hospitalId: integer("hospital_id").references(() => hospitals.id),
+  name: text("name").notNull(),
+  type: text("type"), // insurer, tpa, government_scheme, other
+  contactEmail: text("contact_email"),
+  contactPhone: text("contact_phone"),
+  address: text("address"),
+  notes: text("notes"),
+  isActive: boolean("is_active").default(true),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+// Patient Insurance Policies - per-patient, optionally scoped to hospital
+export const patientInsurancePolicies = pgTable("patient_insurance_policies", {
+  id: serial("id").primaryKey(),
+  patientId: integer("patient_id").references(() => patients.id).notNull(),
+  hospitalId: integer("hospital_id").references(() => hospitals.id),
+  insuranceProviderId: integer("insurance_provider_id").references(() => insuranceProviders.id).notNull(),
+  policyNumber: text("policy_number").notNull(),
+  policyType: text("policy_type"), // cashless, reimbursement, corporate, other
+  coverageType: text("coverage_type"), // ipd, opd, both
+  sumInsured: decimal("sum_insured", { precision: 12, scale: 2 }),
+  validFrom: timestamp("valid_from"),
+  validTo: timestamp("valid_to"),
+  isPrimary: boolean("is_primary").default(false),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+// Insurance Pre-Authorizations - tied to IPD encounters
+export const insurancePreauths = pgTable("insurance_preauths", {
+  id: serial("id").primaryKey(),
+  encounterId: integer("encounter_id").references(() => ipdEncounters.id).notNull(),
+  hospitalId: integer("hospital_id").references(() => hospitals.id).notNull(),
+  patientId: integer("patient_id").references(() => patients.id).notNull(),
+  insurancePolicyId: integer("insurance_policy_id").references(() => patientInsurancePolicies.id),
+  estimatedAmount: decimal("estimated_amount", { precision: 12, scale: 2 }),
+  approvedAmount: decimal("approved_amount", { precision: 12, scale: 2 }),
+  status: text("status").default("pending"), // pending, approved, rejected, cancelled
+  referenceNumber: text("reference_number"),
+  remarks: text("remarks"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at"),
+});
+
+// Insurance Claims - linked to encounters (and invoices in future)
+export const insuranceClaims = pgTable("insurance_claims", {
+  id: serial("id").primaryKey(),
+  encounterId: integer("encounter_id").references(() => ipdEncounters.id),
+  hospitalId: integer("hospital_id").references(() => hospitals.id).notNull(),
+  patientId: integer("patient_id").references(() => patients.id).notNull(),
+  insurancePolicyId: integer("insurance_policy_id").references(() => patientInsurancePolicies.id),
+  claimNumber: text("claim_number"),
+  submittedAmount: decimal("submitted_amount", { precision: 12, scale: 2 }),
+  approvedAmount: decimal("approved_amount", { precision: 12, scale: 2 }),
+  status: text("status").default("draft"), // draft, submitted, in_review, approved, rejected, paid
+  rejectionReason: text("rejection_reason"),
+  paidAt: timestamp("paid_at"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at"),
 });
 
 // Lab Reports - Final reports (linked to orders)
@@ -372,6 +459,7 @@ export const patientsRelations = relations(patients, ({ one, many }) => ({
   appointments: many(appointments),
   prescriptions: many(prescriptions),
   labReports: many(labReports),
+  insurancePolicies: many(patientInsurancePolicies),
 }));
 
 export const labsRelations = relations(labs, ({ one, many }) => ({
@@ -380,17 +468,63 @@ export const labsRelations = relations(labs, ({ one, many }) => ({
   labReports: many(labReports),
 }));
 
+export const insuranceProvidersRelations = relations(insuranceProviders, ({ one, many }) => ({
+  hospital: one(hospitals, { fields: [insuranceProviders.hospitalId], references: [hospitals.id] }),
+  policies: many(patientInsurancePolicies),
+}));
+
+export const patientInsurancePoliciesRelations = relations(
+  patientInsurancePolicies,
+  ({ one, many }) => ({
+    patient: one(patients, { fields: [patientInsurancePolicies.patientId], references: [patients.id] }),
+    hospital: one(hospitals, { fields: [patientInsurancePolicies.hospitalId], references: [hospitals.id] }),
+    provider: one(insuranceProviders, {
+      fields: [patientInsurancePolicies.insuranceProviderId],
+      references: [insuranceProviders.id],
+    }),
+    preauths: many(insurancePreauths),
+    claims: many(insuranceClaims),
+  }),
+);
+
+export const insurancePreauthsRelations = relations(insurancePreauths, ({ one }) => ({
+  encounter: one(ipdEncounters, { fields: [insurancePreauths.encounterId], references: [ipdEncounters.id] }),
+  hospital: one(hospitals, { fields: [insurancePreauths.hospitalId], references: [hospitals.id] }),
+  patient: one(patients, { fields: [insurancePreauths.patientId], references: [patients.id] }),
+  policy: one(patientInsurancePolicies, {
+    fields: [insurancePreauths.insurancePolicyId],
+    references: [patientInsurancePolicies.id],
+  }),
+}));
+
+export const insuranceClaimsRelations = relations(insuranceClaims, ({ one }) => ({
+  encounter: one(ipdEncounters, { fields: [insuranceClaims.encounterId], references: [ipdEncounters.id] }),
+  hospital: one(hospitals, { fields: [insuranceClaims.hospitalId], references: [hospitals.id] }),
+  patient: one(patients, { fields: [insuranceClaims.patientId], references: [patients.id] }),
+  policy: one(patientInsurancePolicies, {
+    fields: [insuranceClaims.insurancePolicyId],
+    references: [patientInsurancePolicies.id],
+  }),
+}));
+
 export const receptionistsRelations = relations(receptionists, ({ one }) => ({
   user: one(users, { fields: [receptionists.userId], references: [users.id] }),
   hospital: one(hospitals, { fields: [receptionists.hospitalId], references: [hospitals.id] }),
 }));
 
-export const appointmentsRelations = relations(appointments, ({ one }) => ({
+export const appointmentsRelations = relations(appointments, ({ one, many }) => ({
   patient: one(patients, { fields: [appointments.patientId], references: [patients.id] }),
   doctor: one(doctors, { fields: [appointments.doctorId], references: [doctors.id] }),
   hospital: one(hospitals, { fields: [appointments.hospitalId], references: [hospitals.id] }),
   receptionist: one(receptionists, { fields: [appointments.receptionistId], references: [receptionists.id] }),
   prescription: one(prescriptions, { fields: [appointments.id], references: [prescriptions.appointmentId] }),
+  rescheduleRequests: many(appointmentReschedules),
+}));
+
+export const appointmentReschedulesRelations = relations(appointmentReschedules, ({ one }) => ({
+  appointment: one(appointments, { fields: [appointmentReschedules.appointmentId], references: [appointments.id] }),
+  requestedBy: one(users, { fields: [appointmentReschedules.requestedByUserId], references: [users.id] }),
+  reviewedBy: one(users, { fields: [appointmentReschedules.reviewedByUserId], references: [users.id] }),
 }));
 
 export const prescriptionsRelations = relations(prescriptions, ({ one }) => ({
@@ -564,6 +698,25 @@ export const patientAuditLogs = pgTable("patient_audit_logs", {
   before: text("before"), // JSON string of state before action
   after: text("after"), // JSON string of state after action
   message: text("message"), // Human readable description
+  ipAddress: varchar("ip_address", { length: 45 }),
+  userAgent: text("user_agent"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+// General Audit Logs - Track all high-risk actions across the system (not only patient-centric)
+export const auditLogs = pgTable("audit_logs", {
+  id: serial("id").primaryKey(),
+  hospitalId: integer("hospital_id").references(() => hospitals.id),
+  patientId: integer("patient_id").references(() => patients.id),
+  actorUserId: integer("actor_user_id").references(() => users.id).notNull(),
+  actorRole: varchar("actor_role", { length: 50 }).notNull(),
+  action: text("action").notNull(), // e.g. APPOINTMENT_CONFIRMED, PAYMENT_RECORDED, BED_CREATED
+  entityType: text("entity_type").notNull(), // appointment, invoice, bed, room, etc.
+  entityId: integer("entity_id"),
+  before: text("before"), // JSON string of relevant state before action
+  after: text("after"), // JSON string of relevant state after action
+  summary: text("summary"), // Human readable description
+  reason: text("reason"), // Business reason (e.g. cancellation, override)
   ipAddress: varchar("ip_address", { length: 45 }),
   userAgent: text("user_agent"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
@@ -1085,6 +1238,18 @@ export type RadiologyTechnician = InferSelectModel<typeof radiologyTechnicians>;
 export type InsertPatient = InferInsertModel<typeof patients>;
 export type Patient = InferSelectModel<typeof patients>;
 
+export type InsertInsuranceProvider = InferInsertModel<typeof insuranceProviders>;
+export type InsuranceProvider = InferSelectModel<typeof insuranceProviders>;
+
+export type InsertPatientInsurancePolicy = InferInsertModel<typeof patientInsurancePolicies>;
+export type PatientInsurancePolicy = InferSelectModel<typeof patientInsurancePolicies>;
+
+export type InsertInsurancePreauth = InferInsertModel<typeof insurancePreauths>;
+export type InsurancePreauth = InferSelectModel<typeof insurancePreauths>;
+
+export type InsertInsuranceClaim = InferInsertModel<typeof insuranceClaims>;
+export type InsuranceClaim = InferSelectModel<typeof insuranceClaims>;
+
 export type InsertLab = InferInsertModel<typeof labs>;
 export type Lab = InferSelectModel<typeof labs>;
 
@@ -1093,6 +1258,9 @@ export type Receptionist = InferSelectModel<typeof receptionists>;
 
 export type InsertAppointment = InferInsertModel<typeof appointments>;
 export type Appointment = InferSelectModel<typeof appointments>;
+
+export type InsertAppointmentReschedule = InferInsertModel<typeof appointmentReschedules>;
+export type AppointmentReschedule = InferSelectModel<typeof appointmentReschedules>;
 
 export type InsertPrescription = InferInsertModel<typeof prescriptions>;
 export type Prescription = InferSelectModel<typeof prescriptions>;

@@ -49,6 +49,8 @@ import { getISTStartOfDay, isSameDayIST } from '../../lib/timezone';
 import dayjs from 'dayjs';
 import { normalizeStatus, APPOINTMENT_STATUS } from '../../lib/appointment-status';
 import type { IpdEncounter } from '../../types/ipd';
+import ReportsPage from '../reports/ReportsPage';
+import AuditLogsPage from '../audit/audit-logs';
 
 const { Content, Sider } = Layout;
 const { Title, Text } = Typography;
@@ -1634,6 +1636,20 @@ export default function HospitalDashboard() {
                         </Card>
                       </Col>
                     </Row>
+                  ),
+                },
+                {
+                  key: 'reports',
+                  label: 'Reports & Analytics',
+                  children: <ReportsPage hospitalId={hospitalProfile?.id} />,
+                },
+                {
+                  key: 'audit',
+                  label: 'Audit Logs',
+                  children: (
+                    <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
+                      <AuditLogsPage />
+                    </div>
                   ),
                 },
               ]}

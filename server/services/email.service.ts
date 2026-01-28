@@ -1,16 +1,51 @@
-// Local email service for NexaCare Medical System
-// Shows email content immediately without external services
+// Email service for NexaCare Medical System
+// Supports SendGrid/Resend integration with fallback to mock mode
 
 export interface EmailData {
   to: string;
   subject: string;
   body: string;
+  html?: string; // Optional HTML body
   type?: 'appointment' | 'prescription' | 'lab_report' | 'notification' | 'reminder';
+}
+
+interface EmailConfig {
+  provider: 'sendgrid' | 'resend' | 'mock';
+  sendgridApiKey?: string;
+  sendgridFromEmail?: string;
+  sendgridFromName?: string;
+  resendApiKey?: string;
+  resendFromEmail?: string;
+  resendFromName?: string;
 }
 
 export class EmailService {
   private static instance: EmailService;
   private emails: EmailData[] = [];
+  private config: EmailConfig;
+
+  constructor() {
+    // Load configuration from environment variables
+    this.config = {
+      provider: (process.env.EMAIL_PROVIDER as 'sendgrid' | 'resend' | 'mock') || 'mock',
+      sendgridApiKey: process.env.SENDGRID_API_KEY,
+      sendgridFromEmail: process.env.SENDGRID_FROM_EMAIL || process.env.EMAIL_FROM || 'noreply@nexacare.com',
+      sendgridFromName: process.env.SENDGRID_FROM_NAME || 'NexaCare Medical System',
+      resendApiKey: process.env.RESEND_API_KEY,
+      resendFromEmail: process.env.RESEND_FROM_EMAIL || process.env.EMAIL_FROM || 'noreply@nexacare.com',
+      resendFromName: process.env.RESEND_FROM_NAME || 'NexaCare Medical System',
+    };
+
+    // Validate provider config
+    if (this.config.provider === 'sendgrid' && !this.config.sendgridApiKey) {
+      console.warn('⚠️  SendGrid provider selected but API key missing. Falling back to mock mode.');
+      this.config.provider = 'mock';
+    }
+    if (this.config.provider === 'resend' && !this.config.resendApiKey) {
+      console.warn('⚠️  Resend provider selected but API key missing. Falling back to mock mode.');
+      this.config.provider = 'mock';
+    }
+  }
 
   static getInstance(): EmailService {
     if (!EmailService.instance) {
@@ -19,18 +54,122 @@ export class EmailService {
     return EmailService.instance;
   }
 
-  // Send email (local only - no external service)
-  async sendEmail(emailData: EmailData): Promise<{ success: boolean; emailId: string }> {
+  // Send email via SendGrid, Resend, or mock
+  async sendEmail(emailData: EmailData): Promise<{ success: boolean; emailId: string; error?: string }> {
     const emailId = `email_${Date.now()}`;
     
-    // Store email locally
+    // Store email locally for tracking
     this.emails.push({
       ...emailData,
       type: emailData.type || 'notification'
     });
 
-    // Log to console
-    console.log(`\n📧 Email Generated:`);
+    // Send via configured provider
+    if (this.config.provider === 'sendgrid') {
+      try {
+        return await this.sendViaSendGrid(emailData, emailId);
+      } catch (error: any) {
+        console.error('❌ SendGrid email error:', error);
+        // Fallback to mock on error
+        return this.sendViaMock(emailData, emailId);
+      }
+    }
+
+    if (this.config.provider === 'resend') {
+      try {
+        return await this.sendViaResend(emailData, emailId);
+      } catch (error: any) {
+        console.error('❌ Resend email error:', error);
+        // Fallback to mock on error
+        return this.sendViaMock(emailData, emailId);
+      }
+    }
+
+    // Send via mock (console log)
+    return this.sendViaMock(emailData, emailId);
+  }
+
+  // Send email via SendGrid
+  private async sendViaSendGrid(emailData: EmailData, emailId: string): Promise<{ success: boolean; emailId: string; error?: string }> {
+    try {
+      // Dynamic import to avoid requiring @sendgrid/mail package if not installed
+      const sgMail = await import('@sendgrid/mail').catch(() => {
+        throw new Error('SendGrid package not installed. Run: npm install @sendgrid/mail');
+      });
+
+      sgMail.default.setApiKey(this.config.sendgridApiKey!);
+
+      const msg = {
+        to: emailData.to,
+        from: {
+          email: this.config.sendgridFromEmail!,
+          name: this.config.sendgridFromName!,
+        },
+        subject: emailData.subject,
+        text: emailData.body,
+        html: emailData.html || emailData.body.replace(/\n/g, '<br>'),
+      };
+
+      await sgMail.default.send(msg);
+
+      console.log(`\n📧 Email Sent via SendGrid:`);
+      console.log(`📬 To: ${emailData.to}`);
+      console.log(`📋 Subject: ${emailData.subject}`);
+      console.log(`🎯 Type: ${emailData.type || 'notification'}`);
+      console.log(`⏰ Sent: ${new Date().toLocaleString()}\n`);
+
+      return {
+        success: true,
+        emailId,
+      };
+    } catch (error: any) {
+      console.error('❌ SendGrid email error:', error.message);
+      throw error;
+    }
+  }
+
+  // Send email via Resend
+  private async sendViaResend(emailData: EmailData, emailId: string): Promise<{ success: boolean; emailId: string; error?: string }> {
+    try {
+      // Dynamic import to avoid requiring resend package if not installed
+      const { Resend } = await import('resend').catch(() => {
+        throw new Error('Resend package not installed. Run: npm install resend');
+      });
+
+      const resend = new Resend(this.config.resendApiKey!);
+
+      const { data, error } = await resend.emails.send({
+        from: `${this.config.resendFromName!} <${this.config.resendFromEmail!}>`,
+        to: emailData.to,
+        subject: emailData.subject,
+        text: emailData.body,
+        html: emailData.html || emailData.body.replace(/\n/g, '<br>'),
+      });
+
+      if (error) {
+        throw new Error(error.message || 'Resend API error');
+      }
+
+      console.log(`\n📧 Email Sent via Resend:`);
+      console.log(`📬 To: ${emailData.to}`);
+      console.log(`📋 Subject: ${emailData.subject}`);
+      console.log(`🆔 Resend ID: ${data?.id}`);
+      console.log(`🎯 Type: ${emailData.type || 'notification'}`);
+      console.log(`⏰ Sent: ${new Date().toLocaleString()}\n`);
+
+      return {
+        success: true,
+        emailId,
+      };
+    } catch (error: any) {
+      console.error('❌ Resend email error:', error.message);
+      throw error;
+    }
+  }
+
+  // Send email via mock (console log)
+  private sendViaMock(emailData: EmailData, emailId: string): { success: boolean; emailId: string } {
+    console.log(`\n📧 Email Generated (Mock Mode):`);
     console.log(`📬 To: ${emailData.to}`);
     console.log(`📋 Subject: ${emailData.subject}`);
     console.log(`📄 Body: ${emailData.body}`);

@@ -10,6 +10,7 @@ import { insertPrescriptionSchema } from "../../shared/schema";
 import { NotificationService } from "../services/localNotification.service";
 import * as medicineReminderService from "../services/medicine-reminder.service";
 import * as followupReminderService from "../services/followup-reminder.service"; 
+import { logAuditEvent } from "../services/audit.service";
 
 const router = Router();
 
@@ -51,6 +52,28 @@ router.post(
       const prescriptionData = { ...parsed, doctorId };
       
       const result = await prescriptionService.issuePrescription(prescriptionData);
+
+      // Audit: prescription created by doctor
+      try {
+        const created = Array.isArray(result) ? result[0] : result;
+        await logAuditEvent({
+          hospitalId: parsed.hospitalId,
+          patientId: parsed.patientId,
+          actorUserId: req.user!.id,
+          actorRole: req.user!.role || 'DOCTOR',
+          action: 'PRESCRIPTION_CREATED',
+          entityType: 'prescription',
+          entityId: created.id,
+          after: {
+            diagnosis: parsed.diagnosis,
+            medications: parsed.medications,
+            followUpDate: parsed.followUpDate,
+          },
+          summary: `Prescription #${created.id} created by doctor ${doctorId}`,
+        });
+      } catch (auditError) {
+        console.error('⚠️ Failed to log prescription audit event:', auditError);
+      }
       
       // Send notification to patient
       try {

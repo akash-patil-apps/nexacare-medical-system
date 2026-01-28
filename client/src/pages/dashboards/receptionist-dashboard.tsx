@@ -70,6 +70,7 @@ import { App } from 'antd';
 import { CheckOutlined, CloseOutlined, ReloadOutlined } from '@ant-design/icons';
 import LabReportViewerModal from '../../components/modals/lab-report-viewer-modal';
 import { QueuePanel } from '../../components/queue/QueuePanel';
+import { RescheduleRequestsQueue } from '../../components/appointments/RescheduleRequestsQueue';
 import { AdmissionModal, IpdEncountersList, TransferModal, DischargeModal } from '../../components/ipd';
 import type { IpdEncounter } from '../../types/ipd';
 import { InvoiceModal } from '../../components/billing/InvoiceModal';
@@ -178,6 +179,9 @@ export default function ReceptionistDashboard() {
   const [slotBookings, setSlotBookings] = useState<Record<string, number>>({});
   const [appointmentBookingStep, setAppointmentBookingStep] = useState(0); // 0: Doctor selection, 1: Date/Time selection, 2: Payment
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState<string | null>(null);
+  
+  // Reschedule requests state
+  const [rescheduleRequests, setRescheduleRequests] = useState<any[]>([]);
 
   // ALL HOOKS MUST BE CALLED BEFORE ANY CONDITIONAL RETURNS
   // Get appointments with auto-refresh
@@ -233,6 +237,7 @@ export default function ReceptionistDashboard() {
           checkedInAt: apt.checkedInAt ?? null,
           date: apt.appointmentDate,
           dateObj: appointmentDate,
+          notes: apt.notes || '',
         };
       });
       return transformed;
@@ -1766,20 +1771,49 @@ export default function ReceptionistDashboard() {
     return { color: 'blue', label: 'Online' };
   };
 
-  // Get payment status label
-  const getPaymentConfig = (paymentStatus?: string | null) => {
+  // Get payment status/method label for receptionist view
+  const getPaymentConfig = (paymentStatus?: string | null, record?: any) => {
     const normalized = (paymentStatus || '').toLowerCase();
+
+    let color: string = 'default';
+    let label: string = 'Not Recorded';
+
     if (normalized === 'paid') {
-      return { color: 'green', label: 'Paid' };
+      color = 'green';
+      label = 'Paid';
+    } else if (normalized === 'partial') {
+      color = 'gold';
+      label = 'Partial';
+    } else if (normalized === 'unpaid' || normalized === 'pending') {
+      color = 'red';
+      label = 'Not Paid';
     }
-    if (normalized === 'partial') {
-      return { color: 'gold', label: 'Partial' };
+
+    // Try to detect specific payment method from notes (set during booking)
+    const notes = (record?.notes || '').toString();
+    let methodLabel: string | null = null;
+    const methodMatch = notes.match(/Method:\s*([^\s|]+)/i);
+    if (methodMatch) {
+      const raw = methodMatch[1].toLowerCase();
+      if (raw === 'googlepay' || raw === 'gpay') methodLabel = 'Google Pay';
+      else if (raw === 'phonepe') methodLabel = 'PhonePe';
+      else if (raw === 'card') methodLabel = 'Card';
+      else if (raw === 'upi') methodLabel = 'UPI';
+      else if (raw === 'cash') methodLabel = 'Cash';
+      else methodLabel = raw.toUpperCase();
     }
-    if (normalized === 'unpaid' || normalized === 'pending') {
-      return { color: 'red', label: 'Not Paid' };
+
+    if (methodLabel) {
+      if (normalized === 'paid') {
+        label = `Paid (${methodLabel})`;
+      } else if (normalized === 'pending' || normalized === 'unpaid') {
+        label = `Pending (${methodLabel})`;
+      } else if (normalized === 'partial') {
+        label = `Partial (${methodLabel})`;
+      }
     }
-    // Default when we don't yet track payments
-    return { color: 'default', label: 'Not Recorded' };
+
+    return { color, label };
   };
 
   // Check if appointment is overdue
@@ -2107,8 +2141,7 @@ export default function ReceptionistDashboard() {
               return <Tag color={src.color} style={{ margin: 0 }}>{src.label}</Tag>;
             })()}
             {(() => {
-              const invoice = appointmentInvoices[record.id];
-              const pay = getPaymentConfig(record.paymentStatus, invoice);
+              const pay = getPaymentConfig(record.paymentStatus, record);
               return <Tag color={pay.color} style={{ margin: 0 }}>{pay.label}</Tag>;
             })()}
           </Space>
@@ -3788,6 +3821,67 @@ export default function ReceptionistDashboard() {
                         </div>
                       </Card>
                     ),
+                  },
+                  {
+                    key: 'reschedule-requests',
+                    label: (
+                      <Space>
+                        <span>Reschedule Requests</span>
+                        {(() => {
+                          const pendingCount = rescheduleRequests.filter((r: any) => r.status === 'requested').length;
+                          return pendingCount > 0 ? (
+                            <Tag color="orange" style={{ margin: 0 }}>{pendingCount}</Tag>
+                          ) : null;
+                        })()}
+                      </Space>
+                    ),
+                    children: <RescheduleRequestsQueue 
+                      hospitalId={hospitalId}
+                      onApprove={async (requestId: number) => {
+                        try {
+                          const token = localStorage.getItem('auth-token');
+                          const response = await fetch(`/api/appointments/reschedule-requests/${requestId}/approve`, {
+                            method: 'PATCH',
+                            headers: {
+                              'Authorization': `Bearer ${token}`,
+                              'Content-Type': 'application/json',
+                            },
+                          });
+                          if (response.ok) {
+                            message.success('Reschedule request approved');
+                            await refetchRescheduleRequests();
+                            await refetchAppointments();
+                          } else {
+                            const error = await response.json();
+                            message.error(error.message || 'Failed to approve request');
+                          }
+                        } catch (error: any) {
+                          message.error(error.message || 'Failed to approve request');
+                        }
+                      }}
+                      onReject={async (requestId: number, reason: string) => {
+                        try {
+                          const token = localStorage.getItem('auth-token');
+                          const response = await fetch(`/api/appointments/reschedule-requests/${requestId}/reject`, {
+                            method: 'PATCH',
+                            headers: {
+                              'Authorization': `Bearer ${token}`,
+                              'Content-Type': 'application/json',
+                            },
+                            body: JSON.stringify({ rejectionReason: reason }),
+                          });
+                          if (response.ok) {
+                            message.success('Reschedule request rejected');
+                            await refetchRescheduleRequests();
+                          } else {
+                            const error = await response.json();
+                            message.error(error.message || 'Failed to reject request');
+                          }
+                        } catch (error: any) {
+                          message.error(error.message || 'Failed to reject request');
+                        }
+                      }}
+                    />,
                   },
                 ]}
               />

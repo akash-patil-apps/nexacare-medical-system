@@ -6,7 +6,10 @@ import { sql } from 'drizzle-orm';
 import type { InsertAppointment } from '../../shared/schema';
 import { emitAppointmentChanged } from '../events/appointments.events';
 import { createNotification } from './notifications.service';
+import { smsService } from './sms.service';
+import { emailService } from './email.service';
 import * as billingService from './billing.service';
+import { logAuditEvent } from './audit.service';
 
 /**
  * Book a new appointment.
@@ -860,8 +863,19 @@ function parseAppointmentStartTime(appointmentDate: Date | string, timeSlot: str
  * Cancel appointment.
  * - Patients can cancel appointments BEFORE receptionist confirmation (full refund)
  * - Patients can cancel appointments AFTER receptionist confirmation (10% cancellation fee, 90% refund)
+ *
+ * `auditContext` is optional metadata about who performed the action and from where.
  */
-export const cancelAppointment = async (appointmentId: number, userId: number, cancellationReason?: string) => {
+export const cancelAppointment = async (
+  appointmentId: number,
+  userId: number,
+  cancellationReason?: string,
+  auditContext?: {
+    actorRole?: string;
+    ipAddress?: string;
+    userAgent?: string;
+  }
+) => {
   console.log(`📅 Cancelling appointment ${appointmentId}${cancellationReason ? ` with reason: ${cancellationReason}` : ''}`);
   
   try {
@@ -1006,6 +1020,36 @@ export const cancelAppointment = async (appointmentId: number, userId: number, c
     
     console.log(`✅ Appointment ${appointmentId} cancelled${cancellationReason ? ` with reason: ${cancellationReason}` : ''}${refundInfo ? `. Refund: ₹${refundInfo.refundAmount}` : ''}`);
     await emitAppointmentChanged(result.id, "cancelled");
+    
+    // Best-effort audit log for cancellation
+    try {
+      await logAuditEvent({
+        hospitalId: existingAppointment.hospitalId || undefined,
+        patientId: existingAppointment.patientId || undefined,
+        actorUserId: userId,
+        actorRole: auditContext?.actorRole || 'PATIENT',
+        action: 'APPOINTMENT_CANCELLED',
+        entityType: 'appointment',
+        entityId: result.id,
+        before: {
+          status: existingAppointment.status,
+          appointmentDate: existingAppointment.appointmentDate,
+          timeSlot: existingAppointment.timeSlot,
+        },
+        after: {
+          status: result.status,
+          cancellationReason: cancellationReason || null,
+          isConfirmed,
+          refundInfo,
+        },
+        reason: cancellationReason || undefined,
+        summary: `Appointment #${result.id} cancelled by ${auditContext?.actorRole || 'PATIENT'}`,
+        ipAddress: auditContext?.ipAddress,
+        userAgent: auditContext?.userAgent,
+      });
+    } catch (auditError) {
+      console.error('⚠️ Failed to log appointment cancellation audit event:', auditError);
+    }
     
     // Return result with refund info
     return {
@@ -1194,7 +1238,34 @@ export const confirmAppointmentByReceptionist = async (appointmentId: number, re
         : String(result.appointmentDate).slice(0, 10);
       const timeSlot = String(result.timeSlot || '').trim();
 
+      // Format date for display
+      const appointmentDateFormatted = result.appointmentDate instanceof Date
+        ? result.appointmentDate.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })
+        : appointmentDate;
+
       if (patientRow?.userId) {
+        // Get patient user details for SMS/Email
+        const [patientUser] = await db
+          .select({ 
+            fullName: users.fullName,
+            mobileNumber: users.mobileNumber,
+            email: users.email,
+          })
+          .from(users)
+          .where(eq(users.id, patientRow.userId))
+          .limit(1);
+
+        // Get doctor name for notification
+        const [doctorUser] = doctorRow?.userId
+          ? await db
+              .select({ fullName: users.fullName })
+              .from(users)
+              .where(eq(users.id, doctorRow.userId))
+              .limit(1)
+          : [null];
+        const doctorName = doctorUser?.fullName || 'Doctor';
+
+        // Create in-app notification
         await createNotification({
           userId: patientRow.userId,
           type: 'appointment_confirmed',
@@ -1204,6 +1275,38 @@ export const confirmAppointmentByReceptionist = async (appointmentId: number, re
           relatedType: 'appointment',
         });
         console.log(`✅ Created confirmation notification for patient userId ${patientRow.userId}`);
+
+        // Send SMS notification
+        if (patientUser?.mobileNumber) {
+          try {
+            await smsService.sendAppointmentConfirmation(
+              patientUser.mobileNumber,
+              patientUser.fullName || 'Patient',
+              doctorName,
+              appointmentDateFormatted,
+              timeSlot
+            );
+            console.log(`✅ Sent SMS confirmation to patient ${patientUser.mobileNumber}`);
+          } catch (smsError: any) {
+            console.error(`⚠️ Failed to send SMS confirmation: ${smsError.message}`);
+          }
+        }
+
+        // Send Email notification
+        if (patientUser?.email) {
+          try {
+            await emailService.sendAppointmentConfirmation(
+              patientUser.email,
+              patientUser.fullName || 'Patient',
+              doctorName,
+              appointmentDateFormatted,
+              timeSlot
+            );
+            console.log(`✅ Sent email confirmation to patient ${patientUser.email}`);
+          } catch (emailError: any) {
+            console.error(`⚠️ Failed to send email confirmation: ${emailError.message}`);
+          }
+        }
       }
 
       if (doctorRow?.userId) {
@@ -1230,7 +1333,40 @@ export const confirmAppointmentByReceptionist = async (appointmentId: number, re
       console.error('⚠️ Failed to create confirmation notifications:', e);
       // Don't throw - appointment confirmation should succeed even if notification fails
     }
-    
+
+    // Audit log: appointment confirmed by receptionist
+    try {
+      // Look up receptionist userId (actor)
+      const [receptionist] = await db
+        .select({ userId: receptionists.userId, hospitalId: receptionists.hospitalId })
+        .from(receptionists)
+        .where(eq(receptionists.id, receptionistId))
+        .limit(1);
+
+      await logAuditEvent({
+        hospitalId: existingAppointment.hospitalId || receptionist?.hospitalId || undefined,
+        patientId: existingAppointment.patientId || undefined,
+        actorUserId: receptionist?.userId || 0,
+        actorRole: 'RECEPTIONIST',
+        action: 'APPOINTMENT_CONFIRMED',
+        entityType: 'appointment',
+        entityId: result.id,
+        before: {
+          status: existingAppointment.status,
+          tokenNumber: existingAppointment.tokenNumber,
+        },
+        after: {
+          status: result.status,
+          tokenNumber: result.tokenNumber,
+          receptionistId,
+        },
+        summary: `Appointment #${result.id} confirmed by receptionist`,
+      });
+    } catch (auditError) {
+      console.error('⚠️ Failed to log appointment confirmation audit event:', auditError);
+      // Do not block main flow on audit failures
+    }
+
     await emitAppointmentChanged(result.id, "confirmed");
     return result;
   } catch (error) {
@@ -1424,7 +1560,7 @@ export const rescheduleAppointment = async (
     timeSlot: string; // HH:mm-HH:mm
     rescheduleReason: string;
   },
-  actor: { userId: number; receptionistId?: number }
+  actor: { userId: number; receptionistId?: number; actorRole?: string }
 ) => {
   const { appointmentDate, appointmentTime, timeSlot, rescheduleReason } = input;
   if (!appointmentDate || !appointmentTime || !timeSlot) {
@@ -1581,6 +1717,32 @@ export const rescheduleAppointment = async (
     }
   } catch (e) {
     console.warn('⚠️ Failed to create reschedule notifications:', e);
+  }
+
+  // Best-effort audit log for reschedule apply (appointment-level)
+  try {
+    await logAuditEvent({
+      hospitalId: (updated as any).hospitalId || undefined,
+      patientId: (updated as any).patientId || undefined,
+      actorUserId: actor.userId,
+      actorRole: actor.actorRole || 'RECEPTIONIST',
+      action: 'APPOINTMENT_RESCHEDULED',
+      entityType: 'appointment',
+      entityId: (updated as any).id,
+      before: {
+        appointmentDate: (updated as any).rescheduledFromDate,
+        timeSlot: (updated as any).rescheduledFromTimeSlot,
+      },
+      after: {
+        appointmentDate: (updated as any).appointmentDate,
+        timeSlot: (updated as any).timeSlot,
+        rescheduleReason: (updated as any).rescheduleReason,
+      },
+      reason: rescheduleReason,
+      summary: `Appointment #${(updated as any).id} rescheduled`,
+    });
+  } catch (auditError) {
+    console.error('⚠️ Failed to log appointment reschedule audit event:', auditError);
   }
 
   return updated;

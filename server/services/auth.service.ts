@@ -5,6 +5,7 @@ import { eq, desc, and } from 'drizzle-orm';
 import { db } from '../db';
 import { users, otpVerifications } from '../../shared/schema';
 import { generateOTP, isOtpExpired } from '../utils/otp';
+import { smsService } from './sms.service';
 import type {
   InsertUser,
 } from '../../shared/schema-types';
@@ -37,8 +38,22 @@ export const sendOtp = async (mobileNumber: string, role: string) => {
     isUsed: false,
   });
 
-  console.log(`✅ OTP ${otp} sent to ${mobileNumber} (expires in 5 minutes)`);
-  return { success: true, otp }; // Return OTP for development
+  // Send OTP via SMS service (will use Twilio if configured, otherwise mock)
+  try {
+    await smsService.sendOTP(mobileNumber, otp, 'verification');
+    console.log(`✅ OTP sent to ${mobileNumber} via SMS service`);
+  } catch (error: any) {
+    console.error(`⚠️  Failed to send OTP via SMS: ${error.message}`);
+    // Still return success - OTP is stored and can be verified
+    // In development, OTP is also returned in response
+  }
+
+  // Return OTP for development/testing (remove in production)
+  const isDevelopment = process.env.NODE_ENV !== 'production';
+  return { 
+    success: true, 
+    ...(isDevelopment && { otp }) // Only return OTP in development
+  };
 };
 
 /**
@@ -140,8 +155,22 @@ export const sendLoginOtp = async (mobileNumber: string) => {
     isUsed: false,
   });
 
-  console.log(`✅ Login OTP ${otp} sent to ${mobileNumber}`);
-  return { success: true, otp }; // Return OTP for development
+  // Send OTP via SMS service (will use Twilio if configured, otherwise mock)
+  try {
+    await smsService.sendOTP(mobileNumber, otp, 'login');
+    console.log(`✅ Login OTP sent to ${mobileNumber} via SMS service`);
+  } catch (error: any) {
+    console.error(`⚠️  Failed to send login OTP via SMS: ${error.message}`);
+    // Still return success - OTP is stored and can be verified
+    // In development, OTP is also returned in response
+  }
+
+  // Return OTP for development/testing (remove in production)
+  const isDevelopment = process.env.NODE_ENV !== 'production';
+  return { 
+    success: true, 
+    ...(isDevelopment && { otp }) // Only return OTP in development
+  };
 };
 
 /**

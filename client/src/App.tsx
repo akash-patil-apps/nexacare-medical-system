@@ -32,6 +32,9 @@ import DoctorOnboarding from './pages/onboarding/doctor-onboarding';
 import ReceptionistOnboarding from './pages/onboarding/receptionist-onboarding';
 import LabOnboarding from './pages/onboarding/lab-onboarding';
 import RevenueDetails from './pages/revenue/revenue-details';
+import PaymentCheckout from './pages/payment/checkout';
+import PaymentSuccess from './pages/payment/success';
+import PaymentFailure from './pages/payment/failure';
 import NotFound from './pages/not-found';
 
 // Create a client
@@ -94,6 +97,9 @@ function AppWrapper({ children }: { children: React.ReactNode }) {
     '/onboarding/doctor',
     '/onboarding/receptionist',
     '/onboarding/lab',
+    '/payment/checkout',
+    '/payment/success',
+    '/payment/failure',
   ];
   
   // Check if current location matches any no-container route (exact match or starts with)
@@ -156,6 +162,11 @@ function App() {
                   {/* Appointment Booking */}
                   <Route path="/book-appointment" component={BookAppointment} />
                   <Route path="/appointments" component={PatientAppointments} />
+                  
+                  {/* Payment Routes */}
+                  <Route path="/payment/checkout" component={PaymentCheckout} />
+                  <Route path="/payment/success" component={PaymentSuccess} />
+                  <Route path="/payment/failure" component={PaymentFailure} />
                   
                   {/* Catch all route */}
                   <Route component={NotFound} />

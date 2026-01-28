@@ -11,6 +11,7 @@ import {
   radiologyTechnicians,
 } from "../../shared/schema";
 import { eq, and, sql, desc, inArray } from "drizzle-orm";
+import { logAuditEvent } from "./audit.service";
 
 /**
  * Create radiology order
@@ -315,6 +316,17 @@ export const releaseRadiologyReport = async (data: {
   releasedByUserId: number;
 }) => {
   try {
+    // Get existing report for context
+    const [existing] = await db
+      .select()
+      .from(radiologyReports)
+      .where(eq(radiologyReports.id, data.reportId))
+      .limit(1);
+
+    if (!existing) {
+      throw new Error("Radiology report not found");
+    }
+
     await db
       .update(radiologyReports)
       .set({
@@ -323,6 +335,28 @@ export const releaseRadiologyReport = async (data: {
         releasedAt: new Date(),
       })
       .where(eq(radiologyReports.id, data.reportId));
+
+    // Best-effort audit log for radiology report release
+    try {
+      await logAuditEvent({
+        hospitalId: (existing as any).hospitalId || undefined,
+        patientId: (existing as any).patientId || undefined,
+        actorUserId: data.releasedByUserId,
+        actorRole: "RADIOLOGY",
+        action: "RADIOLOGY_REPORT_RELEASED",
+        entityType: "radiology_report",
+        entityId: data.reportId,
+        before: {
+          status: (existing as any).status,
+        },
+        after: {
+          status: "released",
+        },
+        summary: `Radiology report #${data.reportId} released`,
+      });
+    } catch (auditError) {
+      console.error("⚠️ Failed to log radiology report release audit event:", auditError);
+    }
 
     return { success: true };
   } catch (error) {
