@@ -1,6 +1,6 @@
 import React, { useMemo } from 'react';
 import { Button, message } from 'antd';
-import { SettingOutlined, UserOutlined, BellOutlined, LogoutOutlined } from '@ant-design/icons';
+import { SettingOutlined, UserOutlined, BellOutlined, LogoutOutlined, MessageOutlined } from '@ant-design/icons';
 import { DashboardIcon } from '../../assets/icons/DashboardIcon';
 import { AppointmentIcon } from '../../assets/icons/AppointmentIcon';
 import { PrescriptionIcon } from '../../assets/icons/PrescriptionIcon';
@@ -36,6 +36,9 @@ export const PatientSidebar: React.FC<PatientSidebarProps> = ({
       case 'reports':
         message.info('Lab reports page coming soon.');
         break;
+      case 'messages':
+        setLocation('/messages');
+        break;
       default:
         break;
     }
@@ -67,7 +70,7 @@ export const PatientSidebar: React.FC<PatientSidebarProps> = ({
           background: '#E3F2FF', // Light blue background for active state
           borderRadius: '8px',
         }}
-        onClick={() => message.info('Profile coming soon.')}
+        onClick={() => setLocation('/dashboard/profile')}
       />
 
       {/* Navigation Icons - Vertical Stack */}
@@ -130,6 +133,21 @@ export const PatientSidebar: React.FC<PatientSidebarProps> = ({
             borderRadius: '8px',
           }}
           onClick={() => handleMenuClick('reports')}
+        />
+
+        <Button
+          type="text"
+          icon={<MessageOutlined style={{ fontSize: '20px', color: selectedMenuKey === 'messages' ? '#1A8FE3' : '#6B7280' }} />}
+          style={{
+            width: '48px',
+            height: '48px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            background: selectedMenuKey === 'messages' ? '#E3F2FF' : 'transparent',
+            borderRadius: '8px',
+          }}
+          onClick={() => handleMenuClick('messages')}
         />
       </div>
 

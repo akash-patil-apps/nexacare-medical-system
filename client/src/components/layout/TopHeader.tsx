@@ -1,8 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { 
   Input, 
   Avatar, 
-  Badge, 
+  Badge,
   Button, 
   Dropdown, 
   Space, 
@@ -10,6 +10,7 @@ import {
   Breadcrumb,
   message,
 } from 'antd';
+import type { MenuProps } from 'antd';
 import {
   SearchOutlined,
   BellOutlined,
@@ -20,9 +21,12 @@ import {
   LogoutOutlined,
   MoonOutlined,
   SunOutlined,
+  SwapOutlined,
 } from '@ant-design/icons';
 import { useAuth } from '../../hooks/use-auth';
 import { useLocation } from 'wouter';
+import { useQuery } from '@tanstack/react-query';
+import { useActingPatient } from '../../hooks/use-acting-patient';
 import { NotificationBell } from '../notifications/NotificationBell';
 
 const { Text } = Typography;
@@ -45,10 +49,74 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
   notificationCount = 0,
   onSearch,
 }) => {
-  const { logout } = useAuth();
-  const [location, setLocation] = useLocation();
+  const { logout, user } = useAuth();
+  const [, setLocation] = useLocation();
   const [searchQuery, setSearchQuery] = useState('');
   const [isDarkMode, setIsDarkMode] = useState(false);
+  const [actingPatientId, setActingPatientId] = useActingPatient();
+  const isPatient = user?.role?.toUpperCase() === 'PATIENT';
+
+  const { data: patientProfile } = useQuery({
+    queryKey: ['/api/patients/profile', 'header'],
+    queryFn: async () => {
+      const token = localStorage.getItem('auth-token');
+      const res = await fetch('/api/patients/profile', { headers: { Authorization: `Bearer ${token}` } });
+      if (!res.ok) return null;
+      return res.json();
+    },
+    enabled: !!user && isPatient,
+  });
+
+  const { data: familyMembers = [] } = useQuery({
+    queryKey: ['/api/patients/family-members', 'header'],
+    queryFn: async () => {
+      const token = localStorage.getItem('auth-token');
+      const res = await fetch('/api/patients/family-members', { headers: { Authorization: `Bearer ${token}` } });
+      if (!res.ok) return [];
+      return res.json();
+    },
+    enabled: !!user && isPatient,
+  });
+
+  // Get acting patient info if switched
+  const { data: actingPatientInfo } = useQuery({
+    queryKey: ['/api/patients', actingPatientId, 'header'],
+    queryFn: async () => {
+      if (!actingPatientId || !isPatient) return null;
+      const token = localStorage.getItem('auth-token');
+      const res = await fetch(`/api/patients/profile-by-id/${actingPatientId}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) return null;
+      return res.json();
+    },
+    enabled: !!user && isPatient && !!actingPatientId,
+  });
+
+  // Determine display name: acting patient or main user
+  const displayName = actingPatientInfo?.user?.fullName || userName;
+  const displayInitials = useMemo(() => {
+    if (actingPatientInfo?.user?.fullName) {
+      const names = actingPatientInfo.user.fullName.split(' ');
+      if (names.length >= 2) {
+        return `${names[0][0]}${names[1][0]}`.toUpperCase();
+      }
+      return actingPatientInfo.user.fullName.substring(0, 2).toUpperCase();
+    }
+    return userInitials;
+  }, [actingPatientInfo, userInitials]);
+
+  // Determine display ID: use acting patient's ID if switched, otherwise use passed userId
+  const displayUserId = useMemo(() => {
+    if (actingPatientInfo?.id) {
+      // Use the acting patient's patient ID to generate the formatted ID
+      // actingPatientInfo structure: { id: patientId, userId, ..., user: {...} }
+      const year = new Date().getFullYear();
+      const idNum = String(actingPatientInfo.id).padStart(3, '0');
+      return `PAT-${year}-${idNum}`;
+    }
+    return userId; // Fall back to the passed userId prop (for main user or non-patient roles)
+  }, [actingPatientInfo?.id, userId]);
 
   const handleSearch = (value: string) => {
     setSearchQuery(value);
@@ -57,30 +125,82 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
     }
   };
 
-  const userMenuItems = [
-    {
-      key: 'profile',
-      label: 'Profile',
-      icon: <UserOutlined />,
-      onClick: () => message.info('Profile coming soon.'),
+  // Unread message count for Messages icon badge
+  const { data: unreadMessagesData } = useQuery({
+    queryKey: ['/api/messages/unread-count'],
+    queryFn: async () => {
+      const token = localStorage.getItem('auth-token');
+      const res = await fetch('/api/messages/unread-count', { headers: { Authorization: `Bearer ${token}` } });
+      if (!res.ok) return { count: 0 };
+      return res.json() as Promise<{ count: number }>;
     },
-    {
-      key: 'settings',
-      label: 'Settings',
-      icon: <SettingOutlined />,
-      onClick: () => message.info('Settings coming soon.'),
-    },
-    {
-      type: 'divider' as const,
-    },
-    {
-      key: 'logout',
-      label: 'Logout',
-      icon: <LogoutOutlined />,
-      danger: true,
-      onClick: () => logout(),
-    },
-  ];
+    enabled: !!user,
+    staleTime: 10_000,
+    refetchInterval: 30_000,
+  });
+  const unreadMessageCount = unreadMessagesData?.count ?? 0;
+
+  const switchAccountChildren: MenuProps['items'] = useMemo(() => {
+    if (!isPatient || !patientProfile?.id) return undefined;
+    const items: NonNullable<MenuProps['items']> = [
+      {
+        key: 'switch-self',
+        label: 'Self',
+        onClick: () => {
+          setActingPatientId(null);
+          message.success('Now using your own account');
+        },
+      },
+    ];
+    familyMembers.forEach((m: { relatedPatientId: number; relationship: string; fullName: string }) => {
+      const label = `${m.relationship.charAt(0).toUpperCase() + m.relationship.slice(1)} (${m.fullName})`;
+      items.push({
+        key: `switch-${m.relatedPatientId}`,
+        label,
+        onClick: () => {
+          setActingPatientId(m.relatedPatientId);
+          message.success(`Now booking as ${m.fullName}`);
+        },
+      });
+    });
+    return items;
+  }, [isPatient, patientProfile?.id, familyMembers, setActingPatientId]);
+
+  const userMenuItems: MenuProps['items'] = useMemo(() => {
+    const items: MenuProps['items'] = [
+      {
+        key: 'profile',
+        label: 'Profile',
+        icon: <UserOutlined />,
+        onClick: () => setLocation('/dashboard/profile'),
+      },
+      {
+        key: 'settings',
+        label: 'Settings',
+        icon: <SettingOutlined />,
+        onClick: () => message.info('Settings coming soon.'),
+      },
+    ];
+    if (switchAccountChildren && switchAccountChildren.length > 0) {
+      items.push({
+        key: 'switch-account',
+        label: 'Switch account',
+        icon: <SwapOutlined />,
+        children: switchAccountChildren,
+      });
+    }
+    items.push(
+      { type: 'divider' },
+      {
+        key: 'logout',
+        label: 'Logout',
+        icon: <LogoutOutlined />,
+        danger: true,
+        onClick: () => logout(),
+      }
+    );
+    return items;
+  }, [setLocation, switchAccountChildren, logout]);
 
   return (
     <div
@@ -154,12 +274,15 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
         />
 
         {/* Messages */}
-        <Button
-          type="text"
-          icon={<MessageOutlined style={{ fontSize: '18px', color: '#8C8C8C' }} />}
-          style={{ color: '#8C8C8C' }}
-          onClick={() => message.info('Messages coming soon.')}
-        />
+        <Badge count={unreadMessageCount} size="small" offset={[-4, 4]}>
+          <Button
+            type="text"
+            icon={<MessageOutlined style={{ fontSize: '18px', color: '#8C8C8C' }} />}
+            style={{ color: '#8C8C8C' }}
+            title="Messages"
+            onClick={() => setLocation('/messages')}
+          />
+        </Badge>
 
         {/* Phone */}
         <Button
@@ -204,14 +327,14 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
                 fontWeight: 600,
               }}
             >
-              {userInitials}
+              {displayInitials}
             </Avatar>
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start' }}>
               <Text strong style={{ fontSize: '13px', lineHeight: 1.2 }}> {/* Reduced from 14px */}
-                {userName}
+                {displayName}
               </Text>
               <Text style={{ fontSize: '11px', color: '#8C8C8C', lineHeight: 1.2 }}> {/* Reduced from 12px */}
-                {userId}
+                {displayUserId}
               </Text>
             </div>
             <SettingOutlined style={{ fontSize: '14px', color: '#8C8C8C' }} /> {/* Reduced from 16px */}

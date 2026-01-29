@@ -1,6 +1,6 @@
 import React, { useMemo } from 'react';
 import { Button, message } from 'antd';
-import { UserOutlined, TeamOutlined, CalendarOutlined, UserAddOutlined, PhoneOutlined, LogoutOutlined } from '@ant-design/icons';
+import { UserOutlined, TeamOutlined, CalendarOutlined, UserAddOutlined, PhoneOutlined, MessageOutlined, LogoutOutlined } from '@ant-design/icons';
 import { useLocation } from 'wouter';
 import { useAuth } from '../../hooks/use-auth';
 
@@ -31,7 +31,10 @@ export const ReceptionistSidebar: React.FC<ReceptionistSidebarProps> = ({
         message.info('Walk-in registration is available from the dashboard.');
         break;
       case 'contacts':
-        message.info('Contact directory coming soon.');
+        setLocation('/dashboard/receptionist/contact-directory');
+        break;
+      case 'messages':
+        setLocation('/messages');
         break;
       default:
         break;
@@ -63,7 +66,7 @@ export const ReceptionistSidebar: React.FC<ReceptionistSidebarProps> = ({
           background: '#E3F2FF', // Light blue background for active user icon
           borderRadius: '8px',
         }}
-        onClick={() => message.info('Profile coming soon.')}
+        onClick={() => setLocation('/dashboard/profile')}
       />
 
       {/* Navigation Icons - Vertical Stack */}
@@ -120,12 +123,28 @@ export const ReceptionistSidebar: React.FC<ReceptionistSidebarProps> = ({
             width: '48px',
             height: '48px',
               display: 'flex',
-              alignItems: 'center',
+            alignItems: 'center',
             justifyContent: 'center',
             background: selectedMenuKey === 'contacts' ? '#E3F2FF' : 'transparent',
             borderRadius: '8px',
           }}
           onClick={() => handleMenuClick('contacts')}
+        />
+
+        <Button
+          type="text"
+          icon={<MessageOutlined style={{ fontSize: '20px', color: selectedMenuKey === 'messages' ? '#1A8FE3' : '#6B7280' }} />}
+          style={{
+            width: '48px',
+            height: '48px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            background: selectedMenuKey === 'messages' ? '#E3F2FF' : 'transparent',
+            borderRadius: '8px',
+          }}
+          onClick={() => handleMenuClick('messages')}
+          title="Messages"
         />
               </div>
               
