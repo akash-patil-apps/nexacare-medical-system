@@ -68,6 +68,33 @@ export function isSameDayIST(a: Date | string | null, b: Date | string | null): 
   return dayA.getTime() === dayB.getTime();
 }
 
+/** IST offset in milliseconds (UTC+5:30). */
+const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
+
+/**
+ * Get the calendar date (YYYY-MM-DD) in IST for a given moment.
+ * Use this for grouping (e.g. revenue by day) so today in India is consistent.
+ */
+export function getCalendarDateIST(date?: Date | string | null): string {
+  if (!date) {
+    const now = new Date();
+    const istMs = now.getTime() + IST_OFFSET_MS;
+    const istDate = new Date(istMs);
+    const y = istDate.getUTCFullYear();
+    const m = istDate.getUTCMonth() + 1;
+    const d = istDate.getUTCDate();
+    return `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+  }
+  const d = typeof date === 'string' ? new Date(date) : date;
+  if (isNaN(d.getTime())) return '';
+  const istMs = d.getTime() + IST_OFFSET_MS;
+  const istDate = new Date(istMs);
+  const y = istDate.getUTCFullYear();
+  const m = istDate.getUTCMonth() + 1;
+  const day = istDate.getUTCDate();
+  return `${y}-${String(m).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+}
+
 /**
  * Format date in IST for display
  * Uses dayjs if available, otherwise falls back to toLocaleString

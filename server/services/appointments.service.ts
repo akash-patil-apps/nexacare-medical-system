@@ -1,5 +1,6 @@
 // server/services/appointments.service.ts
 import { db } from '../db';
+import { retryDbOperation } from '../utils/db-retry';
 import { appointments, patients, doctors, hospitals, users, receptionists, invoices } from '../../shared/schema';
 import { eq, and, desc, ne } from 'drizzle-orm';
 import { sql } from 'drizzle-orm';
@@ -10,6 +11,56 @@ import { smsService } from './sms.service';
 import { emailService } from './email.service';
 import * as billingService from './billing.service';
 import { logAuditEvent } from './audit.service';
+import * as queueService from './queue.service';
+import {
+  getSlotKeyFromAppointment,
+  formatTokenIdentifier,
+  getMaxPatientsPerSlot,
+  type SlotKey,
+} from './opd-token';
+
+/** Parse appointmentTime (e.g. "09:00", "14:30", "02:30 PM") to minutes since midnight for ordering. */
+function parseAppointmentTimeToMinutes(t: string | null | undefined): number {
+  const s = (t || '').trim();
+  const m = s.match(/^(\d{1,2}):(\d{2})/);
+  if (!m) return 0;
+  let h = parseInt(m[1], 10);
+  const min = parseInt(m[2], 10);
+  if (/pm/i.test(s) && h < 12) h += 12;
+  if (/am/i.test(s) && h === 12) h = 0;
+  return h * 60 + min;
+}
+
+/**
+ * Next sequence number for a slot (doctor/date/slotKey). Used to assign token_identifier at book time.
+ * Counts existing appointments in same slot; returns min(count+1, maxPatientsPerSlot).
+ */
+async function getNextSeqForSlot(
+  dbOrTx: typeof db,
+  doctorId: number,
+  dateStr: string,
+  slotKey: SlotKey
+): Promise<number> {
+  const rows = await dbOrTx
+    .select({
+      appointmentTime: appointments.appointmentTime,
+      timeSlot: appointments.timeSlot,
+    })
+    .from(appointments)
+    .where(
+      and(
+        eq(appointments.doctorId, doctorId),
+        sql`DATE(${appointments.appointmentDate}) = ${sql.raw(`'${dateStr}'::date`)}`,
+        sql`${appointments.status} != 'cancelled'`,
+      ),
+    );
+  const inSlot = rows.filter((r) => {
+    const key = getSlotKeyFromAppointment(r.appointmentTime, r.timeSlot);
+    return key.hour === slotKey.hour && key.half === slotKey.half;
+  });
+  const maxPerSlot = getMaxPatientsPerSlot(doctorId, dateStr);
+  return Math.min(inSlot.length + 1, maxPerSlot);
+}
 
 /**
  * Book a new appointment.
@@ -37,11 +88,8 @@ export const bookAppointment = async (
       return ist.toISOString().slice(0, 10);
     })();
 
-    // Best real-life logic:
-    // - Walk-in for TODAY => patient is present => checked-in + token now
-    // - Walk-in for FUTURE DATE => patient not present => confirmed (no token, no check-in)
-    const isWalkInToday = isWalkIn && appointmentDayStr === todayISTStr;
-    const initialStatus = isWalkIn ? (isWalkInToday ? 'checked-in' : 'confirmed') : 'pending';
+    // Spec: booking alone never inserts into active queue. Walk-in today = confirmed only; check-in adds to queue.
+    const initialStatus = isWalkIn ? 'confirmed' : 'pending';
 
     const appointment = await db.transaction(async (tx) => {
       // Convert appointmentDate to Date object if it's a string
@@ -70,20 +118,26 @@ export const bookAppointment = async (
         throw new Error(`Missing required fields: ${!data.appointmentTime ? 'appointmentTime ' : ''}${!data.timeSlot ? 'timeSlot ' : ''}${!data.reason ? 'reason' : ''}`);
       }
 
+      // Assign stable token_identifier at book time (all bookings: online and walk-in)
+      const slotKey = getSlotKeyFromAppointment(data.appointmentTime, data.timeSlot);
+      const nextSeq = await getNextSeqForSlot(tx, data.doctorId, appointmentDayStr, slotKey);
+      const tokenIdentifier = formatTokenIdentifier(slotKey, nextSeq);
+
       const appointmentValues: any = {
-      patientId: data.patientId,
-      doctorId: data.doctorId,
-      hospitalId: data.hospitalId,
-      appointmentDate: appointmentDateValue,
-      appointmentTime: data.appointmentTime, // Required, never null
-      timeSlot: data.timeSlot, // Required, never null
-      reason: data.reason, // Required, never null
+        patientId: data.patientId,
+        doctorId: data.doctorId,
+        hospitalId: data.hospitalId,
+        appointmentDate: appointmentDateValue,
+        appointmentTime: data.appointmentTime,
+        timeSlot: data.timeSlot,
+        reason: data.reason,
         status: initialStatus,
         type: appointmentType,
-      priority: data.priority || 'normal',
-      symptoms: data.symptoms || '',
-      notes: data.notes || '',
+        priority: data.priority || 'normal',
+        symptoms: data.symptoms || '',
+        notes: data.notes || '',
         createdBy: user.id,
+        tokenIdentifier,
       };
 
       // If receptionist is booking, also set receptionistId
@@ -98,58 +152,14 @@ export const bookAppointment = async (
         }
       }
 
-      // Walk-in: always set confirmedAt; only set checkedInAt + token when it is a walk-in for TODAY.
+      // Walk-in: confirmed at booking; patient enters queue only after check-in (no auto check-in)
       if (isWalkIn) {
         appointmentValues.confirmedAt = sql`NOW()`;
-        if (!isWalkInToday) {
-          // Future walk-in booking: treat as confirmed schedule (no token, no check-in)
-          const [created] = await tx.insert(appointments).values(appointmentValues).returning();
-          return created;
-        }
-
-        appointmentValues.checkedInAt = sql`NOW()`;
-        const dateStr = appointmentDayStr;
-
-        // Concurrency-safe token assignment via unique index + retry
-        for (let attempt = 0; attempt < 5; attempt++) {
-          const maxTokenRow = await tx
-            .select({
-              maxToken: sql<number>`COALESCE(MAX(${appointments.tokenNumber}), 0)`,
-            })
-            .from(appointments)
-            .where(
-              and(
-                eq(appointments.doctorId, data.doctorId),
-                sql`DATE(${appointments.appointmentDate}) = DATE(${sql.raw(`'${dateStr}'`)})`,
-              ),
-            );
-
-          const maxToken = maxTokenRow?.[0]?.maxToken ?? 0;
-          const nextToken = maxToken + 1;
-          appointmentValues.tokenNumber = nextToken;
-
-          // Keep any existing notes; also add token marker so clients can parse as fallback
-          const baseNotes = (appointmentValues.notes || '').toString();
-          if (!/Token:\s*\d+/i.test(baseNotes)) {
-            appointmentValues.notes = baseNotes ? `${baseNotes}\nToken: ${nextToken}` : `Token: ${nextToken}`;
-          }
-
-          try {
-            const [created] = await tx.insert(appointments).values(appointmentValues).returning();
-            return created;
-          } catch (e: any) {
-            const msg = String(e?.message || e);
-            if (msg.includes('appointments_doctor_date_token_uq') || msg.toLowerCase().includes('duplicate')) {
-              continue;
-            }
-            throw e;
-          }
-        }
-
-        throw new Error('Failed to allocate token for walk-in. Please retry.');
+        const [created] = await tx.insert(appointments).values(appointmentValues).returning();
+        return created;
       }
 
-      // Non-walk-in: simple insert
+      // Online: insert with token_identifier; confirmation and check-in are separate steps
       try {
       const [created] = await tx.insert(appointments).values(appointmentValues).returning();
       return created;
@@ -262,7 +272,7 @@ export const bookAppointment = async (
 
     await emitAppointmentChanged(
       appointment.id,
-      isWalkIn ? (isWalkInToday ? "checked-in" : "confirmed") : "created"
+      isWalkIn ? 'confirmed' : 'created',
     );
     return appointment;
   } catch (error) {
@@ -358,6 +368,7 @@ export const getAppointmentsByDoctor = async (doctorId: number) => {
         priority: appointments.priority,
         symptoms: appointments.symptoms,
         notes: appointments.notes,
+        tokenIdentifier: appointments.tokenIdentifier,
         tokenNumber: appointments.tokenNumber,
         checkedInAt: appointments.checkedInAt,
         rescheduledAt: appointments.rescheduledAt,
@@ -486,6 +497,7 @@ export const getAppointmentsByPatient = async (patientId: number) => {
       priority: appointments.priority,
       symptoms: appointments.symptoms,
       notes: appointments.notes,
+      tokenIdentifier: appointments.tokenIdentifier,
       tokenNumber: appointments.tokenNumber,
       checkedInAt: appointments.checkedInAt,
       createdAt: appointments.createdAt,
@@ -544,6 +556,7 @@ export const getAppointmentsByPatient = async (patientId: number) => {
  */
 export const getAppointmentsByHospital = async (hospitalId: number) => {
   try {
+    return await retryDbOperation(async () => {
     // Get all appointments for the hospital with hospital name
     const baseSelect = {
       id: appointments.id,
@@ -559,6 +572,7 @@ export const getAppointmentsByHospital = async (hospitalId: number) => {
       priority: appointments.priority,
       symptoms: appointments.symptoms,
       notes: appointments.notes,
+      tokenIdentifier: appointments.tokenIdentifier,
       tokenNumber: appointments.tokenNumber,
       checkedInAt: appointments.checkedInAt,
       createdAt: appointments.createdAt,
@@ -592,6 +606,35 @@ export const getAppointmentsByHospital = async (hospitalId: number) => {
           .orderBy(desc(appointments.appointmentDate));
       } else {
         throw e;
+      }
+    }
+
+    // Backfill token_identifier for existing appointments that have null (e.g. created before new OPD spec)
+    const needBackfill = appointmentsData.filter(
+      (a: any) => !a.tokenIdentifier && a.timeSlot && a.status !== 'cancelled',
+    );
+    if (needBackfill.length > 0) {
+      const dateStr = (d: any) =>
+        d instanceof Date ? d.toISOString().slice(0, 10) : String(d || '').slice(0, 10);
+      const byGroup = new Map<string, typeof needBackfill>();
+      for (const a of needBackfill) {
+        const key = `${a.doctorId}|${dateStr(a.appointmentDate)}|${getSlotKeyFromAppointment(a.appointmentTime, a.timeSlot).hour}|${getSlotKeyFromAppointment(a.appointmentTime, a.timeSlot).half}`;
+        if (!byGroup.has(key)) byGroup.set(key, []);
+        byGroup.get(key)!.push(a);
+      }
+      for (const group of byGroup.values()) {
+        const sorted = [...group].sort(
+          (a, b) =>
+            new Date(a.createdAt || 0).getTime() - new Date(b.createdAt || 0).getTime() || a.id - b.id,
+        );
+        const maxPerSlot = getMaxPatientsPerSlot(sorted[0].doctorId, dateStr(sorted[0].appointmentDate));
+        for (let i = 0; i < sorted.length; i++) {
+          const apt = sorted[i];
+          const slotKey = getSlotKeyFromAppointment(apt.appointmentTime, apt.timeSlot);
+          const tokenIdentifier = formatTokenIdentifier(slotKey, Math.min(i + 1, maxPerSlot));
+          (apt as any).tokenIdentifier = tokenIdentifier;
+          await db.update(appointments).set({ tokenIdentifier }).where(eq(appointments.id, apt.id));
+        }
       }
     }
 
@@ -665,6 +708,7 @@ export const getAppointmentsByHospital = async (hospitalId: number) => {
     );
 
     return enrichedAppointments;
+    }, { maxRetries: 2 }); // 2 retries (3 attempts total) on ETIMEDOUT/ECONNRESET
   } catch (error) {
     console.error('Error fetching hospital appointments:', error);
     throw new Error('Failed to fetch appointments');
@@ -767,41 +811,9 @@ export const updateAppointmentStatus = async (
       updateData.completedAt = sql`NOW()`;
     }
     
-      // If doctor starts consultation (or someone sets checked-in) and token is missing, allocate token.
-      const shouldAllocateToken = (status === 'in_consultation' || status === 'checked-in') && !(existing as any).tokenNumber;
-      if (shouldAllocateToken) {
-        // Convert appointmentDate to a proper date string for SQL comparison
-        let appointmentDateStr: string;
-        if (existing.appointmentDate instanceof Date) {
-          appointmentDateStr = existing.appointmentDate.toISOString().slice(0, 10);
-        } else if (typeof existing.appointmentDate === 'string') {
-          appointmentDateStr = existing.appointmentDate.slice(0, 10);
-        } else {
-          appointmentDateStr = new Date(existing.appointmentDate).toISOString().slice(0, 10);
-        }
-
-        const maxTokenRow = await tx
-          .select({
-            maxToken: sql<number>`COALESCE(MAX(${appointments.tokenNumber}), 0)`,
-          })
-          .from(appointments)
-          .where(
-            and(
-              eq(appointments.doctorId, existing.doctorId),
-              sql`DATE(${appointments.appointmentDate}) = DATE(${sql.raw(`'${appointmentDateStr}'`)})`,
-            ),
-          );
-
-        const maxToken = maxTokenRow?.[0]?.maxToken ?? 0;
-        const nextToken = maxToken + 1;
-        updateData.tokenNumber = nextToken;
-        updateData.checkedInAt = (existing as any).checkedInAt ? (existing as any).checkedInAt : sql`NOW()`;
-
-        const existingNotes = (existing as any).notes || '';
-        if (!/Token:\s*\d+/i.test(existingNotes)) {
-          const note = `Token: ${nextToken}`;
-          updateData.notes = existingNotes ? `${existingNotes}\n${note}` : note;
-        }
+      // Legacy: if status is checked-in/in_consultation and no token_identifier, set checkedInAt (token is assigned at book or on check-in)
+      if ((status === 'in_consultation' || status === 'checked-in') && !(existing as any).checkedInAt) {
+        updateData.checkedInAt = sql`NOW()`;
       }
 
       const [updated] = await tx.update(appointments).set(updateData).where(eq(appointments.id, appointmentId)).returning();
@@ -1148,75 +1160,30 @@ export const confirmAppointmentByReceptionist = async (appointmentId: number, re
     }
     
     console.log(`📋 Current appointment status: ${existingAppointment.status}`);
-    
-    // Assign token based on booking order (createdAt) for this doctor/date
-    // Convert appointmentDate to a proper date string for SQL comparison
-    let appointmentDateStr: string;
-    const rawDate = existingAppointment.appointmentDate;
-    if (rawDate instanceof Date) {
-      appointmentDateStr = rawDate.toISOString().slice(0, 10);
-    } else if (typeof rawDate === 'string') {
-      appointmentDateStr = rawDate.slice(0, 10);
-    } else {
-      appointmentDateStr = new Date(rawDate).toISOString().slice(0, 10);
-    }
 
-    // Get all appointments for this doctor/date, ordered by booking time (createdAt)
-    // This ensures tokens are assigned based on who booked first, not who checked in first
-    const allAppointmentsForDate = await db
-      .select({
-        id: appointments.id,
-        createdAt: appointments.createdAt,
-        tokenNumber: appointments.tokenNumber,
-      })
-      .from(appointments)
-      .where(
-        and(
-          eq(appointments.doctorId, existingAppointment.doctorId),
-          sql`DATE(${appointments.appointmentDate}) = DATE(${sql.raw(`'${appointmentDateStr}'`)})`,
-        ),
-      )
-      .orderBy(appointments.createdAt);
-
-    // Find the position of this appointment in the booking order
-    const appointmentIndex = allAppointmentsForDate.findIndex(apt => apt.id === appointmentId);
-    if (appointmentIndex === -1) {
-      throw new Error('Appointment not found in date group');
-    }
-
-    // Count how many appointments before this one already have tokens assigned
-    const appointmentsBefore = allAppointmentsForDate.slice(0, appointmentIndex);
-    const maxAssignedToken = appointmentsBefore.reduce((max, apt) => {
-      return Math.max(max, apt.tokenNumber || 0);
-    }, 0);
-
-    // The next token should be maxAssignedToken + 1
-    // This ensures tokens are assigned based on booking order (createdAt)
-    const nextToken = maxAssignedToken + 1;
-    
-    // Update appointment status to confirmed and assign token based on booking order
-    // Use SQL NOW() for timestamp compatibility with PostgreSQL
+    // Token (token_identifier) was assigned at book time; confirm only updates status
     const [result] = await db
       .update(appointments)
       .set({
         status: 'confirmed',
         receptionistId,
         confirmedAt: sql`NOW()`,
-        tokenNumber: nextToken, // Assign token based on booking order (createdAt)
       })
       .where(eq(appointments.id, appointmentId))
       .returning();
-    
+
     if (!result) {
       throw new Error('Failed to update appointment');
     }
-    
-    console.log(`✅ Appointment ${appointmentId} confirmed by receptionist. New status: ${result.status}`);
+
+    const resultWithToken = result;
+
+    console.log(`✅ Appointment ${appointmentId} confirmed by receptionist. New status: ${resultWithToken.status}`);
     console.log(`📋 Updated appointment:`, {
-      id: result.id,
-      status: result.status,
-      receptionistId: result.receptionistId,
-      confirmedAt: result.confirmedAt
+      id: resultWithToken.id,
+      status: resultWithToken.status,
+      receptionistId: resultWithToken.receptionistId,
+      confirmedAt: resultWithToken.confirmedAt
     });
     
     // Notify patient and doctor about confirmation
@@ -1224,19 +1191,19 @@ export const confirmAppointmentByReceptionist = async (appointmentId: number, re
       const [patientRow] = await db
         .select({ userId: patients.userId })
         .from(patients)
-        .where(eq(patients.id, result.patientId))
+        .where(eq(patients.id, resultWithToken.patientId))
         .limit(1);
       
       const [doctorRow] = await db
         .select({ userId: doctors.userId })
         .from(doctors)
-        .where(eq(doctors.id, result.doctorId))
+        .where(eq(doctors.id, resultWithToken.doctorId))
         .limit(1);
 
-      const appointmentDate = result.appointmentDate instanceof Date 
-        ? result.appointmentDate.toISOString().slice(0, 10)
-        : String(result.appointmentDate).slice(0, 10);
-      const timeSlot = String(result.timeSlot || '').trim();
+      const appointmentDate = resultWithToken.appointmentDate instanceof Date 
+        ? resultWithToken.appointmentDate.toISOString().slice(0, 10)
+        : String(resultWithToken.appointmentDate).slice(0, 10);
+      const timeSlot = String(resultWithToken.timeSlot || '').trim();
 
       // Format date for display
       const appointmentDateFormatted = result.appointmentDate instanceof Date
@@ -1271,7 +1238,7 @@ export const confirmAppointmentByReceptionist = async (appointmentId: number, re
           type: 'appointment_confirmed',
           title: 'Appointment Confirmed',
           message: `Your appointment on ${appointmentDate} (${timeSlot}) has been confirmed.`,
-          relatedId: result.id,
+          relatedId: resultWithToken.id,
           relatedType: 'appointment',
         });
         console.log(`✅ Created confirmation notification for patient userId ${patientRow.userId}`);
@@ -1324,7 +1291,7 @@ export const confirmAppointmentByReceptionist = async (appointmentId: number, re
           type: 'appointment_confirmed',
           title: 'New Confirmed Appointment',
           message: `${patientName} has a confirmed appointment on ${appointmentDate} (${timeSlot}).`,
-          relatedId: result.id,
+          relatedId: resultWithToken.id,
           relatedType: 'appointment',
         });
         console.log(`✅ Created confirmation notification for doctor userId ${doctorRow.userId}`);
@@ -1350,25 +1317,25 @@ export const confirmAppointmentByReceptionist = async (appointmentId: number, re
         actorRole: 'RECEPTIONIST',
         action: 'APPOINTMENT_CONFIRMED',
         entityType: 'appointment',
-        entityId: result.id,
+        entityId: resultWithToken.id,
         before: {
           status: existingAppointment.status,
           tokenNumber: existingAppointment.tokenNumber,
         },
         after: {
-          status: result.status,
-          tokenNumber: result.tokenNumber,
+          status: resultWithToken.status,
+          tokenNumber: resultWithToken.tokenNumber,
           receptionistId,
         },
-        summary: `Appointment #${result.id} confirmed by receptionist`,
+        summary: `Appointment #${resultWithToken.id} confirmed by receptionist`,
       });
     } catch (auditError) {
       console.error('⚠️ Failed to log appointment confirmation audit event:', auditError);
       // Do not block main flow on audit failures
     }
 
-    await emitAppointmentChanged(result.id, "confirmed");
-    return result;
+    await emitAppointmentChanged(resultWithToken.id, "confirmed");
+    return resultWithToken;
   } catch (error) {
     console.error('❌ Error confirming appointment:', error);
     throw error;
@@ -1376,172 +1343,75 @@ export const confirmAppointmentByReceptionist = async (appointmentId: number, re
 };
 
 /**
- * Check-in appointment (for receptionist) - Records when patient physically arrives at hospital.
- * This is different from "confirm" - check-in happens when patient arrives for their appointment.
+ * Check-in appointment (for receptionist) - Patient enters ACTIVE queue only after check-in.
+ * Uses token_identifier from appointment (assigned at book); no renumbering.
  */
 export const checkInAppointment = async (appointmentId: number, receptionistId: number) => {
   console.log(`📅 Receptionist ${receptionistId} checking in patient for appointment ${appointmentId}`);
-  
-  try {
-    const result = await db.transaction(async (tx) => {
-      // First verify appointment exists and is eligible for token assignment
-      const [existingAppointment] = await tx
-      .select()
-      .from(appointments)
+
+  const result = await db.transaction(async (tx) => {
+    const [existing] = await tx.select().from(appointments).where(eq(appointments.id, appointmentId)).limit(1);
+    if (!existing) throw new Error('Appointment not found');
+
+    const eligibleStatuses = new Set(['confirmed', 'checked-in', 'attended', 'in_consultation']);
+    if (!eligibleStatuses.has((existing.status || '').toString())) {
+      throw new Error(
+        `Cannot check in. Current status: ${existing.status}. Only confirmed/checked-in appointments can be checked in.`,
+      );
+    }
+
+    let appointmentDateStr: string;
+    const rawDate = existing.appointmentDate;
+    if (rawDate instanceof Date) appointmentDateStr = rawDate.toISOString().slice(0, 10);
+    else if (typeof rawDate === 'string') appointmentDateStr = rawDate.slice(0, 10);
+    else appointmentDateStr = new Date(rawDate).toISOString().slice(0, 10);
+
+    // Backfill token_identifier if missing (e.g. pre-migration appointments)
+    let tokenIdentifier = (existing as any).tokenIdentifier;
+    if (!tokenIdentifier) {
+      const slotKey = getSlotKeyFromAppointment(existing.appointmentTime, existing.timeSlot);
+      const nextSeq = await getNextSeqForSlot(tx, existing.doctorId, appointmentDateStr, slotKey);
+      tokenIdentifier = formatTokenIdentifier(slotKey, nextSeq);
+      await tx.update(appointments).set({ tokenIdentifier }).where(eq(appointments.id, appointmentId));
+    }
+
+    const [updated] = await tx
+      .update(appointments)
+      .set({
+        status: 'checked-in',
+        checkedInAt: sql`NOW()`,
+        receptionistId,
+      })
       .where(eq(appointments.id, appointmentId))
+      .returning();
+
+    if (!updated) throw new Error('Failed to update appointment');
+    return updated;
+  });
+
+  // Always create OPD queue entry when appointment is checked in (so they appear in Queue Management)
+  try {
+    const [receptionist] = await db
+      .select({ userId: receptionists.userId, hospitalId: receptionists.hospitalId })
+      .from(receptionists)
+      .where(eq(receptionists.id, receptionistId))
       .limit(1);
-    
-    if (!existingAppointment) {
-      throw new Error('Appointment not found');
+    const hospitalId = receptionist?.hospitalId ?? result.hospitalId;
+    if (hospitalId == null) {
+      console.warn('⚠️ No hospitalId for queue check-in; using appointment hospitalId');
     }
-    
-      const eligibleStatuses = new Set(['confirmed', 'checked-in', 'attended', 'in_consultation']);
-      if (!eligibleStatuses.has((existingAppointment.status || '').toString())) {
-        throw new Error(
-          `Cannot check in appointment. Current status: ${existingAppointment.status}. Only confirmed/checked-in appointments can be checked in.`,
-        );
-      }
-
-      // If already tokened (should have been assigned on confirmation), keep idempotent.
-      if ((existingAppointment as any).tokenNumber) {
-        // Token already assigned, just update status if needed
-        const existingStatus = (existingAppointment.status || '').toString();
-        if (existingStatus === 'confirmed') {
-          const [updated] = await tx
-            .update(appointments)
-            .set({
-              status: 'checked-in',
-              checkedInAt: (existingAppointment as any).checkedInAt ? (existingAppointment as any).checkedInAt : sql`NOW()`,
-            })
-            .where(eq(appointments.id, appointmentId))
-            .returning();
-          return updated as any;
-        }
-        return existingAppointment as any;
-      }
-
-      // Token should have been assigned on confirmation, but if not, assign based on booking order
-      const existingStatus = (existingAppointment.status || '').toString();
-      const existingNotes = (existingAppointment as any).notes || '';
-
-      // Convert appointmentDate to a proper date string for SQL comparison
-      let appointmentDateStr: string;
-      const rawDate = existingAppointment.appointmentDate;
-      
-      if (rawDate instanceof Date) {
-        appointmentDateStr = rawDate.toISOString().slice(0, 10);
-      } else if (typeof rawDate === 'string') {
-        appointmentDateStr = rawDate.slice(0, 10);
-      } else {
-        const dateObj = new Date(rawDate);
-        if (isNaN(dateObj.getTime())) {
-          throw new Error(`Invalid appointment date: ${rawDate}`);
-        }
-        appointmentDateStr = dateObj.toISOString().slice(0, 10);
-      }
-      
-      // Get all appointments for this doctor/date, ordered by booking time (createdAt)
-      const allAppointmentsForDate = await tx
-          .select({
-          id: appointments.id,
-          createdAt: appointments.createdAt,
-          tokenNumber: appointments.tokenNumber,
-          })
-          .from(appointments)
-          .where(
-            and(
-              eq(appointments.doctorId, existingAppointment.doctorId),
-              sql`DATE(${appointments.appointmentDate}) = ${sql.raw(`'${appointmentDateStr}'::date`)}`,
-            ),
-        )
-        .orderBy(appointments.createdAt);
-
-      // Find the position of this appointment in the booking order
-      const appointmentIndex = allAppointmentsForDate.findIndex(apt => apt.id === appointmentId);
-      if (appointmentIndex === -1) {
-        throw new Error('Appointment not found in date group');
-      }
-
-      // Count how many appointments before this one already have tokens assigned
-      const appointmentsBefore = allAppointmentsForDate.slice(0, appointmentIndex);
-      const maxAssignedToken = appointmentsBefore.reduce((max, apt) => {
-        return Math.max(max, apt.tokenNumber || 0);
-      }, 0);
-
-      // The next token should be maxAssignedToken + 1
-      const nextToken = maxAssignedToken + 1;
-
-      // Check if patient is late (appointment time has passed)
-      const appointmentTime = existingAppointment.appointmentTime || '';
-      const now = new Date();
-      let appointmentDateTime: Date;
-      try {
-        appointmentDateTime = new Date(`${appointmentDateStr}T${appointmentTime}`);
-        if (isNaN(appointmentDateTime.getTime())) {
-          // Fallback: use appointment date only
-          appointmentDateTime = new Date(appointmentDateStr);
-        }
-      } catch {
-        appointmentDateTime = new Date(appointmentDateStr);
-      }
-      const isLate = now > appointmentDateTime;
-
-      const checkInNote = `Token: ${nextToken}${isLate ? ' - Late arrival' : ''}`;
-      const updatedNotes =
-        existingNotes && /Token:\s*\d+/i.test(existingNotes) ? existingNotes : (existingNotes ? `${existingNotes}\n${checkInNote}` : checkInNote);
-
-      // Concurrency-safe token assignment via unique index + retry
-      for (let attempt = 0; attempt < 5; attempt++) {
-        try {
-          const [updated] = await tx
-            .update(appointments)
-            .set({
-              // If we're coming from confirmed, set checked-in; otherwise keep current status.
-              status: existingStatus === 'confirmed' ? 'checked-in' : existingStatus,
-              notes: updatedNotes,
-              receptionistId,
-              tokenNumber: nextToken, // Assign token based on booking order
-              checkedInAt: (existingAppointment as any).checkedInAt ? (existingAppointment as any).checkedInAt : sql`NOW()`,
-            })
-            .where(eq(appointments.id, appointmentId))
-            .returning();
-
-          if (!updated) {
-            throw new Error('Failed to update appointment');
-          }
-
-          return updated as any;
-        } catch (e: any) {
-          const msg = String(e?.message || e);
-          // If token unique index collides due to concurrent check-in, retry.
-          if (msg.includes('appointments_doctor_date_token_uq') || msg.toLowerCase().includes('duplicate')) {
-            continue;
-          }
-          throw e;
-        }
-      }
-
-      throw new Error('Failed to allocate token. Please try again.');
+    await queueService.checkInToQueue(appointmentId, {
+      userId: receptionist?.userId ?? 0,
+      hospitalId: hospitalId ?? result.hospitalId,
     });
-    
-    if (!result) {
-      throw new Error('Failed to update appointment');
-    }
-    
-    console.log(`✅ Patient checked in for appointment ${appointmentId}`);
-    console.log(`📋 Updated appointment:`, {
-      id: result.id,
-      status: result.status,
-      receptionistId: result.receptionistId,
-      notes: result.notes
-    });
-    
-    await emitAppointmentChanged(result.id, "checked-in");
-    return result;
-  } catch (error) {
-    console.error('❌ Error checking in appointment:', error);
-    throw error;
+  } catch (e) {
+    console.error('⚠️ Queue entry creation failed (appointment is already checked-in):', e);
+    throw e; // Surface so caller knows queue entry wasn't created; they can retry check-in
   }
+
+  console.log(`✅ Patient checked in for appointment ${appointmentId}`);
+  await emitAppointmentChanged(result.id, 'checked-in');
+  return result;
 };
 
 /**
@@ -1639,11 +1509,15 @@ export const rescheduleAppointment = async (
       updateData.receptionistId = actor.receptionistId;
     }
 
+    // New slot => new stable token_identifier (never renumber; assign for new slot)
+    const newSlotKey = getSlotKeyFromAppointment(appointmentTime, timeSlot);
+    const newSeq = await getNextSeqForSlot(tx, existing.doctorId, newDateStr, newSlotKey);
+    updateData.tokenIdentifier = formatTokenIdentifier(newSlotKey, newSeq);
+
     // Token handling: if changing day, reset queue-related fields and status
     if (!sameDay) {
       updateData.tokenNumber = null;
       updateData.checkedInAt = null;
-      // If patient was already checked-in/attended, move back to confirmed for the new day.
       if (currentStatus === 'checked-in' || currentStatus === 'attended') {
         updateData.status = 'confirmed';
         updateData.confirmedAt = sql`NOW()`;

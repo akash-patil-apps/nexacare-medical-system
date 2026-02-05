@@ -43,7 +43,7 @@ import { useAuth } from '../../hooks/use-auth';
 import { useResponsive } from '../../hooks/use-responsive';
 import { useLocation } from 'wouter';
 import { TopHeader } from '../../components/layout/TopHeader';
-import { getISTStartOfDay, isSameDayIST } from '../../lib/timezone';
+import { getCalendarDateIST } from '../../lib/timezone';
 
 const { Title, Text } = Typography;
 const { RangePicker } = DatePicker;
@@ -145,7 +145,7 @@ export default function RevenueDetails() {
             background: '#E3F2FF',
             borderRadius: '8px',
           }}
-          onClick={() => message.info('Profile coming soon.')}
+          onClick={() => window.location.href = '/dashboard/profile'}
         />
         <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', flex: 1, alignItems: 'center' }}>
           <Button
@@ -332,11 +332,11 @@ export default function RevenueDetails() {
     );
   }) || [];
 
-  // Group transactions by date (like appointments table) - using IST
+  // Group transactions by calendar date in IST (avoids timezone/parsing bugs like "2nd May")
   const transactionsByDate = useMemo(() => {
-    const today = getISTStartOfDay();
-    const tomorrow = new Date(today);
-    tomorrow.setDate(tomorrow.getDate() + 1);
+    const todayIST = getCalendarDateIST();
+    const [ty, tm, td] = todayIST.split('-').map(Number);
+    const tomorrowIST = getCalendarDateIST(new Date(Date.UTC(ty, tm - 1, td + 1)));
     
     const groups: Record<string, RevenueTransaction[]> = {
       today: [],
@@ -345,34 +345,20 @@ export default function RevenueDetails() {
     
     filteredTransactions.forEach((t: RevenueTransaction) => {
       if (!t.receivedAt) return;
-      
-      const transactionDate = new Date(t.receivedAt);
-      const transactionDayIST = getISTStartOfDay(transactionDate);
-      
-      const dateKey = transactionDayIST.getTime();
-      const todayKey = today.getTime();
-      const tomorrowKey = tomorrow.getTime();
-      
-      if (dateKey === todayKey) {
+      const dateStr = getCalendarDateIST(t.receivedAt);
+      if (dateStr === todayIST) {
         groups.today.push(t);
-      } else if (dateKey === tomorrowKey) {
+      } else if (dateStr === tomorrowIST) {
         groups.tomorrow.push(t);
       } else {
-        const dateStr = dayjs(transactionDayIST).format('YYYY-MM-DD');
-        if (!groups[dateStr]) {
-          groups[dateStr] = [];
-        }
+        if (!groups[dateStr]) groups[dateStr] = [];
         groups[dateStr].push(t);
       }
     });
     
-    // Sort each group by time (newest first)
     Object.keys(groups).forEach(key => {
-      groups[key].sort((a, b) => {
-        return dayjs(b.receivedAt).unix() - dayjs(a.receivedAt).unix();
-      });
+      groups[key].sort((a, b) => dayjs(b.receivedAt).unix() - dayjs(a.receivedAt).unix());
     });
-    
     return groups;
   }, [filteredTransactions]);
 

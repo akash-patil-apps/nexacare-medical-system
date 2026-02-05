@@ -1,84 +1,62 @@
 import { db } from '../db';
-import { opdQueueEntries, appointments, patients, doctors } from '../../shared/schema';
-import { eq, and, sql, desc, ne } from 'drizzle-orm';
+import { opdQueueEntries, appointments, patients, doctors, users } from '../../shared/schema';
+import { eq, and, sql, desc, ne, inArray, not } from 'drizzle-orm';
+import {
+  parseTokenIdentifier,
+  slotKeyToMinutes,
+  isLateArrival,
+  getSlotKeyFromAppointment,
+} from './opd-token';
 
 /**
- * Check-in appointment and assign token number
+ * Check-in appointment into OPD queue. Uses token_identifier from appointment (assigned at book).
+ * Queue order is computed dynamically in getQueueForDoctor (slot + arrival priority).
  */
 export const checkInToQueue = async (
   appointmentId: number,
   actor: { userId: number; hospitalId: number }
 ) => {
-  const appointment = await db
-    .select()
-    .from(appointments)
-    .where(eq(appointments.id, appointmentId))
-    .limit(1);
+  const [apt] = await db.select().from(appointments).where(eq(appointments.id, appointmentId)).limit(1);
+  if (!apt) throw new Error('Appointment not found');
 
-  if (appointment.length === 0) {
-    throw new Error('Appointment not found');
-  }
-
-  const apt = appointment[0];
-
-  // Check if already in queue
   const existing = await db
     .select()
     .from(opdQueueEntries)
     .where(eq(opdQueueEntries.appointmentId, appointmentId))
     .limit(1);
+  if (existing.length > 0) return existing[0];
 
-  if (existing.length > 0) {
-    throw new Error('Appointment already in queue');
-  }
+  // Use calendar date (YYYY-MM-DD) so it matches frontend "today" (e.g. IST).
+  // Avoid toISOString() which uses UTC and can shift the day.
+  const aptDate = apt.appointmentDate instanceof Date ? apt.appointmentDate : new Date(apt.appointmentDate);
+  const y = aptDate.getFullYear();
+  const m = aptDate.getMonth() + 1;
+  const d = aptDate.getDate();
+  const queueDate = `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
 
-  // Get queue date (IST) - format as YYYY-MM-DD
-  const appointmentDate = apt.appointmentDate instanceof Date 
-    ? apt.appointmentDate 
-    : new Date(apt.appointmentDate);
-  const queueDate = appointmentDate.toISOString().slice(0, 10);
-
-  // Get max token for this doctor/date
   const maxTokenResult = await db
-    .select({
-      maxToken: sql<number>`COALESCE(MAX(${opdQueueEntries.tokenNumber}), 0)`,
-    })
+    .select({ maxToken: sql<number>`COALESCE(MAX(${opdQueueEntries.tokenNumber}), 0)` })
     .from(opdQueueEntries)
-    .where(
-      and(
-        eq(opdQueueEntries.doctorId, apt.doctorId),
-        eq(opdQueueEntries.queueDate, queueDate),
-      ),
-    );
+    .where(and(eq(opdQueueEntries.doctorId, apt.doctorId), eq(opdQueueEntries.queueDate, queueDate)));
+  const nextToken = (maxTokenResult[0]?.maxToken ?? 0) + 1;
 
-  const maxToken = maxTokenResult[0]?.maxToken ?? 0;
-  const nextToken = maxToken + 1;
-
-  // Get max position
   const maxPositionResult = await db
-    .select({
-      maxPosition: sql<number>`COALESCE(MAX(${opdQueueEntries.position}), 0)`,
-    })
+    .select({ maxPosition: sql<number>`COALESCE(MAX(${opdQueueEntries.position}), 0)` })
     .from(opdQueueEntries)
-    .where(
-      and(
-        eq(opdQueueEntries.doctorId, apt.doctorId),
-        eq(opdQueueEntries.queueDate, queueDate),
-      ),
-    );
+    .where(and(eq(opdQueueEntries.doctorId, apt.doctorId), eq(opdQueueEntries.queueDate, queueDate)));
+  const nextPosition = (maxPositionResult[0]?.maxPosition ?? 0) + 1;
 
-  const maxPosition = maxPositionResult[0]?.maxPosition ?? 0;
-  const nextPosition = maxPosition + 1;
+  const tokenIdentifier = (apt as any).tokenIdentifier ?? null;
 
-  // Create queue entry
   const [queueEntry] = await db
     .insert(opdQueueEntries)
     .values({
       hospitalId: actor.hospitalId,
       doctorId: apt.doctorId,
-      appointmentId: appointmentId,
+      appointmentId,
       patientId: apt.patientId,
-      queueDate: queueDate,
+      queueDate,
+      tokenIdentifier,
       tokenNumber: nextToken,
       position: nextPosition,
       status: 'waiting',
@@ -87,27 +65,24 @@ export const checkInToQueue = async (
     })
     .returning();
 
-  // Update appointment
   await db
     .update(appointments)
-    .set({
-      tokenNumber: nextToken,
-      checkedInAt: sql`NOW()`,
-      status: 'checked-in',
-    })
+    .set({ checkedInAt: sql`NOW()`, status: 'checked-in' })
     .where(eq(appointments.id, appointmentId));
 
   return queueEntry;
 };
 
 /**
- * Get queue for doctor and date
+ * Get queue for doctor and date. Only ACTIVE (checked-in) entries.
+ * Order: Layer 1 = slot priority (earlier slot first), Layer 2 = arrival (earlier check-in first).
+ * Late arrival (check-in after slot start): slot priority expired, ordered after on-time patients by check-in time.
  */
 export const getQueueForDoctor = async (
   doctorId: number,
-  queueDate: string, // YYYY-MM-DD
+  queueDate: string // YYYY-MM-DD
 ) => {
-  const entries = await db
+  const rows = await db
     .select({
       queue: opdQueueEntries,
       appointment: appointments,
@@ -123,10 +98,80 @@ export const getQueueForDoctor = async (
         eq(opdQueueEntries.doctorId, doctorId),
         eq(opdQueueEntries.queueDate, queueDate),
       ),
-    )
-    .orderBy(opdQueueEntries.position);
+    );
 
-  return entries;
+  const parsed = rows.map((row) => {
+    const tokenId = (row.queue as any).tokenIdentifier;
+    const slotKey = tokenId
+      ? parseTokenIdentifier(tokenId)?.slotKey ?? null
+      : row.appointment
+        ? getSlotKeyFromAppointment(
+            (row.appointment as any).appointmentTime,
+            (row.appointment as any).timeSlot,
+          )
+        : null;
+    const slotMinutes = slotKey ? slotKeyToMinutes(slotKey) : 0;
+    const checkedInAt = (row.queue as any).checkedInAt;
+    const late = slotKey ? isLateArrival(slotKey, queueDate, checkedInAt) : false;
+    return { row, slotKey, slotMinutes, checkedInAt, late };
+  });
+
+  parsed.sort((a, b) => {
+    if (a.late !== b.late) return a.late ? 1 : -1;
+    if (a.slotMinutes !== b.slotMinutes) return a.slotMinutes - b.slotMinutes;
+    const tA = a.checkedInAt ? new Date(a.checkedInAt).getTime() : 0;
+    const tB = b.checkedInAt ? new Date(b.checkedInAt).getTime() : 0;
+    return tA - tB;
+  });
+
+  return parsed.map((p) => p.row);
+};
+
+/**
+ * Get today's confirmed/pending appointments for a doctor that are not yet in the queue.
+ * Lets receptionist see e.g. "Ravi Singh - Confirmed" and check them in from the queue view.
+ */
+export const getNotYetCheckedInForDoctor = async (
+  doctorId: number,
+  queueDate: string // YYYY-MM-DD
+) => {
+  const inQueue = await db
+    .select({ appointmentId: opdQueueEntries.appointmentId })
+    .from(opdQueueEntries)
+    .where(
+      and(
+        eq(opdQueueEntries.doctorId, doctorId),
+        eq(opdQueueEntries.queueDate, queueDate),
+      ),
+    );
+  const inQueueIds = inQueue.map((r) => r.appointmentId).filter((id): id is number => id != null);
+
+  const conditions = [
+    eq(appointments.doctorId, doctorId),
+    sql`DATE(${appointments.appointmentDate}) = ${sql.raw(`'${queueDate}'::date`)}`,
+    inArray(appointments.status, ['confirmed', 'pending']),
+  ];
+  if (inQueueIds.length > 0) {
+    conditions.push(not(inArray(appointments.id, inQueueIds)));
+  }
+
+  const rows = await db
+    .select({
+      appointment: appointments,
+      patient: patients,
+      patientName: users.fullName,
+    })
+    .from(appointments)
+    .innerJoin(patients, eq(appointments.patientId, patients.id))
+    .leftJoin(users, eq(patients.userId, users.id))
+    .where(and(...conditions))
+    .orderBy(appointments.appointmentTime);
+
+  return rows.map((r) => ({
+    appointment: r.appointment,
+    patient: r.patient,
+    patientName: r.patientName ?? 'Patient',
+  }));
 };
 
 /**

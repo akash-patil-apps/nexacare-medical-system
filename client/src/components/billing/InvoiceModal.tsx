@@ -18,7 +18,11 @@ import {
 } from 'antd';
 import { DollarOutlined, FileTextOutlined, CheckCircleOutlined } from '@ant-design/icons';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
+import dayjs from 'dayjs';
+import customParseFormat from 'dayjs/plugin/customParseFormat';
 import { CopyIcon } from '../common/CopyIcon';
+
+dayjs.extend(customParseFormat);
 
 const { TextArea } = Input;
 const { Title, Text } = Typography;
@@ -351,13 +355,14 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({
             
             if (dateMatch && timeMatch) {
               try {
-                // Parse date and time from notes (format: "Date: 13/01/2026 | Time: 3:30:00 PM")
+                // Parse date as DD/MM/YYYY (India) so "05/02/2026" = 5 Feb, not May 2 (MM/DD)
                 const dateStr = dateMatch[1].trim();
                 const timeStr = timeMatch[1].trim();
-                const dateTimeStr = `${dateStr} ${timeStr}`;
-                const parsedDate = new Date(dateTimeStr);
-                if (!isNaN(parsedDate.getTime())) {
-                  paymentDate = parsedDate.toISOString();
+                const parsedDate = dayjs(dateStr, ['DD/MM/YYYY', 'DD-MM-YYYY', 'YYYY-MM-DD'], true);
+                if (parsedDate.isValid()) {
+                  const combined = `${dateStr} ${timeStr}`;
+                  const withTime = dayjs(combined, ['DD/MM/YYYY h:mm:ss A', 'DD/MM/YYYY h:mm A', 'DD/MM/YYYY HH:mm'], true);
+                  paymentDate = (withTime.isValid() ? withTime : parsedDate).toISOString();
                 }
               } catch (e) {
                 console.warn('Failed to parse date/time from notes:', e);
