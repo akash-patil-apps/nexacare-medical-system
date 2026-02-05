@@ -11,7 +11,7 @@
     "preview": "npm run build && cross-env NODE_ENV=production node dist/server/index.js",
     "db:generate": "drizzle-kit generate",
     "db:push": "drizzle-kit push",
-    "db:migrate": "drizzle-kit migrate",
+    "db:migrate": "tsx scripts/apply-patient-family-members-migration.ts",
     "seed": "tsx scripts/seed-test-data.ts",
     "seed:test": "tsx scripts/seed-test-data.ts",
     "seed:catalog": "tsx scripts/seed-catalog-data.ts",

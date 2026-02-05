@@ -456,6 +456,30 @@ export const VitalsEntryForm: React.FC<VitalsEntryFormProps> = ({
                 <Text type="secondary" style={{ fontSize: '11px', display: 'block', marginTop: '2px' }}>cm</Text>
               </div>
             </Col>
+            <Col span={6}>
+              <div>
+                <Text type="secondary" style={{ fontSize: '12px' }}>BMI</Text>
+                <div style={{
+                  marginTop: '4px',
+                  padding: '6px 12px',
+                  background: '#fff',
+                  border: '1px solid #d9d9d9',
+                  borderRadius: '6px',
+                  minHeight: '32px',
+                  lineHeight: '20px',
+                }}>
+                  {vitals.weight && vitals.height && parseFloat(vitals.height) > 0 ? (
+                    <Text>
+                      {(parseFloat(vitals.weight) / Math.pow(parseFloat(vitals.height) / 100, 2)).toFixed(2)}
+                      <Text type="secondary" style={{ fontSize: '11px', marginLeft: 4 }}>(auto)</Text>
+                    </Text>
+                  ) : (
+                    <Text type="secondary" style={{ fontSize: '12px' }}>—</Text>
+                  )}
+                </div>
+                <Text type="secondary" style={{ fontSize: '11px', display: 'block', marginTop: '2px' }}>kg/m²</Text>
+              </div>
+            </Col>
           </Row>
         </div>
 

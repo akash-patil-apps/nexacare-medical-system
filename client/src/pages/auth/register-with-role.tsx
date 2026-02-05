@@ -314,15 +314,15 @@ export default function RegisterWithRole() {
             </Form.Item>
             <Form.Item
               name="email"
-              label="Email"
+              label={selectedRole === 'patient' ? 'Email (optional)' : 'Email'}
               rules={[
-                { required: true, message: 'Please enter your email' },
+                ...(selectedRole !== 'patient' ? [{ required: true, message: 'Please enter your email' }] : []),
                 { type: 'email', message: 'Please enter a valid email' },
               ]}
             >
               <Input
                 prefix={<MailOutlined />}
-                placeholder="Enter your email address"
+                placeholder={selectedRole === 'patient' ? 'Optional' : 'Enter your email address'}
                 size="large"
               />
             </Form.Item>

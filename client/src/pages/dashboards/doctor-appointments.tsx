@@ -138,7 +138,7 @@ export default function DoctorAppointments() {
             background: '#E3F2FF',
             borderRadius: '8px',
           }}
-          onClick={() => message.info('Profile coming soon.')}
+          onClick={() => setLocation('/dashboard/profile')}
         />
         <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', flex: 1, alignItems: 'center' }}>
           <Button

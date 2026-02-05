@@ -59,6 +59,8 @@ export interface IpdEncounter {
   admittingDoctorId: number | null;
   attendingDoctorId: number | null;
   admissionType: 'elective' | 'emergency' | 'day_care' | 'observation';
+  attendantName: string | null;
+  attendantMobile: string | null;
   status: 'admitted' | 'transferred' | 'discharged' | 'LAMA' | 'absconded' | 'death';
   admittedAt: string;
   expectedDischargeAt: string | null;

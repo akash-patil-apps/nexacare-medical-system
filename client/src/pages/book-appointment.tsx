@@ -47,6 +47,8 @@ import {
   BankOutlined
 } from '@ant-design/icons';
 import { useAuth } from '../hooks/use-auth';
+import { getActingPatientId, useActingPatient } from '../hooks/use-acting-patient';
+import { useQuery } from '@tanstack/react-query';
 import { useLocation } from 'wouter';
 import { useQueryClient } from '@tanstack/react-query';
 import dayjs from 'dayjs';
@@ -126,6 +128,37 @@ export default function BookAppointment() {
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState<'googlepay' | 'phonepe' | 'card' | 'cash' | null>(null);
   const [showReceipt, setShowReceipt] = useState(false);
   const [receiptData, setReceiptData] = useState<any>(null);
+
+  const isPatient = user?.role?.toUpperCase() === 'PATIENT';
+  const [actingPatientId, setActingPatientId] = useActingPatient();
+
+  // Current user's patient profile ID (for "Self" in For whom)
+  const { data: patientProfile } = useQuery({
+    queryKey: ['/api/patients/profile'],
+    queryFn: async () => {
+      const token = localStorage.getItem('auth-token');
+      if (!token) return null;
+      const res = await fetch('/api/patients/profile', { headers: { Authorization: `Bearer ${token}` } });
+      if (!res.ok) return null;
+      return res.json();
+    },
+    enabled: !!user && isPatient,
+  });
+  const myPatientId = patientProfile?.id ?? null;
+
+  // Family members for "For whom" options
+  const { data: familyMembersData = [] } = useQuery({
+    queryKey: ['/api/patients/family-members'],
+    queryFn: async () => {
+      const token = localStorage.getItem('auth-token');
+      if (!token) return [];
+      const res = await fetch('/api/patients/family-members', { headers: { Authorization: `Bearer ${token}` } });
+      if (!res.ok) return [];
+      return res.json();
+    },
+    enabled: !!user && isPatient,
+  });
+  const familyMembers = Array.isArray(familyMembersData) ? familyMembersData : [];
 
   // Load user city on component mount
   useEffect(() => {
@@ -226,7 +259,8 @@ export default function BookAppointment() {
       // Auto-advance to doctor selection step after doctors are loaded
       if (doctorsList.length > 0) {
         setTimeout(() => {
-          setCurrentStep(1);
+          // Hospital is baseStep 0, doctor is baseStep 1
+          setCurrentStep(hasForWhomStep ? 2 : 1);
         }, 500);
       } else {
         message.warning('No doctors available in this hospital');
@@ -476,9 +510,9 @@ export default function BookAppointment() {
         setAvailableSlots(slots);
       }
       
-      // Auto-advance to date & time selection step
+      // Auto-advance to date & time selection step (baseStep 2)
       setTimeout(() => {
-        setCurrentStep(2);
+        setCurrentStep(hasForWhomStep ? 3 : 2);
       }, 500);
     }
   };
@@ -573,9 +607,9 @@ export default function BookAppointment() {
     setSelectedSlot(slot);
     form.setFieldsValue({ timeSlot: slot });
     
-            // Auto-advance to patient details step
+            // Auto-advance to patient details step (baseStep 3)
             setTimeout(() => {
-              setCurrentStep(3);
+              setCurrentStep(hasForWhomStep ? 4 : 3);
             }, 500);
   };
 
@@ -708,8 +742,9 @@ export default function BookAppointment() {
         };
       }
       
-      const appointmentData = {
-        // patientId will be set by backend based on authenticated user
+      const actingId = getActingPatientId();
+      const patientIdToUse = actingId ?? selectedForWhom ?? myPatientId ?? null;
+      const appointmentData: Record<string, unknown> = {
         doctorId: selectedDoctor.id,
         hospitalId: selectedHospital.id,
         appointmentDate: selectedDate.format('YYYY-MM-DD'),
@@ -722,6 +757,7 @@ export default function BookAppointment() {
         priority: priority,
         paymentStatus: selectedPaymentMethod && ['googlepay', 'phonepe', 'card'].includes(selectedPaymentMethod) ? 'paid' : 'pending',
       };
+      if (patientIdToUse != null) appointmentData.patientId = patientIdToUse;
 
       const token = localStorage.getItem('auth-token');
 
@@ -776,7 +812,55 @@ export default function BookAppointment() {
     }
   };
 
+  // Build "For whom" options
+  const forWhomOptions: { value: number | null; label: string }[] = [];
+  if (myPatientId != null) {
+    forWhomOptions.push({ value: myPatientId, label: 'Self' });
+  }
+  familyMembers.forEach((m: { relatedPatientId: number; relationship: string; fullName: string }) => {
+    const label = `${m.relationship.charAt(0).toUpperCase() + m.relationship.slice(1)} (${m.fullName})`;
+    forWhomOptions.push({ value: m.relatedPatientId, label });
+  });
+  
+  const [selectedForWhom, setSelectedForWhom] = useState<number | null>(() => {
+    // Initialize with current acting patient ID if set
+    const actingId = getActingPatientId();
+    return actingId ?? (myPatientId || null);
+  });
+  
+  // Helper: check if we have "For whom" step
+  const hasForWhomStep = isPatient && forWhomOptions.length > 1;
+  // Helper: get base step (0 = hospital, 1 = doctor, 2 = date/time, 3 = details)
+  const getBaseStep = (step: number) => hasForWhomStep ? step - 1 : step;
+  const baseStep = getBaseStep(currentStep);
+
   const steps = [
+    ...(isPatient && forWhomOptions.length > 1 ? [{
+      title: 'For Whom',
+      icon: <UserOutlined />,
+      content: (
+        <div style={{ padding: '24px 0', textAlign: 'center' }}>
+          <Text style={{ fontSize: '16px', color: '#6B7280', display: 'block', marginBottom: 24 }}>
+            Who is this appointment for?
+          </Text>
+          <Select
+            value={selectedForWhom}
+            onChange={(v) => {
+              setSelectedForWhom(v);
+              setActingPatientId(v);
+              // Auto-advance to next step
+              setTimeout(() => {
+                setCurrentStep(1);
+              }, 300);
+            }}
+            options={forWhomOptions}
+            style={{ width: '100%', maxWidth: 400 }}
+            size="large"
+            placeholder="Select person"
+          />
+        </div>
+      ),
+    }] : []),
     {
       title: 'Select Hospital',
       icon: <EnvironmentOutlined />,
@@ -1833,7 +1917,7 @@ export default function BookAppointment() {
           }}
         >
           {/* Mobile Menu Button */}
-          {(isMobile && (currentStep === 0 || currentStep === 1)) && (
+          {(isMobile && (currentStep === 0 || currentStep === 1 || (isPatient && forWhomOptions.length > 1 && currentStep === 0))) && (
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '16px', background: '#F3F4F6' }}>
               <Button
                 type="text"
@@ -1845,8 +1929,8 @@ export default function BookAppointment() {
             </div>
           )}
 
-          {/* Header - Select Hospital step */}
-          {currentStep === 0 && (
+          {/* Header - For Whom or Select Hospital step */}
+          {((isPatient && forWhomOptions.length > 1 && currentStep === 0) || (!isPatient || forWhomOptions.length <= 1) && currentStep === 0) && (
           <div style={{ 
             background: '#F3F4F6', 
             padding: '24px 32px 24px 32px',
@@ -1888,10 +1972,12 @@ export default function BookAppointment() {
                 flex: 1,
               }}>
                 <Title level={2} style={{ margin: 0, fontSize: '32px', fontWeight: 700, color: '#111827', lineHeight: 1.2 }}>
-                  Select Hospital
+                  {steps[currentStep]?.title || 'Select Hospital'}
                 </Title>
                 <Text style={{ fontSize: '16px', color: '#6B7280', marginTop: '8px' }}>
-                  Choose a hospital in your region
+                  {steps[currentStep]?.title === 'For Whom' 
+                    ? 'Who is this appointment for?' 
+                    : 'Choose a hospital in your region'}
                 </Text>
               </div>
             </div>
@@ -1899,7 +1985,7 @@ export default function BookAppointment() {
         )}
 
           {/* Header - Select Doctor step */}
-          {currentStep === 1 && selectedHospital && (
+          {baseStep === 1 && selectedHospital && (
           <div style={{ 
             background: '#F3F4F6', 
             padding: '24px 32px 24px 32px',
@@ -1952,7 +2038,7 @@ export default function BookAppointment() {
         )}
 
       {/* Header - Select Date & Time step */}
-      {currentStep === 2 && selectedDoctor && selectedHospital && (
+      {baseStep === 2 && selectedDoctor && selectedHospital && (
         <div style={{ 
           background: '#F3F4F6', 
           padding: '24px 32px 24px 32px',
@@ -2007,16 +2093,16 @@ export default function BookAppointment() {
 
       {/* Content */}
       <div style={{ 
-            padding: (currentStep === 0 || currentStep === 1 || currentStep === 2) ? '0 32px 32px 32px' : '0', 
+            padding: (baseStep < 3) ? '0 32px 32px 32px' : '0', 
             width: '100%', 
-            height: currentStep === 3 ? '100vh' : 'auto',
-            overflow: currentStep === 3 ? 'hidden' : 'auto',
+            height: baseStep === 3 ? '100vh' : 'auto',
+            overflow: baseStep === 3 ? 'hidden' : 'auto',
             background: '#F3F4F6',
             position: 'relative',
           }}>
-        <Spin spinning={loading} tip={loading ? (currentStep === 0 ? 'Loading hospitals...' : currentStep === 1 ? 'Loading doctors...' : 'Loading...') : undefined}>
+        <Spin spinning={loading} tip={loading ? (baseStep === 0 ? 'Loading hospitals...' : baseStep === 1 ? 'Loading doctors...' : 'Loading...') : undefined}>
           {/* Back Button - Outside card, top left corner for step 3 */}
-          {currentStep === 3 && (
+          {baseStep === 3 && (
             <div style={{ position: 'absolute', top: '16px', left: '24px', zIndex: 10 }}>
               <Button 
                 icon={<ArrowLeftOutlined />} 
@@ -2037,7 +2123,7 @@ export default function BookAppointment() {
       </div>
       )}
 
-          {currentStep === 0 || currentStep === 1 || currentStep === 2 ? (
+          {baseStep < 3 ? (
             <Form
               form={form}
               layout="vertical"

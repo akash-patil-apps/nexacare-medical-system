@@ -41,6 +41,8 @@ interface PatientFormValues {
   bloodGroup?: string;
   height?: number;
   weight?: number;
+  governmentIdType?: string;
+  governmentIdNumber?: string;
   medicalHistory?: string;
   allergies?: string;
   currentMedications?: string;
@@ -310,6 +312,33 @@ export default function PatientOnboarding() {
                 max={500}
               />
           </Form.Item>
+          </Col>
+          <Col span={12}>
+                <Form.Item name="governmentIdType" label={<Text strong>Government ID Type</Text>}>
+                  <Select
+                    placeholder="Select ID type (optional)"
+                    style={{ height: '48px', borderRadius: '12px' }}
+                    allowClear
+                  >
+                    <Option value="aadhaar">Aadhaar Card</Option>
+                    <Option value="pan">PAN Card</Option>
+                    <Option value="driving_license">Driving License</Option>
+                    <Option value="passport">Passport</Option>
+                  </Select>
+                </Form.Item>
+          </Col>
+          <Col span={12}>
+                <Form.Item
+                  name="governmentIdNumber"
+                  label={<Text strong>Government ID Number</Text>}
+                  dependencies={['governmentIdType']}
+                >
+                  <Input
+                    placeholder="Enter ID number (optional)"
+                    style={{ height: '48px', borderRadius: '12px' }}
+                    maxLength={50}
+                  />
+                </Form.Item>
           </Col>
         </Row>
           </Form>

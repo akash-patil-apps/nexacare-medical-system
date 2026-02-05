@@ -130,15 +130,12 @@ export default function PatientRegistration() {
 
           <Form.Item
             name="email"
-            label="Email Address"
-            rules={[
-              { required: true, message: 'Please enter your email' },
-              { type: 'email', message: 'Please enter a valid email' }
-            ]}
+            label="Email (optional)"
+            rules={[{ type: 'email', message: 'Please enter a valid email' }]}
           >
                 <Input
               prefix={<MailOutlined />}
-              placeholder="Enter email address" 
+              placeholder="Optional" 
             />
           </Form.Item>
 

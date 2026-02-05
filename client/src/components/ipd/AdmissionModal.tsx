@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   Modal,
   Form,
@@ -12,6 +12,7 @@ import {
   Typography,
   Divider,
   Empty,
+  List,
 } from 'antd';
 import { ExclamationCircleOutlined } from '@ant-design/icons';
 import { UserOutlined, SearchOutlined } from '@ant-design/icons';
@@ -39,6 +40,7 @@ export const AdmissionModal: React.FC<AdmissionModalProps> = ({
   patientId,
   hospitalId,
   defaultAdmittingDoctorId,
+  todayAppointments = [],
 }) => {
   const [form] = Form.useForm();
   const queryClient = useQueryClient();
@@ -47,6 +49,22 @@ export const AdmissionModal: React.FC<AdmissionModalProps> = ({
   const [foundPatient, setFoundPatient] = useState<any>(null);
   const [isSearching, setIsSearching] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [selectedFromToday, setSelectedFromToday] = useState<TodayAppointmentItem | null>(null);
+  const [quickCreateModalOpen, setQuickCreateModalOpen] = useState(false);
+  const [quickCreateForm] = Form.useForm();
+  const [quickCreateLoading, setQuickCreateLoading] = useState(false);
+
+  // Unique today's patients (first appointment per patient)
+  const todayPatientsList = useMemo(() => {
+    if (!todayAppointments?.length) return [];
+    const byId = new Map<number, TodayAppointmentItem>();
+    todayAppointments.forEach((a) => {
+      if (a.patientId && !byId.has(a.patientId)) {
+        byId.set(a.patientId, a);
+      }
+    });
+    return Array.from(byId.values());
+  }, [todayAppointments]);
 
   // Fetch bed structure
   const { data: structure, isLoading: structureLoading, error: structureError } = useQuery<BedStructure>({
@@ -222,12 +240,13 @@ export const AdmissionModal: React.FC<AdmissionModalProps> = ({
               'Content-Type': 'application/json',
             },
             body: JSON.stringify({
-              patientId: values.patientId || patientId,
+              patientId: pid,
               admittingDoctorId: values.admittingDoctorId || null,
               attendingDoctorId: values.attendingDoctorId || null,
               admissionType: values.admissionType,
               bedId: selectedBedId,
-              // Note: admissionNotes is not stored in schema yet - can be added later
+              attendantName: values.attendantName || null,
+              attendantMobile: values.attendantMobile || null,
             }),
           });
 
@@ -254,23 +273,75 @@ export const AdmissionModal: React.FC<AdmissionModalProps> = ({
 
   const handleClose = () => {
     form.resetFields();
+    quickCreateForm.resetFields();
     setSelectedBedId(null);
     setSearchMobile('');
     setFoundPatient(null);
+    setSelectedFromToday(null);
+    setQuickCreateModalOpen(false);
     onCancel();
   };
+
+  const handleSelectTodayPatient = (item: TodayAppointmentItem) => {
+    form.setFieldsValue({ patientId: item.patientId });
+    setSelectedFromToday(item);
+    setFoundPatient(null);
+  };
+
+  const handleQuickCreateSubmit = async (values: { fullName: string; mobileNumber: string; gender?: string; dateOfBirth?: any }) => {
+    setQuickCreateLoading(true);
+    try {
+      const token = localStorage.getItem('auth-token');
+      const body: Record<string, string> = {
+        fullName: values.fullName.trim(),
+        mobileNumber: values.mobileNumber.trim(),
+      };
+      if (values.gender) body.gender = values.gender;
+      if (values.dateOfBirth && dayjs.isDayjs(values.dateOfBirth)) {
+        body.dateOfBirth = values.dateOfBirth.format('YYYY-MM-DD');
+      }
+      const response = await fetch('/api/reception/patients/quick-create', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(body),
+      });
+      if (!response.ok) {
+        const err = await response.json();
+        throw new Error(err.message || 'Failed to create profile');
+      }
+      const data = await response.json();
+      setFoundPatient({
+        id: data.patient.id,
+        userId: data.user.id,
+        user: data.user,
+      });
+      form.setFieldsValue({ patientId: data.patient.id });
+      setQuickCreateModalOpen(false);
+      quickCreateForm.resetFields();
+      message.success('Profile created. You can now select bed and admit.');
+    } catch (e: any) {
+      message.error(e.message || 'Failed to create profile');
+    } finally {
+      setQuickCreateLoading(false);
+    }
+  };
+
+  const currentPatientId = patientId ?? form.getFieldValue('patientId') ?? foundPatient?.id ?? selectedFromToday?.patientId;
+  const showPatientSearch = !patientId && !currentPatientId;
 
   // Reset when modal opens/closes
   useEffect(() => {
     if (open) {
       if (patientId) {
         form.setFieldsValue({ patientId });
-        // Note: We don't set foundPatient here because we don't have user info
-        // The form will work with just the patientId
       } else {
         form.resetFields();
         setSearchMobile('');
         setFoundPatient(null);
+        setSelectedFromToday(null);
       }
       setSelectedBedId(null);
     }
@@ -293,57 +364,108 @@ export const AdmissionModal: React.FC<AdmissionModalProps> = ({
           admissionType: 'elective',
         }}
       >
-        {/* Patient Search/Selection */}
+        {/* Patient Search/Selection - no ID search; today's patients first, then mobile search, then quick-create */}
+        <Form.Item name="patientId" hidden>
+          <Input type="hidden" />
+        </Form.Item>
         {!patientId && (
           <>
-            <Form.Item label="Search Patient by Mobile">
-              <Space.Compact style={{ width: '100%' }}>
-                <Input
-                  placeholder="Enter 10-digit mobile number"
-                  maxLength={10}
-                  value={searchMobile}
-                  onChange={(e) => setSearchMobile(e.target.value)}
-                  prefix={<UserOutlined />}
-                />
-                <Button
-                  type="primary"
-                  icon={<SearchOutlined />}
-                  loading={isSearching}
-                  onClick={handleSearchPatient}
-                >
-                  Search
-                </Button>
-              </Space.Compact>
-            </Form.Item>
-            {foundPatient && (
+            {currentPatientId ? (
               <div style={{ marginBottom: 16, padding: 12, background: '#f0f9ff', borderRadius: 8 }}>
                 <Space direction="vertical" size={4}>
                   <Space>
                     <UserOutlined />
                     <div>
-                      <Text strong>{foundPatient.user?.fullName || 'Unknown'}</Text>
+                      <Text strong>
+                        {foundPatient?.user?.fullName ?? selectedFromToday?.patientName ?? 'Patient'}
+                      </Text>
                       <br />
-                      <Text type="secondary">Mobile: {foundPatient.user?.mobileNumber}</Text>
+                      <Text type="secondary">
+                        Mobile: {foundPatient?.user?.mobileNumber ?? selectedFromToday?.patientMobile ?? '—'}
+                      </Text>
                     </div>
                   </Space>
                   <Text type="secondary" style={{ fontSize: 12, marginLeft: 24 }}>
-                    Patient ID: {foundPatient.id}
+                    Patient ID: {currentPatientId}
                   </Text>
+                  <Button type="link" size="small" onClick={() => { form.setFieldsValue({ patientId: undefined }); setFoundPatient(null); setSelectedFromToday(null); }}>
+                    Change patient
+                  </Button>
                 </Space>
               </div>
+            ) : (
+              <>
+                {todayPatientsList.length > 0 && (
+                  <>
+                    <Text strong style={{ display: 'block', marginBottom: 8 }}>Today&apos;s appointments – select a patient</Text>
+                    <List
+                      size="small"
+                      dataSource={todayPatientsList}
+                      style={{ marginBottom: 16, maxHeight: 200, overflow: 'auto' }}
+                      renderItem={(item) => (
+                        <List.Item
+                          extra={
+                            <Button type="primary" size="small" onClick={() => handleSelectTodayPatient(item)}>
+                              Select & admit
+                            </Button>
+                          }
+                        >
+                          <Space direction="vertical" size={0}>
+                            <Text strong>{item.patientName || 'Unknown'}</Text>
+                            <Text type="secondary" style={{ fontSize: 12 }}>
+                              {item.patientMobile || '—'} · {item.timeSlot || '—'}
+                            </Text>
+                          </Space>
+                        </List.Item>
+                      )}
+                    />
+                    <Divider style={{ margin: '12px 0' }}>Or search by mobile number</Divider>
+                  </>
+                )}
+                <Form.Item label="Search by mobile number">
+                  <Space.Compact style={{ width: '100%' }}>
+                    <Input
+                      placeholder="Enter 10-digit mobile number"
+                      maxLength={15}
+                      value={searchMobile}
+                      onChange={(e) => setSearchMobile(e.target.value.replace(/\D/g, '').slice(0, 15))}
+                      prefix={<UserOutlined />}
+                    />
+                    <Button
+                      type="primary"
+                      icon={<SearchOutlined />}
+                      loading={isSearching}
+                      onClick={handleSearchPatient}
+                    >
+                      Search
+                    </Button>
+                  </Space.Compact>
+                </Form.Item>
+                {searchMobile.length >= 10 && !foundPatient && (
+                  <div style={{ marginBottom: 16 }}>
+                    <Button
+                      type="dashed"
+                      icon={<UserAddOutlined />}
+                      onClick={() => {
+                        quickCreateForm.setFieldsValue({ fullName: '', mobileNumber: searchMobile.trim() });
+                        setQuickCreateModalOpen(true);
+                      }}
+                      block
+                    >
+                      Create profile for this number
+                    </Button>
+                    <Text type="secondary" style={{ fontSize: 12, display: 'block', marginTop: 4 }}>
+                      Patient not in system? Create minimal profile (name, mobile) and admit; fill rest later.
+                    </Text>
+                  </div>
+                )}
+                {foundPatient && (
+                  <div style={{ marginBottom: 16, padding: 12, background: '#f6ffed', borderRadius: 8 }}>
+                    <Text type="success">Patient found: {foundPatient.user?.fullName}. You can select bed and admit below.</Text>
+                  </div>
+                )}
+              </>
             )}
-            <Form.Item
-              name="patientId"
-              label="Patient ID"
-              rules={[{ required: true, message: 'Please search and select a patient' }]}
-              help={foundPatient ? `Patient found: ${foundPatient.user?.fullName}` : 'Search by mobile number to find patient'}
-            >
-              <Input 
-                type="number" 
-                placeholder={foundPatient ? `Patient ID: ${foundPatient.id}` : "Enter patient ID or search by mobile"} 
-                disabled={!!foundPatient}
-              />
-            </Form.Item>
           </>
         )}
 
@@ -484,6 +606,51 @@ export const AdmissionModal: React.FC<AdmissionModalProps> = ({
           </Space>
         </Form.Item>
       </Form>
+
+      {/* Quick-create patient modal (minimal profile for IPD admission) */}
+      <Modal
+        title="Create profile for this number"
+        open={quickCreateModalOpen}
+        onCancel={() => { setQuickCreateModalOpen(false); quickCreateForm.resetFields(); }}
+        footer={null}
+        destroyOnClose
+      >
+        <Form
+          form={quickCreateForm}
+          layout="vertical"
+          onFinish={handleQuickCreateSubmit}
+          initialValues={{ mobileNumber: searchMobile.trim() }}
+        >
+          <Form.Item
+            name="fullName"
+            label="Full name"
+            rules={[{ required: true, message: 'Enter patient name' }, { min: 2, message: 'At least 2 characters' }]}
+          >
+            <Input placeholder="Patient full name" />
+          </Form.Item>
+          <Form.Item name="mobileNumber" label="Mobile number">
+            <Input disabled placeholder="10-digit mobile" />
+          </Form.Item>
+          <Form.Item name="gender" label="Gender (optional)">
+            <Select placeholder="Select" allowClear>
+              <Select.Option value="male">Male</Select.Option>
+              <Select.Option value="female">Female</Select.Option>
+              <Select.Option value="other">Other</Select.Option>
+            </Select>
+          </Form.Item>
+          <Form.Item name="dateOfBirth" label="Date of birth (optional)">
+            <DatePicker style={{ width: '100%' }} format="DD/MM/YYYY" />
+          </Form.Item>
+          <Form.Item style={{ marginBottom: 0 }}>
+            <Space>
+              <Button onClick={() => { setQuickCreateModalOpen(false); quickCreateForm.resetFields(); }}>Cancel</Button>
+              <Button type="primary" htmlType="submit" loading={quickCreateLoading}>
+                Create & continue to admit
+              </Button>
+            </Space>
+          </Form.Item>
+        </Form>
+      </Modal>
     </Modal>
   );
 };

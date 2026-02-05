@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Redirect } from "wouter";
+import { Redirect, useLocation } from "wouter";
 import { 
   Layout, 
   Card, 
@@ -26,6 +26,7 @@ import {
   Steps,
   Alert,
   Avatar,
+  Empty,
   notification as antdNotification,
 } from 'antd';
 import { 
@@ -81,6 +82,7 @@ import { LabTestsConfirmationModal } from '../../components/modals/lab-tests-con
 import { VitalsEntryForm } from '../../components/clinical/VitalsEntryForm';
 import LabRequestModal from '../../components/modals/lab-request-modal';
 import { injectNotificationProgressBar } from '../../lib/notification-utils';
+import { getShownNotificationIds, markNotificationAsShown } from '../../lib/notification-shown-storage';
 import tubeIcon from '../../assets/images/tube.png';
 import checkInIcon from '../../assets/images/check-in.png';
 import medicalIcon from '../../assets/images/medical.png';
@@ -97,13 +99,12 @@ const receptionistTheme = {
 };
 
 export default function ReceptionistDashboard() {
+  const [location] = useLocation();
   const { user, isLoading } = useAuth();
   const { notification: notificationApi } = App.useApp();
   const queryClient = useQueryClient();
   const { isMobile, isTablet } = useResponsive();
-  const shownNotificationIdsRef = useRef<Set<number>>(new Set());
   const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false);
-  const [selectedMenuKey] = useState<string>('dashboard');
   const [isBookingModalOpen, setIsBookingModalOpen] = useState(false);
   const [isWalkInModalOpen, setIsWalkInModalOpen] = useState(false);
   const [isWalkInSubmitting, setIsWalkInSubmitting] = useState(false);
@@ -128,6 +129,7 @@ export default function ReceptionistDashboard() {
   const [verifyingOtp, setVerifyingOtp] = useState(false);
   const [dateMode, setDateMode] = useState<'today' | 'tomorrow' | 'custom'>('today');
   const [activeAppointmentTab, setActiveAppointmentTab] = useState<string>('today_all');
+  const [selectedViewDate, setSelectedViewDate] = useState<Dayjs | null>(null);
   const [patientInfoDrawerOpen, setPatientInfoDrawerOpen] = useState(false);
   const [patientInfo, setPatientInfo] = useState<any>(null);
   const [isAdmissionModalOpen, setIsAdmissionModalOpen] = useState(false);
@@ -137,6 +139,28 @@ export default function ReceptionistDashboard() {
   const [isTransferModalOpen, setIsTransferModalOpen] = useState(false);
   const [isDischargeModalOpen, setIsDischargeModalOpen] = useState(false);
   const [activeMainTab, setActiveMainTab] = useState<string>('appointments');
+  const appointmentsSectionRef = useRef<HTMLDivElement>(null);
+  // When on receptionist dashboard page, always highlight Dashboard icon in sidebar (not Appointments)
+  const selectedMenuKey = 'dashboard';
+
+  const handleAppointmentsIconClick = () => {
+    setActiveMainTab('appointments');
+    setTimeout(() => {
+      appointmentsSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 100);
+  };
+
+  // Open Appointments tab when navigating with ?tab=appointments (e.g. from sidebar when on another page)
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('tab') === 'appointments') {
+      setActiveMainTab('appointments');
+      setTimeout(() => {
+        appointmentsSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }, 200);
+    }
+  }, [location]);
+
   const [patientInfoLoading, setPatientInfoLoading] = useState(false);
   const [recommendedLabTests, setRecommendedLabTests] = useState<any[]>([]);
   const [selectedLabReport, setSelectedLabReport] = useState<any>(null);
@@ -218,6 +242,8 @@ export default function ReceptionistDashboard() {
           const m = notes.match(/Token:\s*(\d+)/i);
           return m ? Number(m[1]) : null;
         })();
+        // Prefer token_identifier (e.g. 15A-01), then legacy tokenNumber, then parsed from notes (handle both API shapes)
+        const tokenDisplay = apt.tokenIdentifier ?? apt.token_identifier ?? (apt.tokenNumber ?? tokenFromNotes);
         
         return {
           id: apt.id,
@@ -233,6 +259,7 @@ export default function ReceptionistDashboard() {
           phone: apt.patientPhone || apt.patientMobile || apt.patientPhoneNumber || 'N/A',
           type: apt.type || 'online',
           paymentStatus: apt.paymentStatus || null,
+          tokenDisplay,
           tokenNumber: (apt.tokenNumber ?? tokenFromNotes) ?? null,
           checkedInAt: apt.checkedInAt ?? null,
           date: apt.appointmentDate,
@@ -283,20 +310,19 @@ export default function ReceptionistDashboard() {
     return () => window.removeEventListener('storage', handleStorageChange);
   }, [refetchAppointments]);
 
-  // Show floating notifications with action buttons for receptionist
+  // Show floating notifications with action buttons for receptionist (only once per notification, persisted across refresh)
   useEffect(() => {
-    if (!notifications || notifications.length === 0) return;
+    if (!notifications || notifications.length === 0 || !user?.id) return;
 
+    const shownIds = getShownNotificationIds(user.id);
     const unread = notifications.filter((n: any) => !n.isRead);
-    
+
     unread.forEach((notif: any) => {
       const notifId = Number(notif.id);
-      
-      // Only show if we haven't shown this notification before
-      if (!shownNotificationIdsRef.current.has(notifId)) {
-        shownNotificationIdsRef.current.add(notifId);
-        
-        const type = (notif.type || '').toLowerCase();
+      if (shownIds.has(notifId)) return;
+      markNotificationAsShown(user.id, notifId);
+
+      const type = (notif.type || '').toLowerCase();
         let notificationType: 'info' | 'success' | 'warning' | 'error' = 'info';
         if (type.includes('cancel') || type.includes('reject')) notificationType = 'error';
         else if (type.includes('confirm') || type.includes('complete')) notificationType = 'success';
@@ -395,15 +421,14 @@ export default function ReceptionistDashboard() {
         });
 
         // Inject progress bar after notification is rendered
-        injectNotificationProgressBar(
-          notif.title || 'Notification',
-          notif.message || '',
-          notificationType,
-          10
-        );
-      }
+      injectNotificationProgressBar(
+        notif.title || 'Notification',
+        notif.message || '',
+        notificationType,
+        10
+      );
     });
-  }, [notifications, notificationApi, queryClient, appointments]);
+  }, [notifications, notificationApi, queryClient, appointments, user?.id]);
 
   // Reset appointmentBookingStep when entering appointment booking section
   useEffect(() => {
@@ -977,15 +1002,41 @@ export default function ReceptionistDashboard() {
     });
   }, [appointments]);
 
-  // All appointments for today (for "Today (All)" tab) - Using IST
+  // Sort key for appointment order: token (slot + seq) first, then time. Supports tokenDisplay (e.g. 15A-01) and legacy tokenNumber.
+  const appointmentSortKey = (apt: any) => {
+    const disp = apt.tokenDisplay ?? apt.tokenIdentifier ?? apt.token_identifier;
+    if (typeof disp === 'string' && /^\d{1,2}[AB]-\d{1,2}$/i.test(disp.trim())) {
+      const m = disp.trim().match(/^(\d{1,2})(A|B)-(\d{1,2})$/i);
+      if (m) {
+        const hour = parseInt(m[1], 10);
+        const half = m[2].toUpperCase() === 'B' ? 30 : 0;
+        const seq = parseInt(m[3], 10);
+        return hour * 60 + half + seq / 100;
+      }
+    }
+    const num = apt.tokenNumber;
+    if (num != null && typeof num === 'number') return num;
+    return 999999;
+  };
+
+  // All appointments for today (for "Today (All)" tab) - sorted by token (slot+seq) then time
   const todayAllAppointments = useMemo(() => {
     const todayIST = getISTStartOfDay();
-    return appointments.filter((apt: any) => {
-      if (!apt.date && !apt.dateObj) return false;
-      const d = apt.dateObj || new Date(apt.date);
-      if (isNaN(d.getTime())) return false;
-      return isSameDayIST(d, todayIST);
-    });
+    return appointments
+      .filter((apt: any) => {
+        if (!apt.date && !apt.dateObj) return false;
+        const d = apt.dateObj || new Date(apt.date);
+        if (isNaN(d.getTime())) return false;
+        return isSameDayIST(d, todayIST);
+      })
+      .sort((a: any, b: any) => {
+        const keyA = appointmentSortKey(a);
+        const keyB = appointmentSortKey(b);
+        if (keyA !== keyB) return keyA - keyB;
+        const timeA = a.dateObj || new Date(a.date);
+        const timeB = b.dateObj || new Date(b.date);
+        return timeA.getTime() - timeB.getTime();
+      });
   }, [appointments]);
 
   // Pending appointments (Today + Future) - receptionist needs to see all that require action
@@ -998,22 +1049,31 @@ export default function ReceptionistDashboard() {
     return futureAppointments.filter((apt: any) => normalizeStatus(apt.status) === APPOINTMENT_STATUS.CONFIRMED);
   }, [futureAppointments]);
 
-  // Checked-in appointments for today (checked-in / attended) - Using IST
+  // Checked-in appointments for today (checked-in / attended) - sorted by token then time
   const checkedInTodayAppointments = useMemo(() => {
     const todayIST = getISTStartOfDay();
-    return appointments.filter((apt: any) => {
-      const normalizedStatus = normalizeStatus(apt.status);
-      if (
-        normalizedStatus !== APPOINTMENT_STATUS.CHECKED_IN &&
-        normalizedStatus !== APPOINTMENT_STATUS.ATTENDED
-      ) {
-        return false;
-      }
-      if (!apt.date && !apt.dateObj) return false;
-      const d = apt.dateObj || new Date(apt.date);
-      if (isNaN(d.getTime())) return false;
-      return isSameDayIST(d, todayIST);
-    });
+    return appointments
+      .filter((apt: any) => {
+        const normalizedStatus = normalizeStatus(apt.status);
+        if (
+          normalizedStatus !== APPOINTMENT_STATUS.CHECKED_IN &&
+          normalizedStatus !== APPOINTMENT_STATUS.ATTENDED
+        ) {
+          return false;
+        }
+        if (!apt.date && !apt.dateObj) return false;
+        const d = apt.dateObj || new Date(apt.date);
+        if (isNaN(d.getTime())) return false;
+        return isSameDayIST(d, todayIST);
+      })
+      .sort((a: any, b: any) => {
+        const keyA = appointmentSortKey(a);
+        const keyB = appointmentSortKey(b);
+        if (keyA !== keyB) return keyA - keyB;
+        const timeA = a.dateObj || new Date(a.date);
+        const timeB = b.dateObj || new Date(b.date);
+        return timeA.getTime() - timeB.getTime();
+      });
   }, [appointments]);
 
   // In consultation appointments for today - Using IST
@@ -1021,28 +1081,85 @@ export default function ReceptionistDashboard() {
     return todayAllAppointments.filter((apt: any) => normalizeStatus(apt.status) === APPOINTMENT_STATUS.IN_CONSULTATION);
   }, [todayAllAppointments]);
 
-  // Get appointments for active tab (only future appointments)
+  // Appointments for selected date (Past / By date tab) - any date, past or future
+  const selectedDateAppointments = useMemo(() => {
+    if (!selectedViewDate) return [];
+    const selectedStart = getISTStartOfDay(selectedViewDate.toDate());
+    return appointments
+      .filter((apt: any) => {
+        if (!apt.date && !apt.dateObj) return false;
+        const d = apt.dateObj || new Date(apt.date);
+        if (isNaN(d.getTime())) return false;
+        return isSameDayIST(d, selectedStart);
+      })
+      .sort((a: any, b: any) => {
+        const dateTimeA = a.dateObj || new Date(a.date);
+        const dateTimeB = b.dateObj || new Date(b.date);
+        return dateTimeA.getTime() - dateTimeB.getTime();
+      });
+  }, [appointments, selectedViewDate]);
+
+  // Today's doctors for queue tabs: include every doctor with at least one appointment today; count = in queue + confirmed/pending (so tab shows e.g. (1) when there's someone to check in)
+  const todayDoctorsForQueue = useMemo(() => {
+    const todayIST = getISTStartOfDay();
+    const byDoctor = new Map<number, { doctorId: number; doctorName: string; specialty: string; count: number }>();
+    appointments.forEach((apt: any) => {
+      if (!apt.date && !apt.dateObj) return;
+      const d = apt.dateObj || new Date(apt.date);
+      if (isNaN(d.getTime()) || !isSameDayIST(d, todayIST)) return;
+      const id = apt.doctorId ?? apt.doctor_id;
+      const name = apt.doctor ?? 'Unknown';
+      const specialty = apt.department ?? apt.doctorSpecialty ?? 'General';
+      if (!id) return;
+      const normalizedStatus = normalizeStatus(apt.status);
+      const inQueue =
+        normalizedStatus === APPOINTMENT_STATUS.CHECKED_IN ||
+        normalizedStatus === APPOINTMENT_STATUS.ATTENDED ||
+        normalizedStatus === APPOINTMENT_STATUS.IN_CONSULTATION;
+      const confirmedOrPending =
+        normalizedStatus === APPOINTMENT_STATUS.CONFIRMED || normalizedStatus === APPOINTMENT_STATUS.PENDING;
+      const counts = inQueue ? 1 : confirmedOrPending ? 1 : 0;
+      const existing = byDoctor.get(id);
+      if (existing) {
+        existing.count += counts;
+      } else {
+        byDoctor.set(id, { doctorId: id, doctorName: name, specialty, count: counts });
+      }
+    });
+    return Array.from(byDoctor.values()).sort((a, b) => a.doctorName.localeCompare(b.doctorName));
+  }, [appointments]);
+
+  // Get appointments for active tab - sorted by token (slot+seq or number) then time
   const appointmentsToShow = useMemo(() => {
+    const sortByToken = (list: any[]) => {
+      return [...list].sort((a: any, b: any) => {
+        const keyA = appointmentSortKey(a);
+        const keyB = appointmentSortKey(b);
+        if (keyA !== keyB) return keyA - keyB;
+        const timeA = a.dateObj || new Date(a.date);
+        const timeB = b.dateObj || new Date(b.date);
+        return timeA.getTime() - timeB.getTime();
+      });
+    };
     switch (activeAppointmentTab) {
       case 'queue':
         return []; // Queue tab shows QueuePanel component, not appointments
       case 'today_all':
         return todayAllAppointments;
       case 'pending':
-        return pendingAppointments;
+        return sortByToken(pendingAppointments);
       case 'confirmed':
-        return confirmedAppointments;
+        return sortByToken(confirmedAppointments);
       case 'checkedin':
         return checkedInTodayAppointments;
       case 'inconsultation':
-        return inConsultationTodayAppointments;
+        return sortByToken(inConsultationTodayAppointments);
       case 'completed':
-      return completedTodayAppointments;
+        return sortByToken(completedTodayAppointments);
       case 'tomorrow':
-      return appointmentsByDate.tomorrow || [];
+        return sortByToken(appointmentsByDate.tomorrow || []);
       default:
-        // Date-key tabs (future dates)
-      return appointmentsByDate[activeAppointmentTab] || [];
+        return sortByToken(appointmentsByDate[activeAppointmentTab] || []);
     }
   }, [
     activeAppointmentTab,
@@ -1094,7 +1211,7 @@ export default function ReceptionistDashboard() {
           });
         }
       });
-    
+
     return tabs;
   }, [
     appointmentsByDate,
@@ -1376,10 +1493,12 @@ export default function ReceptionistDashboard() {
       const responseData = await response.json();
 
       if (response.ok) {
-        const tokenNumber = (responseData as any)?.tokenNumber ?? (responseData as any)?.token_number;
+        const tokenId = (responseData as any)?.tokenIdentifier ?? (responseData as any)?.token_identifier;
+        const tokenNum = (responseData as any)?.tokenNumber ?? (responseData as any)?.token_number;
+        const tokenLabel = tokenId ?? tokenNum;
         message.success(
-          tokenNumber
-            ? `Patient checked in successfully! Token #${tokenNumber}`
+          tokenLabel != null
+            ? `Patient checked in successfully! Token ${typeof tokenLabel === 'number' ? '#' : ''}${tokenLabel}`
             : 'Patient checked in successfully! They can now proceed to doctor\'s cabin.'
         );
         // Trigger storage event to notify other tabs/windows
@@ -2114,12 +2233,12 @@ export default function ReceptionistDashboard() {
     },
     {
       title: 'Token',
-      dataIndex: 'tokenNumber',
-      key: 'tokenNumber',
-      width: 60,
+      dataIndex: 'tokenDisplay',
+      key: 'tokenDisplay',
+      width: 72,
       align: 'center' as const,
-      render: (tokenNumber: number | null | undefined) =>
-        tokenNumber ? <Text strong>{tokenNumber}</Text> : <Text type="secondary">-</Text>,
+      render: (tokenDisplay: string | number | null | undefined) =>
+        tokenDisplay != null && tokenDisplay !== '' ? <Text strong>{String(tokenDisplay)}</Text> : <Text type="secondary">-</Text>,
     },
     {
       title: 'Doctor',
@@ -3383,7 +3502,7 @@ export default function ReceptionistDashboard() {
             borderBottom: '1px solid #E3F2FF',
           }}
         >
-          <ReceptionistSidebar selectedMenuKey={selectedMenuKey} hospitalName={hospitalName} />
+          <ReceptionistSidebar selectedMenuKey={selectedMenuKey} hospitalName={hospitalName} onDashboardClick={handleAppointmentsIconClick} onAppointmentsClick={handleAppointmentsIconClick} />
         </Sider>
       )}
 
@@ -3397,7 +3516,7 @@ export default function ReceptionistDashboard() {
           styles={{ body: { padding: 0 } }}
           width={80}
         >
-          <ReceptionistSidebar selectedMenuKey={selectedMenuKey} hospitalName={hospitalName} onMenuClick={() => setMobileDrawerOpen(false)} />
+          <ReceptionistSidebar selectedMenuKey={selectedMenuKey} hospitalName={hospitalName} onMenuClick={() => setMobileDrawerOpen(false)} onDashboardClick={() => { handleAppointmentsIconClick(); setMobileDrawerOpen(false); }} onAppointmentsClick={() => { handleAppointmentsIconClick(); setMobileDrawerOpen(false); }} />
         </Drawer>
       )}
 
@@ -3608,6 +3727,8 @@ export default function ReceptionistDashboard() {
                     key: 'appointments',
                     label: 'Appointments',
                     children: (
+                      <div ref={appointmentsSectionRef} style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
+                      <>
               <Card 
                 variant="borderless"
                 style={{ 
@@ -3717,9 +3838,25 @@ export default function ReceptionistDashboard() {
                           paddingTop: 16,
                         }}>
                           {tab.key === 'queue' ? (
-                            // Queue Management Panel
-                            <div style={{ flex: 1, overflowY: 'auto', padding: '16px' }}>
-                              <QueuePanel />
+                            // Queue Management: tabs for each doctor with appointments today
+                            <div style={{ flex: 1, overflowY: 'auto', padding: '16px', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+                              {todayDoctorsForQueue.length === 0 ? (
+                                <Empty description="No doctors with appointments today. Select another tab or book appointments." />
+                              ) : (
+                                <Tabs
+                                  defaultActiveKey={String(todayDoctorsForQueue[0]?.doctorId ?? '')}
+                                  style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}
+                                  items={todayDoctorsForQueue.map((doc) => ({
+                                    key: String(doc.doctorId),
+                                    label: `${doc.doctorName} (${doc.count})`,
+                                    children: (
+                                      <div style={{ paddingTop: 8 }}>
+                                        <QueuePanel doctorId={doc.doctorId} date={dayjs().format('YYYY-MM-DD')} />
+                                      </div>
+                                    ),
+                                  }))}
+                                />
+                              )}
                             </div>
                           ) : isMobile ? (
                               <Space direction="vertical" size={12} style={{ width: '100%', flex: 1, overflowY: 'auto', paddingRight: 8, paddingBottom: 40 }}>
@@ -3770,6 +3907,10 @@ export default function ReceptionistDashboard() {
                 )}
                 </div>
               </Card>
+
+              {/* Past Appointments moved to /receptionist/appointments */}
+                      </>
+                      </div>
                     ),
                   },
                   {
@@ -5670,6 +5811,15 @@ export default function ReceptionistDashboard() {
         }}
         patientId={selectedPatientForAdmission}
         hospitalId={hospitalId}
+        todayAppointments={todayAllAppointments
+          .filter((a: any) => a.patientId)
+          .map((a: any) => ({
+            patientId: a.patientId,
+            patientName: a.patient,
+            patientMobile: a.phone,
+            timeSlot: a.time,
+            appointmentDate: a.date,
+          }))}
       />
 
       {/* Transfer Modal */}

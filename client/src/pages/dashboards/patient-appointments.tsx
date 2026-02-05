@@ -888,12 +888,12 @@ export default function PatientAppointments() {
     },
     {
       title: 'Token',
-      dataIndex: 'tokenNumber',
-      key: 'tokenNumber',
+      dataIndex: 'tokenDisplay',
+      key: 'tokenDisplay',
       width: 80,
       align: 'center' as const,
-      render: (tokenNumber: number | null | undefined) => (
-        tokenNumber ? <Text strong>{tokenNumber}</Text> : <Text type="secondary">-</Text>
+      render: (tokenDisplay: string | number | null | undefined) => (
+        tokenDisplay != null && tokenDisplay !== '' ? <Text strong>{String(tokenDisplay)}</Text> : <Text type="secondary">-</Text>
       ),
     },
     {

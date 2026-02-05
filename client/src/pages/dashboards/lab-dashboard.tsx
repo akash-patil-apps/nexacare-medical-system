@@ -44,6 +44,7 @@ import { NotificationBell } from '../../components/notifications/NotificationBel
 import { TopHeader } from '../../components/layout/TopHeader';
 import { LabTechnicianSidebar } from '../../components/layout/LabTechnicianSidebar';
 import { subscribeToAppointmentEvents } from '../../lib/appointments-events';
+import { getShownNotificationIds, markNotificationAsShown } from '../../lib/notification-shown-storage';
 import { getISTStartOfDay, isSameDayIST } from '../../lib/timezone';
 import PendingLabOrders from '../lab/pending-orders';
 import LabResultEntry from '../lab/result-entry';
@@ -66,7 +67,6 @@ export default function LabDashboard() {
   const { notification: notificationApi } = App.useApp();
   const { isMobile, isTablet } = useResponsive();
   const queryClient = useQueryClient();
-  const shownNotificationIdsRef = useRef<Set<number>>(new Set());
   const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false);
   const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
   const [selectedReport, setSelectedReport] = useState<any>(null);
@@ -165,60 +165,55 @@ export default function LabDashboard() {
     refetchOnWindowFocus: true,
   });
 
-  // Show floating notifications for unread notifications
+  // Show floating notifications for unread notifications (only once per notification, persisted across refresh)
   useEffect(() => {
-    if (!notifications || notifications.length === 0) return;
+    if (!notifications || notifications.length === 0 || !user?.id) return;
 
+    const shownIds = getShownNotificationIds(user.id);
     const unread = notifications.filter((n: any) => !n.isRead);
-    
+
     unread.forEach((notif: any) => {
       const notifId = Number(notif.id);
-      
-      // Only show if we haven't shown this notification before
-      if (!shownNotificationIdsRef.current.has(notifId)) {
-        shownNotificationIdsRef.current.add(notifId);
-        
-        const type = (notif.type || '').toLowerCase();
-        let notificationType: 'info' | 'success' | 'warning' | 'error' = 'info';
-        if (type.includes('cancel') || type.includes('reject') || type.includes('critical')) notificationType = 'error';
-        else if (type.includes('confirm') || type.includes('complete') || type.includes('ready')) notificationType = 'success';
-        else if (type.includes('pending') || type.includes('resched') || type.includes('processing')) notificationType = 'warning';
-        
-        // Show as floating notification in top right
-        notificationApi[notificationType]({
-          message: notif.title || 'Notification',
-          description: notif.message,
-          placement: 'topRight',
-          duration: 10, // Auto-dismiss after 10 seconds
-          key: `notif-${notifId}`,
-          onClick: () => {
-            // Mark as read when clicked
-            const token = localStorage.getItem('auth-token');
-            if (token) {
-              fetch(`/api/notifications/read/${notifId}`, {
-                method: 'POST',
-                headers: { Authorization: `Bearer ${token}` },
-              }).then(() => {
-                queryClient.invalidateQueries({ queryKey: ['/api/notifications/me'] });
-              });
-            }
-          },
-          onClose: () => {
-            // Mark as read when closed
-            const token = localStorage.getItem('auth-token');
-            if (token) {
-              fetch(`/api/notifications/read/${notifId}`, {
-                method: 'POST',
-                headers: { Authorization: `Bearer ${token}` },
-              }).then(() => {
-                queryClient.invalidateQueries({ queryKey: ['/api/notifications/me'] });
-              });
-            }
-          },
-        });
-      }
+      if (shownIds.has(notifId)) return;
+      markNotificationAsShown(user.id, notifId);
+
+      const type = (notif.type || '').toLowerCase();
+      let notificationType: 'info' | 'success' | 'warning' | 'error' = 'info';
+      if (type.includes('cancel') || type.includes('reject') || type.includes('critical')) notificationType = 'error';
+      else if (type.includes('confirm') || type.includes('complete') || type.includes('ready')) notificationType = 'success';
+      else if (type.includes('pending') || type.includes('resched') || type.includes('processing')) notificationType = 'warning';
+
+      notificationApi[notificationType]({
+        message: notif.title || 'Notification',
+        description: notif.message,
+        placement: 'topRight',
+        duration: 10,
+        key: `notif-${notifId}`,
+        onClick: () => {
+          const token = localStorage.getItem('auth-token');
+          if (token) {
+            fetch(`/api/notifications/read/${notifId}`, {
+              method: 'POST',
+              headers: { Authorization: `Bearer ${token}` },
+            }).then(() => {
+              queryClient.invalidateQueries({ queryKey: ['/api/notifications/me'] });
+            });
+          }
+        },
+        onClose: () => {
+          const token = localStorage.getItem('auth-token');
+          if (token) {
+            fetch(`/api/notifications/read/${notifId}`, {
+              method: 'POST',
+              headers: { Authorization: `Bearer ${token}` },
+            }).then(() => {
+              queryClient.invalidateQueries({ queryKey: ['/api/notifications/me'] });
+            });
+          }
+        },
+      });
     });
-  }, [notifications, notificationApi, queryClient]);
+  }, [notifications, notificationApi, queryClient, user?.id]);
 
   // Real-time: subscribe to appointment events for notifications
   useEffect(() => {

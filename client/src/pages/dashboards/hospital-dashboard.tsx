@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect, useRef } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Redirect } from "wouter";
+import { Redirect, useLocation } from "wouter";
 import { formatTimeSlot12h } from "../../lib/time";
 import { 
   Layout, 
@@ -20,6 +20,7 @@ import {
   Divider,
   Tabs,
   List,
+  DatePicker,
 } from 'antd';
 import { 
   UserOutlined, 
@@ -33,6 +34,7 @@ import {
   DollarOutlined,
   BellOutlined,
   LogoutOutlined,
+  MessageOutlined,
 } from '@ant-design/icons';
 import { useAuth } from '../../hooks/use-auth';
 import { useResponsive } from '../../hooks/use-responsive';
@@ -45,8 +47,9 @@ import IPDPatientDetail from '../../pages/ipd/patient-detail';
 import { ClinicalNotesEditor } from '../../components/clinical/ClinicalNotesEditor';
 import { VitalsEntryForm } from '../../components/clinical/VitalsEntryForm';
 import { subscribeToAppointmentEvents } from '../../lib/appointments-events';
+import { getShownNotificationIds, markNotificationAsShown } from '../../lib/notification-shown-storage';
 import { getISTStartOfDay, isSameDayIST } from '../../lib/timezone';
-import dayjs from 'dayjs';
+import dayjs, { type Dayjs } from 'dayjs';
 import { normalizeStatus, APPOINTMENT_STATUS } from '../../lib/appointment-status';
 import type { IpdEncounter } from '../../types/ipd';
 import ReportsPage from '../reports/ReportsPage';
@@ -64,13 +67,14 @@ const hospitalTheme = {
 };
 
 export default function HospitalDashboard() {
+  const [, setLocation] = useLocation();
   const { user, isLoading, logout } = useAuth();
   const { notification: notificationApi } = App.useApp();
   const { isMobile, isTablet } = useResponsive();
   const queryClient = useQueryClient();
-  const shownNotificationIdsRef = useRef<Set<number>>(new Set());
   const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false);
   const [activeAppointmentTab, setActiveAppointmentTab] = useState<string>('today_all');
+  const [selectedViewDate, setSelectedViewDate] = useState<Dayjs | null>(null);
   const [activeMainTab, setActiveMainTab] = useState<string>('appointments');
   const [ipdSubTab, setIpdSubTab] = useState<string>('structure');
   const [selectedEncounter, setSelectedEncounter] = useState<IpdEncounter | null>(null);
@@ -277,60 +281,55 @@ export default function HospitalDashboard() {
     refetchOnWindowFocus: true,
   });
 
-  // Show floating notifications for unread notifications
+  // Show floating notifications for unread notifications (only once per notification, persisted across refresh)
   useEffect(() => {
-    if (!notifications || notifications.length === 0) return;
+    if (!notifications || notifications.length === 0 || !user?.id) return;
 
+    const shownIds = getShownNotificationIds(user.id);
     const unread = notifications.filter((n: any) => !n.isRead);
-    
+
     unread.forEach((notif: any) => {
       const notifId = Number(notif.id);
-      
-      // Only show if we haven't shown this notification before
-      if (!shownNotificationIdsRef.current.has(notifId)) {
-        shownNotificationIdsRef.current.add(notifId);
-        
-        const type = (notif.type || '').toLowerCase();
-        let notificationType: 'info' | 'success' | 'warning' | 'error' = 'info';
-        if (type.includes('cancel') || type.includes('reject') || type.includes('critical')) notificationType = 'error';
-        else if (type.includes('confirm') || type.includes('complete') || type.includes('ready')) notificationType = 'success';
-        else if (type.includes('pending') || type.includes('resched') || type.includes('processing')) notificationType = 'warning';
-        
-        // Show as floating notification in top right
-        notificationApi[notificationType]({
-          message: notif.title || 'Notification',
-          description: notif.message,
-          placement: 'topRight',
-          duration: 10, // Auto-dismiss after 10 seconds
-          key: `notif-${notifId}`,
-          onClick: () => {
-            // Mark as read when clicked
-            const token = localStorage.getItem('auth-token');
-            if (token) {
-              fetch(`/api/notifications/read/${notifId}`, {
-                method: 'POST',
-                headers: { Authorization: `Bearer ${token}` },
-              }).then(() => {
-                queryClient.invalidateQueries({ queryKey: ['/api/notifications/me'] });
-              });
-            }
-          },
-          onClose: () => {
-            // Mark as read when closed
-            const token = localStorage.getItem('auth-token');
-            if (token) {
-              fetch(`/api/notifications/read/${notifId}`, {
-                method: 'POST',
-                headers: { Authorization: `Bearer ${token}` },
-              }).then(() => {
-                queryClient.invalidateQueries({ queryKey: ['/api/notifications/me'] });
-              });
-            }
-          },
-        });
-      }
+      if (shownIds.has(notifId)) return;
+      markNotificationAsShown(user.id, notifId);
+
+      const type = (notif.type || '').toLowerCase();
+      let notificationType: 'info' | 'success' | 'warning' | 'error' = 'info';
+      if (type.includes('cancel') || type.includes('reject') || type.includes('critical')) notificationType = 'error';
+      else if (type.includes('confirm') || type.includes('complete') || type.includes('ready')) notificationType = 'success';
+      else if (type.includes('pending') || type.includes('resched') || type.includes('processing')) notificationType = 'warning';
+
+      notificationApi[notificationType]({
+        message: notif.title || 'Notification',
+        description: notif.message,
+        placement: 'topRight',
+        duration: 10,
+        key: `notif-${notifId}`,
+        onClick: () => {
+          const token = localStorage.getItem('auth-token');
+          if (token) {
+            fetch(`/api/notifications/read/${notifId}`, {
+              method: 'POST',
+              headers: { Authorization: `Bearer ${token}` },
+            }).then(() => {
+              queryClient.invalidateQueries({ queryKey: ['/api/notifications/me'] });
+            });
+          }
+        },
+        onClose: () => {
+          const token = localStorage.getItem('auth-token');
+          if (token) {
+            fetch(`/api/notifications/read/${notifId}`, {
+              method: 'POST',
+              headers: { Authorization: `Bearer ${token}` },
+            }).then(() => {
+              queryClient.invalidateQueries({ queryKey: ['/api/notifications/me'] });
+            });
+          }
+        },
+      });
     });
-  }, [notifications, notificationApi, queryClient]);
+  }, [notifications, notificationApi, queryClient, user?.id]);
 
   // Real-time: subscribe to appointment events for notifications
   useEffect(() => {
@@ -519,6 +518,24 @@ export default function HospitalDashboard() {
     });
   }, [futureAppointments]);
 
+  // Appointments for selected date (Past / By date tab) - any date, past or future
+  const selectedDateAppointments = useMemo(() => {
+    if (!selectedViewDate) return [];
+    const selectedStart = getISTStartOfDay(selectedViewDate.toDate());
+    return allAppointments
+      .filter((apt: any) => {
+        if (!apt.date && !apt.dateObj) return false;
+        const d = apt.dateObj || new Date(apt.date);
+        if (isNaN(d.getTime())) return false;
+        return isSameDayIST(d, selectedStart);
+      })
+      .sort((a: any, b: any) => {
+        const dateTimeA = a.dateObj || new Date(a.date);
+        const dateTimeB = b.dateObj || new Date(b.date);
+        return dateTimeA.getTime() - dateTimeB.getTime();
+      });
+  }, [allAppointments, selectedViewDate]);
+
   // Get appointments for active tab
   const appointmentsToShow = useMemo(() => {
     switch (activeAppointmentTab) {
@@ -579,7 +596,7 @@ export default function HospitalDashboard() {
           });
         }
       });
-    
+
     return tabs;
   }, [
     todayAllAppointments,
@@ -741,7 +758,7 @@ export default function HospitalDashboard() {
     );
   };
 
-  const [selectedMenuKey] = useState<string>('dashboard');
+  const [selectedMenuKey, setSelectedMenuKey] = useState<string>('dashboard');
 
   const sidebarMenu = useMemo(() => [
     {
@@ -831,7 +848,7 @@ export default function HospitalDashboard() {
           background: '#E3F2FF', // Light blue background for active user icon
           borderRadius: '8px',
         }}
-        onClick={() => message.info('Profile coming soon.')}
+        onClick={() => setLocation('/dashboard/profile')}
       />
 
       {/* Navigation Icons - Vertical Stack */}
@@ -904,8 +921,28 @@ export default function HospitalDashboard() {
           }}
           onClick={() => {
             if (onMenuClick) onMenuClick();
-            message.info('Appointments page coming soon.');
+            setSelectedMenuKey('appointments');
+            setActiveMainTab('appointments');
           }}
+        />
+        
+        <Button
+          type="text"
+          icon={<MessageOutlined style={{ fontSize: '20px', color: selectedMenuKey === 'messages' ? '#1A8FE3' : '#6B7280' }} />}
+          style={{
+            width: '48px',
+            height: '48px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            background: selectedMenuKey === 'messages' ? '#E3F2FF' : 'transparent',
+            borderRadius: '8px',
+          }}
+          onClick={() => {
+            if (onMenuClick) onMenuClick();
+            setLocation('/admin/messages');
+          }}
+          title="Messages"
         />
         
         <Button
@@ -1404,8 +1441,7 @@ export default function HospitalDashboard() {
                   flex: 1,
                   minHeight: 0,
                 }}
-                title="Upcoming Appointments" 
-                extra={<Button type="link" onClick={() => message.info('View all appointments feature coming soon')}>View All</Button>}
+                title="Upcoming Appointments"
                 bodyStyle={{ 
                   flex: 1, 
                   minHeight: 0, 
@@ -1446,7 +1482,7 @@ export default function HospitalDashboard() {
                           flexDirection: 'column',
                           paddingTop: 16,
                         }}>
-                {isMobile ? (
+                          {isMobile ? (
                             <Space direction="vertical" size={12} style={{ width: '100%', flex: 1, overflowY: 'auto', paddingRight: 8, paddingBottom: 40 }}>
                     {appointmentsLoading ? (
                       <>
@@ -1483,6 +1519,59 @@ export default function HospitalDashboard() {
                   />
                 )}
                 </div>
+              </Card>
+
+              {/* Past Appointments - visible section with date picker */}
+              <Card
+                variant="borderless"
+                style={{
+                  borderRadius: 16,
+                  boxShadow: '0 2px 8px rgba(0, 0, 0, 0.08)',
+                  border: '1px solid #E5E7EB',
+                  background: '#fff',
+                  marginTop: 16,
+                }}
+                title={<Text strong>Past Appointments</Text>}
+                bodyStyle={{ padding: isMobile ? 12 : 16 }}
+              >
+                <Space style={{ marginBottom: 16 }} wrap>
+                  <Text strong>Select date:</Text>
+                  <DatePicker
+                    value={selectedViewDate}
+                    onChange={(d) => setSelectedViewDate(d)}
+                    allowClear
+                    style={{ minWidth: 180 }}
+                  />
+                  {selectedViewDate && (
+                    <Text type="secondary">
+                      {selectedDateAppointments.length} appointment(s) on {selectedViewDate.format('DD MMM YYYY')}
+                    </Text>
+                  )}
+                </Space>
+                {!selectedViewDate ? (
+                  <div style={{ textAlign: 'center', padding: '24px 0' }}>
+                    <Text type="secondary">Select a date to view appointments for that day.</Text>
+                  </div>
+                ) : appointmentsLoading ? (
+                  <div style={{ textAlign: 'center', padding: 24 }}><Spin /></div>
+                ) : selectedDateAppointments.length === 0 ? (
+                  <div style={{ textAlign: 'center', padding: '24px 0' }}>
+                    <Text type="secondary">No appointments on this date.</Text>
+                  </div>
+                ) : isMobile ? (
+                  <Space direction="vertical" size={12} style={{ width: '100%' }}>
+                    {selectedDateAppointments.map(renderMobileAppointmentCard)}
+                  </Space>
+                ) : (
+                  <Table
+                    columns={appointmentColumns}
+                    dataSource={selectedDateAppointments}
+                    pagination={false}
+                    rowKey="id"
+                    size="small"
+                    scroll={{ x: 'max-content' }}
+                  />
+                )}
               </Card>
             </Col>
           </Row>

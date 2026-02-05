@@ -59,6 +59,7 @@ import { playNotificationSound } from '../../lib/notification-sounds';
 import { NotificationBell } from '../../components/notifications/NotificationBell';
 import { TopHeader } from '../../components/layout/TopHeader';
 import { injectNotificationProgressBar } from '../../lib/notification-utils';
+import { getShownNotificationIds, markNotificationAsShown } from '../../lib/notification-shown-storage';
 import { AvailabilityManager } from '../../components/availability/AvailabilityManager';
 import { ClinicalNotesEditor } from '../../components/clinical/ClinicalNotesEditor';
 import { VitalsEntryForm } from '../../components/clinical/VitalsEntryForm';
@@ -387,6 +388,7 @@ export default function DoctorDashboard() {
           status: apt.status || 'pending',
           type: apt.type || 'Consultation',
           priority: apt.priority || 'Normal',
+          tokenDisplay: apt.tokenIdentifier ?? (apt.tokenNumber ?? tokenFromNotes),
           tokenNumber: (apt.tokenNumber ?? tokenFromNotes) ?? null,
           checkedInAt: apt.checkedInAt ?? null,
           date: apt.appointmentDate,
@@ -724,21 +726,19 @@ export default function DoctorDashboard() {
     return notifications.filter((notif: any) => !notif.read);
   }, [notifications]);
 
-  // Show all unread notifications as auto-dismissing banners (toast-style)
-  const shownNotificationIdsRef = useRef<Set<number>>(new Set());
+  // Show all unread notifications as auto-dismissing banners (only once per notification, persisted across refresh)
   useEffect(() => {
-    if (!notifications || notifications.length === 0) return;
+    if (!notifications || notifications.length === 0 || !user?.id) return;
 
+    const shownIds = getShownNotificationIds(user.id);
     const unread = notifications.filter((notif: any) => !notif.isRead && !notif.read);
-    
+
     unread.forEach((notif: any) => {
       const notifId = Number(notif.id);
-      
-      // Only show if we haven't shown this notification before
-      if (!shownNotificationIdsRef.current.has(notifId)) {
-        shownNotificationIdsRef.current.add(notifId);
-        
-        const type = (notif.type || '').toLowerCase();
+      if (shownIds.has(notifId)) return;
+      markNotificationAsShown(user.id, notifId);
+
+      const type = (notif.type || '').toLowerCase();
         let notificationType: 'info' | 'success' | 'warning' | 'error' = 'info';
         if (type.includes('cancel') || type.includes('reject')) notificationType = 'error';
         else if (type.includes('confirm') || type.includes('complete')) notificationType = 'success';
@@ -779,15 +779,14 @@ export default function DoctorDashboard() {
         });
 
         // Inject progress bar after notification is rendered
-        injectNotificationProgressBar(
-          notif.title || 'Notification',
-          notif.message || '',
-          notificationType,
-          10
-        );
-      }
+      injectNotificationProgressBar(
+        notif.title || 'Notification',
+        notif.message || '',
+        notificationType,
+        10
+      );
     });
-  }, [notifications, notificationApi, queryClient]);
+  }, [notifications, notificationApi, queryClient, user?.id]);
   
   // Calculate completed appointments using universal status constants
   const completedAppointmentsCount = useMemo(() => {
@@ -1255,12 +1254,12 @@ export default function DoctorDashboard() {
     },
     {
       title: 'Token',
-      dataIndex: 'tokenNumber',
-      key: 'tokenNumber',
-      width: 70,
+      dataIndex: 'tokenDisplay',
+      key: 'tokenDisplay',
+      width: 72,
       align: 'center' as const,
-      render: (tokenNumber: number | null | undefined) =>
-        tokenNumber ? <Text strong>{tokenNumber}</Text> : <Text type="secondary">-</Text>,
+      render: (tokenDisplay: string | number | null | undefined) =>
+        tokenDisplay != null && tokenDisplay !== '' ? <Text strong>{String(tokenDisplay)}</Text> : <Text type="secondary">-</Text>,
     },
     {
       title: 'Priority',
@@ -1451,7 +1450,7 @@ export default function DoctorDashboard() {
           background: '#E3F2FF', // Light blue background for active user icon
           borderRadius: '8px',
         }}
-        onClick={() => message.info('Profile coming soon.')}
+        onClick={() => setLocation('/dashboard/profile')}
       />
 
       {/* Navigation Icons - Vertical Stack */}

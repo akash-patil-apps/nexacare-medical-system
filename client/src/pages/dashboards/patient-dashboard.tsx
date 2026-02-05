@@ -1,4 +1,4 @@
-import React, { useMemo, useState, useEffect, useRef } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Redirect, useLocation } from 'wouter';
 import { 
@@ -14,8 +14,12 @@ import {
   Skeleton,
   Tabs,
   Drawer,
+  Modal,
   App,
+  Input,
 } from 'antd';
+import dayjs from 'dayjs';
+import { PrescriptionPreview } from '../../components/prescription/PrescriptionPreview';
 import {
   CalendarOutlined,
   MedicineBoxOutlined,
@@ -42,6 +46,7 @@ import LabReportViewerModal from '../../components/modals/lab-report-viewer-moda
 import { formatDate, formatDateTime } from '../../lib/utils';
 import { formatTimeSlot12h } from '../../lib/time';
 import { subscribeToAppointmentEvents } from '../../lib/appointments-events';
+import { getShownNotificationIds, markNotificationAsShown } from '../../lib/notification-shown-storage';
 import { PatientSidebar } from '../../components/layout/PatientSidebar';
 import { NotificationBell } from '../../components/notifications/NotificationBell';
 import { TopHeader } from '../../components/layout/TopHeader';
@@ -89,9 +94,13 @@ export default function PatientDashboard() {
   const [activeAppointmentTab, setActiveAppointmentTab] = useState<string>('upcoming');
   const [selectedLabReport, setSelectedLabReport] = useState<any>(null);
   const [isLabReportModalOpen, setIsLabReportModalOpen] = useState(false);
+  const [selectedPrescription, setSelectedPrescription] = useState<any>(null);
+  const [isPrescriptionDetailOpen, setIsPrescriptionDetailOpen] = useState(false);
+  const [refillPrescription, setRefillPrescription] = useState<any>(null);
+  const [refillNotes, setRefillNotes] = useState('');
+  const [refillSubmitting, setRefillSubmitting] = useState(false);
   const [selectedMenuKey] = useState<string>('dashboard');
-  const shownNotificationIdsRef = useRef<Set<number>>(new Set());
-  
+
   // Redirect if not authenticated
   if (!isLoading && !user) {
     return <Redirect to="/login" />;
@@ -140,20 +149,19 @@ export default function PatientDashboard() {
     refetchOnWindowFocus: true,
   });
 
-  // Show floating notifications for unread notifications
+  // Show floating notifications for unread notifications (only once per notification, persisted across refresh)
   useEffect(() => {
-    if (!notifications || notifications.length === 0) return;
+    if (!notifications || notifications.length === 0 || !user?.id) return;
 
+    const shownIds = getShownNotificationIds(user.id);
     const unread = notifications.filter((n: any) => !n.isRead);
-    
+
     unread.forEach((notif: any) => {
       const notifId = Number(notif.id);
-      
-      // Only show if we haven't shown this notification before
-      if (!shownNotificationIdsRef.current.has(notifId)) {
-        shownNotificationIdsRef.current.add(notifId);
-        
-        const type = (notif.type || '').toLowerCase();
+      if (shownIds.has(notifId)) return;
+      markNotificationAsShown(user.id, notifId);
+
+      const type = (notif.type || '').toLowerCase();
         let notificationType: 'info' | 'success' | 'warning' | 'error' = 'info';
         if (type.includes('cancel') || type.includes('reject')) notificationType = 'error';
         else if (type.includes('confirm') || type.includes('complete')) notificationType = 'success';
@@ -191,9 +199,8 @@ export default function PatientDashboard() {
             }
           },
         });
-      }
     });
-  }, [notifications, notificationApi, queryClient]);
+  }, [notifications, notificationApi, queryClient, user?.id]);
 
   const {
     data: allAppointments = [],
@@ -397,6 +404,12 @@ export default function PatientDashboard() {
     queryFn: () => fetchWithAuth<Array<any>>('/api/labs/patient/reports'),
   });
 
+  const { data: medicineReminders = [] } = useQuery({
+    queryKey: ['patient-medicine-reminders'],
+    queryFn: () => fetchWithAuth<Array<{ timeLabel: string; medicationName: string; dosage: string }>>('/api/prescriptions/patient/reminders'),
+    enabled: !!user,
+  });
+
 
   const prescriptionCards: DashboardPrescription[] = useMemo(() => {
     return prescriptionsData.map((rx: any) => {
@@ -444,16 +457,16 @@ export default function PatientDashboard() {
         setLocation('/book-appointment');
         break;
       case 'refill':
-        message.info('Refill request flow coming soon.');
+        // Refill modal opened per-card via onRequestRefill
         break;
       case 'upload':
-        message.info('Document upload coming soon.');
+        setLocation('/dashboard/patient/documents');
         break;
       case 'message':
-        message.info('Messaging coming soon.');
+        setLocation('/patient/messages');
         break;
       case 'history':
-        message.info('Patient history dashboard coming soon.');
+        setLocation('/dashboard/patient/history');
         break;
       default:
         break;
@@ -808,6 +821,64 @@ export default function PatientDashboard() {
               </Col>
             </Row>
 
+            {/* Medicine Reminders - Today's schedule from active prescriptions */}
+            {medicineReminders.length > 0 && (
+              <Card
+                variant="borderless"
+                style={{
+                  borderRadius: 16,
+                  boxShadow: '0 2px 8px rgba(0, 0, 0, 0.08)',
+                  border: '1px solid #E5E7EB',
+                  background: '#fff',
+                  marginBottom: 16,
+                }}
+                styles={{ body: { padding: 16 } }}
+                title={
+                  <Space>
+                    <ClockCircleOutlined style={{ color: patientTheme.primary }} />
+                    <Title level={5} style={{ margin: 0, color: '#111827', fontWeight: 600, fontSize: 18 }}>
+                      Medicine reminders
+                    </Title>
+                  </Space>
+                }
+                extra={
+                  <Button
+                    type="link"
+                    style={{ color: patientTheme.primary, fontWeight: 500, padding: 0, fontSize: 14, height: 'auto' }}
+                    onClick={() => setLocation('/dashboard/patient/prescriptions')}
+                  >
+                    Prescriptions →
+                  </Button>
+                }
+              >
+                <Space direction="vertical" size={8} style={{ width: '100%' }}>
+                  {medicineReminders.slice(0, 8).map((r, idx) => (
+                    <div
+                      key={idx}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        padding: '8px 12px',
+                        background: patientTheme.highlight,
+                        borderRadius: 10,
+                        border: '1px solid #E3F2FF',
+                      }}
+                    >
+                      <span style={{ fontWeight: 600, color: '#1A8FE3', minWidth: 72 }}>{r.timeLabel}</span>
+                      <span style={{ flex: 1, marginLeft: 12, color: '#111827' }}>{r.medicationName}</span>
+                      <span style={{ color: '#6B7280', fontSize: 13 }}>{r.dosage}</span>
+                    </div>
+                  ))}
+                  {medicineReminders.length > 8 && (
+                    <Text type="secondary" style={{ fontSize: 13 }}>
+                      +{medicineReminders.length - 8} more today
+                    </Text>
+                  )}
+                </Space>
+              </Card>
+            )}
+
             {/* Main Content Sections - Upcoming Appointments on first line, Prescriptions and Lab Results on second line */}
             {/* Matching Figma: gap-4 = 16px, space-y-4 = 16px */}
             <Space direction="vertical" size={16} style={{ width: '100%' }}>
@@ -1037,8 +1108,17 @@ export default function PatientDashboard() {
                           nextDose={rx.nextDose}
                           refillsRemaining={rx.refillsRemaining}
                           adherence={rx.adherence}
-                          onViewDetails={() => message.info('Prescription detail view coming soon.')}
-                          onRequestRefill={() => handleQuickAction('refill')}
+                          onViewDetails={() => {
+                            const fullRx = prescriptionsData.find((p: any) => p.id === rx.id);
+                            if (fullRx) {
+                              setSelectedPrescription(fullRx);
+                              setIsPrescriptionDetailOpen(true);
+                            }
+                          }}
+                          onRequestRefill={() => {
+                            const fullRx = prescriptionsData.find((p: any) => p.id === rx.id);
+                            if (fullRx) setRefillPrescription(fullRx);
+                          }}
                         />
                       ))}
                     </Space>
@@ -1145,6 +1225,154 @@ export default function PatientDashboard() {
           </div>
         </Content>
       </Layout>
+
+      {/* Refill Request Modal */}
+      <Modal
+        title="Request refill"
+        open={!!refillPrescription}
+        onCancel={() => {
+          setRefillPrescription(null);
+          setRefillNotes('');
+        }}
+        onOk={async () => {
+          if (!refillPrescription?.id) return;
+          setRefillSubmitting(true);
+          try {
+            const token = localStorage.getItem('auth-token');
+            const res = await fetch('/api/prescriptions/refill-request', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                Authorization: `Bearer ${token}`,
+              },
+              body: JSON.stringify({
+                prescriptionId: refillPrescription.id,
+                notes: refillNotes.trim() || undefined,
+              }),
+            });
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) {
+              message.error(data.error || 'Failed to submit refill request');
+              return;
+            }
+            message.success('Refill request submitted. The pharmacy will process your request.');
+            setRefillPrescription(null);
+            setRefillNotes('');
+            queryClient.invalidateQueries({ queryKey: ['patient-prescriptions'] });
+          } finally {
+            setRefillSubmitting(false);
+          }
+        }}
+        okText="Submit request"
+        cancelText="Cancel"
+        confirmLoading={refillSubmitting}
+      >
+        {refillPrescription && (() => {
+          let medications: any[] = [];
+          try {
+            medications = refillPrescription.medications
+              ? JSON.parse(refillPrescription.medications) : [];
+            if (!Array.isArray(medications)) medications = [];
+          } catch { medications = []; }
+          const primary = medications[0] || {};
+          const name = primary?.name || refillPrescription.diagnosis || 'Prescription';
+          return (
+            <Space direction="vertical" style={{ width: '100%' }} size={12}>
+              <Typography.Text>
+                Request a refill for <strong>{name}</strong>?
+              </Typography.Text>
+              <div>
+                <Typography.Text type="secondary" style={{ display: 'block', marginBottom: 4 }}>
+                  Notes (optional)
+                </Typography.Text>
+                <Input.TextArea
+                  rows={3}
+                  placeholder="e.g. Need by next week, prefer same brand"
+                  value={refillNotes}
+                  onChange={(e) => setRefillNotes(e.target.value)}
+                  maxLength={500}
+                  showCount
+                />
+              </div>
+            </Space>
+          );
+        })()}
+      </Modal>
+
+      {/* Prescription Detail Modal */}
+      <Modal
+        title="Prescription Details"
+        open={isPrescriptionDetailOpen}
+        onCancel={() => {
+          setIsPrescriptionDetailOpen(false);
+          setSelectedPrescription(null);
+        }}
+        footer={[
+          <Button
+            key="close"
+            onClick={() => {
+              setIsPrescriptionDetailOpen(false);
+              setSelectedPrescription(null);
+            }}
+          >
+            Close
+          </Button>,
+        ]}
+        width={900}
+      >
+        {selectedPrescription && (() => {
+          let medications: any[] = [];
+          try {
+            medications = selectedPrescription.medications
+              ? JSON.parse(selectedPrescription.medications)
+              : [];
+            if (!Array.isArray(medications)) medications = [];
+          } catch {
+            medications = [];
+          }
+          let chiefComplaints: string[] = [];
+          let clinicalFindings: string[] = [];
+          let advice: string[] = [];
+          try {
+            if (selectedPrescription.instructions) {
+              const parsed = JSON.parse(selectedPrescription.instructions);
+              if (parsed.chiefComplaints) chiefComplaints = parsed.chiefComplaints;
+              if (parsed.clinicalFindings) clinicalFindings = parsed.clinicalFindings;
+              if (parsed.advice) advice = parsed.advice;
+            }
+          } catch {
+            if (selectedPrescription.instructions) advice = [selectedPrescription.instructions];
+          }
+          return (
+            <PrescriptionPreview
+              hospitalName={selectedPrescription.hospital?.name}
+              hospitalAddress={selectedPrescription.hospital?.address}
+              doctorName={selectedPrescription.doctor?.fullName || 'Dr. Unknown'}
+              doctorQualification="M.S."
+              doctorRegNo="MMC 2018"
+              patientId={selectedPrescription.patientId}
+              patientName={user?.fullName || 'Unknown'}
+              patientGender={(user as any)?.gender || 'M'}
+              patientAge={
+                (user as any)?.dateOfBirth
+                  ? dayjs().diff(dayjs((user as any).dateOfBirth), 'year')
+                  : undefined
+              }
+              patientMobile={(user as any)?.mobileNumber}
+              patientAddress={(user as any)?.address}
+              weight={selectedPrescription.patient?.weight}
+              height={selectedPrescription.patient?.height}
+              date={selectedPrescription.createdAt}
+              chiefComplaints={chiefComplaints}
+              clinicalFindings={clinicalFindings}
+              diagnosis={selectedPrescription.diagnosis}
+              medications={medications}
+              advice={advice}
+              followUpDate={selectedPrescription.followUpDate}
+            />
+          );
+        })()}
+      </Modal>
 
       {/* Lab Report Viewer Modal */}
       <LabReportViewerModal

@@ -1086,10 +1086,16 @@ export default function PrescriptionForm({
                     if (label.includes(searchTerm) || value.includes(searchTerm)) return true;
                     return fuzzyMatch(searchTerm, label) || fuzzyMatch(searchTerm, value);
                   }}
-                  options={medicines.map((medicine: any) => ({
-                    value: medicine.name,
-                    label: `${medicine.name}${medicine.strength ? ` (${medicine.strength})` : ''}`,
-                  }))}
+                  optionFilterProp="label"
+                  options={medicines.map((medicine: any) => {
+                    const molecule = medicine.genericName || medicine.name;
+                    const nameStrength = `${medicine.name}${medicine.strength ? ` (${medicine.strength})` : ''}`;
+                    const brand = medicine.brandName ? ` - ${medicine.brandName}` : '';
+                    return {
+                      value: medicine.name,
+                      label: `${molecule} | ${nameStrength}${brand}`,
+                    };
+                  })}
                   style={{ width: '100%' }}
                 />
               </Col>
@@ -1231,6 +1237,20 @@ export default function PrescriptionForm({
                     <Option value="Anytime">Any</Option>
                   </Select>
             </div>
+              </Col>
+              <Col span={24}>
+                <Text type="secondary" style={{ fontSize: '12px', display: 'block', marginBottom: '4px' }}>Instruction per medicine</Text>
+                <Input
+                  placeholder="e.g., Take after meals, Avoid dairy, Take at bedtime"
+                  value={currentMedication.instructions}
+                  onChange={(e) => setCurrentMedication({ ...currentMedication, instructions: e.target.value })}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      handleAddMedicationInline();
+                    }
+                  }}
+                />
               </Col>
             </Row>
 
@@ -1572,10 +1592,15 @@ export default function PrescriptionForm({
                       });
                     }
                   }}
-                  options={medicines.map((medicine: any) => ({
-                    value: medicine.name,
-                    label: `${medicine.name}${medicine.strength ? ` (${medicine.strength})` : ''}${medicine.brandName ? ` - ${medicine.brandName}` : ''}`,
-                  }))}
+                  options={medicines.map((medicine: any) => {
+                    const molecule = medicine.genericName || medicine.name;
+                    const nameStrength = `${medicine.name}${medicine.strength ? ` (${medicine.strength})` : ''}`;
+                    const brand = medicine.brandName ? ` - ${medicine.brandName}` : '';
+                    return {
+                      value: medicine.name,
+                      label: `${molecule} | ${nameStrength}${brand}`,
+                    };
+                  })}
                 />
               </Form.Item>
             </Col>

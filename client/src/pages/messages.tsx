@@ -19,6 +19,7 @@ import { MessageOutlined, SendOutlined, UserAddOutlined } from '@ant-design/icon
 import { useAuth } from '../hooks/use-auth';
 import { PatientSidebar } from '../components/layout/PatientSidebar';
 import { ReceptionistSidebar } from '../components/layout/ReceptionistSidebar';
+import { HospitalSidebar } from '../components/layout/HospitalSidebar';
 import { TopHeader } from '../components/layout/TopHeader';
 import dayjs from 'dayjs';
 import relativeTime from 'dayjs/plugin/relativeTime';
@@ -207,7 +208,8 @@ export default function MessagesPage() {
   const role = user?.role?.toUpperCase() || '';
   const showPatientSidebar = role === 'PATIENT';
   const showReceptionistSidebar = role === 'RECEPTIONIST';
-  const showSidebar = showPatientSidebar || showReceptionistSidebar;
+  const showHospitalSidebar = role === 'HOSPITAL' || role === 'ADMIN';
+  const showSidebar = showPatientSidebar || showReceptionistSidebar || showHospitalSidebar;
 
   const headerUserId = useMemo(() => {
     if (!user?.id) return '—';
@@ -249,6 +251,7 @@ export default function MessagesPage() {
         >
           {showPatientSidebar && <PatientSidebar selectedMenuKey="messages" />}
           {showReceptionistSidebar && <ReceptionistSidebar selectedMenuKey="messages" />}
+          {showHospitalSidebar && <HospitalSidebar selectedMenuKey="messages" />}
         </Sider>
       )}
 
@@ -272,7 +275,7 @@ export default function MessagesPage() {
 
         <Content
           style={{
-            padding: '16px 24px 24px 20px',
+            padding: 0,
             overflow: 'auto',
             background: PAGE_BACKGROUND,
             flex: 1,
@@ -281,10 +284,10 @@ export default function MessagesPage() {
           }}
         >
           <Card
-            style={{ maxWidth: 1000, margin: '0 auto', borderRadius: 16, overflow: 'hidden' }}
-            bodyStyle={{ padding: 0 }}
+            style={{ width: '100%', height: '100%', borderRadius: 16, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}
+            styles={{ body: { padding: 0, height: '100%', display: 'flex', flexDirection: 'column' } }}
           >
-            <div style={{ display: 'flex', flexDirection: 'column', height: 560 }}>
+            <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
               {/* In-card header: title + New conversation */}
               <div
                 style={{

@@ -60,26 +60,24 @@ export default function PatientPrescriptionsPage() {
   const [selectedPrescription, setSelectedPrescription] = useState<any>(null);
   const [isViewModalOpen, setIsViewModalOpen] = useState(false);
   
-  // Fetch lab tests for selected prescription
+  // Fetch lab tests for selected prescription (patient's reports)
   const { data: labTests } = useQuery({
-    queryKey: ['/api/labs/reports', selectedPrescription?.patientId],
+    queryKey: ['/api/labs/patient/reports', selectedPrescription?.id],
     queryFn: async () => {
-      if (!selectedPrescription?.patientId) return [];
+      if (!selectedPrescription) return [];
       const token = localStorage.getItem('auth-token');
-      const response = await fetch(`/api/labs/reports?patientId=${selectedPrescription.patientId}`, {
-        headers: {
-          'Authorization': `Bearer ${token}`,
-        },
+      const response = await fetch('/api/labs/patient/reports', {
+        headers: { Authorization: `Bearer ${token}` },
       });
       if (!response.ok) return [];
       const data = await response.json();
-      // Filter for tests related to this prescription/appointment
-      return data.filter((test: any) => 
-        test.appointmentId === selectedPrescription.appointmentId ||
-        (test.status === 'recommended' || test.status === 'pending')
-      );
+      const list = Array.isArray(data) ? data : [];
+      if (selectedPrescription.appointmentId) {
+        return list.filter((test: any) => test.appointmentId === selectedPrescription.appointmentId);
+      }
+      return list.slice(0, 10);
     },
-    enabled: !!selectedPrescription?.patientId,
+    enabled: !!selectedPrescription,
   });
   
   // Get notifications for TopHeader
@@ -98,14 +96,26 @@ export default function PatientPrescriptionsPage() {
   
   const siderWidth = isMobile ? 0 : 80; // Narrow sidebar width matching PatientSidebar
 
-  // Fetch prescriptions data
+  // Fetch prescriptions data (use /api prefix so proxy forwards to backend)
   const { data: prescriptions = [], isLoading } = useQuery({
     queryKey: ['/api/prescriptions/patient'],
     queryFn: async () => {
-      const response = await apiRequest('GET', '/prescriptions/patient');
-      return response.json();
+      const response = await apiRequest('GET', '/api/prescriptions/patient');
+      const data = await response.json();
+      return Array.isArray(data) ? data : (data?.data ? data.data : []);
     },
   });
+
+  const stats = useMemo(() => {
+    const total = prescriptions.length;
+    const active = prescriptions.filter((p: any) => p.isActive !== false).length;
+    const now = new Date();
+    const followUpDue = prescriptions.filter((p: any) => {
+      const d = p.followUpDate ? new Date(p.followUpDate) : null;
+      return d && d >= now;
+    }).length;
+    return { total, active, followUpDue };
+  }, [prescriptions]);
 
   const handleViewPrescription = (prescription: any) => {
     setSelectedPrescription(prescription);
@@ -299,13 +309,13 @@ export default function PatientPrescriptionsPage() {
             <Text type="secondary">View and download your prescriptions</Text>
           </div>
 
-          {/* Quick Stats */}
+          {/* Quick Stats - from actual data */}
           <Row gutter={[12, 12]} style={{ marginBottom: 16 }}>
             <Col xs={24} sm={8}>
               <Card>
                 <Statistic
                   title="Total Prescriptions"
-                  value={12}
+                  value={stats.total}
                   prefix={<FileTextOutlined style={{ color: '#1890ff' }} />}
                 />
               </Card>
@@ -314,7 +324,7 @@ export default function PatientPrescriptionsPage() {
               <Card>
                 <Statistic
                   title="Active"
-                  value={8}
+                  value={stats.active}
                   prefix={<CheckCircleOutlined style={{ color: '#52c41a' }} />}
                 />
               </Card>
@@ -323,7 +333,7 @@ export default function PatientPrescriptionsPage() {
               <Card>
                 <Statistic
                   title="Follow-up Due"
-                  value={2}
+                  value={stats.followUpDue}
                   prefix={<ExclamationCircleOutlined style={{ color: '#faad14' }} />}
                 />
               </Card>
