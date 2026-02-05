@@ -9,6 +9,7 @@ import {
   decimal,
   uuid,
   unique,
+  primaryKey,
 } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { createInsertSchema } from "drizzle-zod";
@@ -179,7 +180,18 @@ export const patients = pgTable("patients", {
   insuranceNumber: text("insurance_number"),
   occupation: text("occupation"),
   maritalStatus: text("marital_status"),
+  governmentIdType: text("government_id_type"), // aadhaar, pan, driving_license, passport
+  governmentIdNumber: text("government_id_number"),
   createdAt: timestamp("created_at").defaultNow(),
+});
+
+// Patient family members - links primary patient to family member patients (for booking on behalf)
+export const patientFamilyMembers = pgTable("patient_family_members", {
+  id: serial("id").primaryKey(),
+  primaryPatientId: integer("primary_patient_id").references(() => patients.id, { onDelete: "cascade" }).notNull(),
+  relatedPatientId: integer("related_patient_id").references(() => patients.id, { onDelete: "cascade" }).notNull(),
+  relationship: text("relationship").notNull(), // mother, father, brother, sister, spouse, son, daughter, other
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
 });
 
 // Labs
@@ -237,7 +249,8 @@ export const appointments = pgTable("appointments", {
   symptoms: text("symptoms"),
   notes: text("notes"),
   // OPD token/queue basics (v1)
-  tokenNumber: integer("token_number"), // Real token assigned after check-in
+  tokenIdentifier: text("token_identifier"), // Stable slot-based id e.g. 15A-01 (assigned at book, never renumbered)
+  tokenNumber: integer("token_number"), // Legacy display; queue order is computed from slot + check-in
   tempTokenNumber: integer("temp_token_number"), // Temporary token assigned on confirmation (before check-in)
   checkedInAt: timestamp("checked_in_at"),
   confirmedAt: timestamp("confirmed_at"),
@@ -251,6 +264,20 @@ export const appointments = pgTable("appointments", {
   createdBy: integer("created_by").references(() => users.id),
   createdAt: timestamp("created_at").defaultNow(),
 });
+
+// OPD token counter: one row per (doctor, date) to assign next token atomically (no duplicate tokens under concurrency)
+export const opdTokenCounter = pgTable(
+  'opd_token_counter',
+  {
+    doctorId: integer('doctor_id').references(() => doctors.id).notNull(),
+    appointmentDate: text('appointment_date').notNull(), // YYYY-MM-DD
+    lastToken: integer('last_token').notNull().default(0),
+    updatedAt: timestamp('updated_at').defaultNow(),
+  },
+  (table) => ({
+    pk: primaryKey({ columns: [table.doctorId, table.appointmentDate] }),
+  })
+);
 
 // Appointment Reschedule Requests - For patient-initiated reschedule requests
 export const appointmentReschedules = pgTable("appointment_reschedules", {
@@ -408,6 +435,16 @@ export const notifications = pgTable("notifications", {
   createdAt: timestamp("created_at").defaultNow(),
 });
 
+// In-platform direct messages (user-to-user, no external service)
+export const messages = pgTable("messages", {
+  id: serial("id").primaryKey(),
+  senderId: integer("sender_id").references(() => users.id).notNull(),
+  recipientId: integer("recipient_id").references(() => users.id).notNull(),
+  body: text("body").notNull(),
+  readAt: timestamp("read_at"), // null = unread
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
 // RELATIONS
 export const usersRelations = relations(users, ({ one, many }) => ({
   hospital: one(hospitals, { fields: [users.id], references: [hospitals.userId] }),
@@ -419,6 +456,13 @@ export const usersRelations = relations(users, ({ one, many }) => ({
   pharmacist: one(pharmacists, { fields: [users.id], references: [pharmacists.userId] }),
   radiologyTechnician: one(radiologyTechnicians, { fields: [users.id], references: [radiologyTechnicians.userId] }),
   notifications: many(notifications),
+  messagesSent: many(messages, { relationName: "messageSender" }),
+  messagesReceived: many(messages, { relationName: "messageRecipient" }),
+}));
+
+export const messagesRelations = relations(messages, ({ one }) => ({
+  sender: one(users, { fields: [messages.senderId], references: [users.id], relationName: "messageSender" }),
+  recipient: one(users, { fields: [messages.recipientId], references: [users.id], relationName: "messageRecipient" }),
 }));
 
 export const hospitalsRelations = relations(hospitals, ({ one, many }) => ({
@@ -460,6 +504,13 @@ export const patientsRelations = relations(patients, ({ one, many }) => ({
   prescriptions: many(prescriptions),
   labReports: many(labReports),
   insurancePolicies: many(patientInsurancePolicies),
+  familyAsPrimary: many(patientFamilyMembers, { relationName: "primary" }),
+  familyAsRelated: many(patientFamilyMembers, { relationName: "related" }),
+}));
+
+export const patientFamilyMembersRelations = relations(patientFamilyMembers, ({ one }) => ({
+  primaryPatient: one(patients, { fields: [patientFamilyMembers.primaryPatientId], references: [patients.id], relationName: "primary" }),
+  relatedPatient: one(patients, { fields: [patientFamilyMembers.relatedPatientId], references: [patients.id], relationName: "related" }),
 }));
 
 export const labsRelations = relations(labs, ({ one, many }) => ({
@@ -582,7 +633,8 @@ export const opdQueueEntries = pgTable("opd_queue_entries", {
   appointmentId: integer("appointment_id").references(() => appointments.id),
   patientId: integer("patient_id").references(() => patients.id).notNull(),
   queueDate: text("queue_date").notNull(), // YYYY-MM-DD in IST
-  tokenNumber: integer("token_number").notNull(),
+  tokenIdentifier: text("token_identifier"), // From appointment; used for queue ordering (slot + arrival)
+  tokenNumber: integer("token_number").notNull(), // Legacy / unique constraint; queue order is computed
   position: integer("position").notNull(), // order in queue
   status: text("status").default("waiting").notNull(), // waiting, called, in_consultation, completed, skipped, no_show, cancelled
   checkedInAt: timestamp("checked_in_at"),
@@ -665,6 +717,8 @@ export const ipdEncounters = pgTable("ipd_encounters", {
   assignedAt: timestamp("assigned_at"),
   assignedByUserId: integer("assigned_by_user_id").references(() => users.id), // User who assigned
   admissionType: text("admission_type").notNull(), // elective, emergency, daycare, observation
+  attendantName: text("attendant_name"), // Name of person accompanying patient
+  attendantMobile: text("attendant_mobile"), // Mobile number of attendant
   status: text("status").default("admitted").notNull(), // admitted, transferred, discharged
   admittedAt: timestamp("admitted_at").defaultNow(),
   dischargedAt: timestamp("discharged_at"),
@@ -1141,7 +1195,7 @@ export const insertUserSchema = createInsertSchema(users).omit({
 export const registrationSchema = z.object({
   mobileNumber: z.string().min(10).max(15),
   fullName: z.string().min(2),
-  email: z.string().email(),
+  email: z.union([z.string().email(), z.literal('')]).optional().transform((v) => (v === '' ? undefined : v)),
   password: z.string().min(6),
   role: z.enum(['hospital', 'doctor', 'patient', 'lab', 'nurse', 'pharmacist', 'radiology_technician']),
 });
