@@ -32,10 +32,17 @@ export const getUserNotifications = async (userId: number) => {
     .where(eq(notifications.userId, userId))
     .orderBy(desc(notifications.createdAt));
 
-  // Filter notifications based on event time
+  // Filter notifications: always show messages; for appointments only show future events
   const futureNotifications = [];
   
   for (const notif of allNotifications) {
+    // Always include message notifications (new message alerts) regardless of time
+    const isMessage = (notif.type || '').toLowerCase() === 'message' || (notif.relatedType || '').toLowerCase() === 'message';
+    if (isMessage) {
+      futureNotifications.push(notif);
+      continue;
+    }
+
     let eventTime: Date | null = null;
     
     // If notification is related to an appointment, get the appointment's scheduled time

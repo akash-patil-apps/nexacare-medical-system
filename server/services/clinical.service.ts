@@ -172,6 +172,18 @@ export const createVitalsEntry = async (data: {
   notes?: string;
   recordedAt?: Date;
 }) => {
+  // Auto-calculate BMI from weight (kg) and height (cm): BMI = weight / (height/100)^2
+  let bmiValue: string | null = data.bmi ? String(data.bmi) : null;
+  if (bmiValue == null && data.weight != null && data.height != null) {
+    const w = Number(data.weight);
+    const hCm = Number(data.height);
+    if (hCm > 0 && w >= 0) {
+      const hM = hCm / 100;
+      const bmi = Math.round((w / (hM * hM)) * 100) / 100;
+      bmiValue = String(bmi);
+    }
+  }
+
   const [vital] = await db
     .insert(vitalsChart)
     .values({
@@ -190,7 +202,7 @@ export const createVitalsEntry = async (data: {
       painScale: data.painScale || null,
       weight: data.weight ? String(data.weight) : null,
       height: data.height ? String(data.height) : null,
-      bmi: data.bmi ? String(data.bmi) : null,
+      bmi: bmiValue,
       bloodGlucose: data.bloodGlucose ? String(data.bloodGlucose) : null,
       gcs: data.gcs || null,
       urineOutput: data.urineOutput ? String(data.urineOutput) : null,

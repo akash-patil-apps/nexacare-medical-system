@@ -31,9 +31,9 @@ export async function retryDbOperation<T>(
     } catch (error: any) {
       lastError = error;
       
-      // Check if error is retryable
-      const errorCode = error?.code || error?.cause?.code || '';
-      const errorMessage = error?.message || '';
+      // Check if error is retryable (Drizzle wraps with cause: { code: 'ETIMEDOUT' })
+      const errorCode = String(error?.code ?? error?.cause?.code ?? '');
+      const errorMessage = String(error?.message ?? error?.cause?.message ?? '');
       const isRetryable = opts.retryableErrors.some(
         code => errorCode.includes(code) || errorMessage.includes(code)
       );

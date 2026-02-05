@@ -355,36 +355,64 @@ export const searchPatientsForReceptionist = async (
   receptionistUserId: number,
   query: string
 ) => {
-  const context = await getReceptionistContext(receptionistUserId);
-  if (!context) return [];
+  try {
+    const context = await getReceptionistContext(receptionistUserId);
+    if (!context) {
+      console.log('⚠️ Receptionist context not found for user:', receptionistUserId);
+      return [];
+    }
 
-  const trimmed = query.trim();
-  if (!trimmed) return [];
+    const trimmed = query.trim();
+    if (!trimmed) return [];
 
-  const namePattern = `%${trimmed}%`;
+    console.log(`🔍 Searching patients with query: "${trimmed}"`);
 
-  const results = await db
-    .select({
-      userId: users.id,
-      patientId: patients.id,
-      fullName: users.fullName,
-      mobileNumber: users.mobileNumber,
-    })
-    .from(users)
-    .leftJoin(patients, eq(users.id, patients.userId))
-    .where(
-      and(
-        eq(users.role, 'patient'),
-        or(
-          ilike(users.fullName, namePattern),
-          ilike(users.mobileNumber, `${trimmed}%`)
+    const namePattern = `%${trimmed}%`;
+    // Only treat as patient ID when it's a SHORT numeric string (max 9 digits).
+    // 10-digit numbers are mobile numbers and must NEVER be compared to patients.id (32-bit int overflow).
+    const MAX_SAFE_PATIENT_ID = 2147483647; // PostgreSQL integer max
+    let patientIdMatch: number | null = null;
+    if (trimmed.length <= 9 && /^\d+$/.test(trimmed)) {
+      const num = parseInt(trimmed, 10);
+      if (num >= 1 && num <= MAX_SAFE_PATIENT_ID) {
+        patientIdMatch = num;
+      }
+    }
+
+    // Build search conditions: always name + mobile; add patient ID only for short numeric (max 9 digits)
+    const searchConditions: (ReturnType<typeof ilike> | ReturnType<typeof eq>)[] = [
+      ilike(users.fullName, namePattern),
+      ilike(users.mobileNumber, `${trimmed}%`),
+    ];
+    if (patientIdMatch != null) {
+      searchConditions.push(eq(patients.id, patientIdMatch));
+    }
+
+    const results = await db
+      .select({
+        userId: users.id,
+        patientId: patients.id,
+        fullName: users.fullName,
+        mobileNumber: users.mobileNumber,
+        email: users.email,
+      })
+      .from(users)
+      .innerJoin(patients, eq(users.id, patients.userId))
+      .where(
+        and(
+          sql`lower(${users.role}) = 'patient'`,
+          or(...searchConditions)
         )
       )
-    )
-    .orderBy(asc(users.fullName))
-    .limit(10);
+      .orderBy(asc(users.fullName))
+      .limit(25);
 
-  return results;
+    console.log(`✅ Found ${results.length} patients matching "${trimmed}"`);
+    return results;
+  } catch (error) {
+    console.error('❌ Error searching patients:', error);
+    throw error;
+  }
 };
 
 export async function getReceptionistContext(receptionistUserId: number) {
@@ -529,6 +557,93 @@ export async function lookupUserByMobile(mobileNumber: string) {
     }
     throw new Error(`Failed to lookup user: ${error.message || 'Unknown error'}`);
   }
+}
+
+/**
+ * Quick-create minimal user + patient for IPD admission (receptionist).
+ * Used when patient is not found by mobile; create basic profile so admission can proceed; rest can be filled later.
+ */
+export async function quickCreatePatientForAdmission(receptionistUserId: number, payload: {
+  fullName: string;
+  mobileNumber: string;
+  gender?: string | null;
+  dateOfBirth?: string | null;
+}) {
+  const trimmedMobile = payload.mobileNumber.trim();
+  if (trimmedMobile.length < 10 || trimmedMobile.length > 15) {
+    throw new Error('Invalid mobile number length');
+  }
+  const fullName = (payload.fullName || '').trim();
+  if (fullName.length < 2) {
+    throw new Error('Full name is required (at least 2 characters)');
+  }
+
+  let [existingUser] = await db
+    .select()
+    .from(users)
+    .where(eq(users.mobileNumber, trimmedMobile))
+    .limit(1);
+
+  if (!existingUser) {
+    let generatedEmail = `${trimmedMobile}@ipd.nexacare.local`;
+    let emailAttempt = generatedEmail;
+    let counter = 1;
+    while (true) {
+      const [emailUser] = await db.select().from(users).where(eq(users.email, emailAttempt)).limit(1);
+      if (!emailUser) break;
+      emailAttempt = `${generatedEmail.split('@')[0]}+${counter}@${generatedEmail.split('@')[1]}`;
+      counter += 1;
+    }
+    const passwordToHash = `Ipd@${trimmedMobile.slice(-4)}${counter}`;
+    const hashedPassword = await hashPassword(passwordToHash);
+    const [createdUser] = await db
+      .insert(users)
+      .values({
+        fullName,
+        mobileNumber: trimmedMobile,
+        email: emailAttempt,
+        password: hashedPassword,
+        role: 'patient',
+        isVerified: true,
+      })
+      .returning();
+    existingUser = createdUser;
+  }
+
+  let [patient] = await db
+    .select()
+    .from(patients)
+    .where(eq(patients.userId, existingUser.id))
+    .limit(1);
+
+  if (!patient) {
+    const dob = payload.dateOfBirth
+      ? (payload.dateOfBirth.includes('-') ? new Date(payload.dateOfBirth) : new Date(payload.dateOfBirth))
+      : null;
+    const [createdPatient] = await db
+      .insert(patients)
+      .values({
+        userId: existingUser.id,
+        dateOfBirth: dob && !Number.isNaN(dob.getTime()) ? dob : null,
+        gender: payload.gender && payload.gender.trim() ? payload.gender.trim() : null,
+        emergencyContact: trimmedMobile,
+        emergencyContactName: fullName,
+        emergencyRelation: 'Self',
+      })
+      .returning();
+    patient = createdPatient;
+  }
+
+  return {
+    user: {
+      id: existingUser.id,
+      fullName: existingUser.fullName,
+      mobileNumber: existingUser.mobileNumber,
+      email: existingUser.email,
+      role: existingUser.role,
+    },
+    patient: { id: patient.id, userId: patient.userId },
+  };
 }
 
 export async function getPatientInfo(patientId: number) {

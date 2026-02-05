@@ -22,8 +22,8 @@ interface Medication {
  * Returns array of times in HH:mm format
  */
 function parseFrequencyToTimes(frequency: string, timing: string, dosage?: string): string[] {
-  const freq = frequency.toLowerCase().trim();
-  const timingLower = timing.toLowerCase().trim();
+  const freq = (frequency ?? '').toString().toLowerCase().trim();
+  const timingLower = (timing ?? '').toString().toLowerCase().trim();
   const dosageStr = dosage?.trim() || '';
   
   // Check for dosage format like "1-0-1" or "1-1-1" (morning-afternoon-night)
@@ -266,8 +266,9 @@ export async function sendDailyMedicineReminders() {
       // Check each medication for today's reminders
       for (const medication of medications) {
         if (medication.frequency?.toLowerCase().includes('prn')) continue;
-        
-        const times = parseFrequencyToTimes(medication.frequency, medication.timing, medication.dosage);
+        if (medication.frequency == null || medication.frequency === '') continue;
+
+        const times = parseFrequencyToTimes(medication.frequency, medication.timing ?? '', medication.dosage);
         
         for (const time of times) {
           const [hours, minutes] = time.split(':').map(Number);
@@ -313,4 +314,68 @@ export async function sendDailyMedicineReminders() {
   } catch (error) {
     console.error('Failed to send daily medicine reminders:', error);
   }
+}
+
+export interface PatientReminderItem {
+  time: string;
+  timeLabel: string;
+  medicationName: string;
+  dosage: string;
+  frequency?: string;
+  prescriptionId: number;
+}
+
+/**
+ * Get today's and tomorrow's medicine reminder schedule for a patient (for display on dashboard)
+ */
+export async function getPatientReminderSchedule(patientId: number): Promise<PatientReminderItem[]> {
+  const items: PatientReminderItem[] = [];
+  const [patient] = await db.select().from(patients).where(eq(patients.id, patientId)).limit(1);
+  if (!patient) return items;
+
+  const activePrescriptions = await db
+    .select()
+    .from(prescriptions)
+    .where(and(eq(prescriptions.patientId, patientId), eq(prescriptions.isActive, true)));
+
+  const today = dayjs();
+  const daysToInclude = [today, today.add(1, 'day')];
+
+  for (const prescription of activePrescriptions) {
+    let medications: Medication[] = [];
+    try {
+      medications = typeof prescription.medications === 'string'
+        ? JSON.parse(prescription.medications)
+        : prescription.medications;
+    } catch {
+      continue;
+    }
+    if (!Array.isArray(medications)) continue;
+
+    for (const med of medications) {
+      if (med.frequency?.toLowerCase().includes('prn') || !med.frequency) continue;
+      const times = parseFrequencyToTimes(med.frequency, med.timing ?? '', med.dosage);
+      const name = med.name || 'Medication';
+      const dosage = med.dosage || '';
+
+      for (const day of daysToInclude) {
+        for (const time of times) {
+          const [hours, minutes] = time.split(':').map(Number);
+          const timeLabel = dayjs().hour(hours).minute(minutes).format('h:mm A');
+          const dateLabel = day.isSame(today, 'day') ? 'Today' : 'Tomorrow';
+          items.push({
+            time: `${day.format('YYYY-MM-DD')}T${time}`,
+            timeLabel: `${dateLabel} ${timeLabel}`,
+            medicationName: name,
+            dosage,
+            frequency: med.frequency,
+            prescriptionId: prescription.id,
+          });
+        }
+      }
+    }
+  }
+
+  items.sort((a, b) => a.time.localeCompare(b.time));
+  return items;
 }

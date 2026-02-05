@@ -8,6 +8,32 @@ import * as patientsService from "../services/patients.service";
 import { insertPatientSchema } from "../../shared/schema";
 
 const router = Router();
+const familyMemberBodySchema = z.object({
+  relationship: z.enum(['mother', 'father', 'brother', 'sister', 'spouse', 'son', 'daughter', 'other']),
+  mobileNumber: z.string().min(10).max(15),
+  otp: z.string().length(6),
+  fullName: z.string().min(1).optional(),
+  email: z.union([z.string().email(), z.literal('')]).optional().transform((v) => (v === '' ? undefined : v)),
+  password: z.string().min(6).optional(),
+  dateOfBirth: z.union([z.string(), z.date()]).optional().nullable(),
+  gender: z.string().optional().nullable(),
+  bloodGroup: z.string().optional().nullable(),
+  address: z.string().optional().nullable(),
+  city: z.string().optional().nullable(),
+  state: z.string().optional().nullable(),
+  zipCode: z.string().optional().nullable(),
+  emergencyContact: z.string().optional().nullable(),
+  emergencyContactName: z.string().optional().nullable(),
+  emergencyRelation: z.string().optional().nullable(),
+  medicalHistory: z.string().optional().nullable(),
+  allergies: z.string().optional().nullable(),
+  currentMedications: z.string().optional().nullable(),
+  chronicConditions: z.string().optional().nullable(),
+  insuranceProvider: z.string().optional().nullable(),
+  insuranceNumber: z.string().optional().nullable(),
+  occupation: z.string().optional().nullable(),
+  maritalStatus: z.string().optional().nullable(),
+});
 
 // POST /patients/register
 router.post("/register", async (req, res) => {
@@ -33,6 +59,35 @@ router.post(
     } catch (err) {
       console.error("Book appointment error:", err);
       res.status(500).json({ message: "Failed to book appointment" });
+    }
+  }
+);
+
+// GET /patients/profile-by-id/:patientId - get patient profile by patient ID (for family members)
+// This must come before /profile to avoid route conflicts
+router.get(
+  "/profile-by-id/:patientId",
+  authenticateToken,
+  authorizeRoles("PATIENT"),
+  async (req: AuthenticatedRequest, res) => {
+    try {
+      const patientId = parseInt(req.params.patientId, 10);
+      if (isNaN(patientId)) {
+        return res.status(400).json({ message: "Invalid patient ID" });
+      }
+      // Verify the patient is accessible (own or family member)
+      const canAct = await patientsService.canActAsPatient(req.user!.id, patientId);
+      if (!canAct) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+      const result = await patientsService.getPatientWithUserById(patientId);
+      if (!result) {
+        return res.status(404).json({ message: "Patient not found" });
+      }
+      res.status(200).json(result);
+    } catch (err) {
+      console.error("Fetch patient profile by ID error:", err);
+      res.status(500).json({ message: "Failed to fetch patient profile" });
     }
   }
 );
@@ -66,6 +121,42 @@ router.put(
     } catch (err) {
       console.error("Update patient profile error:", err);
       res.status(400).json({ message: "Invalid input", error: err });
+    }
+  }
+);
+
+// GET /patients/family-members - list family members for logged-in patient
+router.get(
+  "/family-members",
+  authenticateToken,
+  authorizeRoles("PATIENT"),
+  async (req: AuthenticatedRequest, res) => {
+    try {
+      const list = await patientsService.getFamilyMembers(req.user!.id);
+      res.status(200).json(list);
+    } catch (err) {
+      console.error("Get family members error:", err);
+      res.status(500).json({ message: "Failed to fetch family members" });
+    }
+  }
+);
+
+// POST /patients/family-members - add a family member (create user + patient + link)
+router.post(
+  "/family-members",
+  authenticateToken,
+  authorizeRoles("PATIENT"),
+  async (req: AuthenticatedRequest, res) => {
+    try {
+      const body = familyMemberBodySchema.parse(req.body);
+      const result = await patientsService.addFamilyMember(req.user!.id, body);
+      res.status(201).json(result);
+    } catch (err: any) {
+      console.error("Add family member error:", err);
+      res.status(400).json({
+        message: err?.message || "Failed to add family member",
+        error: err?.errors || err,
+      });
     }
   }
 );

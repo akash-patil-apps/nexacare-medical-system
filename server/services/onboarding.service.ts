@@ -59,6 +59,8 @@ export const completePatientOnboarding = async (userId: number, data: any) => {
       insuranceNumber: data.insuranceNumber || null,
       occupation: data.occupation || null,
       maritalStatus: data.maritalStatus || null,
+      governmentIdType: data.governmentIdType || null,
+      governmentIdNumber: data.governmentIdNumber ? String(data.governmentIdNumber).trim() : null,
     };
     
     console.log(`💾 Saving patient data:`, {

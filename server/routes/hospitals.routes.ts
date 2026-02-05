@@ -1,13 +1,15 @@
 // server/routes/hospitals.routes.ts
 import { Router } from 'express';
-import { createHospital, getAllHospitals, getHospitalStats, getHospitalById } from '../services/hospitals.service';
+import { createHospital, getAllHospitals, getHospitalStats, getHospitalById, getHospitalStaff, removeStaffMember, type StaffRole } from '../services/hospitals.service';
 import { insertHospitalSchema } from '../../shared/schema';
-import {approveLab,approveDoctor} from '../services/hospitals.service'
+import { approveLab, approveDoctor } from '../services/hospitals.service';
 import { authenticateToken, authorizeRoles } from '../middleware/auth';
 import { AuthenticatedRequest } from '../types';
 import { db } from '../db';
 import { hospitals } from '../../shared/schema';
 import { eq } from 'drizzle-orm';
+
+const VALID_STAFF_ROLES: StaffRole[] = ['doctor', 'nurse', 'receptionist', 'pharmacist', 'radiology_technician'];
 
 
 const router = Router();
@@ -81,6 +83,55 @@ router.post(
     } catch (err) {
       console.error('Approve lab error:', err);
       res.status(500).json({ message: 'Failed to approve lab' });
+    }
+  }
+);
+
+// Get current hospital's staff (MUST be before /my route)
+router.get(
+  '/my/staff',
+  authenticateToken,
+  authorizeRoles('HOSPITAL'),
+  async (req: AuthenticatedRequest, res) => {
+    try {
+      const userId = req.user!.id;
+      const [hospital] = await db.select().from(hospitals).where(eq(hospitals.userId, userId)).limit(1);
+      if (!hospital) {
+        return res.status(404).json({ message: 'Hospital not found for this user' });
+      }
+      const staff = await getHospitalStaff(hospital.id);
+      res.json(staff);
+    } catch (err: any) {
+      console.error('Get hospital staff error:', err);
+      res.status(500).json({ message: err?.message || 'Failed to fetch staff' });
+    }
+  }
+);
+
+router.delete(
+  '/my/staff/:role/:id',
+  authenticateToken,
+  authorizeRoles('HOSPITAL'),
+  async (req: AuthenticatedRequest, res) => {
+    try {
+      const role = req.params.role as StaffRole;
+      const id = parseInt(req.params.id, 10);
+      if (!VALID_STAFF_ROLES.includes(role) || !Number.isInteger(id) || id <= 0) {
+        return res.status(400).json({ message: 'Invalid role or staff id' });
+      }
+      const userId = req.user!.id;
+      const [hospital] = await db.select().from(hospitals).where(eq(hospitals.userId, userId)).limit(1);
+      if (!hospital) {
+        return res.status(404).json({ message: 'Hospital not found for this user' });
+      }
+      const removed = await removeStaffMember(role, id, hospital.id);
+      if (!removed) {
+        return res.status(404).json({ message: 'Staff member not found or already removed' });
+      }
+      res.json({ success: true });
+    } catch (err: any) {
+      console.error('Remove staff error:', err);
+      res.status(500).json({ message: err?.message || 'Failed to remove staff' });
     }
   }
 );

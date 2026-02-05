@@ -1,6 +1,6 @@
 // server/services/hospitals.service.ts
 import { db } from '../db';
-import { hospitals, doctors, appointments, patients, payments, invoices } from '../../shared/schema';
+import { hospitals, doctors, nurses, receptionists, pharmacists, radiologyTechnicians, users, appointments, patients, payments, invoices } from '../../shared/schema';
 import { eq, and, gte, sql } from 'drizzle-orm';
 import type { InsertHospital } from '../../shared/schema-types';
 import { labs } from '../../shared/schema';
@@ -186,5 +186,174 @@ export const getHospitalStats = async (hospitalId: number) => {
   } catch (error) {
     console.error('❌ Error calculating hospital stats:', error);
     throw error;
+  }
+};
+
+export type StaffRole = 'doctor' | 'nurse' | 'receptionist' | 'pharmacist' | 'radiology_technician';
+
+export interface StaffMember {
+  id: number;
+  userId: number;
+  role: StaffRole;
+  fullName: string;
+  email: string;
+  mobileNumber: string;
+  [key: string]: unknown;
+}
+
+/**
+ * Get all staff for a hospital (doctors, nurses, receptionists, pharmacists, radiology technicians) with user info.
+ */
+export const getHospitalStaff = async (hospitalId: number): Promise<{
+  doctors: StaffMember[];
+  nurses: StaffMember[];
+  receptionists: StaffMember[];
+  pharmacists: StaffMember[];
+  radiologyTechnicians: StaffMember[];
+}> => {
+  const [doctorsRows, nursesRows, receptionistsRows, pharmacistsRows, radiologyRows] = await Promise.all([
+    db.select({
+      id: doctors.id,
+      userId: doctors.userId,
+      fullName: users.fullName,
+      email: users.email,
+      mobileNumber: users.mobileNumber,
+      specialty: doctors.specialty,
+      licenseNumber: doctors.licenseNumber,
+      isAvailable: doctors.isAvailable,
+    })
+      .from(doctors)
+      .leftJoin(users, eq(doctors.userId, users.id))
+      .where(eq(doctors.hospitalId, hospitalId)),
+    db.select({
+      id: nurses.id,
+      userId: nurses.userId,
+      fullName: users.fullName,
+      email: users.email,
+      mobileNumber: users.mobileNumber,
+      nursingDegree: nurses.nursingDegree,
+      licenseNumber: nurses.licenseNumber,
+      isAvailable: nurses.isAvailable,
+    })
+      .from(nurses)
+      .leftJoin(users, eq(nurses.userId, users.id))
+      .where(and(eq(nurses.hospitalId, hospitalId), eq(nurses.isAvailable, true))),
+    db.select({
+      id: receptionists.id,
+      userId: receptionists.userId,
+      fullName: users.fullName,
+      email: users.email,
+      mobileNumber: users.mobileNumber,
+      department: receptionists.department,
+      employeeId: receptionists.employeeId,
+      isActive: receptionists.isActive,
+    })
+      .from(receptionists)
+      .leftJoin(users, eq(receptionists.userId, users.id))
+      .where(and(eq(receptionists.hospitalId, hospitalId), eq(receptionists.isActive, true))),
+    db.select({
+      id: pharmacists.id,
+      userId: pharmacists.userId,
+      fullName: users.fullName,
+      email: users.email,
+      mobileNumber: users.mobileNumber,
+      pharmacyDegree: pharmacists.pharmacyDegree,
+      licenseNumber: pharmacists.licenseNumber,
+      isAvailable: pharmacists.isAvailable,
+    })
+      .from(pharmacists)
+      .leftJoin(users, eq(pharmacists.userId, users.id))
+      .where(and(eq(pharmacists.hospitalId, hospitalId), eq(pharmacists.isAvailable, true))),
+    db.select({
+      id: radiologyTechnicians.id,
+      userId: radiologyTechnicians.userId,
+      fullName: users.fullName,
+      email: users.email,
+      mobileNumber: users.mobileNumber,
+      radiologyDegree: radiologyTechnicians.radiologyDegree,
+      licenseNumber: radiologyTechnicians.licenseNumber,
+      isAvailable: radiologyTechnicians.isAvailable,
+    })
+      .from(radiologyTechnicians)
+      .leftJoin(users, eq(radiologyTechnicians.userId, users.id))
+      .where(and(eq(radiologyTechnicians.hospitalId, hospitalId), eq(radiologyTechnicians.isAvailable, true))),
+  ]);
+
+  const toStaff = (role: StaffRole) => (row: Record<string, unknown>): StaffMember => ({
+    id: row.id as number,
+    userId: row.userId as number,
+    role,
+    fullName: (row.fullName as string) ?? '',
+    email: (row.email as string) ?? '',
+    mobileNumber: (row.mobileNumber as string) ?? '',
+    ...row,
+  });
+
+  return {
+    doctors: doctorsRows.map(toStaff('doctor')),
+    nurses: nursesRows.map(toStaff('nurse')),
+    receptionists: receptionistsRows.map(toStaff('receptionist')),
+    pharmacists: pharmacistsRows.map(toStaff('pharmacist')),
+    radiologyTechnicians: radiologyRows.map(toStaff('radiology_technician')),
+  };
+};
+
+/**
+ * Remove (deactivate or unlink) a staff member from the hospital.
+ * - Doctor: set hospitalId = null (unlink).
+ * - Nurse, receptionist, pharmacist, radiology_technician: set isAvailable/isActive = false.
+ */
+export const removeStaffMember = async (
+  role: StaffRole,
+  staffId: number,
+  hospitalId: number
+): Promise<boolean> => {
+  const id = Number(staffId);
+  const hid = Number(hospitalId);
+  if (!id || !hid) return false;
+
+  switch (role) {
+    case 'doctor': {
+      const [updated] = await db
+        .update(doctors)
+        .set({ hospitalId: null })
+        .where(and(eq(doctors.id, id), eq(doctors.hospitalId, hid)))
+        .returning({ id: doctors.id });
+      return !!updated;
+    }
+    case 'nurse': {
+      const [updated] = await db
+        .update(nurses)
+        .set({ isAvailable: false })
+        .where(and(eq(nurses.id, id), eq(nurses.hospitalId, hid)))
+        .returning({ id: nurses.id });
+      return !!updated;
+    }
+    case 'receptionist': {
+      const [updated] = await db
+        .update(receptionists)
+        .set({ isActive: false })
+        .where(and(eq(receptionists.id, id), eq(receptionists.hospitalId, hid)))
+        .returning({ id: receptionists.id });
+      return !!updated;
+    }
+    case 'pharmacist': {
+      const [updated] = await db
+        .update(pharmacists)
+        .set({ isAvailable: false })
+        .where(and(eq(pharmacists.id, id), eq(pharmacists.hospitalId, hid)))
+        .returning({ id: pharmacists.id });
+      return !!updated;
+    }
+    case 'radiology_technician': {
+      const [updated] = await db
+        .update(radiologyTechnicians)
+        .set({ isAvailable: false })
+        .where(and(eq(radiologyTechnicians.id, id), eq(radiologyTechnicians.hospitalId, hid)))
+        .returning({ id: radiologyTechnicians.id });
+      return !!updated;
+    }
+    default:
+      return false;
   }
 };

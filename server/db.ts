@@ -10,13 +10,13 @@ dotenv.config();
 // Create database connection with fallback
 const connectionString = process.env.DATABASE_URL || "postgresql://neondb_owner:npg_NQrYiJCf3kG0@ep-floral-fire-a1368kxn-pooler.ap-southeast-1.aws.neon.tech/neondb?sslmode=require&channel_binding=require";
 
-// Configure postgres with timeout and connection settings
+// Configure postgres with timeout and connection settings (tuned to reduce ETIMEDOUT on slow networks)
 const sql = postgres(connectionString, {
-  connect_timeout: 30, // 30 seconds connection timeout (increased)
-  idle_timeout: 30, // 30 seconds idle timeout (increased)
+  connect_timeout: 60, // 60 seconds to establish connection (helps remote/Neon DB)
+  idle_timeout: 60, // 60 seconds before idle connection is closed
   max_lifetime: 60 * 30, // 30 minutes max connection lifetime
-  max: 20, // Maximum number of connections in the pool (increased)
-  statement_timeout: 30000, // 30 seconds statement timeout (increased)
+  max: 20, // Maximum number of connections in the pool
+  statement_timeout: 60000, // 60 seconds per query (avoids read ETIMEDOUT on slow responses)
   prepare: false, // Disable prepared statements for faster queries (can help with connection issues)
   connection: {
     application_name: 'nexacare-medical-system',

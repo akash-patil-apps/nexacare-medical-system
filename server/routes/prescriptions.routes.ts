@@ -1,15 +1,17 @@
 // server/routes/prescriptions.routes.ts
 import { Router } from "express";
 import { z } from "zod";
+import { eq } from "drizzle-orm";
 import { authenticateToken, authorizeRoles } from "../middleware/auth";
 import type { AuthenticatedRequest } from "../types";
 import * as prescriptionService from "../services/prescription.service";
 import * as doctorsService from "../services/doctors.service";
 import * as patientsService from "../services/patients.service";
-import { insertPrescriptionSchema } from "../../shared/schema";
+import { insertPrescriptionSchema, prescriptions } from "../../shared/schema";
+import { db } from "../db";
 import { NotificationService } from "../services/localNotification.service";
 import * as medicineReminderService from "../services/medicine-reminder.service";
-import * as followupReminderService from "../services/followup-reminder.service"; 
+import * as followupReminderService from "../services/followup-reminder.service";
 import { logAuditEvent } from "../services/audit.service";
 
 const router = Router();
@@ -202,6 +204,26 @@ router.get(
   }
 );
 
+// 3b. Get medicine reminder schedule for logged-in patient (today + tomorrow)
+router.get(
+  "/patient/reminders",
+  authenticateToken,
+  authorizeRoles("PATIENT"),
+  async (req: AuthenticatedRequest, res) => {
+    try {
+      const patientProfile = await patientsService.getPatientByUserId(req.user!.id);
+      if (!patientProfile?.id) {
+        return res.status(404).json({ error: "Patient profile not found" });
+      }
+      const reminders = await medicineReminderService.getPatientReminderSchedule(patientProfile.id);
+      res.json(reminders);
+    } catch (err) {
+      console.error("Patient reminders error:", err);
+      res.status(500).json({ error: "Failed to fetch reminders" });
+    }
+  }
+);
+
 // 4. Update prescription by doctor (with edit window guard)
 router.put(
   "/:id",
@@ -336,7 +358,77 @@ router.get(
   }
 );
 
-// 8. Get prescription by ID (for viewing details)
+// 8. Request refill (patient only)
+router.post(
+  "/refill-request",
+  authenticateToken,
+  authorizeRoles("PATIENT"),
+  async (req: AuthenticatedRequest, res) => {
+    try {
+      const patientProfile = await patientsService.getPatientByUserId(req.user!.id);
+      if (!patientProfile?.id) {
+        return res.status(404).json({ error: "Patient profile not found" });
+      }
+      const { prescriptionId, notes } = req.body as { prescriptionId: number; notes?: string };
+      if (!prescriptionId || typeof prescriptionId !== "number") {
+        return res.status(400).json({ error: "prescriptionId is required" });
+      }
+      const [rx] = await db.select().from(prescriptions).where(eq(prescriptions.id, prescriptionId));
+      if (!rx) {
+        return res.status(404).json({ error: "Prescription not found" });
+      }
+      if (rx.patientId !== patientProfile.id) {
+        return res.status(403).json({ error: "This prescription does not belong to you" });
+      }
+      const hospitalId = rx.hospitalId;
+      if (hospitalId) {
+        try {
+          const { getPharmacistsByHospital } = await import("../services/pharmacists.service");
+          const hospitalPharmacists = await getPharmacistsByHospital(hospitalId);
+          const patientName = req.user!.fullName || "Patient";
+          const message = notes
+            ? `Refill requested for prescription #${prescriptionId} by ${patientName}. Notes: ${notes}`
+            : `Refill requested for prescription #${prescriptionId} by ${patientName}.`;
+          for (const pharmacistData of hospitalPharmacists) {
+            if (pharmacistData.user?.id) {
+              await NotificationService.createNotification({
+                userId: pharmacistData.user.id,
+                type: "refill_request",
+                title: "Prescription Refill Requested",
+                message,
+                relatedId: prescriptionId,
+                relatedType: "prescription",
+              });
+            }
+          }
+        } catch (e) {
+          console.error("Refill request: notify pharmacists failed", e);
+        }
+      }
+      try {
+        const patient = await patientsService.getPatientById(rx.patientId);
+        if (patient?.userId) {
+          await NotificationService.createNotification({
+            userId: patient.userId,
+            type: "refill_request",
+            title: "Refill Request Submitted",
+            message: "Your refill request has been submitted. The pharmacy will process it shortly.",
+            relatedId: prescriptionId,
+            relatedType: "prescription",
+          });
+        }
+      } catch (e) {
+        console.error("Refill request: notify patient failed", e);
+      }
+      res.status(200).json({ success: true, message: "Refill request submitted" });
+    } catch (err) {
+      console.error("Refill request error:", err);
+      res.status(500).json({ error: "Failed to submit refill request" });
+    }
+  }
+);
+
+// 9. Get prescription by ID (for viewing details)
 router.get(
   "/:id",
   authenticateToken,

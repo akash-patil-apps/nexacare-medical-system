@@ -9,6 +9,37 @@ import { getRecommendedLabTestsForPatient, confirmLabRecommendation } from '../s
 
 const router = Router();
 
+const quickCreatePatientSchema = z.object({
+  fullName: z.string().min(2, 'Full name is required (at least 2 characters)'),
+  mobileNumber: z.string().min(10, 'Mobile number is required (at least 10 digits)'),
+  gender: z.string().optional().nullable(),
+  dateOfBirth: z.string().optional().nullable(),
+});
+
+/**
+ * Quick-create minimal user + patient for IPD admission (when patient not found by mobile).
+ * Receptionist can fill rest of data later.
+ */
+router.post(
+  '/patients/quick-create',
+  authenticateToken,
+  authorizeRoles('receptionist'),
+  async (req: AuthenticatedRequest, res) => {
+    try {
+      const payload = quickCreatePatientSchema.parse(req.body);
+      const receptionistId = req.user!.id;
+      const result = await receptionService.quickCreatePatientForAdmission(receptionistId, payload);
+      res.status(201).json(result);
+    } catch (err: any) {
+      if (err instanceof z.ZodError) {
+        return res.status(400).json({ message: 'Invalid input', errors: err.errors });
+      }
+      console.error('Quick-create patient error:', err);
+      res.status(500).json({ message: err?.message || 'Failed to create patient profile' });
+    }
+  }
+);
+
 /**
  * Get walk-in appointments.
  */
@@ -225,9 +256,12 @@ router.get(
       const patientId = Number(req.params.patientId);
       const recommendations = await getRecommendedLabTestsForPatient(patientId);
       res.json(recommendations);
-    } catch (err) {
+    } catch (err: any) {
       console.error('Get lab recommendations error:', err);
-      res.status(500).json({ message: 'Failed to fetch lab recommendations' });
+      const isTimeout = err?.cause?.code === 'ETIMEDOUT' || err?.code === 'ETIMEDOUT' || err?.cause?.code === 'ECONNRESET';
+      res.status(isTimeout ? 503 : 500).json({
+        message: isTimeout ? 'Database temporarily unavailable (timeout). Please try again.' : 'Failed to fetch lab recommendations',
+      });
     }
   }
 );

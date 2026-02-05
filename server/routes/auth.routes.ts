@@ -80,8 +80,14 @@ router.post('/otp/verify', async (req, res) => {
 // Register user (after OTP is verified)
 router.post('/register', async (req, res) => {
   try {
-    const validated = registrationSchema.parse(req.body);
-    const result = await registerUser(validated);
+    const validated = registrationSchema.parse(req.body) as z.infer<typeof registrationSchema> & { email?: string };
+    if (validated.role !== 'patient' && (!validated.email || !String(validated.email).trim())) {
+      return res.status(400).json({ message: 'Email is required for this role' });
+    }
+    if (validated.role === 'patient' && (!validated.email || !String(validated.email).trim())) {
+      validated.email = `pat_${validated.mobileNumber}_${Date.now()}@nexacare.local`;
+    }
+    const result = await registerUser(validated as Parameters<typeof registerUser>[0]);
     res.json(result);
   } catch (error) {
     console.error('Registration error:', error);

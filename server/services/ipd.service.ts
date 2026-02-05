@@ -430,6 +430,8 @@ export const admitPatient = async (data: {
       admittingDoctorId: data.admittingDoctorId || null,
       attendingDoctorId: data.attendingDoctorId || null,
       admissionType: data.admissionType,
+      attendantName: data.attendantName?.trim() || null,
+      attendantMobile: data.attendantMobile?.trim() || null,
       status: 'admitted',
       admittedAt: sql`NOW()`,
       createdAt: sql`NOW()`,

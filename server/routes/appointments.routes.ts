@@ -1,6 +1,7 @@
 // server/routes/appointments.routes.ts
 import { Router } from 'express';
 import * as appointmentService from '../services/appointments.service';
+import * as patientsService from '../services/patients.service';
 import { db } from '../db';
 import { eq } from 'drizzle-orm';
 import { authenticateToken, authorizeRoles, type AuthenticatedRequest } from '../middleware/auth';
@@ -39,7 +40,7 @@ router.post('/', authorizeRoles('PATIENT', 'ADMIN', 'RECEPTIONIST'), async (req:
       });
     }
 
-    // Get patient ID - for receptionists, use patientId from body if provided
+    // Get patient ID - for receptionists, use patientId from body if provided; for patients, allow self or family member
     let patientId: number;
     if (user.role === 'RECEPTIONIST' && req.body.patientId) {
       // Receptionist booking for a specific patient
@@ -49,8 +50,20 @@ router.post('/', authorizeRoles('PATIENT', 'ADMIN', 'RECEPTIONIST'), async (req:
       if (!patient) {
         return res.status(400).json({ message: 'Patient not found' });
       }
+    } else if (user.role === 'PATIENT' && req.body.patientId) {
+      // Patient booking for self or a family member
+      const requestedId = Number(req.body.patientId);
+      const allowed = await patientsService.canActAsPatient(user.id, requestedId);
+      if (!allowed) {
+        return res.status(403).json({ message: 'You can only book for yourself or a linked family member.' });
+      }
+      const [patient] = await db.select().from(patients).where(eq(patients.id, requestedId)).limit(1);
+      if (!patient) {
+        return res.status(400).json({ message: 'Patient not found' });
+      }
+      patientId = requestedId;
     } else {
-      // For patients, use their own patient profile
+      // For patients (no patientId in body), use their own patient profile
       const patient = await db.select().from(patients).where(eq(patients.userId, user.id)).limit(1);
       
       
@@ -175,16 +188,24 @@ router.get('/my', authorizeRoles('PATIENT', 'DOCTOR', 'RECEPTIONIST', 'HOSPITAL'
     }
 
     res.json(appointments);
-  } catch (err) {
+  } catch (err: any) {
     console.error('❌ Get my appointments error:', err);
-    res.status(400).json({ message: 'Failed to fetch appointments', error: err instanceof Error ? err.message : 'Unknown error' });
+    const isTimeout = err?.cause?.code === 'ETIMEDOUT' || err?.code === 'ETIMEDOUT' || err?.cause?.code === 'ECONNRESET';
+    const status = isTimeout ? 503 : 400;
+    const message = isTimeout ? 'Database temporarily unavailable (timeout). Please try again.' : 'Failed to fetch appointments';
+    res.status(status).json({ message, error: err instanceof Error ? err.message : 'Unknown error' });
   }
 });
 
 // Get appointment by ID
 router.get('/:appointmentId', async (req: AuthenticatedRequest, res) => {
   try {
-    const appointment = await appointmentService.getAppointmentById(+req.params.appointmentId);
+    const rawId = req.params.appointmentId;
+    const appointmentId = typeof rawId === 'string' ? parseInt(rawId, 10) : Number(rawId);
+    if (Number.isNaN(appointmentId) || appointmentId < 1) {
+      return res.status(400).json({ message: 'Invalid appointment ID' });
+    }
+    const appointment = await appointmentService.getAppointmentById(appointmentId);
     if (!appointment) {
       return res.status(404).json({ message: 'Appointment not found' });
     }

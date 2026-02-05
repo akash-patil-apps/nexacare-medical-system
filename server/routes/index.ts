@@ -20,6 +20,7 @@ import prescriptionsRoutes from "./prescriptions.routes";
 import locationsRoutes from "./locations.routes";
 import onboardingRoutes from "./onboarding.routes";
 import notificationsRoutes from "./notifications.routes";
+import messagesRoutes from "./messages.routes";
 import eventsRoutes from "./events.routes";
 import queueRoutes from "./queue.routes";
 import ipdRoutes from "./ipd.routes";
@@ -70,6 +71,7 @@ export async function registerRoutes(app: Express) {
   app.use("/api/locations", locationsRoutes);
   app.use("/api/onboarding", onboardingRoutes);
   app.use("/api/notifications", notificationsRoutes);
+  app.use("/api/messages", messagesRoutes);
   app.use("/api/events", eventsRoutes);
   app.use("/api/opd-queue", queueRoutes);
   app.use("/api/ipd", ipdRoutes);

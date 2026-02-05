@@ -3,7 +3,7 @@ import * as clinicalService from '../services/clinical.service';
 import { authenticateToken, authorizeRoles, type AuthenticatedRequest } from '../middleware/auth';
 import { db } from '../db';
 import { eq } from 'drizzle-orm';
-import { receptionists, hospitals, doctors, nurses } from '../../shared/schema';
+import { receptionists, hospitals, doctors, nurses, patients } from '../../shared/schema';
 import { logAuditEvent } from '../services/audit.service';
 
 const router = Router();
@@ -323,22 +323,40 @@ router.post('/vitals', authorizeRoles('DOCTOR', 'NURSE', 'ADMIN', 'HOSPITAL', 'R
 router.get('/vitals', authenticateToken, async (req: AuthenticatedRequest, res) => {
   try {
     const { patientId, encounterId, appointmentId, dateFrom, dateTo, nurse } = req.query;
-    const hospitalId = await getHospitalId(req.user);
+    const userRole = req.user?.role?.toUpperCase();
 
-    // If nurse=true, don't require patientId (nurse can see all their vitals)
-    // Otherwise, patientId is required
-    if (!nurse && !patientId) {
-      return res.status(400).json({ message: 'patientId is required' });
+    let hospitalId: number | undefined;
+    let resolvedPatientId: number | undefined = patientId ? +patientId : undefined;
+
+    if (userRole === 'PATIENT') {
+      // Patients can only view their own vitals: resolve patient ID from user
+      const [patient] = await db
+        .select()
+        .from(patients)
+        .where(eq(patients.userId, req.user!.id))
+        .limit(1);
+      if (!patient) {
+        return res.status(404).json({ message: 'Patient record not found' });
+      }
+      resolvedPatientId = patient.id;
+    } else {
+      hospitalId = await getHospitalId(req.user);
+
+      // If nurse=true, don't require patientId (nurse can see all their vitals)
+      // Otherwise, patientId is required for staff
+      if (!nurse && !patientId) {
+        return res.status(400).json({ message: 'patientId is required' });
+      }
     }
 
     // If nurse=true and user is a nurse, filter by the nurse's user ID
     let recordedByUserId: number | undefined;
-    if (nurse === 'true' && req.user?.role?.toUpperCase() === 'NURSE') {
-      recordedByUserId = req.user.id;
+    if (nurse === 'true' && userRole === 'NURSE') {
+      recordedByUserId = req.user!.id;
     }
 
     const vitals = await clinicalService.getVitalsForPatient({
-      patientId: patientId ? +patientId : undefined,
+      patientId: resolvedPatientId,
       encounterId: encounterId ? +encounterId : undefined,
       appointmentId: appointmentId ? +appointmentId : undefined,
       hospitalId,

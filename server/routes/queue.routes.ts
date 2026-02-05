@@ -62,14 +62,17 @@ router.post('/check-in', authorizeRoles('RECEPTIONIST', 'ADMIN'), async (req: Au
   }
 });
 
-// Get queue for doctor and date
+// Get queue for doctor and date (active queue + confirmed/pending not yet checked in)
 router.get('/doctor/:doctorId/date/:date', async (req: AuthenticatedRequest, res) => {
   try {
     const { doctorId, date } = req.params;
     const queueDate = date; // YYYY-MM-DD format
 
-    const queue = await queueService.getQueueForDoctor(+doctorId, queueDate);
-    res.json(queue);
+    const [queue, notYetCheckedIn] = await Promise.all([
+      queueService.getQueueForDoctor(+doctorId, queueDate),
+      queueService.getNotYetCheckedInForDoctor(+doctorId, queueDate),
+    ]);
+    res.json({ queue, notYetCheckedIn });
   } catch (err: any) {
     console.error('❌ Get queue error:', err);
     res.status(400).json({

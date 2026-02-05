@@ -3,6 +3,7 @@ import { labs, labReports, patients, doctors, users } from '../../shared/schema'
 import { eq, desc, and } from 'drizzle-orm';
 import { InsertLabReport } from '../../shared/schema-types';
 import { getDoctorByUserId } from './doctors.service';
+import { retryDbOperation } from '../utils/db-retry';
 
 export const getAllLabs = async () => {
   return db.select().from(labs);
@@ -256,58 +257,56 @@ export const confirmLabRecommendation = async (reportId: number) => {
 
 // Get recommended lab tests for a patient (for receptionist to see)
 export const getRecommendedLabTestsForPatient = async (patientId: number) => {
-  // Select all fields from labReports (priority might not exist in schema, so we'll handle it safely)
-  const reports = await db
-    .select()
-    .from(labReports)
-    .where(and(
-      eq(labReports.patientId, patientId),
-      eq(labReports.status, 'recommended')
-    ))
-    .orderBy(desc(labReports.createdAt));
+  return retryDbOperation(
+    async () => {
+      const reports = await db
+        .select()
+        .from(labReports)
+        .where(and(
+          eq(labReports.patientId, patientId),
+          eq(labReports.status, 'recommended')
+        ))
+        .orderBy(desc(labReports.createdAt));
 
-  // Enrich with doctor names
-  const enrichedReports = await Promise.all(
-    reports.map(async (report) => {
-      let doctorName = null;
-      if (report.doctorId) {
-        try {
-          const [doctor] = await db
-            .select({ userId: doctors.userId })
-            .from(doctors)
-            .where(eq(doctors.id, report.doctorId))
-            .limit(1);
-          if (doctor) {
-            const [doctorUser] = await db
-              .select({ fullName: users.fullName })
-              .from(users)
-              .where(eq(users.id, doctor.userId))
-              .limit(1);
-            if (doctorUser) {
-              doctorName = doctorUser.fullName;
+      const enrichedReports = await Promise.all(
+        reports.map(async (report) => {
+          let doctorName = null;
+          if (report.doctorId) {
+            try {
+              const [doctor] = await db
+                .select({ userId: doctors.userId })
+                .from(doctors)
+                .where(eq(doctors.id, report.doctorId))
+                .limit(1);
+              if (doctor) {
+                const [doctorUser] = await db
+                  .select({ fullName: users.fullName })
+                  .from(users)
+                  .where(eq(users.id, doctor.userId))
+                  .limit(1);
+                if (doctorUser) {
+                  doctorName = doctorUser.fullName;
+                }
+              }
+            } catch (error) {
+              console.error(`❌ Error fetching doctor name for doctor ID ${report.doctorId}:`, error);
             }
           }
-        } catch (error) {
-          console.error(`❌ Error fetching doctor name for doctor ID ${report.doctorId}:`, error);
-        }
-      }
-      
-      // Extract priority from notes if it was stored there, or default to 'normal'
-      let priority = 'normal';
-      if (report.notes) {
-        const priorityMatch = report.notes.match(/^(urgent|high|normal)\s+priority/i);
-        if (priorityMatch) {
-          priority = priorityMatch[1].toLowerCase();
-        }
-      }
-      
-      return { 
-        ...report, 
-        doctorName,
-        priority, // Add priority field for frontend compatibility
-      };
-    })
-  );
 
-  return enrichedReports;
+          let priority = 'normal';
+          if (report.notes) {
+            const priorityMatch = report.notes.match(/^(urgent|high|normal)\s+priority/i);
+            if (priorityMatch) {
+              priority = priorityMatch[1].toLowerCase();
+            }
+          }
+
+          return { ...report, doctorName, priority };
+        })
+      );
+
+      return enrichedReports;
+    },
+    { maxRetries: 2 }
+  );
 };

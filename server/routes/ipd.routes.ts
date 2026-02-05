@@ -452,7 +452,7 @@ router.get('/structure', authenticateToken, authorizeRoles('ADMIN', 'HOSPITAL', 
 router.post('/encounters', authorizeRoles('ADMIN', 'HOSPITAL', 'RECEPTIONIST', 'DOCTOR'), async (req: AuthenticatedRequest, res) => {
   try {
     const hospitalId = await getHospitalId(req.user);
-    const { patientId, admittingDoctorId, attendingDoctorId, admissionType, bedId } = req.body;
+    const { patientId, admittingDoctorId, attendingDoctorId, admissionType, bedId, attendantName, attendantMobile } = req.body;
 
     if (!patientId || !admissionType || !bedId) {
       return res.status(400).json({ message: 'patientId, admissionType, and bedId are required' });
@@ -465,6 +465,8 @@ router.post('/encounters', authorizeRoles('ADMIN', 'HOSPITAL', 'RECEPTIONIST', '
       attendingDoctorId,
       admissionType,
       bedId,
+      attendantName: attendantName || null,
+      attendantMobile: attendantMobile || null,
       actorUserId: req.user?.id,
       actorRole: req.user?.role || 'UNKNOWN',
       ipAddress: req.ip || req.socket.remoteAddress || undefined,

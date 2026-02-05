@@ -96,8 +96,12 @@ router.get(
   authorizeRoles("patient"),
   async (req: AuthenticatedRequest, res) => {
     try {
-      const patientId = req.user!.id;
-      const reports = await getLabReportsForPatient(patientId);
+      const { getPatientByUserId } = await import("../services/patients.service");
+      const patient = await getPatientByUserId(req.user!.id);
+      if (!patient?.id) {
+        return res.json([]);
+      }
+      const reports = await getLabReportsForPatient(patient.id);
       res.json(reports);
     } catch (err) {
       console.error("Get patient lab reports error:", err);
