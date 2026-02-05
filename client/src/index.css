@@ -149,6 +149,44 @@ body {
   padding: 0;
 }
 
+/* Contact directory / receptionist sub-pages: full-width layout, no pink gap */
+body:has(.receptionist-contact-directory-wrapper) {
+  background: #F3F4F6 !important;
+}
+
+/* Remove medical-container padding/background/centering so contact directory is full-width like receptionist dashboard */
+body:has(.receptionist-contact-directory-wrapper) .medical-container {
+  padding: 0 !important;
+  background: transparent !important;
+  display: block !important;
+  align-items: unset !important;
+  justify-content: unset !important;
+  min-height: 100vh;
+}
+
+/* Messages page: no medical-container (route excluded in App); force grey, no outline/border */
+body:has(.messages-page-wrapper) {
+  background: #F3F4F6 !important;
+}
+.messages-page-wrapper,
+.messages-page-wrapper .ant-layout,
+.messages-page-wrapper .ant-layout-content {
+  background: #F3F4F6 !important;
+  outline: none !important;
+  border: none !important;
+  box-shadow: none !important;
+}
+.messages-page-wrapper .ant-card {
+  border: none !important;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.08) !important;
+  outline: none !important;
+}
+/* Remove any focus/selection outline that could show as pink/magenta */
+.messages-page-wrapper:focus,
+.messages-page-wrapper:focus-visible {
+  outline: none !important;
+}
+
 /* Remove padding and background for dashboard pages */
 body:has(.pharmacist-dashboard-wrapper) .medical-container,
 body:has(.pharmacy-inventory-wrapper) .medical-container,

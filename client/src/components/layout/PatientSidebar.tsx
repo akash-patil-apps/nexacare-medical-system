@@ -1,5 +1,5 @@
 import React, { useMemo } from 'react';
-import { Button, message } from 'antd';
+import { Button } from 'antd';
 import { SettingOutlined, UserOutlined, BellOutlined, LogoutOutlined, MessageOutlined } from '@ant-design/icons';
 import { DashboardIcon } from '../../assets/icons/DashboardIcon';
 import { AppointmentIcon } from '../../assets/icons/AppointmentIcon';
@@ -34,10 +34,10 @@ export const PatientSidebar: React.FC<PatientSidebarProps> = ({
         setLocation('/dashboard/patient/prescriptions');
         break;
       case 'reports':
-        message.info('Lab reports page coming soon.');
+        setLocation('/dashboard/patient/reports');
         break;
       case 'messages':
-        setLocation('/messages');
+        setLocation('/patient/messages');
         break;
       default:
         break;

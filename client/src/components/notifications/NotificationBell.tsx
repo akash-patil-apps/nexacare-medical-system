@@ -1,8 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Badge, Button, Drawer, List, Space, Tag, Typography, App } from 'antd';
-import { BellOutlined, CheckOutlined } from '@ant-design/icons';
+import { BellOutlined, CheckOutlined, MessageOutlined } from '@ant-design/icons';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useLocation } from 'wouter';
+import { useAuth } from '../../hooks/use-auth';
+import { getMessagesPathForRole } from '../../lib/messages-route';
 import { subscribeToAppointmentEvents } from '../../lib/appointments-events';
+import { playNotificationSound } from '../../lib/notification-sounds';
 
 const { Text } = Typography;
 
@@ -61,7 +65,9 @@ export function NotificationBell({
   showToastOnNew?: boolean;
 }) {
   const { notification } = App.useApp();
+  const { user } = useAuth();
   const queryClient = useQueryClient();
+  const [, setLocation] = useLocation();
   const [open, setOpen] = useState(false);
 
   const { data: notifications = [], isLoading } = useQuery({
@@ -120,6 +126,16 @@ export function NotificationBell({
     const newOnes = notifications.filter((n) => !prev.has(Number(n.id)));
     if (newOnes.length > 0) {
       const latest = newOnes[0];
+      const type = (latest.type || '').toLowerCase();
+      const isMessage = type === 'message' || (latest.relatedType || '').toLowerCase() === 'message';
+      const isMedicineReminder = type === 'medicine_reminder';
+      if (isMessage) {
+        playNotificationSound('message');
+      } else if (isMedicineReminder) {
+        playNotificationSound('message');
+      } else {
+        playNotificationSound('new');
+      }
       notification.open({
         message: latest.title || 'New notification',
         description: latest.message,
@@ -132,6 +148,7 @@ export function NotificationBell({
 
   const typeTagColor = (type: string) => {
     const t = (type || '').toLowerCase();
+    if (t.includes('message')) return 'blue';
     if (t.includes('cancel')) return 'red';
     if (t.includes('resched')) return 'blue';
     if (t.includes('confirm')) return 'green';
@@ -141,6 +158,7 @@ export function NotificationBell({
 
   const normalizeTypeLabel = (type: string) => {
     const t = (type || '').toUpperCase();
+    if (t === 'MESSAGE') return 'New message';
     if (t === 'APPOINTMENT_RESCHEDULED' || t === 'APPOINTMENT_RESCHEDULED'.toUpperCase()) return 'RESCHEDULED';
     if (t === 'APPOINTMENT_CONFIRMED') return 'CONFIRMED';
     if (t === 'APPOINTMENT_CANCELLED') return 'CANCELLED';
@@ -208,16 +226,32 @@ export function NotificationBell({
                       </div>
                     </div>
 
-                    <Button
-                      size="small"
-                      type="link"
-                      disabled={!!item.isRead}
-                      loading={markOneMutation.isPending && (markOneMutation.variables as any) === item.id}
-                      onClick={() => markOneMutation.mutate(item.id)}
-                      style={{ padding: 0, whiteSpace: 'nowrap' }}
-                    >
-                      Mark read
-                    </Button>
+                    <Space size={8}>
+                      {(item.type || '').toLowerCase() === 'message' && (
+                        <Button
+                          size="small"
+                          type="link"
+                          icon={<MessageOutlined />}
+                          onClick={() => {
+                            setOpen(false);
+                            setLocation(getMessagesPathForRole(user?.role));
+                          }}
+                          style={{ padding: 0 }}
+                        >
+                          Open
+                        </Button>
+                      )}
+                      <Button
+                        size="small"
+                        type="link"
+                        disabled={!!item.isRead}
+                        loading={markOneMutation.isPending && (markOneMutation.variables as any) === item.id}
+                        onClick={() => markOneMutation.mutate(item.id)}
+                        style={{ padding: 0, whiteSpace: 'nowrap' }}
+                      >
+                        Mark read
+                      </Button>
+                    </Space>
                   </div>
 
                   <div style={{ marginTop: 10, wordBreak: 'break-word' }}>{item.message}</div>

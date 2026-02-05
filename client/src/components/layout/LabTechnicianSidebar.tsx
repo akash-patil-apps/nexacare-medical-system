@@ -1,6 +1,7 @@
 import React from 'react';
 import { Button, message } from 'antd';
 import { UserOutlined, DashboardOutlined, ExperimentOutlined, FileSearchOutlined, CheckCircleOutlined, UploadOutlined, BarChartOutlined, LogoutOutlined } from '@ant-design/icons';
+import { useLocation } from 'wouter';
 import { useAuth } from '../../hooks/use-auth';
 
 interface LabTechnicianSidebarProps {
@@ -43,7 +44,7 @@ export const LabTechnicianSidebar: React.FC<LabTechnicianSidebarProps> = ({
           background: '#E3F2FF', // Light blue background for active user icon
           borderRadius: '8px',
         }}
-        onClick={() => message.info('Profile coming soon.')}
+        onClick={() => setLocation('/dashboard/profile')}
       />
 
       {/* Navigation Icons - Vertical Stack */}

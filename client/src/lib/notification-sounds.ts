@@ -1,21 +1,49 @@
 /**
  * Notification sound utility for different dashboard events
+ * Uses a single AudioContext resumed on first user interaction (required by browser autoplay policy).
  */
 
-// Create audio context for generating sounds
-const createAudioContext = () => {
+let sharedAudioContext: AudioContext | null = null;
+
+function getAudioContext(): AudioContext | null {
+  if (sharedAudioContext) return sharedAudioContext;
   try {
-    return new (window.AudioContext || (window as any).webkitAudioContext)();
+    const Ctor = window.AudioContext || (window as any).webkitAudioContext;
+    if (!Ctor) return null;
+    sharedAudioContext = new Ctor();
+    return sharedAudioContext;
   } catch (e) {
     console.warn('AudioContext not supported');
     return null;
   }
-};
+}
 
-// Generate a beep sound
+/** Call once on app load to resume AudioContext on first user interaction so sounds can play later. */
+export function enableNotificationSoundsOnFirstInteraction(): void {
+  if (typeof document === 'undefined') return;
+  const resume = async () => {
+    const ctx = getAudioContext();
+    if (ctx?.state === 'suspended') {
+      try {
+        await ctx.resume();
+      } catch (_) {}
+    }
+    document.removeEventListener('click', resume);
+    document.removeEventListener('keydown', resume);
+    document.removeEventListener('touchstart', resume);
+  };
+  document.addEventListener('click', resume, { once: true, passive: true });
+  document.addEventListener('keydown', resume, { once: true, passive: true });
+  document.addEventListener('touchstart', resume, { once: true, passive: true });
+}
+
+// Generate a beep sound (uses shared context; must have been resumed via user gesture)
 const playBeep = (frequency: number, duration: number, type: OscillatorType = 'sine') => {
-  const audioContext = createAudioContext();
+  const audioContext = getAudioContext();
   if (!audioContext) return;
+  if (audioContext.state === 'suspended') {
+    audioContext.resume().catch(() => {});
+  }
 
   const oscillator = audioContext.createOscillator();
   const gainNode = audioContext.createGain();
@@ -36,7 +64,7 @@ const playBeep = (frequency: number, duration: number, type: OscillatorType = 's
 };
 
 // Play a notification sound based on type
-export const playNotificationSound = (type: 'booking' | 'new' | 'pending' | 'confirmation' | 'cancellation') => {
+export const playNotificationSound = (type: 'booking' | 'new' | 'pending' | 'confirmation' | 'cancellation' | 'message') => {
   // Check if sounds are enabled (can be stored in localStorage)
   const soundsEnabled = localStorage.getItem('notification-sounds-enabled') !== 'false';
   if (!soundsEnabled) return;
@@ -73,6 +101,12 @@ export const playNotificationSound = (type: 'booking' | 'new' | 'pending' | 'con
         // Warning sound for cancellation
         playBeep(400, 0.3, 'sawtooth');
         setTimeout(() => playBeep(300, 0.3, 'sawtooth'), 300);
+        break;
+
+      case 'message':
+        // Distinct sound for new chat/message (double soft beep)
+        playBeep(880, 0.12, 'sine');
+        setTimeout(() => playBeep(1100, 0.12, 'sine'), 120);
         break;
       
       default:

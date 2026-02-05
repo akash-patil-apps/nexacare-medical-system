@@ -25,6 +25,7 @@ import {
 } from '@ant-design/icons';
 import { useAuth } from '../../hooks/use-auth';
 import { useLocation } from 'wouter';
+import { getMessagesPathForRole } from '../../lib/messages-route';
 import { useQuery } from '@tanstack/react-query';
 import { useActingPatient } from '../../hooks/use-acting-patient';
 import { NotificationBell } from '../notifications/NotificationBell';
@@ -280,7 +281,7 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
             icon={<MessageOutlined style={{ fontSize: '18px', color: '#8C8C8C' }} />}
             style={{ color: '#8C8C8C' }}
             title="Messages"
-            onClick={() => setLocation('/messages')}
+            onClick={() => setLocation(getMessagesPathForRole(user?.role))}
           />
         </Badge>
 

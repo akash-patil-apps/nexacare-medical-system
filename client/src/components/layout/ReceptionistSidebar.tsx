@@ -8,13 +8,19 @@ interface ReceptionistSidebarProps {
   selectedMenuKey?: string;
   onMenuClick?: () => void;
   hospitalName?: string | null;
+  /** When provided and user clicks Dashboard while already on dashboard, switch to main view (e.g. appointments tab) */
+  onDashboardClick?: () => void;
+  /** When provided and user clicks Appointments while on dashboard, switch to appointments tab instead of navigating */
+  onAppointmentsClick?: () => void;
 }
 
 export const ReceptionistSidebar: React.FC<ReceptionistSidebarProps> = ({ 
   selectedMenuKey = 'dashboard',
   onMenuClick,
+  onDashboardClick,
+  onAppointmentsClick,
 }) => {
-  const [, setLocation] = useLocation();
+  const [location, setLocation] = useLocation();
   const { logout } = useAuth();
 
   const handleMenuClick = (key: string) => {
@@ -22,10 +28,14 @@ export const ReceptionistSidebar: React.FC<ReceptionistSidebarProps> = ({
     
     switch (key) {
       case 'dashboard':
-        setLocation('/dashboard/receptionist');
+        if (onDashboardClick && location === '/dashboard/receptionist') {
+          onDashboardClick();
+        } else {
+          setLocation('/dashboard/receptionist');
+        }
         break;
       case 'appointments':
-        message.info('Appointments page coming soon.');
+        setLocation('/receptionist/appointments');
         break;
       case 'walkin':
         message.info('Walk-in registration is available from the dashboard.');
@@ -34,7 +44,7 @@ export const ReceptionistSidebar: React.FC<ReceptionistSidebarProps> = ({
         setLocation('/dashboard/receptionist/contact-directory');
         break;
       case 'messages':
-        setLocation('/messages');
+        setLocation('/receptionist/messages');
         break;
       default:
         break;
