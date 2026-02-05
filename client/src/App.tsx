@@ -1,5 +1,6 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { Router, Route, Switch, Redirect, useLocation } from 'wouter';
+import { enableNotificationSoundsOnFirstInteraction } from './lib/notification-sounds';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { AuthProvider, useAuth } from './hooks/use-auth';
 import { MedicalThemeProvider } from './antd.config.tsx';
@@ -14,10 +15,14 @@ import ForgotPassword from './pages/auth/forgot-password';
 import PatientDashboard from './pages/dashboards/patient-dashboard';
 import PatientAppointments from './pages/dashboards/patient-appointments';
 import PatientPrescriptions from './pages/dashboards/patient-prescriptions';
+import PatientLabReports from './pages/dashboards/patient-lab-reports';
+import PatientDocuments from './pages/dashboards/patient-documents';
+import PatientHistory from './pages/dashboards/patient-history';
 import BookAppointment from './pages/book-appointment';
 import DoctorDashboard from './pages/dashboards/doctor-dashboard';
 import DoctorAppointments from './pages/dashboards/doctor-appointments';
 import HospitalDashboard from './pages/dashboards/hospital-dashboard';
+import StaffManagement from './pages/dashboards/staff-management';
 import LabDashboard from './pages/dashboards/lab-dashboard';
 import ReceptionistDashboard from './pages/dashboards/receptionist-dashboard';
 import NurseDashboard from './pages/dashboards/nurse-dashboard';
@@ -35,7 +40,18 @@ import RevenueDetails from './pages/revenue/revenue-details';
 import PaymentCheckout from './pages/payment/checkout';
 import PaymentSuccess from './pages/payment/success';
 import PaymentFailure from './pages/payment/failure';
+import ContactDirectory from './pages/contact-directory';
+import MessagesPage from './pages/messages';
+import ProfilePage from './pages/profile';
+import ReceptionistAppointmentsPage from './pages/receptionist-appointments';
+import { getMessagesPathForRole } from './lib/messages-route';
 import NotFound from './pages/not-found';
+
+function RedirectToRoleMessages() {
+  const { user } = useAuth();
+  const path = getMessagesPathForRole(user?.role);
+  return <Redirect to={path} />;
+}
 
 // Create a client
 const queryClient = new QueryClient();
@@ -81,7 +97,12 @@ function DashboardRedirect() {
 // Wrapper component that conditionally applies medical-container class
 function AppWrapper({ children }: { children: React.ReactNode }) {
   const [location] = useLocation();
-  
+
+  // Resume AudioContext on first user interaction so notification sounds can play (browser autoplay policy)
+  useEffect(() => {
+    enableNotificationSoundsOnFirstInteraction();
+  }, []);
+
   // Routes that should NOT have medical-container wrapper
   const noContainerRoutes = [
     '/',
@@ -100,6 +121,15 @@ function AppWrapper({ children }: { children: React.ReactNode }) {
     '/payment/checkout',
     '/payment/success',
     '/payment/failure',
+    '/messages',
+    '/admin',
+    '/patient',
+    '/receptionist',
+    '/doctor',
+    '/nurse',
+    '/pharmacist',
+    '/lab',
+    '/radiology-technician',
   ];
   
   // Check if current location matches any no-container route (exact match or starts with)
@@ -149,15 +179,33 @@ function App() {
                   <Route path="/dashboard/patient" component={PatientDashboard} />
                   <Route path="/dashboard/patient/appointments" component={PatientAppointments} />
                   <Route path="/dashboard/patient/prescriptions" component={PatientPrescriptions} />
+                  <Route path="/dashboard/patient/reports" component={PatientLabReports} />
+                  <Route path="/dashboard/patient/documents" component={PatientDocuments} />
+                  <Route path="/dashboard/patient/history" component={PatientHistory} />
                   <Route path="/dashboard/doctor" component={DoctorDashboard} />
                   <Route path="/dashboard/doctor/appointments" component={DoctorAppointments} />
                   <Route path="/dashboard/hospital" component={HospitalDashboard} />
                   <Route path="/dashboard/hospital/revenue" component={RevenueDetails} />
+                  <Route path="/dashboard/hospital/staff" component={StaffManagement} />
                   <Route path="/dashboard/lab" component={LabDashboard} />
                   <Route path="/dashboard/receptionist" component={ReceptionistDashboard} />
                   <Route path="/dashboard/nurse" component={NurseDashboard} />
                   <Route path="/dashboard/pharmacist" component={PharmacistDashboard} />
                   <Route path="/dashboard/radiology-technician" component={RadiologyTechnicianDashboard} />
+                  <Route path="/dashboard/receptionist" component={ReceptionistDashboard} />
+                  <Route path="/dashboard/receptionist/contact-directory" component={ContactDirectory} />
+                  <Route path="/receptionist/appointments" component={ReceptionistAppointmentsPage} />
+                  {/* Role-based messages routes */}
+                  <Route path="/patient/messages" component={MessagesPage} />
+                  <Route path="/receptionist/messages" component={MessagesPage} />
+                  <Route path="/admin/messages" component={MessagesPage} />
+                  <Route path="/doctor/messages" component={MessagesPage} />
+                  <Route path="/nurse/messages" component={MessagesPage} />
+                  <Route path="/pharmacist/messages" component={MessagesPage} />
+                  <Route path="/lab/messages" component={MessagesPage} />
+                  <Route path="/radiology-technician/messages" component={MessagesPage} />
+                  <Route path="/messages" component={RedirectToRoleMessages} />
+                  <Route path="/dashboard/profile" component={ProfilePage} />
                   
                   {/* Appointment Booking */}
                   <Route path="/book-appointment" component={BookAppointment} />
