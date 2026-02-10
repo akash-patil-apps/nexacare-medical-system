@@ -25,6 +25,7 @@
     "export-test-data": "tsx scripts/export-test-data.ts",
     "export-all-credentials": "tsx scripts/export-all-credentials.ts",
     "export-to-pdf": "tsx scripts/export-to-pdf.ts",
+    "docs:pdf": "tsx scripts/markdown-to-pdf.ts docs/STAKEHOLDER_PRODUCT_OVERVIEW.md",
     "fix-mobile-numbers": "tsx scripts/fix-mobile-numbers.ts",
     "cleanup-and-reseed": "tsx scripts/cleanup-and-reseed.ts",
     "verify-mobile-numbers": "tsx scripts/verify-mobile-numbers.ts",
