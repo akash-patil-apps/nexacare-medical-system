@@ -37,7 +37,7 @@ bash scripts/vercel-build-server.sh || bash ../scripts/vercel-build-server.sh
 | Setting | Value |
 |--------|--------|
 | **Build Command** | `bash scripts/vercel-build-server.sh || bash ../scripts/vercel-build-server.sh` |
-| **Output Directory** | Leave **empty** or N/A (backend has no static output). |
+| **Output Directory** | **Leave completely blank** — do not type `dist`, `N/A`, or any value. The backend is a Node server; Vercel runs it from the repo root. If you see "No Output Directory named 'dist' (or 'A') found", clear the field so it is truly empty (toggle off any override). |
 | **Install Command** | `npm install` |
 
 ---
