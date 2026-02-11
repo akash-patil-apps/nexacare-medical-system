@@ -11,8 +11,8 @@ const __dirname = path.dirname(__filename);
 const viteLogger = createLogger();
 
 export function serveStatic(app: Express) {
-  // In production, the built files will be at dist/client from the server's perspective
-  const distPath = path.resolve(__dirname, "../../dist/client");
+  // Client builds to client/dist; from compiled server (dist/server) that is ../../client/dist
+  const distPath = path.resolve(__dirname, "../../client/dist");
   
   if (!fs.existsSync(distPath)) {
     throw new Error(`Could not find the built client: ${distPath}`);

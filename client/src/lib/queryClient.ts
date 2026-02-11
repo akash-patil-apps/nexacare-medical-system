@@ -1,8 +1,8 @@
 import { QueryClient, QueryFunction } from "@tanstack/react-query";
 import { getAuthToken } from "./auth";
+import { API_BASE } from "./apiBase";
 
-// API base URL - use relative URLs to go through Vite proxy
-const API_BASE_URL = '';
+const API_BASE_URL = API_BASE;
 
 async function throwIfResNotOk(res: Response) {
   if (!res.ok) {
