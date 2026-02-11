@@ -4,33 +4,37 @@ Use this when your manager deploys the **backend (API)** on Vercel using the **E
 
 ---
 
-## Step 1: Create a new Vercel project for the backend
+## Step 1: Create a **new** Vercel project for the backend (separate from frontend)
 
 1. Go to [vercel.com/new](https://vercel.com/new).
-2. **Import** the same repo: `https://github.com/itspatilakash/nexacare-medical-system`.
+2. **Import** the same repo: `https://github.com/akash-patil-apps/nexacare-medical-system` (or your repo URL).
 3. Select the **main** branch (or your production branch).
+4. **Important:** This must be a **different project** from the one you use for the frontend. The frontend project has Root = `client`; the backend project must use the **repo root** (see Step 2).
 
 ---
 
-## Step 2: Application Preset
+## Step 2: Application Preset and Root Directory (critical)
 
-1. In the project setup, find **"Application Preset"** (or **Framework Preset**).
-2. Open the dropdown and choose **"Express"**.
-3. Leave **Root Directory** as **empty** (repo root). Do **not** set it to `client` or `server`.
+1. In the project setup, find **"Application Preset"** and choose **"Express"**.
+2. **Root Directory** — this must be the **repository root**, not `client`:
+   - Click **Edit** next to Root Directory.
+   - In the modal, select **"nexacare-medical-system (root)"** (the first option — the repo root).
+   - Click **Continue**.
+   - If you leave Root Directory as **client**, the build will fail with **"Missing script: build:server"** because `build:server` only exists in the root `package.json`.
 
 ---
 
 ## Step 3: Build and output settings
 
-Configure these in the Vercel project settings:
+The repo has a **`vercel.json`** at the root that sets `buildCommand: "npm run build:server"` and `installCommand: "npm install"`. So you don't need to change these in the dashboard if Root Directory is the repo root.
+
+If you override in the dashboard, use:
 
 | Setting | Value |
 |--------|--------|
 | **Build Command** | `npm run build:server` |
 | **Output Directory** | Leave **empty** or default (backend has no static output). |
 | **Install Command** | `npm install` |
-
-If the Express preset already set a build command, **override** it to: `npm run build:server`.
 
 ---
 
