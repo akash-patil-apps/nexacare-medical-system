@@ -1,5 +1,5 @@
 {
-  "buildCommand": "npx tsc --project server/tsconfig.server.json",
+  "buildCommand": "bash scripts/vercel-build-server.sh || bash ../scripts/vercel-build-server.sh",
   "installCommand": "npm install",
   "framework": null
 }
