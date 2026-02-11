@@ -1,5 +1,6 @@
 import React, { useEffect } from 'react';
 import { Router, Route, Switch, Redirect, useLocation } from 'wouter';
+import { Analytics } from '@vercel/analytics/react';
 import { enableNotificationSoundsOnFirstInteraction } from './lib/notification-sounds';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { AuthProvider, useAuth } from './hooks/use-auth';
@@ -152,6 +153,7 @@ function App() {
     <QueryClientProvider client={queryClient}>
       <MedicalThemeProvider>
         <AntApp>
+          <Analytics />
           <AuthProvider>
             <Router>
               <AppWrapper>
