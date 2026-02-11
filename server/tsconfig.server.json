@@ -3,16 +3,9 @@
   "compilerOptions": {
     "outDir": "../dist/server",
     "rootDir": "..",
-    "noEmit": false
+    "noEmit": false,
+    "noEmitOnError": false
   },
-  "include": [
-    "./**/*",
-    "../shared/**/*",
-    "../drizzle/**/*"
-  ],
-  "exclude": [
-    "node_modules",
-    "dist",
-    "client"
-  ]
+  "include": ["./**/*", "../shared/**/*", "../drizzle/**/*"],
+  "exclude": ["node_modules", "dist", "client"]
 }

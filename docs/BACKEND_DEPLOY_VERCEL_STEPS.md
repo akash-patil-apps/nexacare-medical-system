@@ -20,7 +20,7 @@ Use this when your manager deploys the **backend (API)** on Vercel using the **E
    - Click **Edit** next to Root Directory.
    - In the modal, select **"nexacare-medical-system (root)"** (the first option — the repo root).
    - Click **Continue**.
-   - If you leave Root Directory as **client**, the build will fail with **"Missing script: build:server"** because `build:server` only exists in the root `package.json`.
+   - If Root Directory is **client**, you will see **"bash: scripts/vercel-build-server.sh: No such file or directory"** and the build will fail. The backend project must use the repo root so that `scripts/` and `server/` exist.
 
 ---
 
@@ -98,7 +98,7 @@ Then the frontend will call `https://your-backend-url.vercel.app/api/...` for al
 
 ## TypeScript errors during build
 
-The codebase currently has many TypeScript errors (schema types, Drizzle API, strict nulls). The Vercel build script is set up to **still produce output** so the backend can deploy (the script ignores the tsc exit code and only fails if `dist/server/index.js` is missing). The app may run; some code paths could hit runtime issues. Fixing the TypeScript errors in the codebase is recommended when you have time. Until then, deployment will continue to work.
+The codebase currently has many TypeScript errors (schema types, Drizzle API, strict nulls). The Vercel build script is set up to **still produce output** so the backend can deploy (the script ignores the tsc exit code and only fails if `dist/server/server/index.js` is missing). The app may run; some code paths could hit runtime issues. Fixing the TypeScript errors in the codebase is recommended when you have time. Until then, deployment will continue to work.
 
 ---
 
