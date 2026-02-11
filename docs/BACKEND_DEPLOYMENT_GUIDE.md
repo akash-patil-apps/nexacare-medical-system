@@ -39,7 +39,7 @@ These assume the deployment **root is the repository root** (not `server/`).
 
 - **Install command:** `npm install`
 - **Build command:** `npm run build:server`
-- **Start command:** `npm run start` (or `node dist/server/index.js`)
+- **Start command:** `npm run start` (or `node dist/server/server/index.js`)
 - **Port:** The app reads `process.env.PORT` (e.g. Railway/Render set this automatically). Default is 3000.
 
 ---
