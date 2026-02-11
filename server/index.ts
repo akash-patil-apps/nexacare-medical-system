@@ -57,4 +57,9 @@ const start = async () => {
   });
 };
 
-start();
+// On Vercel we only export the app (no listen); locally we start the server
+if (!process.env.VERCEL) {
+  start();
+}
+
+export default app;
