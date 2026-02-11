@@ -28,7 +28,27 @@ app.use((req, res, next) => {
   rateLimit({ windowMs: 15 * 60 * 1000, max: 1000 })(req, res, next);
 });
 
-app.use(cors());
+// CORS: allow frontend origin(s) and credentials (required when frontend uses credentials: "include")
+const allowedOrigins = [
+  'https://nexacare-medical-system.vercel.app',
+  'http://localhost:5173',
+  'http://localhost:3000',
+  ...(process.env.CORS_ORIGIN ? process.env.CORS_ORIGIN.split(',').map((o) => o.trim()) : []),
+];
+app.use(
+  cors({
+    origin: (origin, cb) => {
+      if (!origin || allowedOrigins.some((o) => origin === o || origin.endsWith('.vercel.app'))) {
+        cb(null, true);
+      } else {
+        cb(null, false);
+      }
+    },
+    credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization'],
+  })
+);
 app.use(express.json());
 
 // Register API routes

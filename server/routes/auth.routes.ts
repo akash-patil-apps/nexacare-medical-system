@@ -149,6 +149,16 @@ router.post('/login/otp/verify', async (req, res) => {
   }
 });
 
+// Login only accepts POST; GET returns 405 so the route is clearly "method not allowed" (not 404)
+router.get('/login', (_req, res) => {
+  res.set('Allow', 'POST');
+  res.status(405).json({
+    message: 'Method Not Allowed',
+    allow: 'POST',
+    hint: 'Use POST with body { mobileNumber, password }',
+  });
+});
+
 // Login with password
 router.post('/login', async (req, res) => {
   try {

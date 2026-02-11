@@ -61,6 +61,7 @@ In **Settings → Environment Variables**, add these (for **Production** and **P
 | `ENABLE_MEDICINE_REMINDERS` | `false` | Recommended on Vercel (no long-running process). Use [Vercel Cron](https://vercel.com/docs/cron-jobs) or an external cron to call `/api/cron/medicine-reminders?key=YOUR_CRON_API_KEY`. |
 | `CRON_API_KEY` | A secret string | Only if you call the cron endpoint from outside. |
 | `PAYMENT_GATEWAY` | `mock` or `razorpay` | Plus Razorpay keys if you use real payments. |
+| `CORS_ORIGIN` | Comma-separated URLs | Extra allowed origins for CORS (e.g. a custom frontend domain). Production already allows `*.vercel.app` and the main frontend URL. |
 
 Do **not** commit real values; set them only in Vercel.
 
@@ -84,6 +85,26 @@ Do **not** commit real values; set them only in Vercel.
    - **Redeploy** the frontend so the new env is applied.
 
 Then the frontend will call `https://your-backend-url.vercel.app/api/...` for all API requests.
+
+### If login returns 404 or “can’t login”
+
+1. **Frontend must point to the backend**  
+   In the **frontend** project, set **`VITE_API_BASE_URL`** to your backend URL (e.g. `https://nexacare-medical-system-backend.vercel.app`) with **no trailing slash**.  
+   Then **redeploy the frontend** — Vite bakes this in at build time, so a new deployment is required.
+
+2. **Check where the request goes**  
+   In the browser, open DevTools → **Network**, try to log in (Sign In with password), and find the request to `/api/auth/login`.  
+   - You may see **GET** `/api/auth/login` (e.g. from prefetch or other code); the backend returns **405 Method Not Allowed** for GET. Only **POST** is valid for login.  
+   - Find the **POST** request when you click Sign In.  
+     - If its URL is the **frontend** domain, the frontend build does not have the backend URL; set `VITE_API_BASE_URL` and **redeploy the frontend**.  
+     - If the POST URL is the **backend** domain but you get **404**, the backend may not be receiving the request; check backend deployment and that the backend project’s Root Directory is the repo root.  
+     - If the POST returns **200** but login still fails, check the response body and DB/seed (e.g. run `npm run db:push` and your seed script against the production `DATABASE_URL`).
+
+3. **Backend and DB**  
+   Ensure the **backend** project has **`DATABASE_URL`** and **`JWT_SECRET`** set.  
+   Run **`npm run db:push`** (and optionally your seed script) against the **production** DB so the schema and seeded users exist; otherwise login will fail even if the request reaches the backend.
+
+**CORS:** If the Network tab shows "CORS error" for the login request, the backend must allow your frontend origin. The latest backend code allows `*.vercel.app` and credentials; redeploy the backend. For a custom frontend domain, set `CORS_ORIGIN` (comma-separated) in the backend’s env vars.
 
 ---
 
