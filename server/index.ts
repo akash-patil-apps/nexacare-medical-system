@@ -14,41 +14,41 @@ import { startMedicineReminderScheduler } from "./scheduler";
 const app = express();
 const server = createServer(app);
 
-// Security middleware
-app.use(securityHeaders);
-
-// Rate limiting - more lenient in development
-const isDevelopment = process.env.NODE_ENV !== 'production';
-app.use((req, res, next) => {
-  // Skip rate limiting for static assets and in development
-  if (isDevelopment || req.path.startsWith('/assets/') || req.path.startsWith('/@')) {
-    return next();
-  }
-  // Apply rate limiting for production
-  rateLimit({ windowMs: 15 * 60 * 1000, max: 1000 })(req, res, next);
-});
-
-// CORS: allow frontend origin(s) and credentials (required when frontend uses credentials: "include")
+// CORS first so preflight (OPTIONS) always gets correct headers before any other middleware
 const allowedOrigins = [
   'https://nexacare-medical-system.vercel.app',
   'http://localhost:5173',
   'http://localhost:3000',
   ...(process.env.CORS_ORIGIN ? process.env.CORS_ORIGIN.split(',').map((o) => o.trim()) : []),
 ];
-app.use(
-  cors({
-    origin: (origin, cb) => {
-      if (!origin || allowedOrigins.some((o) => origin === o || origin.endsWith('.vercel.app'))) {
-        cb(null, true);
-      } else {
-        cb(null, false);
-      }
-    },
-    credentials: true,
-    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization'],
-  })
-);
+const corsOptions = {
+  origin: (origin: string | undefined, cb: (err: Error | null, allow?: boolean) => void) => {
+    if (!origin || allowedOrigins.includes(origin) || origin.endsWith('.vercel.app')) {
+      cb(null, true);
+    } else {
+      cb(null, false);
+    }
+  },
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS', 'HEAD'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'Accept'],
+  preflightContinue: false,
+  optionsSuccessStatus: 204,
+};
+app.use(cors(corsOptions));
+
+// Security middleware
+app.use(securityHeaders);
+
+// Rate limiting - more lenient in development
+const isDevelopment = process.env.NODE_ENV !== 'production';
+app.use((req, res, next) => {
+  if (isDevelopment || req.path.startsWith('/assets/') || req.path.startsWith('/@')) {
+    return next();
+  }
+  rateLimit({ windowMs: 15 * 60 * 1000, max: 1000 })(req, res, next);
+});
+
 app.use(express.json());
 
 // Register API routes
