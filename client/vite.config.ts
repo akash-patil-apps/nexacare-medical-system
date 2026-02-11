@@ -5,7 +5,8 @@ import path from 'path';
 export default defineConfig({
   plugins: [react()],
   build: {
-    outDir: '../dist/client',
+    // Always output to dist (Vercel expects client/dist when Root = client; server uses client/dist)
+    outDir: 'dist',
     emptyOutDir: true,
   },
   server: {
