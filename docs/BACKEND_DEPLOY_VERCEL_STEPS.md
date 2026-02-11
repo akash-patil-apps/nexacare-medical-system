@@ -26,14 +26,16 @@ Use this when your manager deploys the **backend (API)** on Vercel using the **E
 
 ## Step 3: Build and output settings
 
-The repo has a **`vercel.json`** at the root that sets `buildCommand: "npm run build:server"` and `installCommand: "npm install"`. So you don't need to change these in the dashboard if Root Directory is the repo root.
+The repo has a **`vercel.json`** at the root that sets:
+- `buildCommand`: **`npx tsc --project server/tsconfig.server.json`** (runs the TypeScript compiler directly, so the build doesn’t depend on npm scripts).
+- `installCommand`: **`npm install`**
 
 If you override in the dashboard, use:
 
 | Setting | Value |
 |--------|--------|
-| **Build Command** | `npm run build:server` |
-| **Output Directory** | Leave **empty** or default (backend has no static output). |
+| **Build Command** | `npx tsc --project server/tsconfig.server.json` |
+| **Output Directory** | Leave **empty** or N/A (backend has no static output). |
 | **Install Command** | `npm install` |
 
 ---
