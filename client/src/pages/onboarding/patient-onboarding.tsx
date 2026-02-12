@@ -1,46 +1,160 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useLocation } from 'wouter';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query';
 import {
   Form,
   Input,
-  DatePicker,
   Select,
   Button,
-  Card,
   Row,
   Col,
-  Space,
   Typography,
   message,
-  Progress,
-  Steps,
-  Divider,
+  Radio,
 } from 'antd';
-import {
-  UserOutlined,
-  MedicineBoxOutlined,
-  SecurityScanOutlined,
-  CheckCircleFilled,
-  ArrowLeftOutlined,
-  CalendarOutlined,
-  HeartOutlined,
-  FileTextOutlined,
-  RightOutlined,
-} from '@ant-design/icons';
+import { RightOutlined } from '@ant-design/icons';
 import dayjs, { Dayjs } from 'dayjs';
 import { apiRequest } from '../../lib/queryClient';
+import { OnboardingStepsLayout } from '../../components/onboarding/OnboardingStepsLayout';
+import { ChipSelectFormField } from '../../components/onboarding/ChipSelect';
 
 const { Option } = Select;
 const { TextArea } = Input;
-const { Title, Text, Paragraph } = Typography;
+const { Text } = Typography;
+
+const DRAFT_KEY = 'patient-onboarding-draft';
+
+const ALLERGY_OPTIONS = [
+  { label: 'None', value: 'None' },
+  { label: 'Penicillin', value: 'Penicillin' },
+  { label: 'Peanuts', value: 'Peanuts' },
+  { label: 'Latex', value: 'Latex' },
+  { label: 'Shellfish', value: 'Shellfish' },
+  { label: 'Eggs', value: 'Eggs' },
+  { label: 'Dairy', value: 'Dairy' },
+  { label: 'Soy', value: 'Soy' },
+  { label: 'Tree Nuts', value: 'Tree Nuts' },
+  { label: 'Pollen', value: 'Pollen' },
+  { label: 'Dust', value: 'Dust' },
+];
+
+const CHRONIC_CONDITION_OPTIONS = [
+  { label: 'None', value: 'None' },
+  { label: 'Diabetes', value: 'Diabetes' },
+  { label: 'Hypertension', value: 'Hypertension' },
+  { label: 'Asthma', value: 'Asthma' },
+  { label: 'Heart Disease', value: 'Heart Disease' },
+  { label: 'Thyroid', value: 'Thyroid' },
+  { label: 'Arthritis', value: 'Arthritis' },
+  { label: 'COPD', value: 'COPD' },
+  { label: 'Kidney Disease', value: 'Kidney Disease' },
+];
+
+function computeBmi(heightCm: number, weightKg: number): number | null {
+  if (!heightCm || !weightKg || heightCm <= 0 || weightKg <= 0) return null;
+  const heightM = heightCm / 100;
+  return Math.round((weightKg / (heightM * heightM)) * 10) / 10;
+}
+
+function bmiCategory(bmi: number): string {
+  if (bmi < 18.5) return 'Underweight';
+  if (bmi < 25) return 'Normal';
+  if (bmi < 30) return 'Overweight';
+  return 'Obese';
+}
+
+const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+const currentYear = dayjs().year();
+
+function DateOfBirthInput({ value, onChange }: { value: Dayjs | null; onChange: (d: Dayjs | null) => void }) {
+  const [month, setMonth] = useState<number>(value ? value.month() + 1 : 0);
+  const [day, setDay] = useState<number>(value ? value.date() : 0);
+  const [year, setYear] = useState<number>(value ? value.year() : 0);
+
+  useEffect(() => {
+    if (value) {
+      setMonth(value.month() + 1);
+      setDay(value.date());
+      setYear(value.year());
+    } else {
+      setMonth(0);
+      setDay(0);
+      setYear(0);
+    }
+  }, [value?.valueOf()]);
+
+  const notify = (m: number, d: number, y: number) => {
+    if (m && d && y && y >= 1900 && y <= currentYear) {
+      const dObj = dayjs(`${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`);
+      if (dObj.isValid() && dObj.date() === d && !dObj.isAfter(dayjs().endOf('day'))) onChange(dObj);
+      else onChange(null);
+    } else onChange(null);
+  };
+
+  return (
+    <Row gutter={8}>
+      <Col span={8}>
+        <Select
+          placeholder="Month"
+          value={month || undefined}
+          onChange={(m) => { setMonth(m); notify(m, day, year); }}
+          style={{ width: '100%', borderRadius: 12, height: 48 }}
+          options={MONTHS.map((name, i) => ({ label: name, value: i + 1 }))}
+        />
+      </Col>
+      <Col span={8}>
+        <Input
+          type="number"
+          placeholder="Day"
+          min={1}
+          max={31}
+          value={day || ''}
+          onChange={(e) => { const v = parseInt(e.target.value, 10) || 0; setDay(v); notify(month, v, year); }}
+          style={{ borderRadius: 12, height: 48 }}
+        />
+      </Col>
+      <Col span={8}>
+        <Input
+          type="number"
+          placeholder="Year"
+          min={1900}
+          max={currentYear}
+          value={year || ''}
+          onChange={(e) => { const v = parseInt(e.target.value, 10) || 0; setYear(v); notify(month, day, v); }}
+          style={{ borderRadius: 12, height: 48 }}
+        />
+      </Col>
+    </Row>
+  );
+}
+
+const PATIENT_STEPS = [
+  { title: 'Personal Information' },
+  { title: 'Medical History' },
+  { title: 'Emergency & Insurance' },
+];
+
+const STEP_TITLES = ['Personal Information', 'Medical History', 'Emergency & Insurance'];
+const STEP_NOTES = [
+  "Let's get to know you better",
+  'Help us provide better care',
+  'Complete your contact and insurance information',
+];
+
+const fieldStyle = { height: 48, borderRadius: 12 };
 
 interface PatientFormValues {
   dateOfBirth: Dayjs | null;
   gender: string;
-  bloodGroup?: string;
-  height?: number;
-  weight?: number;
+  bloodGroup: string;
+  height: number;
+  weight: number;
+  address?: string;
+  city?: string;
+  state?: string;
+  zipCode?: string;
+  occupation?: string;
+  maritalStatus?: string;
   governmentIdType?: string;
   governmentIdNumber?: string;
   medicalHistory?: string;
@@ -59,771 +173,338 @@ export default function PatientOnboarding() {
   const queryClient = useQueryClient();
   const [currentStep, setCurrentStep] = useState(0);
   const [form] = Form.useForm<PatientFormValues>();
-  const totalSteps = 3;
+
+  const userRole = localStorage.getItem('userRole') || 'patient';
+  const { data: onboardingStatus } = useQuery({
+    queryKey: ['onboarding-status', userRole],
+    queryFn: async () => {
+      const res = await apiRequest('GET', '/api/onboarding/patient/status');
+      return res.json();
+    },
+    enabled: true,
+  });
+  const userMobile = onboardingStatus?.user?.mobileNumber ?? '';
+
+  const height = Form.useWatch('height', form);
+  const weight = Form.useWatch('weight', form);
+  const formValues = Form.useWatch(undefined, form);
+  const bmi = height && weight ? computeBmi(Number(height), Number(weight)) : null;
+
+  const saveDraft = useCallback(() => {
+    try {
+      const values = form.getFieldsValue(true);
+      const payload = {
+        step: currentStep,
+        values: {
+          ...values,
+          dateOfBirth: values.dateOfBirth ? (values.dateOfBirth?.toISOString?.() ?? values.dateOfBirth) : null,
+        },
+      };
+      localStorage.setItem(DRAFT_KEY, JSON.stringify(payload));
+    } catch {
+      // ignore
+    }
+  }, [form, currentStep]);
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(DRAFT_KEY);
+      if (!raw) return;
+      const draft = JSON.parse(raw);
+      if (draft?.step != null && typeof draft.step === 'number') setCurrentStep(Math.min(Math.max(0, draft.step), 2));
+      if (draft?.values && typeof draft.values === 'object') {
+        const v = { ...draft.values };
+        if (v.dateOfBirth) v.dateOfBirth = dayjs(v.dateOfBirth);
+        form.setFieldsValue(v);
+      }
+    } catch {
+      // ignore
+    }
+  }, []);
+
+  useEffect(() => {
+    const t = setTimeout(saveDraft, 800);
+    return () => clearTimeout(t);
+  }, [currentStep, formValues, saveDraft]);
 
   const completeOnboardingMutation = useMutation({
     mutationFn: async (data: any) => {
       const res = await apiRequest('POST', '/api/onboarding/patient/complete', data);
       return res.json();
     },
-    onSuccess: async (data) => {
-      const userRole = localStorage.getItem('userRole') || 'patient';
+    onSuccess: async () => {
+      localStorage.removeItem(DRAFT_KEY);
       await queryClient.invalidateQueries({ queryKey: ['onboarding-status', userRole] });
-      
-      const refetchResults = await queryClient.refetchQueries({ 
-        queryKey: ['onboarding-status', userRole],
-      });
-      
-      let updatedStatus = null;
-      if (refetchResults && refetchResults.length > 0) {
-        const result = refetchResults[0];
-        updatedStatus = result?.data || result?.state?.data;
-      }
-      
-      if (!updatedStatus) {
-        try {
-          const res = await apiRequest('GET', '/api/onboarding/patient/status');
-          updatedStatus = await res.json();
-        } catch (err) {
-          console.error('Failed to fetch updated status:', err);
-        }
-      }
-      
       localStorage.setItem('onboarding-just-completed', 'true');
-      localStorage.setItem('onboarding-completed-timestamp', Date.now().toString());
-      
       message.success('Profile completed successfully! Welcome to NexaCare!');
-      
       setTimeout(() => {
         setLocation('/dashboard/patient');
-        setTimeout(() => {
-          localStorage.removeItem('onboarding-just-completed');
-        }, 5000);
       }, 500);
     },
     onError: (error: any) => {
-      console.error('❌ Patient onboarding error:', error);
-      const errorMessage = error.message || error.toString() || 'Failed to complete profile';
-      message.error(errorMessage);
+      message.error(error?.message || 'Failed to complete profile');
     },
   });
 
   const handleNext = async () => {
     try {
       const stepFields: Record<number, (keyof PatientFormValues)[]> = {
-        0: ['dateOfBirth', 'gender'],
+        0: ['dateOfBirth', 'gender', 'bloodGroup', 'height', 'weight'],
         1: [],
         2: ['emergencyContactName', 'emergencyContact'],
       };
-
       const fieldsToValidate = stepFields[currentStep] || [];
-      if (fieldsToValidate.length > 0) {
-        await form.validateFields(fieldsToValidate);
-      }
-
-        setCurrentStep(currentStep + 1);
-    } catch (error) {
-        console.error('Validation error on Next:', error);
+      if (fieldsToValidate.length > 0) await form.validateFields(fieldsToValidate);
+      setCurrentStep(currentStep + 1);
+      saveDraft();
+    } catch (e) {
+      // validation failed
     }
   };
 
   const handlePrev = () => {
     if (currentStep > 0) {
-    setCurrentStep(currentStep - 1);
+      setCurrentStep(currentStep - 1);
+      saveDraft();
     }
   };
 
   const handleComplete = async () => {
-    if (completeOnboardingMutation.isPending) {
-      return;
-    }
-
+    if (completeOnboardingMutation.isPending) return;
     try {
-      await form.validateFields(['dateOfBirth', 'gender', 'emergencyContactName', 'emergencyContact']);
-
+      await form.validateFields(['dateOfBirth', 'gender', 'bloodGroup', 'height', 'weight', 'emergencyContactName', 'emergencyContact']);
       const allValues = form.getFieldsValue(true);
-      
       let dateOfBirthFormatted = null;
       if (allValues.dateOfBirth) {
-        if (allValues.dateOfBirth.format) {
-          dateOfBirthFormatted = allValues.dateOfBirth.format('YYYY-MM-DD');
-        } else if (typeof allValues.dateOfBirth === 'string') {
-          dateOfBirthFormatted = allValues.dateOfBirth;
-        } else {
-          dateOfBirthFormatted = allValues.dateOfBirth.toString();
-        }
+        dateOfBirthFormatted = allValues.dateOfBirth?.format?.('YYYY-MM-DD') ?? (typeof allValues.dateOfBirth === 'string' ? allValues.dateOfBirth : allValues.dateOfBirth?.toString?.());
       }
-
       let emergencyRelation = allValues.emergencyRelation;
-      if (emergencyRelation === 'Other' && allValues.emergencyRelationOther) {
-        emergencyRelation = allValues.emergencyRelationOther;
-      }
-      
-      const transformedValues = {
-        ...allValues,
-        dateOfBirth: dateOfBirthFormatted,
-        gender: allValues.gender || null,
-        emergencyRelation: emergencyRelation || null,
-      };
-      
+      if (emergencyRelation === 'Other' && allValues.emergencyRelationOther) emergencyRelation = allValues.emergencyRelationOther;
+      const transformedValues = { ...allValues, dateOfBirth: dateOfBirthFormatted, emergencyRelation: emergencyRelation || null } as any;
       delete transformedValues.emergencyRelationOther;
-      
-      if (!transformedValues.dateOfBirth || !transformedValues.gender) {
-        message.error('Please fill in all required fields (Date of Birth and Gender)');
-        setCurrentStep(0);
-        return;
-      }
-
-      if (!transformedValues.emergencyContactName || !transformedValues.emergencyContact) {
-        message.error('Please fill in all required fields (Emergency Contact Name and Number)');
-        setCurrentStep(2);
-        return;
-      }
-      
       completeOnboardingMutation.mutate(transformedValues);
-    } catch (error: any) {
-      console.error('❌ Validation failed:', error);
-      if (error.errorFields && error.errorFields.length > 0) {
-        const firstError = error.errorFields[0];
-        const errorMessage = firstError?.errors?.[0] || 'Please fill in all required fields';
-        message.error(errorMessage);
-        
-        const fieldName = firstError?.name?.[0];
-        if (fieldName === 'dateOfBirth' || fieldName === 'gender') {
-          if (currentStep !== 0) {
-            setCurrentStep(0);
-            window.scrollTo({ top: 0, behavior: 'smooth' });
-          }
-        } else if (fieldName === 'emergencyContactName' || fieldName === 'emergencyContact') {
-          if (currentStep !== 2) {
-            setCurrentStep(2);
-            window.scrollTo({ top: 0, behavior: 'smooth' });
-          }
-        }
-      } else {
-        message.error('Please fill in all required fields');
-      }
+    } catch (err: any) {
+      if (err?.errorFields?.length) {
+        message.error(err.errorFields[0]?.errors?.[0] || 'Please fill required fields');
+      } else message.error('Please fill in all required fields');
     }
   };
 
-  const getProgressPercentage = () => {
-    return Math.round(((currentStep + 1) / totalSteps) * 100);
+  const handleBack = () => {
+    if (currentStep === 0) setLocation('/dashboard/patient');
+    else setCurrentStep(currentStep - 1);
   };
-
-  const stepItems = [
-    { title: 'Personal', description: 'Information' },
-    { title: 'Medical', description: 'History' },
-    { title: 'Emergency', description: '& Insurance' },
-  ];
 
   const renderStepContent = () => {
     if (currentStep === 0) {
       return (
-        <div style={{ padding: '24px 0' }}>
-          <div style={{ textAlign: 'center', marginBottom: '32px' }}>
-            <div style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              width: '64px',
-              height: '64px',
-              borderRadius: '16px',
-              background: 'linear-gradient(135deg, #1A8FE3 0%, #10B981 100%)',
-              marginBottom: '16px',
-              boxShadow: '0 4px 12px rgba(26, 143, 227, 0.3)'
-            }}>
-              <UserOutlined style={{ fontSize: '32px', color: '#FFFFFF' }} />
-            </div>
-            <Title level={2} style={{ margin: 0, marginBottom: '8px', fontSize: '28px', fontWeight: 700 }}>
-              Personal Information
-            </Title>
-            <Text style={{ fontSize: '16px', color: '#8C8C8C' }}>
-              Let's get to know you better
-            </Text>
+        <Form form={form} layout="vertical" preserve={true}>
+          <Row gutter={[16, 8]}>
+            <Col span={24}>
+              <Form.Item name="dateOfBirth" label={<Text strong>Date of Birth <Text type="danger">*</Text></Text>} rules={[{ required: true, message: 'Please enter your date of birth' }]}>
+                <DateOfBirthInput />
+              </Form.Item>
+            </Col>
+            <Col span={24}>
+              <Form.Item name="gender" label={<Text strong>Gender <Text type="danger">*</Text></Text>} rules={[{ required: true, message: 'Please select your gender' }]}>
+                <Radio.Group optionType="button" buttonStyle="solid" style={{ width: '100%', display: 'flex', gap: 8 }} size="large">
+                  <Radio.Button value="Male" style={{ flex: 1, height: 48, lineHeight: '46px', textAlign: 'center', borderRadius: 12 }}>Male</Radio.Button>
+                  <Radio.Button value="Female" style={{ flex: 1, height: 48, lineHeight: '46px', textAlign: 'center', borderRadius: 12 }}>Female</Radio.Button>
+                  <Radio.Button value="Other" style={{ flex: 1, height: 48, lineHeight: '46px', textAlign: 'center', borderRadius: 12 }}>Other</Radio.Button>
+                </Radio.Group>
+              </Form.Item>
+            </Col>
+            <Col span={12}>
+              <Form.Item name="bloodGroup" label={<Text strong>Blood Group <Text type="danger">*</Text></Text>} rules={[{ required: true, message: 'Please select blood group' }]}>
+                <Select placeholder="Select blood group" style={fieldStyle}>
+                  {['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'].map((g) => <Option key={g} value={g}>{g}</Option>)}
+                </Select>
+              </Form.Item>
+            </Col>
+            <Col span={12}>
+              <Form.Item name="height" label={<Text strong>Height (cm) <Text type="danger">*</Text></Text>} rules={[{ required: true, message: 'Please enter height' }]}>
+                <Input type="number" placeholder="Height in cm" style={fieldStyle} min={0} max={300} />
+              </Form.Item>
+            </Col>
+            <Col span={12}>
+              <Form.Item name="weight" label={<Text strong>Weight (kg) <Text type="danger">*</Text></Text>} rules={[{ required: true, message: 'Please enter weight' }]}>
+                <Input type="number" placeholder="Weight in kg" style={fieldStyle} min={0} max={500} />
+              </Form.Item>
+            </Col>
+            {bmi != null && (
+              <Col span={24}>
+                <div style={{ padding: '12px 16px', background: '#F0FDF4', borderRadius: 12, border: '1px solid #BBF7D0' }}>
+                  <Text strong>BMI: {bmi}</Text>
+                  <Text style={{ marginLeft: 8, color: '#059669' }}>({bmiCategory(bmi)})</Text>
+                </div>
+              </Col>
+            )}
+            <Col span={24}>
+              <Form.Item name="address" label={<Text strong>Address</Text>}>
+                <Input placeholder="Street, area, landmark" style={fieldStyle} />
+              </Form.Item>
+            </Col>
+            <Col span={12}>
+              <Form.Item name="city" label={<Text strong>City</Text>}>
+                <Input placeholder="City" style={fieldStyle} />
+              </Form.Item>
+            </Col>
+            <Col span={12}>
+              <Form.Item name="state" label={<Text strong>State</Text>}>
+                <Input placeholder="State" style={fieldStyle} />
+              </Form.Item>
+            </Col>
+            <Col span={8}>
+              <Form.Item name="zipCode" label={<Text strong>Zip Code</Text>}>
+                <Input placeholder="Zip / PIN" style={fieldStyle} maxLength={10} />
+              </Form.Item>
+            </Col>
+            <Col span={8}>
+              <Form.Item name="occupation" label={<Text strong>Occupation</Text>}>
+                <Input placeholder="Occupation (optional)" style={fieldStyle} />
+              </Form.Item>
+            </Col>
+            <Col span={8}>
+              <Form.Item name="maritalStatus" label={<Text strong>Marital Status</Text>}>
+                <Select placeholder="Select (optional)" style={fieldStyle} allowClear>
+                  {['Single', 'Married', 'Divorced', 'Widowed', 'Other'].map((s) => <Option key={s} value={s}>{s}</Option>)}
+                </Select>
+              </Form.Item>
+            </Col>
+            <Col span={12}>
+              <Form.Item name="governmentIdType" label={<Text strong>Government ID Type</Text>}>
+                <Select placeholder="Select ID type (optional)" style={fieldStyle} allowClear>
+                  <Option value="aadhaar">Aadhaar Card</Option>
+                  <Option value="pan">PAN Card</Option>
+                  <Option value="driving_license">Driving License</Option>
+                  <Option value="passport">Passport</Option>
+                </Select>
+              </Form.Item>
+            </Col>
+            <Col span={12}>
+              <Form.Item name="governmentIdNumber" label={<Text strong>Government ID Number</Text>}>
+                <Input placeholder="Enter ID number (optional)" style={fieldStyle} maxLength={50} />
+              </Form.Item>
+            </Col>
+          </Row>
+          <div style={{ marginTop: 12, display: 'flex', justifyContent: 'space-between' }}>
+            <Button size="large" onClick={handleBack} style={{ borderRadius: 12 }}>Back</Button>
+            <Button type="primary" size="large" onClick={handleNext} icon={<RightOutlined />} iconPosition="end" style={{ borderRadius: 12, background: '#059669', borderColor: '#059669' }}>Continue</Button>
           </div>
-
-          <Form form={form} layout="vertical" preserve={true}>
-        <Row gutter={[16, 16]}>
-          <Col span={24}>
-          <Form.Item
-            name="dateOfBirth"
-                  label={<Text strong>Date of Birth <Text type="danger">*</Text></Text>}
-            rules={[{ required: true, message: 'Please select your date of birth' }]}
-          >
-              <DatePicker
-                    style={{ width: '100%', height: '48px', borderRadius: '12px' }}
-                placeholder="Select your date of birth"
-                format="DD/MM/YYYY"
-                disabledDate={(current) => current && current > dayjs().endOf('day')}
-              />
-          </Form.Item>
-          </Col>
-          <Col span={24}>
-          <Form.Item
-            name="gender"
-                  label={<Text strong>Gender <Text type="danger">*</Text></Text>}
-            rules={[{ required: true, message: 'Please select your gender' }]}
-          >
-                  <Select 
-                    placeholder="Select gender"
-                    style={{ height: '48px', borderRadius: '12px' }}
-                  >
-              <Option value="Male">Male</Option>
-              <Option value="Female">Female</Option>
-              <Option value="Other">Other</Option>
-            </Select>
-          </Form.Item>
-          </Col>
-          <Col span={12}>
-                <Form.Item name="bloodGroup" label={<Text strong>Blood Group</Text>}>
-                  <Select 
-                    placeholder="Select blood group"
-                    style={{ height: '48px', borderRadius: '12px' }}
-                  >
-              <Option value="A+">A+</Option>
-              <Option value="A-">A-</Option>
-              <Option value="B+">B+</Option>
-              <Option value="B-">B-</Option>
-              <Option value="AB+">AB+</Option>
-              <Option value="AB-">AB-</Option>
-              <Option value="O+">O+</Option>
-              <Option value="O-">O-</Option>
-            </Select>
-          </Form.Item>
-          </Col>
-          <Col span={12}>
-                <Form.Item name="height" label={<Text strong>Height (cm)</Text>}>
-              <Input
-                type="number"
-                placeholder="Enter height in cm"
-                    style={{ height: '48px', borderRadius: '12px' }}
-                min={0}
-                max={300}
-              />
-          </Form.Item>
-          </Col>
-          <Col span={12}>
-                <Form.Item name="weight" label={<Text strong>Weight (kg)</Text>}>
-              <Input
-                type="number"
-                placeholder="Enter weight in kg"
-                    style={{ height: '48px', borderRadius: '12px' }}
-                min={0}
-                max={500}
-              />
-          </Form.Item>
-          </Col>
-          <Col span={12}>
-                <Form.Item name="governmentIdType" label={<Text strong>Government ID Type</Text>}>
-                  <Select
-                    placeholder="Select ID type (optional)"
-                    style={{ height: '48px', borderRadius: '12px' }}
-                    allowClear
-                  >
-                    <Option value="aadhaar">Aadhaar Card</Option>
-                    <Option value="pan">PAN Card</Option>
-                    <Option value="driving_license">Driving License</Option>
-                    <Option value="passport">Passport</Option>
-                  </Select>
-                </Form.Item>
-          </Col>
-          <Col span={12}>
-                <Form.Item
-                  name="governmentIdNumber"
-                  label={<Text strong>Government ID Number</Text>}
-                  dependencies={['governmentIdType']}
-                >
-                  <Input
-                    placeholder="Enter ID number (optional)"
-                    style={{ height: '48px', borderRadius: '12px' }}
-                    maxLength={50}
-                  />
-                </Form.Item>
-          </Col>
-        </Row>
-          </Form>
-        </div>
+        </Form>
       );
     }
 
     if (currentStep === 1) {
       return (
-        <div style={{ padding: '24px 0' }}>
-          <div style={{ textAlign: 'center', marginBottom: '32px' }}>
-            <div style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              width: '64px',
-              height: '64px',
-              borderRadius: '16px',
-              background: 'linear-gradient(135deg, #1A8FE3 0%, #10B981 100%)',
-              marginBottom: '16px',
-              boxShadow: '0 4px 12px rgba(26, 143, 227, 0.3)'
-            }}>
-              <MedicineBoxOutlined style={{ fontSize: '32px', color: '#FFFFFF' }} />
-            </div>
-            <Title level={2} style={{ margin: 0, marginBottom: '8px', fontSize: '28px', fontWeight: 700 }}>
-              Medical History
-            </Title>
-            <Text style={{ fontSize: '16px', color: '#8C8C8C' }}>
-              Help us provide better care
-            </Text>
+        <Form form={form} layout="vertical" preserve={true}>
+          <Row gutter={[16, 8]}>
+            <Col span={24}>
+              <Form.Item name="allergies" label={<Text strong>Known Allergies (optional)</Text>}>
+                <ChipSelectFormField options={ALLERGY_OPTIONS} />
+              </Form.Item>
+            </Col>
+            <Col span={24}>
+              <Form.Item name="chronicConditions" label={<Text strong>Chronic Conditions (optional)</Text>}>
+                <ChipSelectFormField options={CHRONIC_CONDITION_OPTIONS} />
+              </Form.Item>
+            </Col>
+            <Col span={24}>
+              <Form.Item name="currentMedications" label={<Text strong>Current Medications</Text>}>
+                <TextArea rows={3} placeholder="List any medications you're currently taking" style={{ borderRadius: 12 }} />
+              </Form.Item>
+            </Col>
+            <Col span={24}>
+              <Form.Item name="medicalHistory" label={<Text strong>Medical History</Text>}>
+                <TextArea rows={4} placeholder="Past surgeries, significant health events" style={{ borderRadius: 12 }} />
+              </Form.Item>
+            </Col>
+          </Row>
+          <div style={{ marginTop: 12, display: 'flex', justifyContent: 'space-between' }}>
+            <Button size="large" onClick={handlePrev} style={{ borderRadius: 12 }}>Previous</Button>
+            <Button type="primary" size="large" onClick={handleNext} icon={<RightOutlined />} iconPosition="end" style={{ borderRadius: 12, background: '#059669', borderColor: '#059669' }}>Continue</Button>
           </div>
-
-          <Form form={form} layout="vertical" preserve={true}>
-        <Row gutter={[16, 16]}>
-          <Col span={24}>
-                <Form.Item name="allergies" label={<Text strong>Known Allergies</Text>}>
-              <TextArea
-                    rows={3}
-                    placeholder="e.g., Penicillin, Peanuts, Latex (or leave blank if none)"
-                    style={{ borderRadius: '12px' }}
-              />
-          </Form.Item>
-          </Col>
-          <Col span={24}>
-                <Form.Item name="chronicConditions" label={<Text strong>Chronic Conditions</Text>}>
-              <TextArea
-                rows={3}
-                    placeholder="e.g., Diabetes, Hypertension, Asthma (or leave blank if none)"
-                    style={{ borderRadius: '12px' }}
-              />
-          </Form.Item>
-          </Col>
-          <Col span={24}>
-                <Form.Item name="currentMedications" label={<Text strong>Current Medications</Text>}>
-              <TextArea
-                rows={3}
-                    placeholder="List any medications you're currently taking"
-                    style={{ borderRadius: '12px' }}
-              />
-          </Form.Item>
-          </Col>
-          <Col span={24}>
-                <Form.Item name="medicalHistory" label={<Text strong>Medical History</Text>}>
-              <TextArea
-                    rows={4}
-                    placeholder="Enter any relevant medical history, past surgeries, or significant health events"
-                    style={{ borderRadius: '12px' }}
-              />
-          </Form.Item>
-          </Col>
-        </Row>
-          </Form>
-        </div>
+        </Form>
       );
     }
 
     if (currentStep === 2) {
       return (
-        <div style={{ padding: '24px 0' }}>
-          <div style={{ textAlign: 'center', marginBottom: '32px' }}>
-            <div style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              width: '64px',
-              height: '64px',
-              borderRadius: '16px',
-              background: 'linear-gradient(135deg, #1A8FE3 0%, #10B981 100%)',
-              marginBottom: '16px',
-              boxShadow: '0 4px 12px rgba(26, 143, 227, 0.3)'
-            }}>
-              <SecurityScanOutlined style={{ fontSize: '32px', color: '#FFFFFF' }} />
-            </div>
-            <Title level={2} style={{ margin: 0, marginBottom: '8px', fontSize: '28px', fontWeight: 700 }}>
-              Emergency & Insurance
-            </Title>
-            <Text style={{ fontSize: '16px', color: '#8C8C8C' }}>
-              Complete your contact and insurance information
-            </Text>
-          </div>
-
-          <Form 
-            form={form} 
-            layout="vertical" 
-            preserve={true}
-            onValuesChange={(changedValues) => {
-              if (changedValues.emergencyRelation !== undefined) {
-                form.setFieldsValue({ emergencyRelationOther: undefined });
-              }
-            }}
-          >
-        <Row gutter={[16, 16]}>
-          <Col span={24}>
-          <Form.Item
-            name="emergencyContactName"
-                  label={<Text strong>Emergency Contact Name <Text type="danger">*</Text></Text>}
-            rules={[{ required: true, message: 'Please enter emergency contact name' }]}
-          >
-                  <Input 
-                    placeholder="Enter emergency contact full name"
-                    style={{ height: '48px', borderRadius: '12px' }}
-                  />
-          </Form.Item>
-          </Col>
-          <Col span={12}>
-          <Form.Item
-            name="emergencyContact"
-                  label={<Text strong>Emergency Contact Number <Text type="danger">*</Text></Text>}
-              rules={[
-                { required: true, message: 'Please enter emergency contact number' },
-                { pattern: /^[0-9]{10}$/, message: 'Enter a valid 10-digit mobile number' },
-              ]}
-          >
-              <Input
-                placeholder="10-digit mobile number"
-                maxLength={10}
-                    style={{ height: '48px', borderRadius: '12px' }}
-              />
-          </Form.Item>
-          </Col>
-          <Col span={12}>
-                <Form.Item name="emergencyRelation" label={<Text strong>Relationship</Text>}>
-              <Select
-                placeholder="Select relationship"
-                allowClear
-                    style={{ height: '48px', borderRadius: '12px' }}
-              >
-                <Option value="Spouse">Spouse</Option>
-                <Option value="Parent">Parent</Option>
-                <Option value="Child">Child</Option>
-                <Option value="Sibling">Sibling</Option>
-                <Option value="Friend">Friend</Option>
-                <Option value="Relative">Relative</Option>
-                <Option value="Guardian">Guardian</Option>
-                <Option value="Colleague">Colleague</Option>
-                <Option value="Other">Other</Option>
-              </Select>
-            </Form.Item>
-          </Col>
-          {form.getFieldValue('emergencyRelation') === 'Other' && (
+        <Form form={form} layout="vertical" preserve={true} onValuesChange={(changed) => { if (changed.emergencyRelation !== undefined) form.setFieldsValue({ emergencyRelationOther: undefined }); }}>
+          <Row gutter={[16, 8]}>
+            <Col span={12}>
+              <Form.Item name="emergencyContactName" label={<Text strong>Emergency Contact Name <Text type="danger">*</Text></Text>} rules={[{ required: true, message: 'Please enter emergency contact name' }]}>
+                <Input placeholder="Emergency contact full name" style={fieldStyle} />
+              </Form.Item>
+            </Col>
             <Col span={12}>
               <Form.Item
-                name="emergencyRelationOther"
-                    label={<Text strong>Specify Relationship <Text type="danger">*</Text></Text>}
-                rules={[{ required: true, message: 'Please specify the relationship' }]}
-              >
-                    <Input 
-                      placeholder="Enter relationship"
-                      style={{ height: '48px', borderRadius: '12px' }}
-                    />
-          </Form.Item>
+              name="emergencyContact"
+              label={<Text strong>Emergency Contact Number <Text type="danger">*</Text></Text>}
+              rules={[
+                { required: true, message: 'Required' },
+                { pattern: /^[0-9]{10}$/, message: 'Valid 10-digit number' },
+                {
+                  validator: (_, value) => {
+                    if (!value || !userMobile) return Promise.resolve();
+                    const normalize = (s: string) => String(s).replace(/\D/g, '').slice(-10);
+                    if (normalize(value) === normalize(userMobile)) {
+                      return Promise.reject(new Error("Must be different from your registered mobile number"));
+                    }
+                    return Promise.resolve();
+                  },
+                },
+              ]}
+            >
+              <Input placeholder="10-digit mobile number (different from yours)" maxLength={10} style={fieldStyle} />
+            </Form.Item>
             </Col>
-          )}
-          <Col span={12}>
-                <Form.Item name="insuranceProvider" label={<Text strong>Insurance Provider</Text>}>
-                  <Input 
-                    placeholder="Enter insurance provider name (optional)"
-                    style={{ height: '48px', borderRadius: '12px' }}
-                  />
-          </Form.Item>
-          </Col>
-          <Col span={12}>
-                <Form.Item name="insuranceNumber" label={<Text strong>Insurance Number</Text>}>
-                  <Input 
-                    placeholder="Enter insurance number (optional)"
-                    style={{ height: '48px', borderRadius: '12px' }}
-                  />
-          </Form.Item>
-          </Col>
-        </Row>
-          </Form>
-        </div>
+            <Col span={8}>
+              <Form.Item name="emergencyRelation" label={<Text strong>Relationship</Text>}>
+                <Select placeholder="Select relationship" allowClear style={fieldStyle}>
+                  {['Spouse', 'Parent', 'Child', 'Sibling', 'Friend', 'Relative', 'Guardian', 'Colleague', 'Other'].map((r) => <Option key={r} value={r}>{r}</Option>)}
+                </Select>
+              </Form.Item>
+            </Col>
+            {form.getFieldValue('emergencyRelation') === 'Other' && (
+              <Col span={8}>
+                <Form.Item name="emergencyRelationOther" label={<Text strong>Specify Relationship <Text type="danger">*</Text></Text>} rules={[{ required: true, message: 'Please specify' }]}>
+                  <Input placeholder="Enter relationship" style={fieldStyle} />
+                </Form.Item>
+              </Col>
+            )}
+            <Col span={12}>
+              <Form.Item name="insuranceProvider" label={<Text strong>Insurance Provider</Text>}>
+                <Input placeholder="Insurance provider (optional)" style={fieldStyle} />
+              </Form.Item>
+            </Col>
+            <Col span={12}>
+              <Form.Item name="insuranceNumber" label={<Text strong>Insurance Number</Text>}>
+                <Input placeholder="Insurance number (optional)" style={fieldStyle} />
+              </Form.Item>
+            </Col>
+          </Row>
+          <div style={{ marginTop: 12, display: 'flex', justifyContent: 'space-between' }}>
+            <Button size="large" onClick={handlePrev} style={{ borderRadius: 12 }}>Previous</Button>
+            <Button type="primary" size="large" loading={completeOnboardingMutation.isPending} onClick={handleComplete} icon={<RightOutlined />} iconPosition="end" style={{ borderRadius: 12, background: '#059669', borderColor: '#059669' }}>Complete Profile</Button>
+          </div>
+        </Form>
       );
     }
 
-    // Completion screen
-    return (
-      <div style={{ padding: '24px 0', textAlign: 'center' }}>
-        <div style={{
-          display: 'inline-flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          width: '80px',
-          height: '80px',
-          borderRadius: '24px',
-          background: 'linear-gradient(135deg, #1A8FE3 0%, #10B981 100%)',
-          marginBottom: '24px',
-          boxShadow: '0 8px 24px rgba(26, 143, 227, 0.4)'
-        }}>
-          <CheckCircleFilled style={{ fontSize: '48px', color: '#FFFFFF' }} />
-        </div>
-        <Title level={2} style={{ margin: 0, marginBottom: '12px', fontSize: '36px', fontWeight: 700 }}>
-          All Set! 🎉
-        </Title>
-        <Paragraph style={{ fontSize: '18px', color: '#8C8C8C', marginBottom: '32px' }}>
-          Your patient profile has been created successfully
-        </Paragraph>
-
-        <Card
-          style={{
-            background: 'linear-gradient(135deg, #E6F7FF 0%, #B3E5FC 100%)',
-            borderRadius: '16px',
-            border: 'none',
-            marginBottom: '24px'
-          }}
-          bodyStyle={{ padding: '32px' }}
-        >
-          <Title level={4} style={{ marginBottom: '24px', textAlign: 'left' }}>
-            What you can do now:
-          </Title>
-          
-          <Space direction="vertical" size="large" style={{ width: '100%' }}>
-            <div style={{ display: 'flex', alignItems: 'flex-start', gap: '16px', textAlign: 'left' }}>
-              <div style={{
-                width: '48px',
-                height: '48px',
-                borderRadius: '12px',
-                background: '#FFFFFF',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
-                flexShrink: 0
-              }}>
-                <CalendarOutlined style={{ fontSize: '24px', color: '#1A8FE3' }} />
-              </div>
-              <div>
-                <Title level={5} style={{ margin: 0, marginBottom: '4px' }}>Book Appointments</Title>
-                <Text style={{ color: '#8C8C8C' }}>
-                  Schedule visits with doctors and specialists at your convenience
-                </Text>
-              </div>
-            </div>
-
-            <div style={{ display: 'flex', alignItems: 'flex-start', gap: '16px', textAlign: 'left' }}>
-              <div style={{
-                width: '48px',
-                height: '48px',
-                borderRadius: '12px',
-                background: '#FFFFFF',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
-                flexShrink: 0
-              }}>
-                <HeartOutlined style={{ fontSize: '24px', color: '#FF4D4F' }} />
-              </div>
-              <div>
-                <Title level={5} style={{ margin: 0, marginBottom: '4px' }}>Health Records</Title>
-                <Text style={{ color: '#8C8C8C' }}>
-                  Access your complete medical history anytime, anywhere
-                </Text>
-              </div>
-            </div>
-
-            <div style={{ display: 'flex', alignItems: 'flex-start', gap: '16px', textAlign: 'left' }}>
-              <div style={{
-                width: '48px',
-                height: '48px',
-                borderRadius: '12px',
-                background: '#FFFFFF',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
-                flexShrink: 0
-              }}>
-                <FileTextOutlined style={{ fontSize: '24px', color: '#722ED1' }} />
-              </div>
-              <div>
-                <Title level={5} style={{ margin: 0, marginBottom: '4px' }}>Prescriptions & Reports</Title>
-                <Text style={{ color: '#8C8C8C' }}>
-                  View digital prescriptions and lab reports instantly
-                </Text>
-              </div>
-            </div>
-          </Space>
-        </Card>
-      </div>
-    );
+    return null;
   };
 
   return (
-    <div style={{
-      minHeight: '100vh',
-      background: 'linear-gradient(135deg, #F5F5F5 0%, #E8E8E8 100%)',
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-      padding: '24px'
-    }}>
-      <div style={{ width: '100%', maxWidth: '800px' }}>
-      <Card
-          style={{
-            borderRadius: '24px',
-            boxShadow: '0 8px 32px rgba(0,0,0,0.12)',
-            overflow: 'hidden'
-          }}
-          bodyStyle={{ padding: 0 }}
-        >
-          {/* Progress Header */}
-          <div style={{
-            background: 'linear-gradient(135deg, #FAFAFA 0%, #FFFFFF 100%)',
-            padding: '32px',
-            borderBottom: '1px solid #F0F0F0'
-          }}>
-            {currentStep < totalSteps && (
-              <Button
-                type="text"
-                icon={<ArrowLeftOutlined />}
-                onClick={handlePrev}
-                style={{
-                  marginBottom: '24px',
-                  padding: 0,
-                  height: 'auto',
-                  color: '#8C8C8C'
-                }}
-              >
-                Back
-              </Button>
-            )}
-
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '16px' }}>
-              <div>
-                <Text style={{ fontSize: '12px', fontWeight: 600, color: '#8C8C8C', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                  Step {currentStep + 1} of {totalSteps}
-                </Text>
-                <Paragraph style={{ margin: '4px 0 0 0', color: '#595959' }}>
-                  Complete your profile
-                </Paragraph>
-              </div>
-              {currentStep < totalSteps && (
-                <div style={{ textAlign: 'right' }}>
-                  <Title level={2} style={{
-                    margin: 0,
-                    fontSize: '24px',
-                    fontWeight: 700,
-                    background: 'linear-gradient(135deg, #1A8FE3 0%, #10B981 100%)',
-                    WebkitBackgroundClip: 'text',
-                    WebkitTextFillColor: 'transparent',
-                    backgroundClip: 'text'
-                  }}>
-                    {getProgressPercentage()}%
-                  </Title>
-                  <Text style={{ fontSize: '12px', color: '#8C8C8C' }}>Completed</Text>
-                </div>
-              )}
-            </div>
-
-            {/* Progress Bar */}
-            {currentStep < totalSteps && (
-              <Progress
-                percent={getProgressPercentage()}
-                strokeColor={{
-                  '0%': '#1A8FE3',
-                  '100%': '#10B981',
-                }}
-                showInfo={false}
-                style={{ marginBottom: '24px' }}
-              />
-            )}
-
-            {/* Step Indicators */}
-            {currentStep < totalSteps && (
-              <Steps
-                current={currentStep}
-                items={stepItems.map((item, index) => ({
-                  title: item.title,
-                  description: item.description,
-                  icon: index < currentStep ? (
-                    <CheckCircleFilled style={{ color: '#10B981' }} />
-                  ) : (
-                    <div style={{
-                      width: '32px',
-                      height: '32px',
-                      borderRadius: '50%',
-                      background: index === currentStep 
-                        ? 'linear-gradient(135deg, #1A8FE3 0%, #10B981 100%)'
-                        : '#F0F0F0',
-                      color: index === currentStep ? '#FFFFFF' : '#BFBFBF',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      fontWeight: 600,
-                      fontSize: '14px'
-                    }}>
-                      {index + 1}
-                    </div>
-                  ),
-                }))}
-              />
-            )}
-          </div>
-
-          {/* Form Content */}
-          <div style={{ padding: '32px' }}>
-            {renderStepContent()}
-
-            {/* Action Buttons */}
-            {currentStep < totalSteps && (
-              <div style={{ marginTop: '32px', display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
-            {currentStep > 0 && (
-                  <Button
-                    size="large"
-                    onClick={handlePrev}
-                    style={{
-                      height: '56px',
-                      padding: '0 32px',
-                      borderRadius: '12px',
-                      fontSize: '16px',
-                      fontWeight: 600
-                    }}
-                  >
-                    Previous
-                  </Button>
-            )}
-                {currentStep < totalSteps - 1 && (
-                  <Button
-                    type="primary"
-                    size="large"
-                    onClick={handleNext}
-                    icon={<RightOutlined />}
-                    iconPosition="end"
-                    style={{
-                      height: '56px',
-                      padding: '0 32px',
-                      borderRadius: '12px',
-                      fontSize: '16px',
-                      fontWeight: 600,
-                      background: 'linear-gradient(135deg, #1A8FE3 0%, #10B981 100%)',
-                      border: 'none',
-                      boxShadow: '0 4px 12px rgba(26, 143, 227, 0.3)'
-                    }}
-                  >
-                    Continue
-              </Button>
-            )}
-                {currentStep === totalSteps - 1 && (
-              <Button
-                type="primary"
-                    size="large"
-                    onClick={handleComplete}
-                loading={completeOnboardingMutation.isPending}
-                    icon={<RightOutlined />}
-                    iconPosition="end"
-                    style={{
-                      height: '56px',
-                      padding: '0 32px',
-                      borderRadius: '12px',
-                      fontSize: '16px',
-                      fontWeight: 600,
-                      background: 'linear-gradient(135deg, #1A8FE3 0%, #10B981 100%)',
-                      border: 'none',
-                      boxShadow: '0 4px 12px rgba(26, 143, 227, 0.3)'
-                    }}
-              >
-                Complete Profile
-              </Button>
-            )}
-          </div>
-            )}
-          </div>
-        </Card>
-        </div>
-    </div>
+    <OnboardingStepsLayout
+      steps={PATIENT_STEPS}
+      currentStepIndex={currentStep}
+      stepTitle={STEP_TITLES[currentStep]}
+      stepNote={STEP_NOTES[currentStep]}
+      onBack={handleBack}
+      showHelpLink={true}
+    >
+      {renderStepContent()}
+    </OnboardingStepsLayout>
   );
 }
