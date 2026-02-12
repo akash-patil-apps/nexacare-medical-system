@@ -5,7 +5,7 @@ import type { AuthenticatedRequest } from "../types";
 import { createLabReport as createLabReportRecord, updateLabReportStatus, getLabReportById, updateLabReport, getLabByUserId, createLabRequest } from "../services/lab.service";
 import { getLabReportsForLab, getLabReportsForPatient, getLabReportsForDoctor } from "../services/lab.service";
 import { NotificationService } from "../services/notification.service";
-import { getPatientById } from "../services/patients.service";
+import { getPatientById, getPatientByUserId } from "../services/patients.service";
 import { getDoctorById } from "../services/doctors.service";
 
 const router = Router();
@@ -96,7 +96,6 @@ router.get(
   authorizeRoles("patient"),
   async (req: AuthenticatedRequest, res) => {
     try {
-      const { getPatientByUserId } = await import("../services/patients.service");
       const patient = await getPatientByUserId(req.user!.id);
       if (!patient?.id) {
         return res.json([]);
