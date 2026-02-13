@@ -1,7 +1,6 @@
 import jwt from 'jsonwebtoken';
 import type { Request, Response, NextFunction } from 'express';
-
-const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key';
+import { getJwtSecret } from '../env';
 
 export interface AuthenticatedRequest extends Request {
   user?: {
@@ -21,7 +20,7 @@ export function authenticateToken(req: AuthenticatedRequest, res: Response, next
   }
 
   try {
-    const decoded = jwt.verify(token, JWT_SECRET) as any;
+    const decoded = jwt.verify(token, getJwtSecret()) as any;
     req.user = decoded;
     next();
   } catch (error) {
@@ -52,5 +51,5 @@ export function authorizeRoles(...roles: string[]) {
 }
 
 export function generateToken(user: { id: number; mobileNumber: string; role: string; fullName: string }) {
-  return jwt.sign(user, JWT_SECRET, { expiresIn: '24h' });
+  return jwt.sign(user, getJwtSecret(), { expiresIn: '24h' });
 }

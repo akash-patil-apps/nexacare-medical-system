@@ -6,11 +6,11 @@ import { db } from '../db';
 import { users, otpVerifications } from '../../shared/schema';
 import { generateOTP, isOtpExpired } from '../utils/otp';
 import { smsService } from './sms.service';
+import { getJwtSecret } from '../env';
 import type {
   InsertUser,
 } from '../../shared/schema-types';
 
-const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key';
 const JWT_EXPIRES_IN = '7d';
 
 export const hashPassword = (password: string) => bcrypt.hash(password, 10);
@@ -22,7 +22,7 @@ export const generateToken = (user: {
   mobileNumber: string;
   role: string;
   fullName: string;
-}) => jwt.sign(user, JWT_SECRET, { expiresIn: JWT_EXPIRES_IN });
+}) => jwt.sign(user, getJwtSecret(), { expiresIn: JWT_EXPIRES_IN });
 
 /**
  * Send OTP for mobile registration/login.

@@ -16,6 +16,7 @@ import {
   message,
   Drawer,
   Spin,
+  Empty,
   App,
   Divider,
   Tabs,
@@ -251,6 +252,20 @@ export default function HospitalDashboard() {
       return data;
     },
     enabled: !!user && user.role?.toUpperCase() === 'HOSPITAL',
+  });
+
+  // Get hospital staff (doctors, nurses, etc.) for sidebar pages
+  const { data: hospitalStaff, isLoading: staffLoading } = useQuery({
+    queryKey: ['/api/hospitals/my/staff'],
+    queryFn: async () => {
+      const token = localStorage.getItem('auth-token');
+      const response = await fetch('/api/hospitals/my/staff', {
+        headers: { 'Authorization': `Bearer ${token}` },
+      });
+      if (!response.ok) throw new Error('Failed to fetch staff');
+      return response.json();
+    },
+    enabled: !!user && (user.role?.toUpperCase() === 'HOSPITAL' || user.role?.toUpperCase() === 'ADMIN'),
   });
 
   // Get hospital name from profile
@@ -885,8 +900,9 @@ export default function HospitalDashboard() {
           }}
           onClick={() => {
             if (onMenuClick) onMenuClick();
-            message.info('Doctors page coming soon.');
+            setSelectedMenuKey('doctors');
           }}
+          title="Doctors"
         />
         
         <Button
@@ -1268,6 +1284,83 @@ export default function HospitalDashboard() {
             
             {/* Floating Notifications - Auto-dismiss after 10 seconds (handled by useEffect) */}
 
+            {/* Sidebar page: Doctors */}
+            {selectedMenuKey === 'doctors' ? (
+              <Card
+                variant="borderless"
+                style={{
+                  borderRadius: 16,
+                  boxShadow: '0 2px 8px rgba(0, 0, 0, 0.08)',
+                  border: '1px solid #E5E7EB',
+                  background: '#fff',
+                  flex: 1,
+                  minHeight: 0,
+                  display: 'flex',
+                  flexDirection: 'column',
+                  overflow: 'hidden',
+                }}
+                title={
+                  <span style={{ fontSize: 18, fontWeight: 600 }}>
+                    <TeamOutlined style={{ marginRight: 8, color: hospitalTheme.primary }} />
+                    Doctors
+                  </span>
+                }
+                bodyStyle={{ flex: 1, minHeight: 0, overflow: 'auto', padding: isMobile ? 12 : 16 }}
+              >
+                {staffLoading ? (
+                  <div style={{ display: 'flex', justifyContent: 'center', padding: 48 }}>
+                    <Spin size="large" />
+                  </div>
+                ) : !hospitalStaff?.doctors?.length ? (
+                  <Empty
+                    image={Empty.PRESENTED_IMAGE_SIMPLE}
+                    description="No doctors in this hospital yet"
+                    style={{ padding: '48px 0' }}
+                  />
+                ) : isMobile ? (
+                  <Space direction="vertical" size={12} style={{ width: '100%' }}>
+                    {(hospitalStaff.doctors as any[]).map((d: any) => (
+                      <Card key={d.id} size="small" style={{ borderRadius: 12, border: '1px solid #E5E7EB' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 8 }}>
+                          <span style={{ fontWeight: 600, fontSize: 15 }}>{d.fullName || '—'}</span>
+                          {d.isAvailable !== false && <Tag color="green">Available</Tag>}
+                        </div>
+                        <div style={{ fontSize: 13, color: '#6B7280' }}>
+                          {d.specialty && <div>Specialty: {d.specialty}</div>}
+                          {d.email && <div>{d.email}</div>}
+                          {d.mobileNumber && <div>{d.mobileNumber}</div>}
+                          {d.licenseNumber && <div>License: {d.licenseNumber}</div>}
+                        </div>
+                      </Card>
+                    ))}
+                  </Space>
+                ) : (
+                  <Table
+                    dataSource={hospitalStaff.doctors || []}
+                    rowKey="id"
+                    loading={staffLoading}
+                    size="middle"
+                    pagination={{ pageSize: 10, showSizeChanger: true, showTotal: (t, r) => `${r[0]}-${r[1]} of ${t}` }}
+                    scroll={{ x: 'max-content' }}
+                    columns={[
+                      { title: 'Name', dataIndex: 'fullName', key: 'fullName', render: (v: string) => v || '—', width: 160 },
+                      { title: 'Specialty', dataIndex: 'specialty', key: 'specialty', render: (v: string) => v || '—', width: 120 },
+                      { title: 'Email', dataIndex: 'email', key: 'email', render: (v: string) => v || '—', width: 180 },
+                      { title: 'Mobile', dataIndex: 'mobileNumber', key: 'mobileNumber', render: (v: string) => v || '—', width: 120 },
+                      { title: 'License', dataIndex: 'licenseNumber', key: 'licenseNumber', render: (v: string) => v || '—', width: 120 },
+                      {
+                        title: 'Status',
+                        key: 'isAvailable',
+                        width: 100,
+                        render: (_: any, r: any) =>
+                          r.isAvailable !== false ? <Tag color="green">Available</Tag> : <Tag color="default">Unavailable</Tag>,
+                      },
+                    ]}
+                  />
+                )}
+              </Card>
+            ) : (
+            <>
             {/* KPI Cards - Matching Receptionist Dashboard Design */}
             {isMobile ? (
               <div style={{ 
@@ -1280,7 +1373,7 @@ export default function HospitalDashboard() {
                 WebkitOverflowScrolling: 'touch',
               }}>
                 {[
-                  { label: "Total Doctors", value: statsLoading ? '...' : (stats?.totalDoctors || 0), icon: <TeamOutlined style={{ fontSize: '24px', color: hospitalTheme.primary }} />, trendLabel: "Active", trendColor: hospitalTheme.primary, trendBg: hospitalTheme.highlight, onView: () => message.info('View doctors') },
+                  { label: "Total Doctors", value: statsLoading ? '...' : (stats?.totalDoctors || 0), icon: <TeamOutlined style={{ fontSize: '24px', color: hospitalTheme.primary }} />, trendLabel: "Active", trendColor: hospitalTheme.primary, trendBg: hospitalTheme.highlight, onView: () => setSelectedMenuKey('doctors') },
                   { label: "Total Patients", value: statsLoading ? '...' : (stats?.totalPatients || 0), icon: <UserOutlined style={{ fontSize: '24px', color: hospitalTheme.secondary }} />, trendLabel: "Registered", trendColor: hospitalTheme.secondary, trendBg: "#E0F2FE", onView: () => message.info('View patients') },
                   { label: "Daily Revenue", value: statsLoading ? '...' : `₹${(stats?.dailyRevenue || 0).toLocaleString()}`, icon: <BarChartOutlined style={{ fontSize: '24px', color: '#22C55E' }} />, trendLabel: "Today", trendColor: '#22C55E', trendBg: "#D1FAE5", onView: () => message.info('View revenue') },
                   { label: "Weekly Revenue", value: statsLoading ? '...' : `₹${(stats?.weeklyRevenue || 0).toLocaleString()}`, icon: <BarChartOutlined style={{ fontSize: '24px', color: '#3B82F6' }} />, trendLabel: "This Week", trendColor: '#3B82F6', trendBg: "#DBEAFE", onView: () => message.info('View revenue') },
@@ -1302,7 +1395,7 @@ export default function HospitalDashboard() {
                 trendType="positive"
                     trendColor={hospitalTheme.primary}
                     trendBg={hospitalTheme.highlight}
-                    onView={() => message.info('View doctors')}
+                    onView={() => setSelectedMenuKey('doctors')}
               />
                 </div>
                 <div style={{ flex: 1, minWidth: 200 }}>
@@ -1744,6 +1837,8 @@ export default function HospitalDashboard() {
               ]}
             />
             </div>
+            </>
+            )}
           </div>
         </Content>
       </Layout>
