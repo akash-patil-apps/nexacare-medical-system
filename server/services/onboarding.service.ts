@@ -142,13 +142,16 @@ export const getPatientOnboardingStatus = async (userId: number) => {
     const hasPatientProfile = patient.length > 0;
     
     // Check if profile is complete (has required essential fields)
-    // Required fields: dateOfBirth and gender (as per onboarding form)
+    // Required: dateOfBirth, gender, bloodGroup, height, weight
     let isComplete = false;
     
     if (hasPatientProfile && patient[0]) {
       const profile = patient[0];
       const hasDateOfBirth = profile.dateOfBirth !== null && profile.dateOfBirth !== undefined;
       const hasGender = profile.gender !== null && profile.gender !== undefined && profile.gender !== '';
+      const hasBloodGroup = profile.bloodGroup != null && String(profile.bloodGroup).trim() !== '';
+      const hasHeight = profile.height != null && Number(profile.height) > 0;
+      const hasWeight = profile.weight != null && Number(profile.weight) > 0;
       
       console.log(`📊 Profile check for user ${userId}:`, {
         hasProfile: true,
@@ -156,9 +159,12 @@ export const getPatientOnboardingStatus = async (userId: number) => {
         hasDateOfBirth,
         gender: profile.gender,
         hasGender,
+        hasBloodGroup,
+        hasHeight,
+        hasWeight,
       });
       
-      isComplete = hasDateOfBirth && hasGender;
+      isComplete = hasDateOfBirth && hasGender && hasBloodGroup && hasHeight && hasWeight;
     } else {
       console.log(`📊 Profile check for user ${userId}: No profile found`);
     }
@@ -388,15 +394,15 @@ export const completeNurseOnboarding = async (userId: number, data: any) => {
     const nurseData = {
       nursingDegree: data.nursingDegree,
       licenseNumber: data.licenseNumber,
-      specialization: data.specialization,
-      experience: data.experience,
+      specialization: data.specialization && String(data.specialization).trim() ? data.specialization : null,
+      experience: data.experience != null && data.experience !== '' ? Number(data.experience) : null,
       shiftType: data.shiftType || 'day',
-      workingHours: data.workingHours,
-      wardPreferences: data.wardPreferences ? JSON.stringify(data.wardPreferences) : null,
-      skills: data.skills ? JSON.stringify(data.skills) : null,
-      languages: data.languages,
-      certifications: data.certifications,
-      bio: data.bio,
+      workingHours: data.workingHours && String(data.workingHours).trim() ? data.workingHours : null,
+      wardPreferences: data.wardPreferences ? (Array.isArray(data.wardPreferences) ? JSON.stringify(data.wardPreferences) : data.wardPreferences) : null,
+      skills: data.skills ? (Array.isArray(data.skills) ? JSON.stringify(data.skills) : data.skills) : null,
+      languages: Array.isArray(data.languages) ? data.languages.join(', ') : (data.languages && String(data.languages).trim() ? data.languages : null),
+      certifications: data.certifications && String(data.certifications).trim() ? data.certifications : null,
+      bio: data.bio && String(data.bio).trim() ? data.bio : null,
       hospitalId,
     };
 
@@ -487,14 +493,14 @@ export const completePharmacistOnboarding = async (userId: number, data: any) =>
     const pharmacistData = {
       pharmacyDegree: data.pharmacyDegree,
       licenseNumber: data.licenseNumber,
-      specialization: data.specialization,
-      experience: data.experience,
+      specialization: data.specialization && String(data.specialization).trim() ? data.specialization : null,
+      experience: data.experience != null && data.experience !== '' ? Number(data.experience) : null,
       shiftType: data.shiftType || 'day',
-      workingHours: data.workingHours,
+      workingHours: data.workingHours && String(data.workingHours).trim() ? data.workingHours : null,
       pharmacyType: data.pharmacyType || 'hospital',
-      languages: data.languages,
-      certifications: data.certifications,
-      bio: data.bio,
+      languages: Array.isArray(data.languages) ? data.languages.join(', ') : (data.languages && String(data.languages).trim() ? data.languages : null),
+      certifications: data.certifications && String(data.certifications).trim() ? data.certifications : null,
+      bio: data.bio && String(data.bio).trim() ? data.bio : null,
       hospitalId,
     };
 
@@ -585,14 +591,14 @@ export const completeRadiologyTechnicianOnboarding = async (userId: number, data
     const technicianData = {
       radiologyDegree: data.radiologyDegree,
       licenseNumber: data.licenseNumber,
-      specialization: data.specialization,
-      experience: data.experience,
+      specialization: data.specialization && String(data.specialization).trim() ? data.specialization : null,
+      experience: data.experience != null && data.experience !== '' ? Number(data.experience) : null,
       shiftType: data.shiftType || 'day',
-      workingHours: data.workingHours,
-      modalities: data.modalities,
-      languages: data.languages,
-      certifications: data.certifications,
-      bio: data.bio,
+      workingHours: data.workingHours && String(data.workingHours).trim() ? data.workingHours : null,
+      modalities: Array.isArray(data.modalities) ? data.modalities.join(', ') : (data.modalities && String(data.modalities).trim() ? data.modalities : null),
+      languages: Array.isArray(data.languages) ? data.languages.join(', ') : (data.languages && String(data.languages).trim() ? data.languages : null),
+      certifications: data.certifications && String(data.certifications).trim() ? data.certifications : null,
+      bio: data.bio && String(data.bio).trim() ? data.bio : null,
       hospitalId,
     };
 
@@ -671,17 +677,19 @@ export const completeDoctorOnboarding = async (userId: number, data: any) => {
       .where(eq(doctors.userId, userId))
       .limit(1);
 
+    const languagesVal = Array.isArray(data.languages) ? data.languages.join(', ') : (data.languages ?? null);
     const doctorData = {
       hospitalId: data.hospitalId || null,
       specialty: data.specialty || null,
       qualification: data.qualification || null,
       licenseNumber: data.licenseNumber || null,
-      experience: data.experience ? Number(data.experience) : null,
-      consultationFee: data.consultationFee ? String(data.consultationFee) : null,
+      experience: data.experience != null && data.experience !== '' ? Number(data.experience) : null,
+      consultationFee: data.consultationFee != null && data.consultationFee !== '' ? String(data.consultationFee) : null,
       workingHours: data.workingHours || null,
-      languages: data.languages || null,
-      awards: data.awards || null,
-      bio: data.bio || null,
+      availableSlots: Array.isArray(data.availableSlots) ? data.availableSlots.join(', ') : (data.availableSlots || null),
+      languages: typeof languagesVal === 'string' && languagesVal.trim() ? languagesVal : null,
+      awards: data.awards && String(data.awards).trim() ? data.awards : null,
+      bio: data.bio && String(data.bio).trim() ? data.bio : null,
     };
 
     if (existingDoctor.length > 0) {

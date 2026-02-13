@@ -1,40 +1,31 @@
 import React, { useMemo, useState } from 'react';
 import { useLocation } from 'wouter';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import {
-  Form,
-  Input,
-  Select,
-  Button,
-  Card,
-  message,
-  TimePicker,
-  Switch,
-  Row,
-  Col,
-  Space,
-  Typography,
-} from 'antd';
-import {
-  UserOutlined,
-  HomeOutlined,
-  EnvironmentOutlined,
-  SettingOutlined,
-  SecurityScanOutlined,
-  PhoneOutlined,
-  LockOutlined,
-  MailOutlined,
-} from '@ant-design/icons';
-import {
-  CheckCircleFilled,
-  RightCircleOutlined,
-  ClockCircleOutlined,
-} from '@ant-design/icons';
+import { Form, Input, Select, Button, message, TimePicker, Switch, Row, Col, Space, Typography } from 'antd';
+import { UserOutlined, HomeOutlined, EnvironmentOutlined, SettingOutlined, PhoneOutlined, LockOutlined, MailOutlined, RightOutlined } from '@ant-design/icons';
 import dayjs, { Dayjs } from 'dayjs';
 import { apiRequest } from '../../lib/queryClient';
 import { setAuthToken } from '../../lib/auth';
+import { OnboardingStepsLayout } from '../../components/onboarding/OnboardingStepsLayout';
 
-const { TextArea } = Input;
+const { Text } = Typography;
+
+const HOSPITAL_STEPS = [
+  { title: 'Account Setup' },
+  { title: 'Verify OTP' },
+  { title: 'Hospital Basics' },
+  { title: 'Location & Contact' },
+  { title: 'Operations & Services' },
+];
+const STEP_TITLES = ['Account Setup', 'Verify OTP', 'Hospital Basics', 'Location & Contact', 'Operations & Services'];
+const STEP_NOTES = [
+  'Create your hospital admin account.',
+  'Enter the OTP sent to your mobile.',
+  'Enter hospital name and license.',
+  'Enter address and contact details.',
+  'Set departments, hours, and services.',
+];
+const fieldStyle = { borderRadius: 12 };
 
 interface StateOption {
   id: number;
@@ -52,7 +43,6 @@ interface HospitalFormValues {
   hospitalName: string;
   licenseNumber: string;
   establishedYear?: number;
-  totalBeds?: number;
   address: string;
   city: string;
   stateId: number;
@@ -65,13 +55,6 @@ interface HospitalFormValues {
   website?: string;
   photos?: string[];
 }
-
-type StepConfig = {
-  title: string;
-  icon: React.ReactNode;
-  content: React.ReactNode;
-  footer?: React.ReactNode;
-};
 
 export default function HospitalOnboarding() {
   const [, setLocation] = useLocation();
@@ -214,7 +197,6 @@ export default function HospitalOnboarding() {
         hospitalName: values.hospitalName,
         licenseNumber: values.licenseNumber,
         establishedYear: values.establishedYear ? Number(values.establishedYear) : undefined,
-        totalBeds: values.totalBeds ? Number(values.totalBeds) : undefined,
         address: values.address,
         city: values.city,
         stateId: values.stateId,
@@ -235,384 +217,174 @@ export default function HospitalOnboarding() {
     }
   };
 
-  const steps: StepConfig[] = [
-    {
-      title: 'Account Setup',
-      icon: <UserOutlined />,
-      content: (
-        <Row gutter={16}>
-          <Col span={12}>
-            <Form.Item
-              name="fullName"
-              label="Full Name"
-              rules={[{ required: true, message: 'Please enter your full name' }]}
-            >
-              <Input prefix={<UserOutlined />} placeholder="Administrator full name" />
-            </Form.Item>
-          </Col>
-          <Col span={12}>
-            <Form.Item
-              name="email"
-              label="Email"
-              rules={[{ required: true, message: 'Please enter a valid email', type: 'email' }]}
-            >
-              <Input prefix={<MailOutlined />} placeholder="Email address" />
-            </Form.Item>
-          </Col>
-          <Col span={12}>
-            <Form.Item
-              name="mobileNumber"
-              label="Mobile Number"
-              rules={[
-                { required: true, message: 'Please enter mobile number' },
-                { pattern: /^[0-9]{10}$/, message: 'Enter a valid 10-digit Indian mobile number' },
-              ]}
-            >
-              <Input prefix={<PhoneOutlined />} placeholder="10-digit mobile" maxLength={10} />
-            </Form.Item>
-          </Col>
-          <Col span={12}>
-            <Form.Item
-              name="password"
-              label="Password"
-              rules={[{ required: true, message: 'Please enter a password' }, { min: 6, message: 'Minimum 6 characters' }]}
-            >
-              <Input.Password prefix={<LockOutlined />} placeholder="Create password" />
-            </Form.Item>
-          </Col>
-          <Col span={12}>
-            <Form.Item
-              name="confirmPassword"
-              label="Confirm Password"
-              dependencies={["password"]}
-              rules={[
-                { required: true, message: 'Please confirm your password' },
-                ({ getFieldValue }) => ({
-                  validator(_, value) {
-                    if (!value || getFieldValue('password') === value) {
-                      return Promise.resolve();
-                    }
-                    return Promise.reject(new Error('Passwords do not match'));
-                  },
-                }),
-              ]}
-            >
-              <Input.Password prefix={<LockOutlined />} placeholder="Re-enter password" />
-            </Form.Item>
-          </Col>
-        </Row>
-      ),
-      footer: (
-        <Button type="primary" onClick={handleSendOtp} loading={sendingOtp}>
-          Send OTP
-        </Button>
-      ),
-    },
-    {
-      title: 'Verify OTP',
-      icon: <SecurityScanOutlined />,
-      content: (
-        <div>
-          <Typography.Paragraph>
-            Enter the 6-digit OTP sent to <strong>{form.getFieldValue('mobileNumber')}</strong>.
-          </Typography.Paragraph>
-          <Form.Item
-            name="otp"
-            label="OTP"
-            rules={[{ required: true, message: 'Please enter OTP' }, { pattern: /^[0-9]{6}$/, message: 'Enter 6-digit OTP' }]}
-          >
-            <Input maxLength={6} placeholder="Enter OTP" style={{ textAlign: 'center', letterSpacing: 4 }} />
-          </Form.Item>
-        </div>
-      ),
-      footer: (
-        <Space>
-          <Button onClick={() => setCurrentStep(0)}>
-            Back
-          </Button>
-          <Button type="primary" onClick={handleVerifyOtp} loading={verifyingOtp}>
-            Verify & Continue
-          </Button>
-        </Space>
-      ),
-    },
-    {
-      title: 'Hospital Basics',
-      icon: <HomeOutlined />,
-      content: (
-        <Row gutter={16}>
-          <Col span={12}>
-            <Form.Item
-              name="hospitalName"
-              label="Hospital Name"
-              rules={[{ required: true, message: 'Please enter hospital name' }]}
-            >
-              <Input placeholder="Hospital name" />
-            </Form.Item>
-          </Col>
-          <Col span={12}>
-            <Form.Item
-              name="licenseNumber"
-              label="License Number"
-              rules={[{ required: true, message: 'Please enter license number' }]}
-            >
-              <Input placeholder="License number" />
-            </Form.Item>
-          </Col>
-          <Col span={12}>
-            <Form.Item name="establishedYear" label="Established Year">
-              <Input type="number" placeholder="e.g., 1998" min={1800} max={new Date().getFullYear()} />
-            </Form.Item>
-          </Col>
-          <Col span={12}>
-            <Form.Item name="totalBeds" label="Total Beds">
-              <Input type="number" placeholder="Enter total beds" min={0} />
-            </Form.Item>
-          </Col>
-        </Row>
-      ),
-    },
-    {
-      title: 'Location & Contact',
-      icon: <EnvironmentOutlined />,
-      content: (
-        <Row gutter={16}>
-          <Col span={24}>
-            <Form.Item
-              name="address"
-              label="Street & Area"
-              rules={[{ required: true, message: 'Please enter address' }]}
-            >
-              <Input placeholder="Street address, area" />
-            </Form.Item>
-          </Col>
-          <Col span={12}>
-            <Form.Item
-              name="city"
-              label="City"
-              rules={[{ required: true, message: 'Please enter city' }]}
-            >
-              <Input placeholder="City" />
-            </Form.Item>
-          </Col>
-          <Col span={12}>
-            <Form.Item
-              name="stateId"
-              label="State"
-              rules={[{ required: true, message: 'Please select state' }]}
-            >
-              <Select
-                placeholder="Select state"
-                loading={statesLoading}
-                showSearch
-                optionFilterProp="children"
-              >
-                {stateOptions.map((state) => (
-                  <Select.Option key={state.id} value={state.id}>
-                    {state.name}
-                  </Select.Option>
-                ))}
-              </Select>
-            </Form.Item>
-          </Col>
-          <Col span={12}>
-            <Form.Item
-              name="zipCode"
-              label="Zip Code"
-              rules={[{ required: true, message: 'Please enter zip code' }]}
-            >
-              <Input placeholder="Zip / Postal code" />
-            </Form.Item>
-          </Col>
-          <Col span={12}>
-            <Form.Item name="contactEmail" label="Contact Email">
-              <Input type="email" placeholder="Contact email (optional)" />
-            </Form.Item>
-          </Col>
-          <Col span={12}>
-            <Form.Item name="website" label="Website">
-              <Input placeholder="https://example.com" />
-            </Form.Item>
-          </Col>
-        </Row>
-      ),
-    },
-    {
-      title: 'Operations & Services',
-      icon: <SettingOutlined />,
-      content: (
-        <Row gutter={16}>
-          <Col span={24}>
-            <Form.Item name="departments" label="Departments">
-              <Select mode="tags" placeholder="Add departments (press enter after each)" />
-            </Form.Item>
-          </Col>
-          <Col span={24}>
-            <Form.Item name="services" label="Services Offered">
-              <Select mode="tags" placeholder="Add services (press enter after each)" />
-            </Form.Item>
-          </Col>
-          <Col span={24}>
-            <Form.Item
-              name="operatingHours"
-              label="Operating Hours"
-              rules={[{ required: true, message: 'Please select operating hours' }]}
-            >
-              <TimePicker.RangePicker
-                format="hh:mm A"
-                use12Hours
-                style={{ width: '100%' }}
-                minuteStep={15}
-                placeholder={["Opens at", "Closes at"]}
-              />
-            </Form.Item>
-          </Col>
-          <Col span={12}>
-            <Form.Item name="emergencyServices" label="Emergency Services" valuePropName="checked">
-              <Switch checkedChildren="Yes" unCheckedChildren="No" />
-            </Form.Item>
-          </Col>
-          <Col span={24}>
-            <Form.Item name="photos" label="Photo URLs (optional)">
-              <Select mode="tags" placeholder="Paste photo URLs and press enter" />
-            </Form.Item>
-          </Col>
-        </Row>
-      ),
-    },
-  ];
-
-  const renderFooter = () => {
-    if (currentStep <= 1) {
-      return steps[currentStep].footer ?? null;
-    }
-
-    return (
-      <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-        <Button onClick={() => setCurrentStep((prev) => prev - 1)}>Previous</Button>
-        {currentStep < steps.length - 1 && (
-          <Button type="primary" onClick={() => setCurrentStep((prev) => prev + 1)}>
-            Next
-          </Button>
-        )}
-        {currentStep === steps.length - 1 && (
-          <Button
-            type="primary"
-            onClick={handleCompleteOnboarding}
-            loading={completeOnboardingMutation.isPending}
-          >
-            Complete Profile
-          </Button>
-        )}
-      </div>
-    );
+  const handleBack = () => {
+    if (currentStep === 0) setLocation('/dashboard/hospital');
+    else setCurrentStep(currentStep - 1);
   };
-
-  const isAccountStep = currentStep <= 1;
-  const allowTransition = accountRegistered || currentStep <= 1;
-
-  const getStepStatus = (index: number) => {
-    if (index < currentStep) return 'completed';
-    if (index === currentStep) return 'active';
-    return 'upcoming';
-  };
-
-  const renderStatusLabel = (status: string) => {
-    switch (status) {
-      case 'completed':
-        return 'Completed';
-      case 'active':
-        return 'In progress';
-      default:
-        return 'Pending';
-    }
-  };
-
-  const renderStatusIcon = (status: string) => {
-    switch (status) {
-      case 'completed':
-        return <CheckCircleFilled />;
-      case 'active':
-        return <RightCircleOutlined />;
-      default:
-        return <ClockCircleOutlined />;
-    }
-  };
-
-  const progressLabel = `Step ${Math.min(currentStep + 1, steps.length)} of ${steps.length}`;
 
   return (
-    <div className="hospital-onboarding-wrapper">
-      <Card
-        className="hospital-onboarding-card"
-        variant="borderless"
-        style={{ borderRadius: 28, boxShadow: '0 28px 60px rgba(15, 34, 67, 0.12)' }}
-        styles={{ body: { padding: 0 } }}
+    <OnboardingStepsLayout
+      steps={HOSPITAL_STEPS}
+      currentStepIndex={currentStep}
+      stepTitle={STEP_TITLES[currentStep]}
+      stepNote={STEP_NOTES[currentStep]}
+      onBack={handleBack}
+      showHelpLink
+    >
+      <Form
+        form={form}
+        layout="vertical"
+        initialValues={{
+          emergencyServices: true,
+          operatingHours: [dayjs().hour(9).minute(0), dayjs().hour(21).minute(0)],
+        }}
+        disabled={currentStep > 1 && !accountRegistered}
       >
-        <div className="hospital-onboarding-layout">
-          <aside className="hospital-onboarding-stepper">
-            <Space direction="vertical" size={4}>
-              <Typography.Text type="secondary" className="hospital-onboarding-progress-label">
-                {progressLabel}
-              </Typography.Text>
-              <Typography.Title level={4} style={{ margin: 0 }}>
-                Hospital Onboarding
-              </Typography.Title>
-              <Typography.Paragraph type="secondary" style={{ marginBottom: 0 }}>
-                Complete the following steps to set up your hospital profile.
-              </Typography.Paragraph>
-            </Space>
-            <ul className="hospital-stepper-list">
-              {steps.map((step, index) => {
-                const status = getStepStatus(index);
-                return (
-                  <li key={step.title} className={`hospital-stepper-item ${status}`}>
-                    <span className="hospital-stepper-icon">
-                      {renderStatusIcon(status)}
-                    </span>
-                    <div className="hospital-stepper-copy">
-                      <Typography.Text className="hospital-stepper-title">
-                        {step.title}
-                      </Typography.Text>
-                      <Typography.Text className="hospital-stepper-status">
-                        {renderStatusLabel(status)}
-                      </Typography.Text>
-                    </div>
-                  </li>
-                );
-              })}
-            </ul>
-          </aside>
-
-          <div className="hospital-onboarding-content">
-            <Typography.Title level={2} style={{ marginBottom: 24 }}>
-              {isAccountStep ? 'Create Hospital Admin Account' : 'Complete Hospital Profile'}
-            </Typography.Title>
-
-            {!allowTransition && (
-              <Typography.Paragraph type="warning" style={{ marginBottom: 16 }}>
-                Please complete account setup before continuing.
-              </Typography.Paragraph>
-            )}
-
-            <Form
-              form={form}
-              layout="vertical"
-              initialValues={{
-                emergencyServices: true,
-                operatingHours: [dayjs().hour(9).minute(0), dayjs().hour(21).minute(0)],
-              }}
-              disabled={currentStep > 1 && !accountRegistered}
-            >
-              <div className="hospital-onboarding-content-inner">
-                {steps[currentStep].content}
-              </div>
-              <div className="hospital-onboarding-footer">{renderFooter()}</div>
-            </Form>
+        {currentStep === 0 && (
+          <Row gutter={[16, 8]}>
+            <Col span={12}>
+              <Form.Item name="fullName" label="Full Name" rules={[{ required: true, message: 'Please enter your full name' }]}>
+                <Input prefix={<UserOutlined />} placeholder="Administrator full name" style={fieldStyle} />
+              </Form.Item>
+            </Col>
+            <Col span={12}>
+              <Form.Item name="email" label="Email" rules={[{ required: true, message: 'Please enter a valid email', type: 'email' }]}>
+                <Input prefix={<MailOutlined />} placeholder="Email address" style={fieldStyle} />
+              </Form.Item>
+            </Col>
+            <Col span={12}>
+              <Form.Item name="mobileNumber" label="Mobile Number" rules={[{ required: true, message: 'Please enter mobile number' }, { pattern: /^[0-9]{10}$/, message: 'Enter a valid 10-digit number' }]}>
+                <Input prefix={<PhoneOutlined />} placeholder="10-digit mobile" maxLength={10} style={fieldStyle} />
+              </Form.Item>
+            </Col>
+            <Col span={12}>
+              <Form.Item name="password" label="Password" rules={[{ required: true, message: 'Please enter a password' }, { min: 6, message: 'Minimum 6 characters' }]}>
+                <Input.Password prefix={<LockOutlined />} placeholder="Create password" style={fieldStyle} />
+              </Form.Item>
+            </Col>
+            <Col span={12}>
+              <Form.Item name="confirmPassword" label="Confirm Password" dependencies={['password']} rules={[{ required: true, message: 'Please confirm password' }, ({ getFieldValue }) => ({ validator(_, value) { if (!value || getFieldValue('password') === value) return Promise.resolve(); return Promise.reject(new Error('Passwords do not match')); } })]}>
+                <Input.Password prefix={<LockOutlined />} placeholder="Re-enter password" style={fieldStyle} />
+              </Form.Item>
+            </Col>
+          </Row>
+        )}
+        {currentStep === 1 && (
+          <div>
+            <Text type="secondary">Enter the 6-digit OTP sent to <strong>{form.getFieldValue('mobileNumber')}</strong>.</Text>
+            <Form.Item name="otp" label="OTP" rules={[{ required: true, message: 'Please enter OTP' }, { pattern: /^[0-9]{6}$/, message: 'Enter 6-digit OTP' }]} style={{ marginTop: 8 }}>
+              <Input maxLength={6} placeholder="Enter OTP" style={{ textAlign: 'center', letterSpacing: 4, borderRadius: 12 }} />
+            </Form.Item>
           </div>
+        )}
+        {currentStep === 2 && (
+          <Row gutter={[16, 8]}>
+            <Col span={12}>
+              <Form.Item name="hospitalName" label="Hospital Name" rules={[{ required: true, message: 'Please enter hospital name' }]}>
+                <Input placeholder="Hospital name" style={fieldStyle} />
+              </Form.Item>
+            </Col>
+            <Col span={12}>
+              <Form.Item name="licenseNumber" label="License Number" rules={[{ required: true, message: 'Please enter license number' }]}>
+                <Input placeholder="License number" style={fieldStyle} />
+              </Form.Item>
+            </Col>
+            <Col span={12}>
+              <Form.Item name="establishedYear" label="Established Year">
+                <Input type="number" placeholder="e.g., 1998" min={1800} max={new Date().getFullYear()} style={fieldStyle} />
+              </Form.Item>
+            </Col>
+            <Col span={12}>
+              <Text type="secondary" style={{ display: 'block', marginTop: 8 }}>Total beds are managed in Hospital → IPD → Beds. Add beds after onboarding.</Text>
+            </Col>
+          </Row>
+        )}
+        {currentStep === 3 && (
+          <Row gutter={[16, 8]}>
+            <Col span={24}>
+              <Form.Item name="address" label="Street & Area" rules={[{ required: true, message: 'Please enter address' }]}>
+                <Input placeholder="Street address, area" style={fieldStyle} />
+              </Form.Item>
+            </Col>
+            <Col span={8}>
+              <Form.Item name="city" label="City" rules={[{ required: true, message: 'Please enter city' }]}>
+                <Input placeholder="City" style={fieldStyle} />
+              </Form.Item>
+            </Col>
+            <Col span={8}>
+              <Form.Item name="stateId" label="State" rules={[{ required: true, message: 'Please select state' }]}>
+                <Select placeholder="Select state" loading={statesLoading} showSearch optionFilterProp="children" style={fieldStyle}>
+                  {stateOptions.map((state: StateOption) => <Select.Option key={state.id} value={state.id}>{state.name}</Select.Option>)}
+                </Select>
+              </Form.Item>
+            </Col>
+            <Col span={8}>
+              <Form.Item name="zipCode" label="Zip Code" rules={[{ required: true, message: 'Please enter zip code' }]}>
+                <Input placeholder="Zip / Postal code" style={fieldStyle} />
+              </Form.Item>
+            </Col>
+            <Col span={12}>
+              <Form.Item name="contactEmail" label="Contact Email">
+                <Input type="email" placeholder="Contact email (optional)" style={fieldStyle} />
+              </Form.Item>
+            </Col>
+            <Col span={12}>
+              <Form.Item name="website" label="Website">
+                <Input placeholder="https://example.com" style={fieldStyle} />
+              </Form.Item>
+            </Col>
+          </Row>
+        )}
+        {currentStep === 4 && (
+          <Row gutter={[16, 8]}>
+            <Col span={12}>
+              <Form.Item name="departments" label="Departments">
+                <Select mode="tags" placeholder="Add departments" style={fieldStyle} />
+              </Form.Item>
+            </Col>
+            <Col span={12}>
+              <Form.Item name="services" label="Services Offered">
+                <Select mode="tags" placeholder="Add services" style={fieldStyle} />
+              </Form.Item>
+            </Col>
+            <Col span={24}>
+              <Form.Item name="operatingHours" label="Operating Hours" rules={[{ required: true, message: 'Please select operating hours' }]}>
+                <TimePicker.RangePicker format="hh:mm A" use12Hours style={{ width: '100%', borderRadius: 12 }} minuteStep={15} placeholder={['Opens at', 'Closes at']} />
+              </Form.Item>
+            </Col>
+            <Col span={12}>
+              <Form.Item name="emergencyServices" label="Emergency Services" valuePropName="checked">
+                <Switch checkedChildren="Yes" unCheckedChildren="No" />
+              </Form.Item>
+            </Col>
+            <Col span={12}>
+              <Form.Item name="photos" label="Photo URLs (optional)">
+                <Select mode="tags" placeholder="Paste photo URLs" style={fieldStyle} />
+              </Form.Item>
+            </Col>
+          </Row>
+        )}
+        <div style={{ marginTop: 12, display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
+          {currentStep === 0 && <Button type="primary" onClick={handleSendOtp} loading={sendingOtp} style={{ borderRadius: 12, background: '#059669', borderColor: '#059669' }}>Send OTP</Button>}
+          {currentStep === 1 && (
+            <Space>
+              <Button onClick={() => setCurrentStep(0)} style={{ borderRadius: 12 }}>Back</Button>
+              <Button type="primary" onClick={handleVerifyOtp} loading={verifyingOtp} style={{ borderRadius: 12, background: '#059669', borderColor: '#059669' }}>Verify & Continue</Button>
+            </Space>
+          )}
+          {currentStep >= 2 && (
+            <>
+              <Button onClick={() => setCurrentStep(currentStep - 1)} style={{ borderRadius: 12 }}>Previous</Button>
+              {currentStep < 4 ? (
+                <Button type="primary" onClick={() => setCurrentStep(currentStep + 1)} icon={<RightOutlined />} iconPosition="end" style={{ borderRadius: 12, background: '#059669', borderColor: '#059669' }}>Next</Button>
+              ) : (
+                <Button type="primary" onClick={handleCompleteOnboarding} loading={completeOnboardingMutation.isPending} style={{ borderRadius: 12, background: '#059669', borderColor: '#059669' }}>Complete Profile</Button>
+              )}
+            </>
+          )}
         </div>
-      </Card>
-    </div>
+      </Form>
+    </OnboardingStepsLayout>
   );
 }
 

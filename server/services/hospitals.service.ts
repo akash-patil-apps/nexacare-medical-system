@@ -1,18 +1,44 @@
 // server/services/hospitals.service.ts
 import { db } from '../db';
-import { hospitals, doctors, nurses, receptionists, pharmacists, radiologyTechnicians, users, appointments, patients, payments, invoices } from '../../shared/schema';
+import { hospitals, doctors, nurses, receptionists, pharmacists, radiologyTechnicians, users, appointments, patients, payments, invoices, beds, rooms, wards } from '../../shared/schema';
 import { eq, and, gte, sql } from 'drizzle-orm';
 import type { InsertHospital } from '../../shared/schema-types';
 import { labs } from '../../shared/schema';
 
 
 /**
- * Fetch all hospitals from DB.
+ * Fetch bed count per hospital from IPD beds (beds added by admin).
+ */
+async function getBedCountByHospital(): Promise<Record<number, number>> {
+  const counts = await db
+    .select({
+      hospitalId: wards.hospitalId,
+      count: sql<number>`count(${beds.id})::int`,
+    })
+    .from(beds)
+    .innerJoin(rooms, eq(beds.roomId, rooms.id))
+    .innerJoin(wards, eq(rooms.wardId, wards.id))
+    .groupBy(wards.hospitalId);
+  const map: Record<number, number> = {};
+  for (const row of counts) {
+    if (row.hospitalId != null) map[row.hospitalId] = row.count;
+  }
+  return map;
+}
+
+/**
+ * Fetch all hospitals from DB. totalBeds is set from actual beds in IPD (added by admin), not from onboarding.
  */
 export const getAllHospitals = async () => {
   try {
-    const result = await db.select().from(hospitals);
-    return result;
+    const [result, bedCountByHospital] = await Promise.all([
+      db.select().from(hospitals),
+      getBedCountByHospital(),
+    ]);
+    return result.map((h) => ({
+      ...h,
+      totalBeds: bedCountByHospital[h.id] ?? 0,
+    }));
   } catch (error) {
     console.error('❌ Error fetching hospitals:', error);
     throw error;
