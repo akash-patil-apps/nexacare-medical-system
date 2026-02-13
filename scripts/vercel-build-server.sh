@@ -69,7 +69,10 @@ console.log('ESM import fix done.');
 "
 echo "ESM import fix complete."
 
-# Vercel looks for an entrypoint in output directory "." (root). Create one.
+# Vercel looks for an entrypoint that imports express. Create one that does both.
 echo "Creating root entrypoint for Vercel..."
-echo "import './dist/server/server/index.js';" > "$ROOT/index.js"
+cat > "$ROOT/index.js" << 'ENTRYPOINT'
+import 'express';
+import './dist/server/server/index.js';
+ENTRYPOINT
 echo "Root index.js created."
