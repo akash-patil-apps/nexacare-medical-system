@@ -22,6 +22,7 @@ import {
   Tabs,
   List,
   DatePicker,
+  Input,
 } from 'antd';
 import { 
   UserOutlined, 
@@ -42,6 +43,7 @@ import { useResponsive } from '../../hooks/use-responsive';
 import { KpiCard } from '../../components/dashboard/KpiCard';
 import { NotificationBell } from '../../components/notifications/NotificationBell';
 import { TopHeader } from '../../components/layout/TopHeader';
+import { HospitalSidebar } from '../../components/layout/HospitalSidebar';
 import { BedOccupancyMap, TransferModal, TransferDoctorModal, DischargeModal, BedStructureManager } from '../../components/ipd';
 import { IpdEncountersList } from '../../components/ipd/IpdEncountersList';
 import IPDPatientDetail from '../../pages/ipd/patient-detail';
@@ -49,7 +51,7 @@ import { ClinicalNotesEditor } from '../../components/clinical/ClinicalNotesEdit
 import { VitalsEntryForm } from '../../components/clinical/VitalsEntryForm';
 import { subscribeToAppointmentEvents } from '../../lib/appointments-events';
 import { getShownNotificationIds, markNotificationAsShown } from '../../lib/notification-shown-storage';
-import { getISTStartOfDay, isSameDayIST } from '../../lib/timezone';
+import { getISTStartOfDay, isSameDayIST, getISTNow } from '../../lib/timezone';
 import dayjs, { type Dayjs } from 'dayjs';
 import { normalizeStatus, APPOINTMENT_STATUS } from '../../lib/appointment-status';
 import type { IpdEncounter } from '../../types/ipd';
@@ -68,7 +70,7 @@ const hospitalTheme = {
 };
 
 export default function HospitalDashboard() {
-  const [, setLocation] = useLocation();
+  const [location, setLocation] = useLocation();
   const { user, isLoading, logout } = useAuth();
   const { notification: notificationApi } = App.useApp();
   const { isMobile, isTablet } = useResponsive();
@@ -90,6 +92,8 @@ export default function HospitalDashboard() {
   const [isClinicalNoteModalOpen, setIsClinicalNoteModalOpen] = useState(false);
   const [isVitalsModalOpen, setIsVitalsModalOpen] = useState(false);
   const [selectedEncounterForDetail, setSelectedEncounterForDetail] = useState<number | null>(null);
+  const [patientsSearch, setPatientsSearch] = useState('');
+  const [loadingPatientId, setLoadingPatientId] = useState<number | null>(null);
 
   // Redirect if not authenticated
   if (!isLoading && !user) {
@@ -267,6 +271,53 @@ export default function HospitalDashboard() {
     },
     enabled: !!user && (user.role?.toUpperCase() === 'HOSPITAL' || user.role?.toUpperCase() === 'ADMIN'),
   });
+
+  // Encountered patients (only those with at least one appointment at this hospital) for Patients page
+  const { data: encounteredPatientsData, isLoading: encounteredPatientsLoading } = useQuery({
+    queryKey: ['/api/hospitals/my/encountered-patients', patientsSearch],
+    queryFn: async () => {
+      const token = localStorage.getItem('auth-token');
+      const url = patientsSearch.trim()
+        ? `/api/hospitals/my/encountered-patients?search=${encodeURIComponent(patientsSearch.trim())}`
+        : '/api/hospitals/my/encountered-patients';
+      const response = await fetch(url, {
+        headers: { 'Authorization': `Bearer ${token}` },
+      });
+      if (!response.ok) throw new Error('Failed to fetch patients');
+      return response.json();
+    },
+    enabled: !!user && user.role?.toUpperCase() === 'HOSPITAL',
+  });
+  const encounteredAppointments = encounteredPatientsData?.appointments ?? [];
+
+  // Open patient detail from admin Patients list (hospital API - only if patient has encounter)
+  const openPatientDetailFromList = async (patientId: number) => {
+    setLoadingPatientId(patientId);
+    try {
+      const token = localStorage.getItem('auth-token');
+      const response = await fetch(`/api/hospitals/my/patients/${patientId}`, {
+        headers: { 'Authorization': `Bearer ${token}` },
+      });
+      if (!response.ok) {
+        const err = await response.json().catch(() => ({}));
+        if (response.status === 403) {
+          message.error('Patient has no encounter at this hospital');
+          return;
+        }
+        if (response.status === 404) message.error('Patient not found');
+        else message.error(err?.message || 'Failed to load patient');
+        return;
+      }
+      const data = await response.json();
+      setPatientInfo(data);
+      setPatientInfoDrawerOpen(true);
+      await fetchClinicalData(patientId);
+    } catch (e: any) {
+      message.error(e?.message || 'Failed to load patient details');
+    } finally {
+      setLoadingPatientId(null);
+    }
+  };
 
   // Get hospital name from profile
   const hospitalName = useMemo(() => {
@@ -773,45 +824,21 @@ export default function HospitalDashboard() {
     );
   };
 
-  const [selectedMenuKey, setSelectedMenuKey] = useState<string>('dashboard');
+  // Sync selectedMenuKey from URL; read from window.location.search so it updates when sidebar sets ?view=
+  const selectedMenuKey = (() => {
+    try {
+      const search = typeof window !== 'undefined' ? window.location.search : '';
+      const view = new URLSearchParams(search).get('view');
+      return (view && ['dashboard', 'patients', 'appointments', 'messages', 'reports', 'revenue'].includes(view)) ? view : 'dashboard';
+    } catch {
+      return 'dashboard';
+    }
+  })();
 
-  const sidebarMenu = useMemo(() => [
-    {
-      key: 'dashboard',
-      icon: <BankOutlined style={{ fontSize: 18, color: selectedMenuKey === 'dashboard' ? hospitalTheme.primary : '#8C8C8C' }} />, 
-      label: 'Dashboard' 
-    },
-    {
-      key: 'doctors',
-      icon: <TeamOutlined style={{ fontSize: 18, color: selectedMenuKey === 'doctors' ? hospitalTheme.primary : '#8C8C8C' }} />, 
-      label: 'Doctors' 
-    },
-    {
-      key: 'patients',
-      icon: <UserOutlined style={{ fontSize: 18, color: selectedMenuKey === 'patients' ? hospitalTheme.primary : '#8C8C8C' }} />, 
-      label: 'Patients' 
-    },
-    {
-      key: 'appointments',
-      icon: <CalendarOutlined style={{ fontSize: 18, color: selectedMenuKey === 'appointments' ? hospitalTheme.primary : '#8C8C8C' }} />, 
-      label: 'Appointments' 
-    },
-    {
-      key: 'reports',
-      icon: <FileTextOutlined style={{ fontSize: 18, color: selectedMenuKey === 'reports' ? hospitalTheme.primary : '#8C8C8C' }} />, 
-      label: 'Lab Reports' 
-    },
-    {
-      key: 'analytics',
-      icon: <BarChartOutlined style={{ fontSize: 18, color: selectedMenuKey === 'analytics' ? hospitalTheme.primary : '#8C8C8C' }} />,
-    },
-    {
-      key: 'revenue',
-      label: 'Revenue',
-      path: '/dashboard/hospital/revenue',
-      icon: <DollarOutlined style={{ fontSize: 18, color: selectedMenuKey === 'revenue' ? hospitalTheme.primary : '#8C8C8C' }} />, 
-    },
-  ], [selectedMenuKey]);
+  // When opening dashboard with ?view=appointments, show appointments tab
+  useEffect(() => {
+    if (selectedMenuKey === 'appointments') setActiveMainTab('appointments');
+  }, [selectedMenuKey]);
 
   const siderWidth = isMobile ? 0 : 80; // Narrow sidebar width matching PatientSidebar
 
@@ -836,186 +863,6 @@ export default function HospitalDashboard() {
     }
     return 'HA';
   }, [user?.fullName]);
-
-  // Sidebar content component (reusable for drawer and sider)
-  const SidebarContent = ({ onMenuClick }: { onMenuClick?: () => void }) => (
-    <div style={{ 
-      display: 'flex', 
-      flexDirection: 'column', 
-      height: '100%',
-      background: '#fff', // White background matching PatientSidebar
-      width: '80px', // Narrow vertical bar
-      alignItems: 'center',
-      padding: '16px 0',
-      gap: '12px',
-      borderRight: '1px solid #E5E7EB', // Light border on right
-    }}>
-      {/* User Icon at Top */}
-      <Button
-        type="text"
-        icon={<UserOutlined style={{ fontSize: '20px', color: '#1A8FE3' }} />}
-        style={{
-          width: '48px',
-          height: '48px',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          background: '#E3F2FF', // Light blue background for active user icon
-          borderRadius: '8px',
-        }}
-        onClick={() => setLocation('/dashboard/profile')}
-      />
-
-      {/* Navigation Icons - Vertical Stack */}
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', flex: 1, alignItems: 'center' }}>
-        <Button
-          type="text"
-          icon={<BankOutlined style={{ fontSize: '20px', color: selectedMenuKey === 'dashboard' ? '#1A8FE3' : '#6B7280' }} />}
-          style={{
-            width: '48px',
-            height: '48px',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            background: selectedMenuKey === 'dashboard' ? '#E3F2FF' : 'transparent',
-            borderRadius: '8px',
-          }}
-          onClick={() => {
-            if (onMenuClick) onMenuClick();
-            setSelectedMenuKey('dashboard');
-          }}
-        />
-        
-        <Button
-          type="text"
-          icon={<TeamOutlined style={{ fontSize: '20px', color: selectedMenuKey === 'doctors' ? '#1A8FE3' : '#6B7280' }} />}
-          style={{
-            width: '48px',
-            height: '48px',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            background: selectedMenuKey === 'doctors' ? '#E3F2FF' : 'transparent',
-            borderRadius: '8px',
-          }}
-          onClick={() => {
-            if (onMenuClick) onMenuClick();
-            setSelectedMenuKey('doctors');
-          }}
-          title="Doctors"
-        />
-        
-        <Button
-          type="text"
-          icon={<UserOutlined style={{ fontSize: '20px', color: selectedMenuKey === 'patients' ? '#1A8FE3' : '#6B7280' }} />}
-          style={{
-            width: '48px',
-            height: '48px',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            background: selectedMenuKey === 'patients' ? '#E3F2FF' : 'transparent',
-            borderRadius: '8px',
-          }}
-          onClick={() => {
-            if (onMenuClick) onMenuClick();
-            message.info('Patients page coming soon.');
-          }}
-        />
-        
-        <Button
-          type="text"
-          icon={<CalendarOutlined style={{ fontSize: '20px', color: selectedMenuKey === 'appointments' ? '#1A8FE3' : '#6B7280' }} />}
-          style={{
-            width: '48px',
-            height: '48px',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            background: selectedMenuKey === 'appointments' ? '#E3F2FF' : 'transparent',
-            borderRadius: '8px',
-          }}
-          onClick={() => {
-            if (onMenuClick) onMenuClick();
-            setSelectedMenuKey('appointments');
-            setActiveMainTab('appointments');
-          }}
-        />
-        
-        <Button
-          type="text"
-          icon={<MessageOutlined style={{ fontSize: '20px', color: selectedMenuKey === 'messages' ? '#1A8FE3' : '#6B7280' }} />}
-          style={{
-            width: '48px',
-            height: '48px',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            background: selectedMenuKey === 'messages' ? '#E3F2FF' : 'transparent',
-            borderRadius: '8px',
-          }}
-          onClick={() => {
-            if (onMenuClick) onMenuClick();
-            setLocation('/admin/messages');
-          }}
-          title="Messages"
-        />
-        
-        <Button
-          type="text"
-          icon={<FileTextOutlined style={{ fontSize: '20px', color: selectedMenuKey === 'reports' ? '#1A8FE3' : '#6B7280' }} />}
-          style={{
-            width: '48px',
-            height: '48px',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            background: selectedMenuKey === 'reports' ? '#E3F2FF' : 'transparent',
-            borderRadius: '8px',
-          }}
-          onClick={() => {
-            if (onMenuClick) onMenuClick();
-            message.info('Lab Reports page coming soon.');
-          }}
-        />
-        
-        <Button
-          type="text"
-          icon={<BarChartOutlined style={{ fontSize: '20px', color: selectedMenuKey === 'revenue' ? '#1A8FE3' : '#6B7280' }} />}
-          style={{
-            width: '48px',
-            height: '48px',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            background: selectedMenuKey === 'revenue' ? '#E3F2FF' : 'transparent',
-            borderRadius: '8px',
-          }}
-          onClick={() => {
-            if (onMenuClick) onMenuClick();
-            window.location.href = '/dashboard/hospital/revenue';
-          }}
-        />
-      </div>
-
-      {/* Bottom Icons */}
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', alignItems: 'center' }}>
-        <Button
-          type="text"
-          icon={<LogoutOutlined style={{ fontSize: '20px', color: '#EF4444' }} />}
-          style={{
-            width: '48px',
-            height: '48px',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-          }}
-          onClick={() => logout()}
-          title="Logout"
-        />
-      </div>
-    </div>
-  );
 
   return (
     <>
@@ -1191,7 +1038,7 @@ export default function HospitalDashboard() {
           borderRight: '1px solid #E5E7EB',
         }}
       >
-          <SidebarContent />
+          <HospitalSidebar selectedMenuKey={selectedMenuKey} />
         </Sider>
       )}
 
@@ -1205,7 +1052,7 @@ export default function HospitalDashboard() {
           bodyStyle={{ padding: 0 }}
           width={260}
         >
-          <SidebarContent onMenuClick={() => setMobileDrawerOpen(false)} />
+          <HospitalSidebar selectedMenuKey={selectedMenuKey} onMenuClick={() => setMobileDrawerOpen(false)} />
         </Drawer>
       )}
 
@@ -1284,8 +1131,8 @@ export default function HospitalDashboard() {
             
             {/* Floating Notifications - Auto-dismiss after 10 seconds (handled by useEffect) */}
 
-            {/* Sidebar page: Doctors */}
-            {selectedMenuKey === 'doctors' ? (
+            {/* Sidebar page: Patients (doctors managed via Staff management) */}
+            {selectedMenuKey === 'patients' ? (
               <Card
                 variant="borderless"
                 style={{
@@ -1301,62 +1148,93 @@ export default function HospitalDashboard() {
                 }}
                 title={
                   <span style={{ fontSize: 18, fontWeight: 600 }}>
-                    <TeamOutlined style={{ marginRight: 8, color: hospitalTheme.primary }} />
-                    Doctors
+                    <UserOutlined style={{ marginRight: 8, color: hospitalTheme.primary }} />
+                    Patients (encountered at this hospital)
                   </span>
+                }
+                extra={
+                  <Input.Search
+                    placeholder="Search by name, mobile, email or Patient ID"
+                    allowClear
+                    value={patientsSearch}
+                    onChange={(e) => setPatientsSearch(e.target.value)}
+                    onSearch={(v) => setPatientsSearch(v || '')}
+                    style={{ width: isMobile ? '100%' : 320 }}
+                  />
                 }
                 bodyStyle={{ flex: 1, minHeight: 0, overflow: 'auto', padding: isMobile ? 12 : 16 }}
               >
-                {staffLoading ? (
+                {encounteredPatientsLoading ? (
                   <div style={{ display: 'flex', justifyContent: 'center', padding: 48 }}>
                     <Spin size="large" />
                   </div>
-                ) : !hospitalStaff?.doctors?.length ? (
+                ) : encounteredAppointments.length === 0 ? (
                   <Empty
                     image={Empty.PRESENTED_IMAGE_SIMPLE}
-                    description="No doctors in this hospital yet"
+                    description={patientsSearch.trim() ? 'No matching patients with appointments at this hospital' : 'No patients have booked appointments at this hospital yet'}
                     style={{ padding: '48px 0' }}
                   />
-                ) : isMobile ? (
-                  <Space direction="vertical" size={12} style={{ width: '100%' }}>
-                    {(hospitalStaff.doctors as any[]).map((d: any) => (
-                      <Card key={d.id} size="small" style={{ borderRadius: 12, border: '1px solid #E5E7EB' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 8 }}>
-                          <span style={{ fontWeight: 600, fontSize: 15 }}>{d.fullName || '—'}</span>
-                          {d.isAvailable !== false && <Tag color="green">Available</Tag>}
-                        </div>
-                        <div style={{ fontSize: 13, color: '#6B7280' }}>
-                          {d.specialty && <div>Specialty: {d.specialty}</div>}
-                          {d.email && <div>{d.email}</div>}
-                          {d.mobileNumber && <div>{d.mobileNumber}</div>}
-                          {d.licenseNumber && <div>License: {d.licenseNumber}</div>}
-                        </div>
-                      </Card>
-                    ))}
-                  </Space>
                 ) : (
-                  <Table
-                    dataSource={hospitalStaff.doctors || []}
-                    rowKey="id"
-                    loading={staffLoading}
-                    size="middle"
-                    pagination={{ pageSize: 10, showSizeChanger: true, showTotal: (t, r) => `${r[0]}-${r[1]} of ${t}` }}
-                    scroll={{ x: 'max-content' }}
-                    columns={[
-                      { title: 'Name', dataIndex: 'fullName', key: 'fullName', render: (v: string) => v || '—', width: 160 },
-                      { title: 'Specialty', dataIndex: 'specialty', key: 'specialty', render: (v: string) => v || '—', width: 120 },
-                      { title: 'Email', dataIndex: 'email', key: 'email', render: (v: string) => v || '—', width: 180 },
-                      { title: 'Mobile', dataIndex: 'mobileNumber', key: 'mobileNumber', render: (v: string) => v || '—', width: 120 },
-                      { title: 'License', dataIndex: 'licenseNumber', key: 'licenseNumber', render: (v: string) => v || '—', width: 120 },
-                      {
-                        title: 'Status',
-                        key: 'isAvailable',
-                        width: 100,
-                        render: (_: any, r: any) =>
-                          r.isAvailable !== false ? <Tag color="green">Available</Tag> : <Tag color="default">Unavailable</Tag>,
-                      },
-                    ]}
-                  />
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
+                    {(() => {
+                      const now = getISTNow();
+                      const todayStart = getISTStartOfDay(now);
+                      const yesterdayStart = new Date(todayStart.getTime() - 24 * 60 * 60 * 1000);
+                      const groups: { label: string; dateKey: string; appointments: typeof encounteredAppointments }[] = [];
+                      const getDateKey = (d: Date | string | null) => {
+                        if (!d) return '';
+                        const dt = typeof d === 'string' ? new Date(d) : d;
+                        return getISTStartOfDay(dt).toISOString().slice(0, 10);
+                      };
+                      const getLabel = (d: Date | string | null) => {
+                        if (!d) return 'Other';
+                        const dt = typeof d === 'string' ? new Date(d) : d;
+                        const dayStart = getISTStartOfDay(dt);
+                        if (isSameDayIST(dayStart, todayStart)) return 'Today';
+                        if (isSameDayIST(dayStart, yesterdayStart)) return 'Yesterday';
+                        return dayjs(dt).format('DD MMM YYYY');
+                      };
+                      for (const apt of encounteredAppointments) {
+                        const key = getDateKey(apt.appointmentDate);
+                        const label = getLabel(apt.appointmentDate);
+                        const existing = groups.find((g) => g.dateKey === key);
+                        if (existing) existing.appointments.push(apt);
+                        else groups.push({ label, dateKey: key, appointments: [apt] });
+                      }
+                      return groups.map((g) => (
+                        <div key={g.dateKey}>
+                          <Text strong style={{ fontSize: 15, marginBottom: 8, display: 'block' }}>{g.label}</Text>
+                          <List
+                            dataSource={g.appointments}
+                            renderItem={(apt: any) => (
+                              <List.Item
+                                style={{ cursor: 'pointer', padding: '12px 16px', borderRadius: 8, border: '1px solid #E5E7EB' }}
+                                onClick={() => openPatientDetailFromList(apt.patientId)}
+                                actions={loadingPatientId === apt.patientId ? [<Spin key="s" size="small" />] : undefined}
+                              >
+                                <List.Item.Meta
+                                  title={
+                                    <Space>
+                                      <span>{apt.patientName || '—'}</span>
+                                      <Tag color={apt.status === 'completed' ? 'green' : apt.status === 'cancelled' ? 'red' : 'blue'}>{apt.status}</Tag>
+                                      {apt.tokenIdentifier && <Tag>{apt.tokenIdentifier}</Tag>}
+                                    </Space>
+                                  }
+                                  description={
+                                    <Space split={<Divider type="vertical" />}>
+                                      <span>{apt.doctorName || '—'}</span>
+                                      <span>{apt.appointmentTime || apt.timeSlot || '—'}</span>
+                                      <span>{apt.reason || '—'}</span>
+                                    </Space>
+                                  }
+                                />
+                              </List.Item>
+                            )}
+                          />
+                        </div>
+                      ));
+                    })()}
+                  </div>
                 )}
               </Card>
             ) : (
@@ -1373,8 +1251,8 @@ export default function HospitalDashboard() {
                 WebkitOverflowScrolling: 'touch',
               }}>
                 {[
-                  { label: "Total Doctors", value: statsLoading ? '...' : (stats?.totalDoctors || 0), icon: <TeamOutlined style={{ fontSize: '24px', color: hospitalTheme.primary }} />, trendLabel: "Active", trendColor: hospitalTheme.primary, trendBg: hospitalTheme.highlight, onView: () => setSelectedMenuKey('doctors') },
-                  { label: "Total Patients", value: statsLoading ? '...' : (stats?.totalPatients || 0), icon: <UserOutlined style={{ fontSize: '24px', color: hospitalTheme.secondary }} />, trendLabel: "Registered", trendColor: hospitalTheme.secondary, trendBg: "#E0F2FE", onView: () => message.info('View patients') },
+                  { label: "Total Doctors", value: statsLoading ? '...' : (stats?.totalDoctors || 0), icon: <TeamOutlined style={{ fontSize: '24px', color: hospitalTheme.primary }} />, trendLabel: "Active", trendColor: hospitalTheme.primary, trendBg: hospitalTheme.highlight, onView: () => setLocation('/dashboard/hospital/staff') },
+                  { label: "Total Patients", value: statsLoading ? '...' : (stats?.totalPatients || 0), icon: <UserOutlined style={{ fontSize: '24px', color: hospitalTheme.secondary }} />, trendLabel: "Registered", trendColor: hospitalTheme.secondary, trendBg: "#E0F2FE", onView: () => setLocation('/dashboard/hospital?view=patients') },
                   { label: "Daily Revenue", value: statsLoading ? '...' : `₹${(stats?.dailyRevenue || 0).toLocaleString()}`, icon: <BarChartOutlined style={{ fontSize: '24px', color: '#22C55E' }} />, trendLabel: "Today", trendColor: '#22C55E', trendBg: "#D1FAE5", onView: () => message.info('View revenue') },
                   { label: "Weekly Revenue", value: statsLoading ? '...' : `₹${(stats?.weeklyRevenue || 0).toLocaleString()}`, icon: <BarChartOutlined style={{ fontSize: '24px', color: '#3B82F6' }} />, trendLabel: "This Week", trendColor: '#3B82F6', trendBg: "#DBEAFE", onView: () => message.info('View revenue') },
                   { label: "Monthly Revenue", value: statsLoading ? '...' : `₹${(stats?.monthlyRevenue || stats?.totalRevenue || 0).toLocaleString()}`, icon: <BarChartOutlined style={{ fontSize: '24px', color: hospitalTheme.primary }} />, trendLabel: "This Month", trendColor: hospitalTheme.primary, trendBg: hospitalTheme.highlight, onView: () => message.info('View revenue') },
@@ -1395,7 +1273,7 @@ export default function HospitalDashboard() {
                 trendType="positive"
                     trendColor={hospitalTheme.primary}
                     trendBg={hospitalTheme.highlight}
-                    onView={() => setSelectedMenuKey('doctors')}
+                    onView={() => setLocation('/dashboard/hospital/staff')}
               />
                 </div>
                 <div style={{ flex: 1, minWidth: 200 }}>
@@ -1407,7 +1285,7 @@ export default function HospitalDashboard() {
                 trendType="positive"
                     trendColor={hospitalTheme.secondary}
                     trendBg="#E0F2FE"
-                    onView={() => message.info('View patients')}
+                    onView={() => setLocation('/dashboard/hospital?view=patients')}
               />
                 </div>
                 <div style={{ flex: 1, minWidth: 200 }}>
@@ -1905,6 +1783,14 @@ export default function HospitalDashboard() {
             <Card title="Patient Information" size="small">
               <Space direction="vertical" style={{ width: '100%' }}>
                 <div>
+                  <Text type="secondary">Patient ID:</Text>
+                  <Text strong style={{ marginLeft: 8 }}>
+                    {patientInfo.patient?.id != null
+                      ? `PAT-${new Date().getFullYear()}-${String(patientInfo.patient.id).padStart(4, '0')}`
+                      : 'N/A'}
+                  </Text>
+                </div>
+                <div>
                   <Text type="secondary">Name:</Text>
                   <Text strong style={{ marginLeft: 8 }}>
                     {patientInfo.patient?.user?.fullName || 'N/A'}
@@ -1916,6 +1802,12 @@ export default function HospitalDashboard() {
                     {patientInfo.patient?.user?.mobileNumber || 'N/A'}
                   </Text>
                 </div>
+                {(patientInfo.patient?.user?.email) && (
+                  <div>
+                    <Text type="secondary">Email:</Text>
+                    <Text strong style={{ marginLeft: 8 }}>{patientInfo.patient.user.email}</Text>
+                  </div>
+                )}
                 {patientInfo.encounter && (
                   <>
                     <div>
@@ -1942,6 +1834,81 @@ export default function HospitalDashboard() {
                 )}
               </Space>
             </Card>
+
+            {/* Appointments / Visits */}
+            {patientInfo.appointments?.length > 0 && (
+              <Card title={`Appointments / Visits (${patientInfo.appointmentsTotal ?? patientInfo.appointments.length})`} size="small">
+                <List
+                  size="small"
+                  dataSource={patientInfo.appointments.slice(0, 20)}
+                  renderItem={(apt: any) => (
+                    <List.Item>
+                      <div style={{ width: '100%' }}>
+                        <Space>
+                          <Text strong>{apt.doctorName || 'Doctor'}</Text>
+                          <Tag color={apt.status === 'completed' ? 'green' : apt.status === 'cancelled' ? 'red' : 'blue'}>{apt.status}</Tag>
+                        </Space>
+                        <br />
+                        <Text type="secondary" style={{ fontSize: 12 }}>
+                          {apt.appointmentDate ? dayjs(apt.appointmentDate).format('DD MMM YYYY') : ''} {apt.appointmentTime || apt.timeSlot || ''} — {apt.reason || '—'}
+                        </Text>
+                      </div>
+                    </List.Item>
+                  )}
+                />
+                {(patientInfo.appointmentsTotal ?? patientInfo.appointments.length) > 20 && (
+                  <Text type="secondary" style={{ fontSize: 12 }}>Showing last 20 of {patientInfo.appointmentsTotal ?? patientInfo.appointments.length}</Text>
+                )}
+              </Card>
+            )}
+
+            {/* Lab Reports */}
+            {patientInfo.labReports?.length > 0 && (
+              <Card title={`Lab Reports (${patientInfo.labReports.length})`} size="small">
+                <List
+                  size="small"
+                  dataSource={patientInfo.labReports.slice(0, 15)}
+                  renderItem={(lab: any) => (
+                    <List.Item>
+                      <div style={{ width: '100%' }}>
+                        <Text strong>{lab.reportType || lab.testName || 'Lab Report'}</Text>
+                        <br />
+                        <Text type="secondary" style={{ fontSize: 12 }}>
+                          {lab.reportDate ? dayjs(lab.reportDate).format('DD MMM YYYY') : ''} — {lab.status || '—'}
+                        </Text>
+                      </div>
+                    </List.Item>
+                  )}
+                />
+                {patientInfo.labReports.length > 15 && (
+                  <Text type="secondary" style={{ fontSize: 12 }}>Showing last 15</Text>
+                )}
+              </Card>
+            )}
+
+            {/* Prescriptions */}
+            {patientInfo.prescriptions?.length > 0 && (
+              <Card title={`Prescriptions (${patientInfo.prescriptionsTotal ?? patientInfo.prescriptions.length})`} size="small">
+                <List
+                  size="small"
+                  dataSource={patientInfo.prescriptions.slice(0, 10)}
+                  renderItem={(rx: any) => (
+                    <List.Item>
+                      <div style={{ width: '100%' }}>
+                        <Text strong>{rx.diagnosis || 'Prescription'}</Text>
+                        <br />
+                        <Text type="secondary" style={{ fontSize: 12 }}>
+                          {rx.createdAt ? dayjs(rx.createdAt).format('DD MMM YYYY') : ''} — Medications: {(typeof rx.medications === 'string' ? rx.medications : JSON.stringify(rx.medications || {})).slice(0, 80)}…
+                        </Text>
+                      </div>
+                    </List.Item>
+                  )}
+                />
+                {(patientInfo.prescriptionsTotal ?? patientInfo.prescriptions.length) > 10 && (
+                  <Text type="secondary" style={{ fontSize: 12 }}>Showing last 10 of {patientInfo.prescriptionsTotal ?? patientInfo.prescriptions.length}</Text>
+                )}
+              </Card>
+            )}
 
             {/* Clinical Documentation */}
             <Card 

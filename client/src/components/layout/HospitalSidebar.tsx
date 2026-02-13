@@ -1,12 +1,12 @@
 import React from 'react';
-import { Button } from 'antd';
+import { Button, message } from 'antd';
 import {
   UserOutlined,
   BankOutlined,
-  CalendarOutlined,
   MessageOutlined,
-  DollarOutlined,
-  TeamOutlined,
+  FileTextOutlined,
+  BarChartOutlined,
+  SolutionOutlined,
   LogoutOutlined,
 } from '@ant-design/icons';
 import { useLocation } from 'wouter';
@@ -17,6 +17,7 @@ interface HospitalSidebarProps {
   onMenuClick?: () => void;
 }
 
+/** Single sidebar for all hospital/admin pages: dashboard, messages, revenue, staff. Same order everywhere. */
 export const HospitalSidebar: React.FC<HospitalSidebarProps> = ({
   selectedMenuKey = 'dashboard',
   onMenuClick,
@@ -29,12 +30,19 @@ export const HospitalSidebar: React.FC<HospitalSidebarProps> = ({
     switch (key) {
       case 'dashboard':
         setLocation('/dashboard/hospital');
+        if (typeof window !== 'undefined') window.history.replaceState(null, '', '/dashboard/hospital');
         break;
-      case 'appointments':
-        setLocation('/dashboard/hospital');
+      case 'patients': {
+        const path = '/dashboard/hospital?view=patients';
+        if (typeof window !== 'undefined') window.history.replaceState(null, '', path);
+        setLocation(path);
         break;
+      }
       case 'messages':
         setLocation('/admin/messages');
+        break;
+      case 'reports':
+        message.info('Lab Reports page coming soon.');
         break;
       case 'revenue':
         setLocation('/dashboard/hospital/revenue');
@@ -46,6 +54,26 @@ export const HospitalSidebar: React.FC<HospitalSidebarProps> = ({
         break;
     }
   };
+
+  const btn = (key: string, icon: React.ReactNode, title: string) => (
+    <Button
+      type="text"
+      icon={icon}
+      style={{
+        width: '48px',
+        height: '48px',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        background: selectedMenuKey === key ? '#E3F2FF' : 'transparent',
+        borderRadius: '8px',
+      }}
+      onClick={() => handleMenuClick(key)}
+      title={title}
+    />
+  );
+
+  const icon = (key: string) => (selectedMenuKey === key ? '#1A8FE3' : '#6B7280');
 
   return (
     <div
@@ -78,81 +106,12 @@ export const HospitalSidebar: React.FC<HospitalSidebarProps> = ({
       />
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', flex: 1, alignItems: 'center' }}>
-        <Button
-          type="text"
-          icon={<BankOutlined style={{ fontSize: '20px', color: selectedMenuKey === 'dashboard' ? '#1A8FE3' : '#6B7280' }} />}
-          style={{
-            width: '48px',
-            height: '48px',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            background: selectedMenuKey === 'dashboard' ? '#E3F2FF' : 'transparent',
-            borderRadius: '8px',
-          }}
-          onClick={() => handleMenuClick('dashboard')}
-          title="Dashboard"
-        />
-        <Button
-          type="text"
-          icon={<CalendarOutlined style={{ fontSize: '20px', color: selectedMenuKey === 'appointments' ? '#1A8FE3' : '#6B7280' }} />}
-          style={{
-            width: '48px',
-            height: '48px',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            background: selectedMenuKey === 'appointments' ? '#E3F2FF' : 'transparent',
-            borderRadius: '8px',
-          }}
-          onClick={() => handleMenuClick('appointments')}
-          title="Appointments"
-        />
-        <Button
-          type="text"
-          icon={<MessageOutlined style={{ fontSize: '20px', color: selectedMenuKey === 'messages' ? '#1A8FE3' : '#6B7280' }} />}
-          style={{
-            width: '48px',
-            height: '48px',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            background: selectedMenuKey === 'messages' ? '#E3F2FF' : 'transparent',
-            borderRadius: '8px',
-          }}
-          onClick={() => handleMenuClick('messages')}
-          title="Messages"
-        />
-        <Button
-          type="text"
-          icon={<DollarOutlined style={{ fontSize: '20px', color: selectedMenuKey === 'revenue' ? '#1A8FE3' : '#6B7280' }} />}
-          style={{
-            width: '48px',
-            height: '48px',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            background: selectedMenuKey === 'revenue' ? '#E3F2FF' : 'transparent',
-            borderRadius: '8px',
-          }}
-          onClick={() => handleMenuClick('revenue')}
-          title="Revenue"
-        />
-        <Button
-          type="text"
-          icon={<TeamOutlined style={{ fontSize: '20px', color: selectedMenuKey === 'staff' ? '#1A8FE3' : '#6B7280' }} />}
-          style={{
-            width: '48px',
-            height: '48px',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            background: selectedMenuKey === 'staff' ? '#E3F2FF' : 'transparent',
-            borderRadius: '8px',
-          }}
-          onClick={() => handleMenuClick('staff')}
-          title="Staff management"
-        />
+        {btn('dashboard', <BankOutlined style={{ fontSize: '20px', color: icon('dashboard') }} />, 'Dashboard')}
+        {btn('patients', <UserOutlined style={{ fontSize: '20px', color: icon('patients') }} />, 'Patients')}
+        {btn('messages', <MessageOutlined style={{ fontSize: '20px', color: icon('messages') }} />, 'Messages')}
+        {btn('reports', <FileTextOutlined style={{ fontSize: '20px', color: icon('reports') }} />, 'Lab Reports')}
+        {btn('revenue', <BarChartOutlined style={{ fontSize: '20px', color: icon('revenue') }} />, 'Revenue')}
+        {btn('staff', <SolutionOutlined style={{ fontSize: '20px', color: icon('staff') }} />, 'Staff management')}
       </div>
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', alignItems: 'center' }}>
