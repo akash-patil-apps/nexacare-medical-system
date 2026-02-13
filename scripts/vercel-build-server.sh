@@ -69,10 +69,12 @@ console.log('ESM import fix done.');
 "
 echo "ESM import fix complete."
 
-# Vercel looks for an entrypoint that imports express. Create one that does both.
+# Vercel runs as serverless and requires the entry to EXPORT the app (no exports = 500).
+# Server already exports default app and skips listen() when VERCEL is set.
 echo "Creating root entrypoint for Vercel..."
 cat > "$ROOT/index.js" << 'ENTRYPOINT'
 import 'express';
-import './dist/server/server/index.js';
+import app from './dist/server/server/index.js';
+export default app;
 ENTRYPOINT
 echo "Root index.js created."
