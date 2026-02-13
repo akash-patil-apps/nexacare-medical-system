@@ -2,8 +2,8 @@
 import jwt from 'jsonwebtoken';
 import bcrypt from 'bcrypt';
 import { generateOTP, isOtpExpired } from '../utils/otp';
+import { getJwtSecret } from '../env';
 
-const JWT_SECRET = process.env.JWT_SECRET || 'demo-secret-key-2024';
 const JWT_EXPIRES_IN = '7d';
 
 // In-memory storage for demo
@@ -59,7 +59,7 @@ export const generateToken = (user: {
   mobileNumber: string;
   role: string;
   fullName: string;
-}) => jwt.sign(user, JWT_SECRET, { expiresIn: JWT_EXPIRES_IN });
+}) => jwt.sign(user, getJwtSecret(), { expiresIn: JWT_EXPIRES_IN });
 
 /**
  * Send OTP for mobile registration/login.

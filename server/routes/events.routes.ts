@@ -1,5 +1,6 @@
 import { Router } from "express";
 import jwt from "jsonwebtoken";
+import { getJwtSecret } from "../env";
 import { onAppointmentEvent } from "../events/appointments.events";
 import { db } from "../db";
 import { eq } from "drizzle-orm";
@@ -7,13 +8,11 @@ import { hospitals, receptionists } from "../../shared/schema";
 
 const router = Router();
 
-const JWT_SECRET = process.env.JWT_SECRET || "your-secret-key";
-
 function authenticateFromQueryToken(req: any): { id: number; role: string } | null {
   const token = (req.query?.token as string | undefined) || "";
   if (!token) return null;
   try {
-    const decoded = jwt.verify(token, JWT_SECRET) as any;
+    const decoded = jwt.verify(token, getJwtSecret()) as any;
     if (!decoded?.id || !decoded?.role) return null;
     return { id: decoded.id, role: decoded.role };
   } catch {
