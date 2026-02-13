@@ -68,3 +68,8 @@ walk(DIST);
 console.log('ESM import fix done.');
 "
 echo "ESM import fix complete."
+
+# Vercel looks for an entrypoint in output directory "." (root). Create one.
+echo "Creating root entrypoint for Vercel..."
+echo "import './dist/server/server/index.js';" > "$ROOT/index.js"
+echo "Root index.js created."
