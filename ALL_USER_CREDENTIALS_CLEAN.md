@@ -18,7 +18,7 @@ Universal Password: password123
 
 ---
 
-## 👑 ADMIN USERS
+##  ADMIN USERS
 
 | # | Mobile Number | Full Name | Email | Verified |
 |---|---------------|-----------|-------|----------|
@@ -28,7 +28,7 @@ Universal Password: password123
 
 ---
 
-## 🏥 HOSPITAL ADMIN USERS
+##  HOSPITAL ADMIN USERS
 
 | # | Mobile Number | Full Name | Hospital Name | City | Email |
 |---|---------------|-----------|---------------|------|-------|
@@ -47,7 +47,7 @@ Universal Password: password123
 
 ---
 
-## 👨‍⚕️ DOCTOR USERS
+##  DOCTOR USERS
 
 | # | Mobile Number | Doctor Name | Specialty | Hospital | City | Email |
 |---|---------------|-------------|-----------|----------|------|-------|
@@ -256,7 +256,7 @@ Universal Password: password123
 
 ---
 
-## 👤 PATIENT USERS
+##  PATIENT USERS
 
 | # | Mobile Number | Patient Name | Age | Gender | City | Blood Group | Email |
 |---|---------------|--------------|-----|--------|------|-------------|-------|
@@ -366,7 +366,7 @@ Universal Password: password123
 
 ---
 
-## 📞 RECEPTIONIST USERS
+##  RECEPTIONIST USERS
 
 | # | Mobile Number | Receptionist Name | Hospital | Shift | Email |
 |---|---------------|-------------------|----------|-------|-------|
@@ -395,7 +395,7 @@ Universal Password: password123
 
 ---
 
-## 🧪 LAB USERS
+##  LAB USERS
 
 | # | Mobile Number | Lab Admin Name | Lab Name | City | Email |
 |---|---------------|----------------|----------|------|-------|
@@ -414,7 +414,7 @@ Universal Password: password123
 
 ---
 
-## 📋 CSV FORMAT (All Users)
+##  CSV FORMAT (All Users)
 
 ```csv
 Role,Mobile Number,Full Name,Email,Additional Info
@@ -764,7 +764,7 @@ LAB,9840000009,Lab Admin 10,lab.admin.10.9840000009@nexacare.com,Prime Lab 10
 
 ---
 
-## 📝 SIMPLE LIST FORMAT (Mobile Number | Password)
+##  SIMPLE LIST FORMAT (Mobile Number | Password)
 
 ```
 ALL USERS USE PASSWORD: password123

@@ -261,6 +261,46 @@ body:has(.pharmacy-dispensing-wrapper) .medical-container {
   color: #a0a8b6;
 }
 
+/* Register: input + Verify button group - align height */
+.register-verify-input-group {
+  box-sizing: border-box;
+}
+.register-verify-input-group .ant-input-affix-wrapper {
+  height: 100% !important;
+  min-height: 0 !important;
+  padding-top: 0;
+  padding-bottom: 0;
+  align-items: center;
+}
+.register-verify-input-group .ant-input {
+  height: 100%;
+  min-height: 0;
+}
+
+/* Onboarding: compact form – less gap between label and input, between rows */
+.onboarding-form-compact .ant-form-item {
+  margin-bottom: 10px;
+}
+.onboarding-form-compact .ant-form-item-label {
+  padding-bottom: 2px;
+}
+.onboarding-form-compact .ant-form-item-label > label {
+  height: auto;
+  line-height: 1.35;
+}
+.onboarding-form-compact .ant-form-item-explain-error {
+  margin-top: 2px;
+  margin-bottom: 2px;
+}
+.onboarding-form-compact .ant-radio-button-wrapper-checked {
+  background: #059669 !important;
+  border-color: #059669 !important;
+}
+.onboarding-form-compact .ant-radio-button-wrapper-checked:hover {
+  background: #047857 !important;
+  border-color: #047857 !important;
+}
+
 .hospital-onboarding-wrapper {
   min-height: 100vh;
   padding: 48px 24px;

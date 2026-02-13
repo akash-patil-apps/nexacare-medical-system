@@ -1,36 +1,17 @@
 import React, { useState } from 'react';
 import { useLocation } from 'wouter';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import {
-  Form,
-  Input,
-  Select,
-  Button,
-  Card,
-  Row,
-  Col,
-  Space,
-  Typography,
-  message,
-  DatePicker,
-} from 'antd';
-import {
-  UserOutlined,
-  BankOutlined,
-  ClockCircleOutlined,
-  CheckCircleFilled,
-  RightCircleOutlined,
-} from '@ant-design/icons';
-import dayjs from 'dayjs';
+import { Form, Input, Select, Button, Row, Col, message, DatePicker } from 'antd';
+import { RightOutlined } from '@ant-design/icons';
 import { apiRequest } from '../../lib/queryClient';
+import { OnboardingStepsLayout } from '../../components/onboarding/OnboardingStepsLayout';
 
 const { Option } = Select;
 
-type StepConfig = {
-  title: string;
-  icon: React.ReactNode;
-  content: React.ReactNode;
-};
+const RECEPTIONIST_STEPS = [{ title: 'Hospital Selection' }, { title: 'Work Details' }];
+const STEP_TITLES = ['Hospital Selection', 'Work Details'];
+const STEP_NOTES = ['Select the hospital you work at.', 'Enter your work details.'];
+const fieldStyle = { borderRadius: 12 };
 
 export default function ReceptionistOnboarding() {
   const [, setLocation] = useLocation();
@@ -44,7 +25,8 @@ export default function ReceptionistOnboarding() {
     queryFn: async () => {
       const res = await fetch('/api/hospitals');
       if (!res.ok) throw new Error('Failed to fetch hospitals');
-      return res.json();
+      const data = await res.json();
+      return data.hospitals ?? data;
     },
   });
 
@@ -61,23 +43,15 @@ export default function ReceptionistOnboarding() {
       setTimeout(() => setLocation('/dashboard/receptionist'), 500);
     },
     onError: (error: any) => {
-      message.error(error.message || 'Failed to complete profile');
+      message.error(error?.message || 'Failed to complete profile');
     },
   });
 
   const handleNext = async () => {
     try {
-      const stepFields: Record<number, string[]> = {
-        0: ['hospitalId'],
-      };
-      const fieldsToValidate = stepFields[currentStep] || [];
-      if (fieldsToValidate.length > 0) {
-        await form.validateFields(fieldsToValidate);
-      }
+      if (currentStep === 0) await form.validateFields(['hospitalId']);
       setCurrentStep(currentStep + 1);
-    } catch (error) {
-      console.error('Validation error:', error);
-    }
+    } catch (e) {}
   };
 
   const handleComplete = async () => {
@@ -89,184 +63,88 @@ export default function ReceptionistOnboarding() {
         dateOfJoining: values.dateOfJoining ? values.dateOfJoining.format('YYYY-MM-DD') : null,
       };
       completeOnboardingMutation.mutate(transformedValues);
-    } catch (error: any) {
-      message.error('Please fill in all required fields');
+    } catch (err: any) {
+      message.error(err?.errorFields?.[0]?.errors?.[0] || 'Please fill in all required fields');
     }
   };
 
-  const steps: StepConfig[] = [
-    {
-      title: 'Hospital Selection',
-      icon: <BankOutlined />,
-      content: (
-        <Row gutter={[16, 16]}>
-          <Col span={24}>
-            <Form.Item
-              name="hospitalId"
-              label="Hospital"
-              rules={[{ required: true, message: 'Please select a hospital' }]}
-            >
-              <Select
-                placeholder="Select hospital"
-                loading={hospitalsLoading}
-                showSearch
-                optionFilterProp="children"
-                size="large"
-              >
-                {hospitals.map((hospital: any) => (
-                  <Option key={hospital.id} value={hospital.id}>
-                    {hospital.name}
-                  </Option>
-                ))}
-              </Select>
-            </Form.Item>
-          </Col>
-        </Row>
-      ),
-    },
-    {
-      title: 'Work Details',
-      icon: <ClockCircleOutlined />,
-      content: (
-        <Row gutter={[16, 16]}>
-          <Col span={12}>
-            <Form.Item name="employeeId" label="Employee ID">
-              <Input placeholder="Enter employee ID" size="large" />
-            </Form.Item>
-          </Col>
-          <Col span={12}>
-            <Form.Item name="department" label="Department">
-              <Input placeholder="Enter department" size="large" />
-            </Form.Item>
-          </Col>
-          <Col span={12}>
-            <Form.Item name="shift" label="Shift">
-              <Select placeholder="Select shift" size="large">
-                <Option value="day">Day</Option>
-                <Option value="night">Night</Option>
-                <Option value="rotation">Rotation</Option>
-              </Select>
-            </Form.Item>
-          </Col>
-          <Col span={12}>
-            <Form.Item name="workingHours" label="Working Hours">
-              <Input placeholder="e.g., 9:00 AM - 5:00 PM" size="large" />
-            </Form.Item>
-          </Col>
-          <Col span={12}>
-            <Form.Item name="dateOfJoining" label="Date of Joining">
-              <DatePicker style={{ width: '100%' }} size="large" />
-            </Form.Item>
-          </Col>
-        </Row>
-      ),
-    },
-  ];
-
-  const getStepStatus = (index: number) => {
-    if (index < currentStep) return 'completed';
-    if (index === currentStep) return 'active';
-    return 'upcoming';
+  const handleBack = () => {
+    if (currentStep === 0) setLocation('/dashboard/receptionist');
+    else setCurrentStep(currentStep - 1);
   };
 
-  const renderStatusIcon = (status: string) => {
-    switch (status) {
-      case 'completed':
-        return <CheckCircleFilled />;
-      case 'active':
-        return <RightCircleOutlined />;
-      default:
-        return <ClockCircleOutlined />;
-    }
-  };
-
-  const progressLabel = `Step ${currentStep + 1} of ${steps.length}`;
+  const isLastStep = currentStep === RECEPTIONIST_STEPS.length - 1;
 
   return (
-    <div className="receptionist-onboarding-wrapper">
-      <Card
-        className="receptionist-onboarding-card"
-        variant="borderless"
-        style={{ borderRadius: 28, boxShadow: '0 28px 60px rgba(249, 115, 22, 0.12)' }}
-        styles={{ body: { padding: 0 } }}
-      >
-        <div className="receptionist-onboarding-layout">
-          <aside className="receptionist-onboarding-stepper">
-            <Space direction="vertical" size={4}>
-              <Typography.Text type="secondary" className="receptionist-onboarding-progress-label">
-                {progressLabel}
-              </Typography.Text>
-              <Typography.Title level={4} style={{ margin: 0, color: '#F97316' }}>
-                Receptionist Profile Setup
-              </Typography.Title>
-              <Typography.Paragraph type="secondary" style={{ marginBottom: 0 }}>
-                Complete your profile to start assisting patients.
-              </Typography.Paragraph>
-            </Space>
-            <ul className="receptionist-stepper-list">
-              {steps.map((step, index) => {
-                const status = getStepStatus(index);
-                return (
-                  <li key={step.title} className={`receptionist-stepper-item ${status}`}>
-                    <span className="receptionist-stepper-icon">
-                      {renderStatusIcon(status)}
-                    </span>
-                    <div className="receptionist-stepper-copy">
-                      <Typography.Text className="receptionist-stepper-title">
-                        {step.title}
-                      </Typography.Text>
-                    </div>
-                  </li>
-                );
-              })}
-            </ul>
-          </aside>
-
-          <div className="receptionist-onboarding-content">
-            <Typography.Title level={2} style={{ marginBottom: 16, color: '#F97316' }}>
-              {steps[currentStep].title}
-            </Typography.Title>
-
-            <Form form={form} layout="vertical" preserve={true}>
-              <div className="receptionist-onboarding-content-inner">
-                {steps[currentStep].content}
-              </div>
-              <div className="receptionist-onboarding-footer">
-                {currentStep > 0 && (
-                  <Button onClick={() => setCurrentStep(currentStep - 1)} size="large">
-                    Previous
-                  </Button>
-                )}
-                {currentStep < steps.length - 1 && (
-                  <Button
-                    type="primary"
-                    onClick={handleNext}
-                    size="large"
-                    style={{ backgroundColor: '#F97316', borderColor: '#F97316' }}
-                  >
-                    Next
-                  </Button>
-                )}
-                {currentStep === steps.length - 1 && (
-                  <Button
-                    type="primary"
-                    onClick={handleComplete}
-                    loading={completeOnboardingMutation.isPending}
-                    size="large"
-                    style={{
-                      backgroundColor: '#F97316',
-                      borderColor: '#F97316',
-                      boxShadow: '0 12px 24px rgba(249, 115, 22, 0.25)',
-                    }}
-                  >
-                    Complete Profile
-                  </Button>
-                )}
-              </div>
-            </Form>
-          </div>
+    <OnboardingStepsLayout
+      steps={RECEPTIONIST_STEPS}
+      currentStepIndex={currentStep}
+      stepTitle={STEP_TITLES[currentStep]}
+      stepNote={STEP_NOTES[currentStep]}
+      onBack={handleBack}
+      showHelpLink
+    >
+      <Form form={form} layout="vertical" preserve={true}>
+        {currentStep === 0 && (
+          <Row gutter={[16, 16]}>
+            <Col span={24}>
+              <Form.Item name="hospitalId" label="Hospital" rules={[{ required: true, message: 'Please select a hospital' }]}>
+                <Select placeholder="Select hospital" loading={hospitalsLoading} showSearch optionFilterProp="children" size="large" style={fieldStyle}>
+                  {hospitals.map((hospital: any) => (
+                    <Option key={hospital.id} value={hospital.id}>{hospital.name}</Option>
+                  ))}
+                </Select>
+              </Form.Item>
+            </Col>
+          </Row>
+        )}
+        {currentStep === 1 && (
+          <Row gutter={[16, 16]}>
+            <Col span={8}>
+              <Form.Item name="employeeId" label="Employee ID">
+                <Input placeholder="Enter employee ID" size="large" style={fieldStyle} />
+              </Form.Item>
+            </Col>
+            <Col span={8}>
+              <Form.Item name="department" label="Department">
+                <Input placeholder="Enter department" size="large" style={fieldStyle} />
+              </Form.Item>
+            </Col>
+            <Col span={8}>
+              <Form.Item name="shift" label="Shift">
+                <Select placeholder="Select shift" size="large" style={fieldStyle}>
+                  <Option value="day">Day</Option>
+                  <Option value="night">Night</Option>
+                  <Option value="rotation">Rotation</Option>
+                </Select>
+              </Form.Item>
+            </Col>
+            <Col span={12}>
+              <Form.Item name="workingHours" label="Working Hours">
+                <Input placeholder="e.g., 9:00 AM - 5:00 PM" size="large" style={fieldStyle} />
+              </Form.Item>
+            </Col>
+            <Col span={12}>
+              <Form.Item name="dateOfJoining" label="Date of Joining">
+                <DatePicker style={{ width: '100%', borderRadius: 12 }} size="large" />
+              </Form.Item>
+            </Col>
+          </Row>
+        )}
+        <div style={{ marginTop: 12, display: 'flex', justifyContent: 'space-between' }}>
+          {currentStep === 0 ? (
+            <>
+              <Button size="large" onClick={handleBack} style={{ borderRadius: 12 }}>Back</Button>
+              <Button type="primary" size="large" onClick={handleNext} icon={<RightOutlined />} iconPosition="end" style={{ borderRadius: 12, background: '#059669', borderColor: '#059669' }}>Next</Button>
+            </>
+          ) : isLastStep ? (
+            <>
+              <Button size="large" onClick={() => setCurrentStep(0)} style={{ borderRadius: 12 }}>Previous</Button>
+              <Button type="primary" size="large" loading={completeOnboardingMutation.isPending} onClick={handleComplete} style={{ borderRadius: 12, background: '#059669', borderColor: '#059669' }}>Complete Profile</Button>
+            </>
+          ) : null}
         </div>
-      </Card>
-    </div>
+      </Form>
+    </OnboardingStepsLayout>
   );
 }

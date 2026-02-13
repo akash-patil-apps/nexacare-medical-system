@@ -53,7 +53,8 @@ interface Hospital {
   services: string[];
   operating_hours: string;
   emergency_services: boolean;
-  total_beds: number;
+  total_beds?: number;
+  totalBeds?: number; // from API (count of beds added by admin in IPD)
   established_year: number;
 }
 
@@ -363,7 +364,7 @@ export default function AppointmentBookingModal({
                   <Text strong>Established:</Text> {selectedHospital.established_year}
                 </Col>
                 <Col span={12}>
-                  <Text strong>Total Beds:</Text> {selectedHospital.total_beds}
+                  <Text strong>Total Beds:</Text> {selectedHospital.totalBeds ?? selectedHospital.total_beds ?? 0}
                 </Col>
                 <Col span={24}>
                   <Text strong>Departments:</Text>
