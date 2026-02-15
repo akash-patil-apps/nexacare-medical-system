@@ -125,7 +125,7 @@ export const getPrescriptionsForDoctor = async ({
     conditions.push(eq(prescriptions.isActive, status === 'active'));
   }
   let query = db.select().from(prescriptions).where(buildAndCondition(conditions));
-  if (limit) query = query.limit(limit);
+  if (limit) query = query.limit(limit) as typeof query;
   return query;
 };
 
@@ -154,7 +154,7 @@ export const getPrescriptionsForHospital = async ({
     conditions.push(eq(prescriptions.isActive, status === 'active'));
   }
   let query = db.select().from(prescriptions).where(buildAndCondition(conditions));
-  if (limit) query = query.limit(limit);
+  if (limit) query = query.limit(limit) as typeof query;
   return query;
 };
 

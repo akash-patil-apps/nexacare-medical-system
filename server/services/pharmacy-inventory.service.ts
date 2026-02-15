@@ -32,11 +32,11 @@ export const getInventory = async (hospitalId: number, filters?: {
       .where(eq(pharmacyInventory.hospitalId, hospitalId));
 
     if (filters?.medicineCatalogId) {
-      query = query.where(eq(pharmacyInventory.medicineCatalogId, filters.medicineCatalogId));
+      query = (query as any).where(eq(pharmacyInventory.medicineCatalogId, filters.medicineCatalogId));
     }
 
     if (filters?.search) {
-      query = query.where(
+      query = (query as any).where(
         or(
           ilike(medicineCatalog.name, `%${filters.search}%`),
           ilike(pharmacyInventory.batchNumber, `%${filters.search}%`)
@@ -45,13 +45,13 @@ export const getInventory = async (hospitalId: number, filters?: {
     }
 
     if (filters?.lowStock) {
-      query = query.where(
+      query = (query as any).where(
         sql`${pharmacyInventory.quantity} <= ${pharmacyInventory.reorderLevel}`
       );
     }
 
     if (filters?.expired) {
-      query = query.where(sql`${pharmacyInventory.expiryDate} < NOW()`);
+      query = (query as any).where(sql`${pharmacyInventory.expiryDate} < NOW()`);
     }
 
     const results = await query.orderBy(desc(pharmacyInventory.createdAt));
@@ -306,19 +306,19 @@ export const getStockMovements = async (
       .where(eq(pharmacyStockMovements.hospitalId, hospitalId));
 
     if (filters?.inventoryId) {
-      query = query.where(eq(pharmacyStockMovements.inventoryId, filters.inventoryId));
+      query = (query as any).where(eq(pharmacyStockMovements.inventoryId, filters.inventoryId));
     }
 
     if (filters?.movementType) {
-      query = query.where(eq(pharmacyStockMovements.movementType, filters.movementType));
+      query = (query as any).where(eq(pharmacyStockMovements.movementType, filters.movementType));
     }
 
     if (filters?.startDate) {
-      query = query.where(gte(pharmacyStockMovements.createdAt, filters.startDate));
+      query = (query as any).where(gte(pharmacyStockMovements.createdAt, filters.startDate));
     }
 
     if (filters?.endDate) {
-      query = query.where(lte(pharmacyStockMovements.createdAt, filters.endDate));
+      query = (query as any).where(lte(pharmacyStockMovements.createdAt, filters.endDate));
     }
 
     return await query.orderBy(desc(pharmacyStockMovements.createdAt));

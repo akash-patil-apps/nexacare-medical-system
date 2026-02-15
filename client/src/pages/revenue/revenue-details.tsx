@@ -43,6 +43,7 @@ import { useAuth } from '../../hooks/use-auth';
 import { useResponsive } from '../../hooks/use-responsive';
 import { useLocation } from 'wouter';
 import { TopHeader } from '../../components/layout/TopHeader';
+import { HospitalSidebar } from '../../components/layout/HospitalSidebar';
 import { getCalendarDateIST } from '../../lib/timezone';
 
 const { Title, Text } = Typography;
@@ -92,176 +93,6 @@ export default function RevenueDetails() {
   });
   
   const siderWidth = isMobile ? 0 : 80; // Narrow sidebar width matching PatientSidebar
-  
-  // Sidebar content component - matching hospital dashboard
-  const SidebarContent = ({ onMenuClick }: { onMenuClick?: () => void }) => {
-    const handleMenuClick = (key: string) => {
-      if (onMenuClick) onMenuClick();
-      switch (key) {
-        case 'dashboard':
-          setLocation('/dashboard/hospital');
-          break;
-        case 'doctors':
-          message.info('Doctors page coming soon.');
-          break;
-        case 'patients':
-          message.info('Patients page coming soon.');
-          break;
-        case 'appointments':
-          message.info('Appointments page coming soon.');
-          break;
-        case 'reports':
-          message.info('Lab Reports page coming soon.');
-          break;
-        case 'revenue':
-          setLocation('/dashboard/hospital/revenue');
-          break;
-        default:
-          break;
-      }
-    };
-
-    return (
-      <div style={{ 
-        display: 'flex', 
-        flexDirection: 'column', 
-        height: '100%',
-        background: '#fff',
-        width: '80px',
-        alignItems: 'center',
-        padding: '16px 0',
-        gap: '12px',
-        borderRight: '1px solid #E5E7EB',
-      }}>
-        <Button
-          type="text"
-          icon={<UserOutlined style={{ fontSize: '20px', color: '#1A8FE3' }} />}
-          style={{
-            width: '48px',
-            height: '48px',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            background: '#E3F2FF',
-            borderRadius: '8px',
-          }}
-          onClick={() => window.location.href = '/dashboard/profile'}
-        />
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', flex: 1, alignItems: 'center' }}>
-          <Button
-            type="text"
-            icon={<BankOutlined style={{ fontSize: '20px', color: '#6B7280' }} />}
-            style={{
-              width: '48px',
-              height: '48px',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              background: 'transparent',
-              borderRadius: '8px',
-            }}
-            onClick={() => handleMenuClick('dashboard')}
-          />
-          <Button
-            type="text"
-            icon={<TeamOutlined style={{ fontSize: '20px', color: '#6B7280' }} />}
-            style={{
-              width: '48px',
-              height: '48px',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              background: 'transparent',
-              borderRadius: '8px',
-            }}
-            onClick={() => handleMenuClick('doctors')}
-          />
-          <Button
-            type="text"
-            icon={<UserOutlined style={{ fontSize: '20px', color: '#6B7280' }} />}
-            style={{
-              width: '48px',
-              height: '48px',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              background: 'transparent',
-              borderRadius: '8px',
-            }}
-            onClick={() => handleMenuClick('patients')}
-          />
-          <Button
-            type="text"
-            icon={<CalendarOutlined style={{ fontSize: '20px', color: '#6B7280' }} />}
-            style={{
-              width: '48px',
-              height: '48px',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              background: 'transparent',
-              borderRadius: '8px',
-            }}
-            onClick={() => handleMenuClick('appointments')}
-          />
-          <Button
-            type="text"
-            icon={<FileTextOutlined style={{ fontSize: '20px', color: '#6B7280' }} />}
-            style={{
-              width: '48px',
-              height: '48px',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              background: 'transparent',
-              borderRadius: '8px',
-            }}
-            onClick={() => handleMenuClick('reports')}
-          />
-          <Button
-            type="text"
-            icon={<BarChartOutlined style={{ fontSize: '20px', color: '#1A8FE3' }} />}
-            style={{
-              width: '48px',
-              height: '48px',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              background: '#E3F2FF',
-              borderRadius: '8px',
-            }}
-            onClick={() => handleMenuClick('revenue')}
-          />
-        </div>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', alignItems: 'center' }}>
-          <Button
-            type="text"
-            icon={<BellOutlined style={{ fontSize: '20px', color: '#6B7280' }} />}
-            style={{
-              width: '48px',
-              height: '48px',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-            }}
-            onClick={() => message.info('Notifications coming soon.')}
-          />
-          <Button
-            type="text"
-            icon={<SettingOutlined style={{ fontSize: '20px', color: '#6B7280' }} />}
-            style={{
-              width: '48px',
-              height: '48px',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-            }}
-            onClick={() => message.info('Settings coming soon.')}
-          />
-        </div>
-      </div>
-    );
-  };
 
   // Fetch revenue statistics
   const { data: stats, isLoading: statsLoading, refetch: refetchStats } = useQuery({
@@ -425,25 +256,25 @@ export default function RevenueDetails() {
 
   const columns: ColumnsType<RevenueTransaction> = [
     {
-      title: <span style={{ color: '#FFFFFF' }}>Date & Time</span>,
+      title: 'Date & Time',
       dataIndex: 'receivedAt',
       key: 'receivedAt',
       width: 180,
-      render: (date: string) => <span style={{ color: '#CCCCCC' }}>{dayjs(date).format('DD MMM YYYY, hh:mm A')}</span>,
+      render: (date: string) => dayjs(date).format('DD MMM YYYY, hh:mm A'),
       sorter: (a, b) => dayjs(a.receivedAt).unix() - dayjs(b.receivedAt).unix(),
     },
     {
-      title: <span style={{ color: '#FFFFFF' }}>Amount</span>,
+      title: 'Amount',
       dataIndex: 'amount',
       key: 'amount',
       width: 120,
       render: (amount: number) => (
-        <Text strong style={{ color: '#22C55E', fontSize: '16px' }}>₹{amount.toFixed(2)}</Text>
+        <Text strong style={{ color: '#52c41a', fontSize: '16px' }}>₹{amount.toFixed(2)}</Text>
       ),
       sorter: (a, b) => a.amount - b.amount,
     },
     {
-      title: <span style={{ color: '#FFFFFF' }}>Payment Method</span>,
+      title: 'Payment Method',
       dataIndex: 'paymentMethod',
       key: 'paymentMethod',
       width: 120,
@@ -461,7 +292,7 @@ export default function RevenueDetails() {
       },
     },
     {
-      title: <span style={{ color: '#FFFFFF' }}>Source</span>,
+      title: 'Source',
       dataIndex: 'source',
       key: 'source',
       width: 120,
@@ -477,21 +308,21 @@ export default function RevenueDetails() {
       },
     },
     {
-      title: <span style={{ color: '#FFFFFF' }}>Invoice</span>,
+      title: 'Invoice',
       dataIndex: 'invoiceNumber',
       key: 'invoiceNumber',
       width: 180,
-      render: (invoice: string) => <span style={{ color: '#CCCCCC', fontFamily: 'monospace', fontSize: '12px' }}>{invoice || 'N/A'}</span>,
+      render: (invoice: string) => <span style={{ fontFamily: 'monospace', fontSize: '12px' }}>{invoice || 'N/A'}</span>,
     },
     {
-      title: <span style={{ color: '#FFFFFF' }}>Transaction ID</span>,
+      title: 'Transaction ID',
       dataIndex: 'transactionId',
       key: 'transactionId',
       width: 200,
-      render: (id: string) => <span style={{ color: '#CCCCCC', fontFamily: 'monospace', fontSize: '12px' }}>{id || '-'}</span>,
+      render: (id: string) => <span style={{ fontFamily: 'monospace', fontSize: '12px' }}>{id || '-'}</span>,
     },
     {
-      title: <span style={{ color: '#FFFFFF' }}>Status</span>,
+      title: 'Status',
       dataIndex: 'status',
       key: 'status',
       width: 100,
@@ -505,37 +336,32 @@ export default function RevenueDetails() {
       },
     },
     {
-      title: <span style={{ color: '#FFFFFF' }}>Details</span>,
+      title: 'Details',
       key: 'details',
       width: 80,
       fixed: 'right' as const,
       render: (_: any, record: RevenueTransaction) => {
         const popoverContent = (
           <div style={{ maxWidth: '400px' }}>
-            <Descriptions
-              column={1}
-              size="small"
-              labelStyle={{ color: '#CCCCCC', fontWeight: 600, width: '140px' }}
-              contentStyle={{ color: '#FFFFFF' }}
-            >
+            <Descriptions column={1} size="small">
               <Descriptions.Item label="Transaction ID">
                 <Space>
-                  <Text style={{ color: '#FFFFFF', fontFamily: 'monospace' }}>{record.transactionId || 'N/A'}</Text>
+                  <Text style={{ fontFamily: 'monospace' }}>{record.transactionId || 'N/A'}</Text>
                   {record.transactionId && record.transactionId !== 'N/A' && (
-                    <CopyIcon text={record.transactionId} label="Transaction ID" style={{ color: '#FFFFFF' }} />
+                    <CopyIcon text={record.transactionId} label="Transaction ID" />
                   )}
                 </Space>
               </Descriptions.Item>
               <Descriptions.Item label="Invoice Number">
                 <Space>
-                  <Text style={{ color: '#FFFFFF' }}>{record.invoiceNumber || 'N/A'}</Text>
+                  <Text>{record.invoiceNumber || 'N/A'}</Text>
                   {record.invoiceNumber && record.invoiceNumber !== 'N/A' && (
-                    <CopyIcon text={record.invoiceNumber} label="Invoice Number" style={{ color: '#FFFFFF' }} />
+                    <CopyIcon text={record.invoiceNumber} label="Invoice Number" />
                   )}
                 </Space>
               </Descriptions.Item>
               <Descriptions.Item label="Amount">
-                <Text strong style={{ color: '#22C55E', fontSize: '16px' }}>₹{record.amount.toFixed(2)}</Text>
+                <Text strong style={{ color: '#52c41a', fontSize: '16px' }}>₹{record.amount.toFixed(2)}</Text>
               </Descriptions.Item>
               <Descriptions.Item label="Payment Method">
                 <Tag color={record.paymentMethod === 'cash' ? 'green' : record.paymentMethod === 'upi' ? 'orange' : 'blue'}>
@@ -556,15 +382,11 @@ export default function RevenueDetails() {
                 <Tag color="green">{record.status?.toUpperCase() || 'COMPLETED'}</Tag>
               </Descriptions.Item>
               <Descriptions.Item label="Date & Time">
-                <Text style={{ color: '#FFFFFF' }}>
-                  {dayjs(record.receivedAt).format('DD MMM YYYY, hh:mm A')}
-                </Text>
+                {dayjs(record.receivedAt).format('DD MMM YYYY, hh:mm A')}
               </Descriptions.Item>
               {record.notes && (
                 <Descriptions.Item label="Notes">
-                  <Text style={{ color: '#CCCCCC', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
-                    {record.notes}
-                  </Text>
+                  <Text style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{record.notes}</Text>
                 </Descriptions.Item>
               )}
             </Descriptions>
@@ -574,34 +396,12 @@ export default function RevenueDetails() {
         return (
           <Popover
             content={popoverContent}
-            title={
-              <span style={{ color: '#FFFFFF', fontWeight: 600 }}>
-                Transaction Details
-              </span>
-            }
+            title="Transaction Details"
             overlayStyle={{ maxWidth: '450px' }}
-            overlayInnerStyle={{ 
-              background: '#2A2A2A', 
-              border: '1px solid #3A3A3A',
-              borderRadius: '8px',
-            }}
             trigger="hover"
             placement="left"
           >
-            <InfoCircleOutlined 
-              style={{ 
-                color: '#1A8FE3', 
-                fontSize: '18px', 
-                cursor: 'pointer',
-                transition: 'color 0.2s',
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.color = '#4A9EFF';
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.color = '#1A8FE3';
-              }}
-            />
+            <InfoCircleOutlined style={{ color: '#1890ff', fontSize: '18px', cursor: 'pointer' }} />
           </Popover>
         );
       },
@@ -616,70 +416,7 @@ export default function RevenueDetails() {
 
   return (
     <>
-      <style>{`
-        .date-header-row {
-          background: #1A1A1A !important;
-        }
-        .date-header-row:hover {
-          background: #1A1A1A !important;
-        }
-        .date-header-row td {
-          border-bottom: 1px solid #3A3A3A !important;
-          padding: 12px 16px !important;
-        }
-        /* Override medical-container padding for revenue page */
-        body:has(.revenue-details-wrapper) .medical-container {
-          padding: 0 !important;
-          display: block !important;
-          align-items: unset !important;
-          justify-content: unset !important;
-          background: transparent !important;
-          min-height: 100vh !important;
-        }
-        .dark-select-dropdown .ant-select-dropdown {
-          background: #2A2A2A !important;
-        }
-        .dark-select-dropdown .ant-select-item {
-          color: #FFFFFF !important;
-        }
-        .dark-select-dropdown .ant-select-item:hover {
-          background: #3A3A3A !important;
-        }
-        .dark-select-dropdown .ant-select-item-selected {
-          background: #3A3A3A !important;
-        }
-        .ant-table {
-          background: #2A2A2A !important;
-        }
-        .ant-table-thead > tr > th {
-          background: #2A2A2A !important;
-          border-bottom: 1px solid #3A3A3A !important;
-        }
-        .ant-table-tbody > tr > td {
-          background: #2A2A2A !important;
-          border-bottom: 1px solid #3A3A3A !important;
-        }
-        .ant-table-tbody > tr:hover > td {
-          background: #3A3A3A !important;
-        }
-        .ant-pagination {
-          color: #CCCCCC !important;
-        }
-        .ant-pagination-item {
-          background: #2A2A2A !important;
-          border-color: #3A3A3A !important;
-        }
-        .ant-pagination-item a {
-          color: #CCCCCC !important;
-        }
-        .ant-pagination-item-active {
-          background: #3A3A3A !important;
-        }
-        .ant-pagination-item-active a {
-          color: #FFFFFF !important;
-        }
-      `}</style>
-    <Layout className="revenue-details-wrapper" style={{ minHeight: '100vh', background: '#1A1A1A' }}>
+    <Layout className="revenue-details-wrapper" style={{ minHeight: '100vh', background: '#F5F7FF' }}>
       {/* Desktop/Tablet Sidebar */}
       {!isMobile && (
         <Sider
@@ -697,7 +434,7 @@ export default function RevenueDetails() {
             borderRight: '1px solid #E5E7EB',
           }}
         >
-          <SidebarContent />
+          <HospitalSidebar selectedMenuKey="revenue" />
         </Sider>
       )}
 
@@ -711,7 +448,7 @@ export default function RevenueDetails() {
           styles={{ body: { padding: 0 } }}
           width={260}
         >
-          <SidebarContent onMenuClick={() => setMobileDrawerOpen(false)} />
+          <HospitalSidebar selectedMenuKey="revenue" onMenuClick={() => setMobileDrawerOpen(false)} />
         </Drawer>
       )}
 
@@ -719,7 +456,7 @@ export default function RevenueDetails() {
         style={{
           marginLeft: siderWidth,
           minHeight: '100vh',
-          background: '#1A1A1A', // Dark background
+          background: '#F5F7FF',
           display: 'flex',
           flexDirection: 'column',
           height: '100vh',
@@ -752,7 +489,7 @@ export default function RevenueDetails() {
 
         <Content
           style={{
-            background: '#1A1A1A', // Dark background
+            background: '#F5F7FF',
             flex: 1,
             overflowY: 'auto',
             overflowX: 'hidden',
@@ -789,256 +526,209 @@ export default function RevenueDetails() {
 
         {/* Header */}
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
-              <Title level={2} style={{ margin: 0, color: '#FFFFFF' }}>
+              <Title level={2} style={{ margin: 0, color: '#1890ff' }}>
                 <DollarOutlined style={{ marginRight: 8 }} /> Revenue & Transactions
-          </Title>
-          <Space>
-                <Button 
-                  icon={<ReloadOutlined />} 
-                  onClick={() => { refetchStats(); refetchTransactions(); }}
-                  style={{ background: '#2A2A2A', borderColor: '#3A3A3A', color: '#FFFFFF' }}
-                >
-              Refresh
-            </Button>
-                <Button 
-                  icon={<DownloadOutlined />} 
-                  onClick={handleExport}
-                  style={{ background: '#2A2A2A', borderColor: '#3A3A3A', color: '#FFFFFF' }}
-                >
-              Export
-            </Button>
-          </Space>
-        </div>
+              </Title>
+              <Space>
+                <Button icon={<ReloadOutlined />} onClick={() => { refetchStats(); refetchTransactions(); }}>
+                  Refresh
+                </Button>
+                <Button icon={<DownloadOutlined />} onClick={handleExport} type="primary">
+                  Export
+                </Button>
+              </Space>
+            </div>
 
         {/* Revenue Statistics */}
             <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
-          <Col xs={24} sm={12} md={6}>
-            <Card style={{ background: '#2A2A2A', borderColor: '#3A3A3A' }}>
-              <Statistic
-                title={<span style={{ color: '#CCCCCC' }}>Daily Revenue</span>}
-                value={stats?.daily || 0}
-                prefix="₹"
-                valueStyle={{ color: '#22C55E', fontSize: '24px', fontWeight: 'bold' }}
-                loading={statsLoading}
-              />
-            </Card>
-          </Col>
-          <Col xs={24} sm={12} md={6}>
-            <Card style={{ background: '#2A2A2A', borderColor: '#3A3A3A' }}>
-              <Statistic
-                title={<span style={{ color: '#CCCCCC' }}>Weekly Revenue</span>}
-                value={stats?.weekly || 0}
-                prefix="₹"
-                valueStyle={{ color: '#3B82F6', fontSize: '24px', fontWeight: 'bold' }}
-                loading={statsLoading}
-              />
-            </Card>
-          </Col>
-          <Col xs={24} sm={12} md={6}>
-            <Card style={{ background: '#2A2A2A', borderColor: '#3A3A3A' }}>
-              <Statistic
-                title={<span style={{ color: '#CCCCCC' }}>Monthly Revenue</span>}
-                value={stats?.monthly || 0}
-                prefix="₹"
-                valueStyle={{ color: '#EF4444', fontSize: '24px', fontWeight: 'bold' }}
-                loading={statsLoading}
-              />
-            </Card>
-          </Col>
-          <Col xs={24} sm={12} md={6}>
-            <Card style={{ background: '#2A2A2A', borderColor: '#3A3A3A' }}>
-              <Statistic
-                title={<span style={{ color: '#CCCCCC' }}>Total Revenue</span>}
-                value={stats?.total || 0}
-                prefix="₹"
-                valueStyle={{ color: '#A855F7', fontSize: '24px', fontWeight: 'bold' }}
-                loading={statsLoading}
-              />
-            </Card>
-          </Col>
-        </Row>
+              <Col xs={24} sm={12} md={6}>
+                <Card>
+                  <Statistic
+                    title="Daily Revenue"
+                    value={stats?.daily || 0}
+                    prefix="₹"
+                    valueStyle={{ color: '#52c41a', fontSize: '24px', fontWeight: 'bold' }}
+                    loading={statsLoading}
+                  />
+                </Card>
+              </Col>
+              <Col xs={24} sm={12} md={6}>
+                <Card>
+                  <Statistic
+                    title="Weekly Revenue"
+                    value={stats?.weekly || 0}
+                    prefix="₹"
+                    valueStyle={{ color: '#1890ff', fontSize: '24px', fontWeight: 'bold' }}
+                    loading={statsLoading}
+                  />
+                </Card>
+              </Col>
+              <Col xs={24} sm={12} md={6}>
+                <Card>
+                  <Statistic
+                    title="Monthly Revenue"
+                    value={stats?.monthly || 0}
+                    prefix="₹"
+                    valueStyle={{ color: '#fa8c16', fontSize: '24px', fontWeight: 'bold' }}
+                    loading={statsLoading}
+                  />
+                </Card>
+              </Col>
+              <Col xs={24} sm={12} md={6}>
+                <Card>
+                  <Statistic
+                    title="Total Revenue"
+                    value={stats?.total || 0}
+                    prefix="₹"
+                    valueStyle={{ color: '#722ed1', fontSize: '24px', fontWeight: 'bold' }}
+                    loading={statsLoading}
+                  />
+                </Card>
+              </Col>
+            </Row>
 
         {/* Revenue Breakdown */}
             <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
-          <Col xs={24} md={12}>
-            <Card 
-              title={
-                <span style={{ color: '#FFFFFF' }}>
-                  <FileTextOutlined style={{ marginRight: 8 }} /> Revenue by Source
-                </span>
-              }
-              style={{ background: '#2A2A2A', borderColor: '#3A3A3A' }}
-              headStyle={{ background: '#2A2A2A', borderBottom: '1px solid #3A3A3A' }}
-              bodyStyle={{ background: '#2A2A2A' }}
-            >
-              <Space direction="vertical" style={{ width: '100%' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                  <Text style={{ color: '#CCCCCC' }}>Appointments:</Text>
-                  <Text strong style={{ color: '#FFFFFF' }}>₹{revenueBySource?.appointment?.toFixed(2) || '0.00'}</Text>
-                </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                  <Text style={{ color: '#CCCCCC' }}>IPD:</Text>
-                  <Text strong style={{ color: '#FFFFFF' }}>₹{revenueBySource?.ipd?.toFixed(2) || '0.00'}</Text>
-                </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                  <Text style={{ color: '#CCCCCC' }}>OPD:</Text>
-                  <Text strong style={{ color: '#FFFFFF' }}>₹{revenueBySource?.opd?.toFixed(2) || '0.00'}</Text>
-                </div>
-                {(revenueBySource?.test || 0) > 0 && (
-                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                    <Text style={{ color: '#CCCCCC' }}>Tests:</Text>
-                    <Text strong style={{ color: '#FFFFFF' }}>₹{revenueBySource?.test?.toFixed(2) || '0.00'}</Text>
-                  </div>
-                )}
-                {(revenueBySource?.pharmacy || 0) > 0 && (
-                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                    <Text style={{ color: '#CCCCCC' }}>Pharmacy:</Text>
-                    <Text strong style={{ color: '#FFFFFF' }}>₹{revenueBySource?.pharmacy?.toFixed(2) || '0.00'}</Text>
-                  </div>
-                )}
-                <div style={{ display: 'flex', justifyContent: 'space-between', borderTop: '1px solid #3A3A3A', paddingTop: 8, marginTop: 8 }}>
-                  <Text strong style={{ color: '#FFFFFF' }}>Total:</Text>
-                  <Text strong style={{ fontSize: 16, color: '#FFFFFF' }}>₹{revenueBySource?.total?.toFixed(2) || '0.00'}</Text>
-                </div>
-              </Space>
-            </Card>
-          </Col>
-          <Col xs={24} md={12}>
-            <Card 
-              title={
-                <span style={{ color: '#FFFFFF' }}>
-                  <FileTextOutlined style={{ marginRight: 8 }} /> Revenue by Payment Method
-                </span>
-              }
-              style={{ background: '#2A2A2A', borderColor: '#3A3A3A' }}
-              headStyle={{ background: '#2A2A2A', borderBottom: '1px solid #3A3A3A' }}
-              bodyStyle={{ background: '#2A2A2A' }}
-            >
-              <Space direction="vertical" style={{ width: '100%' }}>
-                {revenueByMethod && Object.entries(revenueByMethod)
-                  .filter(([method, amount]: [string, any]) => method !== 'total' && amount > 0)
-                  .map(([method, amount]: [string, any]) => (
-                    <div key={method} style={{ display: 'flex', justifyContent: 'space-between' }}>
-                      <Text style={{ color: '#CCCCCC' }}>{method.charAt(0).toUpperCase() + method.slice(1)}:</Text>
-                      <Text strong style={{ color: '#FFFFFF' }}>₹{amount.toFixed(2)}</Text>
+              <Col xs={24} md={12}>
+                <Card title={<><FileTextOutlined style={{ marginRight: 8 }} /> Revenue by Source</>}>
+                  <Space direction="vertical" style={{ width: '100%' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <Text type="secondary">Appointments:</Text>
+                      <Text strong>₹{revenueBySource?.appointment?.toFixed(2) || '0.00'}</Text>
                     </div>
-                  ))}
-                {(!revenueByMethod || Object.keys(revenueByMethod).filter(key => key !== 'total').length === 0) && (
-                  <Text style={{ color: '#888888' }}>No payment data available</Text>
-                )}
-                {revenueByMethod && revenueByMethod.total !== undefined && (
-                  <div style={{ display: 'flex', justifyContent: 'space-between', borderTop: '1px solid #3A3A3A', paddingTop: 8, marginTop: 8 }}>
-                    <Text strong style={{ color: '#FFFFFF' }}>Total:</Text>
-                    <Text strong style={{ fontSize: 16, color: '#FFFFFF' }}>₹{revenueByMethod.total.toFixed(2)}</Text>
-                  </div>
-                )}
-              </Space>
-            </Card>
-          </Col>
-        </Row>
+                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <Text type="secondary">IPD:</Text>
+                      <Text strong>₹{revenueBySource?.ipd?.toFixed(2) || '0.00'}</Text>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <Text type="secondary">OPD:</Text>
+                      <Text strong>₹{revenueBySource?.opd?.toFixed(2) || '0.00'}</Text>
+                    </div>
+                    {(revenueBySource?.test || 0) > 0 && (
+                      <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                        <Text type="secondary">Tests:</Text>
+                        <Text strong>₹{revenueBySource?.test?.toFixed(2) || '0.00'}</Text>
+                      </div>
+                    )}
+                    {(revenueBySource?.pharmacy || 0) > 0 && (
+                      <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                        <Text type="secondary">Pharmacy:</Text>
+                        <Text strong>₹{revenueBySource?.pharmacy?.toFixed(2) || '0.00'}</Text>
+                      </div>
+                    )}
+                    <div style={{ display: 'flex', justifyContent: 'space-between', borderTop: '1px solid #f0f0f0', paddingTop: 8, marginTop: 8 }}>
+                      <Text strong>Total:</Text>
+                      <Text strong style={{ fontSize: 16 }}>₹{revenueBySource?.total?.toFixed(2) || '0.00'}</Text>
+                    </div>
+                  </Space>
+                </Card>
+              </Col>
+              <Col xs={24} md={12}>
+                <Card title={<><FileTextOutlined style={{ marginRight: 8 }} /> Revenue by Payment Method</>}>
+                  <Space direction="vertical" style={{ width: '100%' }}>
+                    {revenueByMethod && Object.entries(revenueByMethod)
+                      .filter(([method, amount]: [string, any]) => method !== 'total' && amount > 0)
+                      .map(([method, amount]: [string, any]) => (
+                        <div key={method} style={{ display: 'flex', justifyContent: 'space-between' }}>
+                          <Text type="secondary">{method.charAt(0).toUpperCase() + method.slice(1)}:</Text>
+                          <Text strong>₹{amount.toFixed(2)}</Text>
+                        </div>
+                      ))}
+                    {(!revenueByMethod || Object.keys(revenueByMethod).filter(key => key !== 'total').length === 0) && (
+                      <Text type="secondary">No payment data available</Text>
+                    )}
+                    {revenueByMethod && revenueByMethod.total !== undefined && (
+                      <div style={{ display: 'flex', justifyContent: 'space-between', borderTop: '1px solid #f0f0f0', paddingTop: 8, marginTop: 8 }}>
+                        <Text strong>Total:</Text>
+                        <Text strong style={{ fontSize: 16 }}>₹{revenueByMethod.total.toFixed(2)}</Text>
+                      </div>
+                    )}
+                  </Space>
+                </Card>
+              </Col>
+            </Row>
 
         {/* Filters */}
-            <Card 
-              style={{ background: '#2A2A2A', borderColor: '#3A3A3A', marginBottom: 24 }}
-              bodyStyle={{ background: '#2A2A2A' }}
-            >
-          <Row gutter={[16, 16]}>
-            <Col xs={24} sm={12} md={6}>
-              <Text strong style={{ color: '#FFFFFF' }}>Date Range:</Text>
-              <RangePicker
-                style={{ width: '100%', marginTop: 8 }}
-                value={dateRange as any}
-                onChange={(dates) => setDateRange(dates as any)}
-                format="DD/MM/YYYY"
-                popupStyle={{ background: '#2A2A2A' }}
-              />
-            </Col>
-            <Col xs={24} sm={12} md={6}>
-              <Text strong style={{ color: '#FFFFFF' }}>Payment Method:</Text>
-              <Select
-                style={{ width: '100%', marginTop: 8 }}
-                value={paymentMethodFilter}
-                onChange={setPaymentMethodFilter}
-                popupClassName="dark-select-dropdown"
-              >
-                <Option value="all">All Methods</Option>
-                <Option value="online">Online</Option>
-                <Option value="cash">Cash</Option>
-                <Option value="card">Card</Option>
-                <Option value="upi">UPI</Option>
-                <Option value="gpay">Google Pay</Option>
-                <Option value="phonepe">PhonePe</Option>
-                <Option value="cheque">Cheque</Option>
-              </Select>
-            </Col>
-            <Col xs={24} sm={12} md={6}>
-              <Text strong style={{ color: '#FFFFFF' }}>Source:</Text>
-              <Select
-                style={{ width: '100%', marginTop: 8 }}
-                value={sourceFilter}
-                onChange={setSourceFilter}
-                popupClassName="dark-select-dropdown"
-              >
-                <Option value="all">All Sources</Option>
-                <Option value="appointment">Appointments</Option>
-                <Option value="ipd">IPD</Option>
-                <Option value="opd">OPD</Option>
-                <Option value="test">Tests</Option>
-                <Option value="pharmacy">Pharmacy</Option>
-              </Select>
-            </Col>
-            <Col xs={24} sm={12} md={6}>
-              <Text strong style={{ color: '#FFFFFF' }}>Search:</Text>
-              <Input
-                style={{ marginTop: 8, background: '#1A1A1A', borderColor: '#3A3A3A', color: '#FFFFFF' }}
-                placeholder="Invoice, Transaction ID, Notes..."
-                value={searchText}
-                onChange={(e) => setSearchText(e.target.value)}
-                allowClear
-              />
-            </Col>
-          </Row>
-        </Card>
+            <Card style={{ marginBottom: 24 }}>
+              <Row gutter={[16, 16]}>
+                <Col xs={24} sm={12} md={6}>
+                  <Text strong>Date Range:</Text>
+                  <RangePicker
+                    style={{ width: '100%', marginTop: 8 }}
+                    value={dateRange as any}
+                    onChange={(dates) => setDateRange(dates as any)}
+                    format="DD/MM/YYYY"
+                  />
+                </Col>
+                <Col xs={24} sm={12} md={6}>
+                  <Text strong>Payment Method:</Text>
+                  <Select
+                    style={{ width: '100%', marginTop: 8 }}
+                    value={paymentMethodFilter}
+                    onChange={setPaymentMethodFilter}
+                  >
+                    <Option value="all">All Methods</Option>
+                    <Option value="online">Online</Option>
+                    <Option value="cash">Cash</Option>
+                    <Option value="card">Card</Option>
+                    <Option value="upi">UPI</Option>
+                    <Option value="gpay">Google Pay</Option>
+                    <Option value="phonepe">PhonePe</Option>
+                    <Option value="cheque">Cheque</Option>
+                  </Select>
+                </Col>
+                <Col xs={24} sm={12} md={6}>
+                  <Text strong>Source:</Text>
+                  <Select
+                    style={{ width: '100%', marginTop: 8 }}
+                    value={sourceFilter}
+                    onChange={setSourceFilter}
+                  >
+                    <Option value="all">All Sources</Option>
+                    <Option value="appointment">Appointments</Option>
+                    <Option value="ipd">IPD</Option>
+                    <Option value="opd">OPD</Option>
+                    <Option value="test">Tests</Option>
+                    <Option value="pharmacy">Pharmacy</Option>
+                  </Select>
+                </Col>
+                <Col xs={24} sm={12} md={6}>
+                  <Text strong>Search:</Text>
+                  <Input
+                    style={{ marginTop: 8 }}
+                    placeholder="Invoice, Transaction ID, Notes..."
+                    value={searchText}
+                    onChange={(e) => setSearchText(e.target.value)}
+                    allowClear
+                  />
+                </Col>
+              </Row>
+            </Card>
 
         {/* Transactions Table */}
-            <Card 
-              title={
-                <span style={{ color: '#FFFFFF' }}>
-                  <CalendarOutlined style={{ marginRight: 8 }} /> All Transactions
-                </span>
-              }
-              style={{ background: '#2A2A2A', borderColor: '#3A3A3A' }}
-              headStyle={{ background: '#2A2A2A', borderBottom: '1px solid #3A3A3A' }}
-              bodyStyle={{ background: '#2A2A2A' }}
-            >
-          <Tabs
-            activeKey={activeTransactionTab}
-            onChange={setActiveTransactionTab}
-            items={transactionTabs.map(tab => ({
-              key: tab.key,
-              label: tab.label,
-            }))}
-            style={{ marginBottom: 16 }}
-            tabBarStyle={{ 
-              background: '#2A2A2A',
-              borderBottom: '1px solid #3A3A3A',
-              marginBottom: 0
-            }}
-          />
-          <Table
-            columns={columns}
-            dataSource={transactionsToShow}
-            loading={transactionsLoading}
-            rowKey="id"
-            pagination={{
-              pageSize: 50,
-              showSizeChanger: true,
-                  showTotal: (total) => <span style={{ color: '#CCCCCC' }}>Total {total} transactions</span>,
-            }}
-            scroll={{ x: 1200 }}
-                style={{ background: '#2A2A2A' }}
-          />
-        </Card>
+            <Card title={<><CalendarOutlined style={{ marginRight: 8 }} /> All Transactions</>}>
+              <Tabs
+                activeKey={activeTransactionTab}
+                onChange={setActiveTransactionTab}
+                items={transactionTabs.map(tab => ({
+                  key: tab.key,
+                  label: tab.label,
+                }))}
+                style={{ marginBottom: 16 }}
+              />
+              <Table
+                columns={columns}
+                dataSource={transactionsToShow}
+                loading={transactionsLoading}
+                rowKey="id"
+                pagination={{
+                  pageSize: 50,
+                  showSizeChanger: true,
+                  showTotal: (total) => `Total ${total} transactions`,
+                }}
+                scroll={{ x: 1200 }}
+              />
+            </Card>
     </div>
         </Content>
       </Layout>
@@ -1046,3 +736,4 @@ export default function RevenueDetails() {
     </>
   );
 }
+

@@ -78,18 +78,18 @@ export const getPendingPrescriptions = async (hospitalId: number) => {
             id: p.patient.id,
             fullName: p.patientUser?.fullName || null,
             userId: p.patient.userId,
-            gender: p.patientUser?.gender || p.patient.gender,
-            dateOfBirth: p.patientUser?.dateOfBirth || p.patient.dateOfBirth,
+            gender: (p.patientUser as Record<string, unknown>)?.gender as string | undefined || p.patient.gender,
+            dateOfBirth: (p.patientUser as Record<string, unknown>)?.dateOfBirth as Date | undefined || p.patient.dateOfBirth,
             mobileNumber: p.patientUser?.mobileNumber,
-            address: p.patientUser?.address,
+            address: (p.patientUser as Record<string, unknown>)?.address as string | undefined ?? p.patient.address,
             weight: p.patient.weight,
             height: p.patient.height,
             user: p.patientUser ? {
               fullName: p.patientUser.fullName,
-              gender: p.patientUser.gender,
-              dateOfBirth: p.patientUser.dateOfBirth,
+              gender: (p.patientUser as Record<string, unknown>).gender as string | undefined,
+              dateOfBirth: (p.patientUser as Record<string, unknown>).dateOfBirth as Date | undefined,
               mobileNumber: p.patientUser.mobileNumber,
-              address: p.patientUser.address,
+              address: (p.patientUser as Record<string, unknown>).address as string | undefined,
             } : null,
           } : null,
           doctor: p.doctor && doctorUser ? {
@@ -248,11 +248,11 @@ export const getDispensations = async (hospitalId: number, filters?: {
       .where(eq(dispensations.hospitalId, hospitalId));
 
     if (filters?.patientId) {
-      query = query.where(eq(dispensations.patientId, filters.patientId));
+      query = (query as any).where(eq(dispensations.patientId, filters.patientId));
     }
 
     if (filters?.status) {
-      query = query.where(eq(dispensations.status, filters.status));
+      query = (query as any).where(eq(dispensations.status, filters.status));
     }
 
     const results = await query.orderBy(desc(dispensations.createdAt));

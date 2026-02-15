@@ -99,7 +99,7 @@ export async function generateStandardId(
         ORDER BY ${idColumn} DESC
         LIMIT 100
       `));
-      existingIds = Array.isArray(result) ? result : (result.rows || []);
+      existingIds = Array.isArray(result) ? result : ((result as { rows?: unknown[] }).rows || []);
     } else {
       const result = await db.execute(sql.raw(`
         SELECT ${idColumn} 
@@ -108,7 +108,7 @@ export async function generateStandardId(
         ORDER BY ${idColumn} DESC
         LIMIT 100
       `));
-      existingIds = Array.isArray(result) ? result : (result.rows || []);
+      existingIds = Array.isArray(result) ? result : ((result as { rows?: unknown[] }).rows || []);
     }
   } catch (error: any) {
     // If column doesn't exist yet or table doesn't exist, start with sequence 1

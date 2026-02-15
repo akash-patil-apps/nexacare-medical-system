@@ -19,14 +19,9 @@ router.get('/', async (req: AuthenticatedRequest, res) => {
   try {
     const { search, category, subCategory, limit = 200 } = req.query;
 
-    let query = db
-      .select()
-      .from(labTestCatalog)
-      .where(eq(labTestCatalog.isActive, true));
-
-    // Apply search filter
+    const conditions = [eq(labTestCatalog.isActive, true)];
     if (search && typeof search === 'string') {
-      query = query.where(
+      conditions.push(
         or(
           ilike(labTestCatalog.name, `%${search}%`),
           ilike(labTestCatalog.code, `%${search}%`),
@@ -34,20 +29,18 @@ router.get('/', async (req: AuthenticatedRequest, res) => {
         )!
       );
     }
-
-    // Apply category filter
     if (category && typeof category === 'string') {
-      query = query.where(eq(labTestCatalog.category, category));
+      conditions.push(eq(labTestCatalog.category, category));
     }
-
-    // Apply subCategory filter
     if (subCategory && typeof subCategory === 'string') {
-      query = query.where(eq(labTestCatalog.subCategory, subCategory));
+      conditions.push(eq(labTestCatalog.subCategory, subCategory));
     }
-
-    const tests = await query
-      .limit(+(limit as number))
-      .orderBy(labTestCatalog.name);
+    const tests = await db
+      .select()
+      .from(labTestCatalog)
+      .where(and(...conditions))
+      .orderBy(labTestCatalog.name)
+      .limit(+(limit as number));
 
     res.json(tests);
   } catch (err: any) {

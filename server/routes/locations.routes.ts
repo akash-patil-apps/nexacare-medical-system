@@ -1,15 +1,15 @@
 import { Router } from 'express';
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
-import { eq, and, ilike, sql } from "drizzle-orm";
+import { eq, and, ilike, sql, count } from "drizzle-orm";
 import { cities, states } from "../../shared/schema";
 
 const router = Router();
 
 // Create database connection
 const connectionString = process.env.DATABASE_URL!;
-const sql = postgres(connectionString);
-const db = drizzle(sql);
+const pgClient = postgres(connectionString);
+const db = drizzle(pgClient);
 
 // Get all states
 router.get('/states', async (req, res) => {
@@ -130,7 +130,11 @@ router.get('/cities/search', async (req, res) => {
       });
     }
     
-    let query = db
+    const nameMatch = ilike(cities.name, `%${q}%`);
+    const whereClause = stateId && !isNaN(Number(stateId))
+      ? and(nameMatch, eq(cities.stateId, Number(stateId)))
+      : nameMatch;
+    const searchResults = await db
       .select({
         id: cities.id,
         name: cities.name,
@@ -141,21 +145,9 @@ router.get('/cities/search', async (req, res) => {
       })
       .from(cities)
       .innerJoin(states, eq(cities.stateId, states.id))
-      .where(ilike(cities.name, `%${q}%`))
+      .where(whereClause)
       .orderBy(cities.name)
       .limit(50);
-    
-    // Filter by state if provided
-    if (stateId && !isNaN(Number(stateId))) {
-      query = query.where(
-        and(
-          ilike(cities.name, `%${q}%`),
-          eq(cities.stateId, Number(stateId))
-        )
-      );
-    }
-    
-    const searchResults = await query;
     
     res.json({
       success: true,
@@ -183,7 +175,8 @@ router.get('/cities', async (req, res) => {
     const offset = (pageNum - 1) * limitNum;
     
     
-    let query = db
+    const stateFilter = stateId && !isNaN(Number(stateId)) ? eq(cities.stateId, Number(stateId)) : undefined;
+    const citiesData = await db
       .select({
         id: cities.id,
         name: cities.name,
@@ -194,27 +187,15 @@ router.get('/cities', async (req, res) => {
       })
       .from(cities)
       .innerJoin(states, eq(cities.stateId, states.id))
+      .where(stateFilter ?? sql`true`)
       .orderBy(cities.name)
       .limit(limitNum)
       .offset(offset);
     
-    // Filter by state if provided
-    if (stateId && !isNaN(Number(stateId))) {
-      query = query.where(eq(cities.stateId, Number(stateId)));
-    }
-    
-    const citiesData = await query;
-    
-    // Get total count
-    let countQuery = db
-      .select({ count: sql`count(*)` })
-      .from(cities);
-    
-    if (stateId && !isNaN(Number(stateId))) {
-      countQuery = countQuery.where(eq(cities.stateId, Number(stateId)));
-    }
-    
-    const [{ count: totalCount }] = await countQuery;
+    const [{ count: totalCount }] = await db
+      .select({ count: count() })
+      .from(cities)
+      .where(stateFilter ?? sql`true`);
     
     res.json({
       success: true,
@@ -222,7 +203,7 @@ router.get('/cities', async (req, res) => {
       pagination: {
         page: pageNum,
         limit: limitNum,
-        total: Number(totalCount),
+        total: totalCount,
         pages: Math.ceil(Number(totalCount) / limitNum)
       }
     });

@@ -50,22 +50,11 @@ export const getOpdReport = async (filters: {
     conditions.push(eq(appointments.doctorId, doctorId));
   }
 
-  query = query.where(and(...conditions)) as any;
+  query = (query as any).where(and(...conditions));
 
   const allAppointments = await query.orderBy(desc(appointments.appointmentDate));
 
   // Calculate statistics
-  const stats = {
-    total: allAppointments.length,
-    pending: allAppointments.filter((a: any) => a.status === 'pending').length,
-    confirmed: allAppointments.filter((a: any) => a.status === 'confirmed').length,
-    checkedIn: allAppointments.filter((a: any) => a.status === 'checked-in' || a.status === 'attended').length,
-    completed: allAppointments.filter((a: any) => a.status === 'completed').length,
-    cancelled: allAppointments.filter((a: any) => a.status === 'cancelled').length,
-    walkIn: allAppointments.filter((a: any) => a.type === 'walk-in').length,
-    online: allAppointments.filter((a: any) => a.type === 'online' || a.type === 'consultation').length,
-  };
-
   // No-show calculation (confirmed but never checked in and appointment time passed)
   const now = new Date();
   const noShows = allAppointments.filter((a: any) => {
@@ -77,7 +66,17 @@ export const getOpdReport = async (filters: {
     return isConfirmed && neverCheckedIn && isPast;
   });
 
-  stats.noShow = noShows.length;
+  const stats = {
+    total: allAppointments.length,
+    pending: allAppointments.filter((a: any) => a.status === 'pending').length,
+    confirmed: allAppointments.filter((a: any) => a.status === 'confirmed').length,
+    checkedIn: allAppointments.filter((a: any) => a.status === 'checked-in' || a.status === 'attended').length,
+    completed: allAppointments.filter((a: any) => a.status === 'completed').length,
+    cancelled: allAppointments.filter((a: any) => a.status === 'cancelled').length,
+    walkIn: allAppointments.filter((a: any) => a.type === 'walk-in').length,
+    online: allAppointments.filter((a: any) => a.type === 'online' || a.type === 'consultation').length,
+    noShow: noShows.length,
+  };
 
   // Doctor-wise load
   const doctorLoad: Record<number, number> = {};
@@ -118,7 +117,7 @@ export const getLabReport = async (filters: {
     conditions.push(lte(sql`DATE(${labOrders.createdAt})`, dateTo));
   }
 
-  query = query.where(and(...conditions)) as any;
+  query = (query as any).where(and(...conditions));
 
   const allOrders = await query.orderBy(desc(labOrders.createdAt));
 
@@ -209,7 +208,7 @@ export const getFinanceReport = async (filters: {
     conditions.push(lte(sql`DATE(${invoices.createdAt})`, dateTo));
   }
 
-  query = query.where(and(...conditions)) as any;
+  query = (query as any).where(and(...conditions));
 
   const allInvoices = await query.orderBy(desc(invoices.createdAt));
 
@@ -310,7 +309,7 @@ export const getIpdCensusReport = async (filters: {
 
   // Get bed allocations for active encounters
   const encounterIds = activeOnDate.map((e: any) => e.id);
-  const bedAllocations = encounterIds.length > 0
+  const allocationsList = encounterIds.length > 0
     ? await db
         .select()
         .from(bedAllocations)
@@ -319,7 +318,7 @@ export const getIpdCensusReport = async (filters: {
 
   // Group by ward/category (we'll need to join with beds/wards)
   const bedOccupancy: Record<string, number> = {};
-  bedAllocations.forEach((alloc: any) => {
+  allocationsList.forEach((alloc: any) => {
     // This would need to join with beds/wards to get category
     // For now, just count by bed
     bedOccupancy[alloc.bedId] = (bedOccupancy[alloc.bedId] || 0) + 1;

@@ -3,7 +3,7 @@ import * as ipdService from '../services/ipd.service';
 import { authenticateToken, authorizeRoles, type AuthenticatedRequest } from '../middleware/auth';
 import { db } from '../db';
 import { eq } from 'drizzle-orm';
-import { receptionists, hospitals, doctors, nurses, rooms, beds } from '../../shared/schema';
+import { receptionists, hospitals, doctors, nurses, rooms, beds, ipdEncounters } from '../../shared/schema';
 import { logAuditEvent } from '../services/audit.service';
 
 const router = Router();

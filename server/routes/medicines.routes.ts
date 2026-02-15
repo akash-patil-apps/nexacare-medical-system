@@ -66,11 +66,11 @@ router.get('/stats', async (req: AuthenticatedRequest, res) => {
     // Get medicine counts from prescriptions
     const prescriptionStats = await db
       .select({
-        medicationName: prescriptions.medicationName,
+        medicationName: prescriptions.medications,
         count: sql<number>`COUNT(*)`,
       })
       .from(prescriptions)
-      .groupBy(prescriptions.medicationName)
+      .groupBy(prescriptions.medications)
       .orderBy(desc(sql`COUNT(*)`))
       .limit(20);
 

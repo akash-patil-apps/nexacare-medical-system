@@ -113,21 +113,24 @@ export class PaymentGatewayService {
 
       console.log(`\n💳 Razorpay Order Created:`);
       console.log(`🆔 Order ID: ${razorpayOrder.id}`);
-      console.log(`💰 Amount: ₹${(razorpayOrder.amount / 100).toFixed(2)}`);
+      console.log(`💰 Amount: ₹${(Number(razorpayOrder.amount) / 100).toFixed(2)}`);
       console.log(`📋 Receipt: ${razorpayOrder.receipt}`);
       console.log(`⏰ Created: ${new Date().toLocaleString()}\n`);
 
+      const notes = razorpayOrder.notes && typeof razorpayOrder.notes === 'object'
+          ? Object.fromEntries(Object.entries(razorpayOrder.notes).map(([k, v]) => [k, String(v)]))
+          : {};
       return {
         id: razorpayOrder.id,
         entity: razorpayOrder.entity,
-        amount: razorpayOrder.amount,
+        amount: Number(razorpayOrder.amount),
         amount_paid: razorpayOrder.amount_paid,
         amount_due: razorpayOrder.amount_due,
         currency: razorpayOrder.currency,
         receipt: razorpayOrder.receipt,
         status: razorpayOrder.status as any,
         attempts: razorpayOrder.attempts,
-        notes: razorpayOrder.notes || {},
+        notes,
         created_at: razorpayOrder.created_at,
       };
     } catch (error: any) {
@@ -304,17 +307,20 @@ export class PaymentGatewayService {
 
       const razorpayOrder = await razorpay.orders.fetch(orderId);
 
+      const notes = razorpayOrder.notes && typeof razorpayOrder.notes === 'object'
+          ? Object.fromEntries(Object.entries(razorpayOrder.notes).map(([k, v]) => [k, String(v)]))
+          : {};
       return {
         id: razorpayOrder.id,
         entity: razorpayOrder.entity,
-        amount: razorpayOrder.amount,
+        amount: Number(razorpayOrder.amount),
         amount_paid: razorpayOrder.amount_paid,
         amount_due: razorpayOrder.amount_due,
         currency: razorpayOrder.currency,
         receipt: razorpayOrder.receipt,
         status: razorpayOrder.status as any,
         attempts: razorpayOrder.attempts,
-        notes: razorpayOrder.notes || {},
+        notes,
         created_at: razorpayOrder.created_at,
       };
     } catch (error: any) {

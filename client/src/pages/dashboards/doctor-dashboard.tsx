@@ -985,6 +985,8 @@ export default function DoctorDashboard() {
   const handleMenuClick = (e: { key: string }) => {
     if (e.key === 'prescriptions') {
       handleOpenPrescriptionModal();
+    } else if (e.key === 'appointments') {
+      setLocation('/dashboard/doctor/appointments');
     } else {
       setSelectedMenuKey(e.key);
     }
@@ -1493,24 +1495,6 @@ export default function DoctorDashboard() {
         
         <Button
           type="text"
-          icon={<TeamOutlined style={{ fontSize: '20px', color: selectedMenuKey === 'patients' ? '#1A8FE3' : '#6B7280' }} />}
-          style={{
-            width: '48px',
-            height: '48px',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            background: selectedMenuKey === 'patients' ? '#E3F2FF' : 'transparent',
-            borderRadius: '8px',
-          }}
-          onClick={() => {
-            handleMenuClick({ key: 'patients' } as any);
-            onMenuClick?.();
-          }}
-        />
-        
-        <Button
-          type="text"
           icon={<MedicineBoxOutlined style={{ fontSize: '20px', color: selectedMenuKey === 'prescriptions' ? '#1A8FE3' : '#6B7280' }} />}
           style={{
             width: '48px',
@@ -1523,24 +1507,6 @@ export default function DoctorDashboard() {
           }}
           onClick={() => {
             handleMenuClick({ key: 'prescriptions' } as any);
-            onMenuClick?.();
-          }}
-        />
-        
-        <Button
-          type="text"
-          icon={<FileTextOutlined style={{ fontSize: '20px', color: selectedMenuKey === 'reports' ? '#1A8FE3' : '#6B7280' }} />}
-          style={{
-            width: '48px',
-            height: '48px',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            background: selectedMenuKey === 'reports' ? '#E3F2FF' : 'transparent',
-            borderRadius: '8px',
-          }}
-          onClick={() => {
-            handleMenuClick({ key: 'reports' } as any);
             onMenuClick?.();
           }}
         />

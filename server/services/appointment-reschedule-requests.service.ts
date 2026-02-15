@@ -437,9 +437,10 @@ export const rejectRescheduleRequest = async (data: {
 
   // Best-effort audit log for reschedule request rejection
   try {
+    const [apt] = await db.select().from(appointments).where(eq(appointments.id, rescheduleRequest.appointmentId)).limit(1);
     await logAuditEvent({
-      hospitalId: appointment.hospitalId || undefined,
-      patientId: appointment.patientId || undefined,
+      hospitalId: apt?.hospitalId || undefined,
+      patientId: apt?.patientId || undefined,
       actorUserId: reviewedByUserId,
       actorRole: actorRole || 'RECEPTIONIST',
       action: 'RESCHEDULE_REQUEST_REJECTED',

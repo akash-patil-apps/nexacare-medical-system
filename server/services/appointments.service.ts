@@ -2,7 +2,7 @@
 import { db } from '../db';
 import { retryDbOperation } from '../utils/db-retry';
 import { appointments, patients, doctors, hospitals, users, receptionists, invoices } from '../../shared/schema';
-import { eq, and, desc, ne } from 'drizzle-orm';
+import { eq, and, desc, ne, gte, lte } from 'drizzle-orm';
 import { sql } from 'drizzle-orm';
 import type { InsertAppointment } from '../../shared/schema';
 import { emitAppointmentChanged } from '../events/appointments.events';
@@ -99,7 +99,7 @@ export const bookAppointment = async (
         appointmentDateValue = data.appointmentDate;
       } else if (typeof data.appointmentDate === 'string') {
         // Handle different date string formats
-        const dateStr = data.appointmentDate.trim();
+        const dateStr = (data.appointmentDate as string).trim();
         // If it's just a date (YYYY-MM-DD), add time to make it a valid Date
         if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
           appointmentDateValue = new Date(dateStr + 'T00:00:00');
@@ -120,7 +120,7 @@ export const bookAppointment = async (
 
       // Assign stable token_identifier at book time (all bookings: online and walk-in)
       const slotKey = getSlotKeyFromAppointment(data.appointmentTime, data.timeSlot);
-      const nextSeq = await getNextSeqForSlot(tx, data.doctorId, appointmentDayStr, slotKey);
+      const nextSeq = await getNextSeqForSlot(tx as any, data.doctorId, appointmentDayStr, slotKey);
       const tokenIdentifier = formatTokenIdentifier(slotKey, nextSeq);
 
       const appointmentValues: any = {
@@ -384,8 +384,8 @@ export const getAppointmentsByDoctor = async (doctorId: number) => {
       .where(
         and(
           eq(appointments.doctorId, doctorId),
-          // Doctor should see active/checked/completed states
-          sql`${appointments.status} IN ('confirmed', 'checked-in', 'in_consultation', 'attended', 'checked', 'completed', 'cancelled')`
+          // Doctor should see all states including pending
+          sql`${appointments.status} IN ('pending', 'confirmed', 'checked-in', 'in_consultation', 'attended', 'checked', 'completed', 'cancelled')`
         )
       )
       .orderBy(desc(appointments.appointmentDate));
@@ -395,12 +395,17 @@ export const getAppointmentsByDoctor = async (doctorId: number) => {
     // Now enrich with patient names, hospital names, and doctor names
     const enrichedAppointments = await Promise.all(
       appointmentsData.map(async (apt) => {
-        // Get patient name, phone, DOB, blood group
+        // Get patient name, phone, DOB, blood group, gender, weight, height, age-at-reference
         const [patient] = await db
           .select({ 
             userId: patients.userId,
             dateOfBirth: patients.dateOfBirth,
             bloodGroup: patients.bloodGroup,
+            gender: patients.gender,
+            weight: patients.weight,
+            height: patients.height,
+            ageAtReference: patients.ageAtReference,
+            ageReferenceDate: patients.ageReferenceDate,
           })
           .from(patients)
           .where(eq(patients.id, apt.patientId))
@@ -409,11 +414,32 @@ export const getAppointmentsByDoctor = async (doctorId: number) => {
         let patientName = 'Unknown Patient';
         let patientDateOfBirth = null;
         let patientBloodGroup: string | null = null;
+        let patientGender: string | null = null;
+        let patientWeight: string | null = null;
+        let patientHeight: string | null = null;
         let patientPhone: string | null = null;
+        let patientAge: number | null = null;
         
         if (patient && patient.userId) {
           patientDateOfBirth = patient.dateOfBirth;
           patientBloodGroup = patient.bloodGroup ?? null;
+          patientGender = patient.gender ?? null;
+          patientWeight = patient.weight ?? null;
+          patientHeight = patient.height ?? null;
+          // Compute age: from DOB, or from age_at_reference + years since age_reference_date
+          const now = new Date();
+          if (patient.dateOfBirth) {
+            const dob = new Date(patient.dateOfBirth);
+            if (!isNaN(dob.getTime())) {
+              patientAge = Math.floor((now.getTime() - dob.getTime()) / (365.25 * 24 * 60 * 60 * 1000));
+            }
+          } else if (patient.ageAtReference != null && patient.ageReferenceDate) {
+            const refDate = new Date(patient.ageReferenceDate);
+            if (!isNaN(refDate.getTime())) {
+              const yearsSinceRef = (now.getTime() - refDate.getTime()) / (365.25 * 24 * 60 * 60 * 1000);
+              patientAge = patient.ageAtReference + Math.floor(yearsSinceRef);
+            }
+          }
           const [patientUser] = await db
             .select({ fullName: users.fullName, mobileNumber: users.mobileNumber })
             .from(users)
@@ -461,7 +487,11 @@ export const getAppointmentsByDoctor = async (doctorId: number) => {
           ...apt,
           patientName,
           patientDateOfBirth,
+          patientAge,
           patientBloodGroup,
+          patientGender,
+          patientWeight,
+          patientHeight,
           patientPhone,
           hospitalName,
           doctorName,
@@ -641,12 +671,14 @@ export const getAppointmentsByHospital = async (hospitalId: number) => {
     // Enrich with patient and doctor information
     const enrichedAppointments = await Promise.all(
       appointmentsData.map(async (apt) => {
-        // Get patient info including dateOfBirth, bloodGroup
+        // Get patient info including dateOfBirth, bloodGroup, age-at-reference
         const [patient] = await db
           .select({ 
             userId: patients.userId,
             dateOfBirth: patients.dateOfBirth,
             bloodGroup: patients.bloodGroup,
+            ageAtReference: patients.ageAtReference,
+            ageReferenceDate: patients.ageReferenceDate,
           })
           .from(patients)
           .where(eq(patients.id, apt.patientId))
@@ -656,9 +688,23 @@ export const getAppointmentsByHospital = async (hospitalId: number) => {
         let patientDateOfBirth = null;
         let patientBloodGroup: string | null = null;
         let patientPhone: string | null = null;
+        let patientAge: number | null = null;
         if (patient) {
           patientDateOfBirth = patient.dateOfBirth;
           patientBloodGroup = patient.bloodGroup ?? null;
+          const now = new Date();
+          if (patient.dateOfBirth) {
+            const dob = new Date(patient.dateOfBirth);
+            if (!isNaN(dob.getTime())) {
+              patientAge = Math.floor((now.getTime() - dob.getTime()) / (365.25 * 24 * 60 * 60 * 1000));
+            }
+          } else if (patient.ageAtReference != null && patient.ageReferenceDate) {
+            const refDate = new Date(patient.ageReferenceDate);
+            if (!isNaN(refDate.getTime())) {
+              const yearsSinceRef = (now.getTime() - refDate.getTime()) / (365.25 * 24 * 60 * 60 * 1000);
+              patientAge = patient.ageAtReference + Math.floor(yearsSinceRef);
+            }
+          }
           const [patientUser] = await db
             .select({ fullName: users.fullName, mobileNumber: users.mobileNumber })
             .from(users)
@@ -698,6 +744,7 @@ export const getAppointmentsByHospital = async (hospitalId: number) => {
           ...apt,
           patientName,
           patientDateOfBirth,
+          patientAge,
           patientBloodGroup,
           patientPhone,
           doctorName,
@@ -1363,14 +1410,14 @@ export const checkInAppointment = async (appointmentId: number, receptionistId: 
     let appointmentDateStr: string;
     const rawDate = existing.appointmentDate;
     if (rawDate instanceof Date) appointmentDateStr = rawDate.toISOString().slice(0, 10);
-    else if (typeof rawDate === 'string') appointmentDateStr = rawDate.slice(0, 10);
+    else if (typeof rawDate === 'string') appointmentDateStr = (rawDate as string).slice(0, 10);
     else appointmentDateStr = new Date(rawDate).toISOString().slice(0, 10);
 
     // Backfill token_identifier if missing (e.g. pre-migration appointments)
     let tokenIdentifier = (existing as any).tokenIdentifier;
     if (!tokenIdentifier) {
       const slotKey = getSlotKeyFromAppointment(existing.appointmentTime, existing.timeSlot);
-      const nextSeq = await getNextSeqForSlot(tx, existing.doctorId, appointmentDateStr, slotKey);
+      const nextSeq = await getNextSeqForSlot(tx as any, existing.doctorId, appointmentDateStr, slotKey);
       tokenIdentifier = formatTokenIdentifier(slotKey, nextSeq);
       await tx.update(appointments).set({ tokenIdentifier }).where(eq(appointments.id, appointmentId));
     }
@@ -1487,7 +1534,7 @@ export const rescheduleAppointment = async (
       if (isNaN(appointmentDateValue.getTime())) {
         throw new Error(`Invalid appointment date format: ${appointmentDate}`);
       }
-    } else if (appointmentDate instanceof Date) {
+    } else if ((appointmentDate as unknown) instanceof Date) {
       appointmentDateValue = appointmentDate;
     } else {
       throw new Error(`appointmentDate must be a Date object or valid date string`);
@@ -1511,7 +1558,7 @@ export const rescheduleAppointment = async (
 
     // New slot => new stable token_identifier (never renumber; assign for new slot)
     const newSlotKey = getSlotKeyFromAppointment(appointmentTime, timeSlot);
-    const newSeq = await getNextSeqForSlot(tx, existing.doctorId, newDateStr, newSlotKey);
+    const newSeq = await getNextSeqForSlot(tx as any, existing.doctorId, newDateStr, newSlotKey);
     updateData.tokenIdentifier = formatTokenIdentifier(newSlotKey, newSeq);
 
     // Token handling: if changing day, reset queue-related fields and status
@@ -1653,8 +1700,8 @@ export const getAppointmentsByDateRange = async (startDate: Date, endDate: Date)
       .from(appointments)
       .where(
         and(
-          eq(appointments.appointmentDate, startDate.toISOString().split('T')[0]),
-          eq(appointments.appointmentDate, endDate.toISOString().split('T')[0])
+          gte(appointments.appointmentDate, new Date(startDate.toISOString().split('T')[0])),
+          lte(appointments.appointmentDate, new Date(endDate.toISOString().split('T')[0]))
         )
       )
       .orderBy(desc(appointments.appointmentDate));

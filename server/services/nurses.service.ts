@@ -2,7 +2,7 @@
 import { db } from '../db';
 import { nurses, users, hospitals } from '../../shared/schema';
 import type { InsertNurse } from '../../shared/schema';
-import { eq, like, and } from 'drizzle-orm';
+import { eq, like, and, sql } from 'drizzle-orm';
 
 /**
  * Create a new nurse profile.
@@ -26,7 +26,7 @@ export const getAllNurses = async () => {
   const result = await db
     .select()
     .from(nurses)
-    .where(() => true);
+    .where(sql`true`);
 
   return result;
 };

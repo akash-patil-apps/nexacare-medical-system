@@ -201,9 +201,9 @@ export default function DoctorOnboarding() {
             <Button size="large" onClick={handlePrev} style={{ borderRadius: 12 }}>Previous</Button>
             <Button type="primary" size="large" loading={completeOnboardingMutation.isPending} onClick={handleComplete} style={{ borderRadius: 12, background: '#059669', borderColor: '#059669' }}>Complete Profile</Button>
           </>
-        )}
-      </div>
-    </Form>
+                )}
+              </div>
+            </Form>
   );
 
   return (

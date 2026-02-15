@@ -5,12 +5,12 @@ config();
 import express from "express";
 import cors from "cors";
 import { createServer } from "http";
-import { registerRoutes } from "./routes";
+import { registerRoutes } from "./routes/index.js";
 // NOTE: Do NOT statically import ./vite or ./scheduler here — they pull in
 // vite → rollup which needs a platform-specific native binary that doesn't
 // exist on Vercel's Linux runtime. Use dynamic import() inside start() instead.
-import { errorHandler } from "./middleware/errorHandler";
-import { securityHeaders, rateLimit } from "./middleware/security";
+import { errorHandler } from "./middleware/errorHandler.js";
+import { securityHeaders, rateLimit } from "./middleware/security.js";
 
 const app = express();
 const server = createServer(app);
@@ -61,10 +61,10 @@ app.use(errorHandler);
 const start = async () => {
   // Dynamic imports so vite/rollup native binaries are never loaded on Vercel
   if (process.env.NODE_ENV === "production") {
-    const { serveStatic } = await import("./vite");
+    const { serveStatic } = await import("./vite.js");
     serveStatic(app);
   } else {
-    const { setupVite } = await import("./vite");
+    const { setupVite } = await import("./vite.js");
     await setupVite(app, server);
   }
 
@@ -74,7 +74,7 @@ const start = async () => {
     
     // Start medicine reminder scheduler
     if (process.env.ENABLE_MEDICINE_REMINDERS !== 'false') {
-      import("./scheduler").then(({ startMedicineReminderScheduler }) => {
+      import("./scheduler.js").then(({ startMedicineReminderScheduler }) => {
         startMedicineReminderScheduler();
       });
     } else {

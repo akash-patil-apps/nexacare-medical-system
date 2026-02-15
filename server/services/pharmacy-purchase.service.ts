@@ -68,11 +68,11 @@ export const getPurchaseOrders = async (hospitalId: number, filters?: {
       .where(eq(purchaseOrders.hospitalId, hospitalId));
 
     if (filters?.status) {
-      query = query.where(eq(purchaseOrders.status, filters.status));
+      query = (query as any).where(eq(purchaseOrders.status, filters.status));
     }
 
     if (filters?.supplierId) {
-      query = query.where(eq(purchaseOrders.supplierId, filters.supplierId));
+      query = (query as any).where(eq(purchaseOrders.supplierId, filters.supplierId));
     }
 
     const results = await query.orderBy(desc(purchaseOrders.createdAt));

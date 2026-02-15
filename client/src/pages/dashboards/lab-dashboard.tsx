@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Redirect } from "wouter";
+import { Redirect, useLocation } from "wouter";
 import { 
   Layout, 
   Card, 
@@ -71,38 +71,31 @@ export default function LabDashboard() {
   const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
   const [selectedReport, setSelectedReport] = useState<any>(null);
   const [statusFilter, setStatusFilter] = useState<string>('all');
-  const [selectedMenuKey, setSelectedMenuKey] = useState<string>('dashboard');
-
-  // Redirect if not authenticated
-  if (!isLoading && !user) {
-    return <Redirect to="/login" />;
-  }
-
-  // Redirect if user doesn't have LAB role
-  if (!isLoading && user) {
-    const userRole = user.role?.toUpperCase();
-    if (userRole !== 'LAB') {
-      message.warning('You do not have access to this dashboard');
-      switch (userRole) {
-        case 'PATIENT':
-          return <Redirect to="/dashboard/patient" />;
-        case 'DOCTOR':
-          return <Redirect to="/dashboard/doctor" />;
-        case 'RECEPTIONIST':
-          return <Redirect to="/dashboard/receptionist" />;
-        case 'HOSPITAL':
-          return <Redirect to="/dashboard/hospital" />;
-        case 'NURSE':
-          return <Redirect to="/dashboard/nurse" />;
-        case 'PHARMACIST':
-          return <Redirect to="/dashboard/pharmacist" />;
-        case 'RADIOLOGY_TECHNICIAN':
-          return <Redirect to="/dashboard/radiology-technician" />;
-        default:
-          return <Redirect to="/login" />;
-      }
+  const [location, setLocation] = useLocation();
+  const urlView = useMemo(() => {
+    const search = location.includes('?') ? location.split('?')[1] || '' : '';
+    let view = new URLSearchParams(search).get('view');
+    if (view && ['dashboard', 'pending-orders', 'result-entry', 'report-release'].includes(view)) return view;
+    if (typeof window !== 'undefined') {
+      view = new URLSearchParams(window.location.search).get('view');
+      if (view && ['dashboard', 'pending-orders', 'result-entry', 'report-release'].includes(view)) return view;
     }
-  }
+    return 'dashboard';
+  }, [location]);
+  const [sidebarView, setSidebarView] = useState<string | null>(null);
+  const selectedMenuKey = sidebarView ?? urlView;
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const pathname = window.location.pathname;
+    const search = window.location.search || '';
+    if (!pathname.startsWith('/dashboard/lab')) return;
+    const fullUrl = pathname + search;
+    if (search && fullUrl !== location) setLocation(fullUrl);
+    const view = new URLSearchParams(search).get('view');
+    if (view && ['dashboard', 'pending-orders', 'result-entry', 'report-release'].includes(view)) setSidebarView(view);
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- run once on mount to sync URL
+  }, []);
 
   // Get lab reports from API
   const { data: labReportsData = [], isLoading: labReportsLoading } = useQuery({
@@ -607,6 +600,27 @@ export default function LabDashboard() {
     );
   };
 
+  // Redirect if not authenticated (after all hooks)
+  if (!isLoading && !user) {
+    return <Redirect to="/login" />;
+  }
+  if (!isLoading && user) {
+    const userRole = user.role?.toUpperCase();
+    if (userRole !== 'LAB') {
+      message.warning('You do not have access to this dashboard');
+      switch (userRole) {
+        case 'PATIENT': return <Redirect to="/dashboard/patient" />;
+        case 'DOCTOR': return <Redirect to="/dashboard/doctor" />;
+        case 'RECEPTIONIST': return <Redirect to="/dashboard/receptionist" />;
+        case 'HOSPITAL': return <Redirect to="/dashboard/hospital" />;
+        case 'NURSE': return <Redirect to="/dashboard/nurse" />;
+        case 'PHARMACIST': return <Redirect to="/dashboard/pharmacist" />;
+        case 'RADIOLOGY_TECHNICIAN': return <Redirect to="/dashboard/radiology-technician" />;
+        default: return <Redirect to="/login" />;
+      }
+    }
+  }
+
   const siderWidth = isMobile ? 0 : 80; // Narrow sidebar width matching PatientSidebar
 
   return (
@@ -736,7 +750,8 @@ export default function LabDashboard() {
           <LabTechnicianSidebar 
             selectedMenuKey={selectedMenuKey}
             onMenuClick={(key) => {
-              if (key) setSelectedMenuKey(key);
+              if (key) setSidebarView(key);
+              setLocation(key === 'dashboard' ? '/dashboard/lab' : `/dashboard/lab?view=${key}`);
             }}
             hospitalName={labProfile?.name}
           />
@@ -756,7 +771,8 @@ export default function LabDashboard() {
           <LabTechnicianSidebar 
             selectedMenuKey={selectedMenuKey}
             onMenuClick={(key) => {
-              if (key) setSelectedMenuKey(key);
+              if (key) setSidebarView(key);
+              setLocation(key === 'dashboard' ? '/dashboard/lab' : `/dashboard/lab?view=${key}`);
               setMobileDrawerOpen(false);
             }}
             hospitalName={labProfile?.name}
@@ -988,7 +1004,7 @@ export default function LabDashboard() {
                       <Option value="ready">Ready</Option>
                       <Option value="completed">Completed</Option>
                     </Select>
-                    <Button type="link" onClick={() => message.info('View all reports feature coming soon')}>View All</Button>
+                    <Button type="link" onClick={() => { setSidebarView('report-release'); setLocation('/dashboard/lab?view=report-release'); }}>View All</Button>
                       </Space>
                     }
                 bodyStyle={{ 

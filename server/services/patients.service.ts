@@ -2,7 +2,7 @@
 import { db } from "../db";
 import { patients, users, patientFamilyMembers } from "../../shared/schema";
 import { InsertPatient } from "../../shared/schema-types";
-import { eq, and } from "drizzle-orm";
+import { eq, and, sql } from "drizzle-orm";
 import { hashPassword, verifyOtp } from "./auth.service";
 
 /**
@@ -83,7 +83,7 @@ export const getAllPatients = async () => {
   const result = await db
     .select()
     .from(patients)
-    .where(() => true);
+    .where(sql`true`);
   
   console.log(`📋 Found ${result.length} patients`);
   return result;
@@ -94,15 +94,10 @@ export const getAllPatients = async () => {
  */
 export const updatePatientByUserId = async (userId: number, data: Partial<InsertPatient>) => {
   console.log(`🏥 Updating patient for user ${userId}`);
-  const updateData = {
-    ...data,
-    updatedAt: new Date()
-  };
-  
   const result = await db
     .update(patients)
-    .set(updateData)
-    .where((condition: any) => condition(userId))
+    .set(data)
+    .where(eq(patients.userId, userId))
     .returning();
   
   console.log(`✅ Patient updated for user ${userId}`);
@@ -114,15 +109,10 @@ export const updatePatientByUserId = async (userId: number, data: Partial<Insert
  */
 export const updatePatientById = async (patientId: number, data: Partial<InsertPatient>) => {
   console.log(`🏥 Updating patient ${patientId}`);
-  const updateData = {
-    ...data,
-    updatedAt: new Date()
-  };
-  
   const result = await db
     .update(patients)
-    .set(updateData)
-    .where((condition: any) => condition(patientId))
+    .set(data)
+    .where(eq(patients.id, patientId))
     .returning();
   
   console.log(`✅ Patient ${patientId} updated`);

@@ -50,8 +50,8 @@ router.post(
         return res.status(400).json({ error: "medications is required" });
       }
       
-      // Build final prescription data with doctorId
-      const prescriptionData = { ...parsed, doctorId };
+      // Build final prescription data with doctorId (cast: schema inference can make keys optional)
+      const prescriptionData = { ...parsed, doctorId } as Parameters<typeof prescriptionService.issuePrescription>[0];
       
       const result = await prescriptionService.issuePrescription(prescriptionData);
 

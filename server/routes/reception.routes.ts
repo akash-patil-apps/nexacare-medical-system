@@ -26,7 +26,7 @@ router.post(
   authorizeRoles('receptionist'),
   async (req: AuthenticatedRequest, res) => {
     try {
-      const payload = quickCreatePatientSchema.parse(req.body);
+      const payload = quickCreatePatientSchema.parse(req.body) as Parameters<typeof receptionService.quickCreatePatientForAdmission>[1];
       const receptionistId = req.user!.id;
       const result = await receptionService.quickCreatePatientForAdmission(receptionistId, payload);
       res.status(201).json(result);
@@ -187,7 +187,7 @@ router.post(
   authorizeRoles('receptionist'),
   async (req: AuthenticatedRequest, res) => {
     try {
-      const payload = walkInSchema.parse(req.body);
+      const payload = walkInSchema.parse(req.body) as import("../services/reception.service").WalkInRegistrationInput;
       const receptionistId = req.user!.id;
       const walkin = await receptionService.registerWalkInPatient(receptionistId, payload);
       res.status(201).json(walkin);

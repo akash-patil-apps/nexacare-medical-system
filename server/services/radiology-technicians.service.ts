@@ -2,7 +2,7 @@
 import { db } from '../db';
 import { radiologyTechnicians, users, hospitals } from '../../shared/schema';
 import type { InsertRadiologyTechnician } from '../../shared/schema';
-import { eq, like, and } from 'drizzle-orm';
+import { eq, like, and, sql } from 'drizzle-orm';
 
 /**
  * Create a new radiology technician profile.
@@ -26,7 +26,7 @@ export const getAllRadiologyTechnicians = async () => {
   const result = await db
     .select()
     .from(radiologyTechnicians)
-    .where(() => true);
+    .where(sql`true`);
 
   return result;
 };

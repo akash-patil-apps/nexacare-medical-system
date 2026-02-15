@@ -404,6 +404,8 @@ export const admitPatient = async (data: {
   actorRole?: string;
   ipAddress?: string;
   userAgent?: string;
+  attendantName?: string | null;
+  attendantMobile?: string | null;
 }) => {
   // Check bed availability
   const bed = await db.select().from(beds).where(eq(beds.id, data.bedId)).limit(1);
@@ -1138,7 +1140,7 @@ export const deleteFloor = async (floorId: number) => {
 
   const [deleted] = await db
     .update(floors)
-    .set({ isActive: false, updatedAt: sql`NOW()` })
+    .set({ isActive: false, updatedAt: sql`NOW()` } as Record<string, unknown>)
     .where(eq(floors.id, floorId))
     .returning();
 
@@ -1163,7 +1165,7 @@ export const deleteWard = async (wardId: number) => {
 
   const [deleted] = await db
     .update(wards)
-    .set({ isActive: false, updatedAt: sql`NOW()` })
+    .set({ isActive: false, updatedAt: sql`NOW()` } as Record<string, unknown>)
     .where(eq(wards.id, wardId))
     .returning();
 
@@ -1187,7 +1189,7 @@ export const deleteRoom = async (roomId: number) => {
 
   const [deleted] = await db
     .update(rooms)
-    .set({ isActive: false, updatedAt: sql`NOW()` })
+    .set({ isActive: false, updatedAt: sql`NOW()` } as Record<string, unknown>)
     .where(eq(rooms.id, roomId))
     .returning();
 

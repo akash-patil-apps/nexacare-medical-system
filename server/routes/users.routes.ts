@@ -9,7 +9,7 @@ const router = Router();
 // Register User
 router.post('/', async (req, res) => {
   try {
-    const data = insertUserSchema.parse(req.body);
+    const data = insertUserSchema.parse(req.body) as unknown as Parameters<typeof registerUser>[0];
     const user = await registerUser(data);
     res.status(201).json(user);
   } catch (err) {

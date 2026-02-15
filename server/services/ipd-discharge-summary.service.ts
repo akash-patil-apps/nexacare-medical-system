@@ -65,8 +65,8 @@ export const generateDischargeSummary = async (encounterId: number) => {
         .from(payments)
         .where(eq(payments.invoiceId, invoice.id));
 
-      const invoiceTotal = items.reduce((sum, item) => sum + (item.amount || 0), 0);
-      const invoicePaid = invoicePayments.reduce((sum, payment) => sum + (payment.amount || 0), 0);
+      const invoiceTotal = items.reduce((sum, item) => sum + Number(item.amount || 0), 0);
+      const invoicePaid = invoicePayments.reduce((sum, payment) => sum + Number(payment.amount || 0), 0);
 
       totalBilled += invoiceTotal;
       totalPaid += invoicePaid;

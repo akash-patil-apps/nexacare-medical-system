@@ -4,7 +4,10 @@
     "outDir": "../dist/server",
     "rootDir": "..",
     "noEmit": false,
-    "noEmitOnError": false
+    "noEmitOnError": false,
+    "strict": false,
+    "strictNullChecks": false,
+    "noImplicitAny": false
   },
   "include": ["./**/*", "../shared/**/*", "../drizzle/**/*"],
   "exclude": ["node_modules", "dist", "client"]

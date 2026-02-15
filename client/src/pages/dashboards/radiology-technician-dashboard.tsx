@@ -65,45 +65,39 @@ const radiologyTheme = {
   background: '#FAF5FF', // Light purple background
 };
 
+const RADIOLOGY_VIEWS = ['dashboard', 'pending-orders', 'report-creation', 'report-release', 'orders', 'schedule', 'equipment'] as const;
+
 export default function RadiologyTechnicianDashboard() {
   const { user, isLoading, logout } = useAuth();
   const { notification: notificationApi } = App.useApp();
   const queryClient = useQueryClient();
-  const [, setLocation] = useLocation();
+  const [location, setLocation] = useLocation();
   const { isMobile, isTablet } = useResponsive();
   const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false);
-  const [selectedMenuKey, setSelectedMenuKey] = useState<string>('dashboard');
-
-  // Redirect if not authenticated
-  if (!isLoading && !user) {
-    return <Redirect to="/login" />;
-  }
-
-  // Redirect if user doesn't have RADIOLOGY_TECHNICIAN role
-  if (!isLoading && user) {
-    const userRole = user.role?.toUpperCase();
-    if (userRole !== 'RADIOLOGY_TECHNICIAN') {
-      message.warning('You do not have access to this dashboard');
-      switch (userRole) {
-        case 'PATIENT':
-          return <Redirect to="/dashboard/patient" />;
-        case 'DOCTOR':
-          return <Redirect to="/dashboard/doctor" />;
-        case 'RECEPTIONIST':
-          return <Redirect to="/dashboard/receptionist" />;
-        case 'HOSPITAL':
-          return <Redirect to="/dashboard/hospital" />;
-        case 'LAB':
-          return <Redirect to="/dashboard/lab" />;
-        case 'NURSE':
-          return <Redirect to="/dashboard/nurse" />;
-        case 'PHARMACIST':
-          return <Redirect to="/dashboard/pharmacist" />;
-        default:
-          return <Redirect to="/login" />;
-      }
+  const urlView = useMemo(() => {
+    const search = location.includes('?') ? location.split('?')[1] || '' : '';
+    let view = new URLSearchParams(search).get('view');
+    if (view && RADIOLOGY_VIEWS.includes(view as any)) return view;
+    if (typeof window !== 'undefined') {
+      view = new URLSearchParams(window.location.search).get('view');
+      if (view && RADIOLOGY_VIEWS.includes(view as any)) return view;
     }
-  }
+    return 'dashboard';
+  }, [location]);
+  const [sidebarView, setSidebarView] = useState<string | null>(null);
+  const selectedMenuKey = sidebarView ?? urlView;
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const pathname = window.location.pathname;
+    const search = window.location.search || '';
+    if (!pathname.startsWith('/dashboard/radiology-technician')) return;
+    const fullUrl = pathname + search;
+    if (search && fullUrl !== location) setLocation(fullUrl);
+    const view = new URLSearchParams(search).get('view');
+    if (view && RADIOLOGY_VIEWS.includes(view as any)) setSidebarView(view);
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- run once on mount to sync URL
+  }, []);
 
   // Get radiology technician profile
   const { data: technicianProfile, isLoading: isLoadingProfile } = useQuery({
@@ -266,34 +260,51 @@ export default function RadiologyTechnicianDashboard() {
     ];
   }, [imagingOrders]);
 
-  // Quick actions for radiology technicians
+  const radiologyUserId = useMemo(() => {
+    if (user?.id) {
+      const year = new Date().getFullYear();
+      const idNum = String(user.id).padStart(3, '0');
+      return `RAD-${year}-${idNum}`;
+    }
+    return 'RAD-2024-001';
+  }, [user?.id]);
+  const radiologyUserInitials = useMemo(() => {
+    if (user?.fullName) {
+      const names = user.fullName.split(' ');
+      if (names.length >= 2) return `${names[0][0]}${names[1][0]}`.toUpperCase();
+      return user.fullName.substring(0, 2).toUpperCase();
+    }
+    return 'RT';
+  }, [user?.fullName]);
+
+  // Quick actions for radiology technicians — navigate to sidebar views
   const quickActions = [
     {
       title: 'New Imaging',
       description: 'Perform imaging procedure',
       icon: <ExperimentOutlined />,
-      action: () => message.info('Imaging procedure feature coming soon'),
+      action: () => { setSidebarView('pending-orders'); setLocation('/dashboard/radiology-technician?view=pending-orders'); },
       color: radiologyTheme.primary,
     },
     {
       title: 'Upload Images',
       description: 'Upload scan results',
       icon: <CameraOutlined />,
-      action: () => message.info('Image upload feature coming soon'),
+      action: () => { setSidebarView('report-creation'); setLocation('/dashboard/radiology-technician?view=report-creation'); },
       color: radiologyTheme.accent,
     },
     {
       title: 'Equipment Status',
       description: 'Check machine availability',
       icon: <ExperimentOutlined />,
-      action: () => message.info('Equipment status feature coming soon'),
+      action: () => { setSidebarView('equipment'); setLocation('/dashboard/radiology-technician?view=equipment'); },
       color: '#059669',
     },
     {
       title: 'Schedule Orders',
       description: 'Manage imaging schedule',
       icon: <FileTextOutlined />,
-      action: () => message.info('Scheduling feature coming soon'),
+      action: () => { setSidebarView('schedule'); setLocation('/dashboard/radiology-technician?view=schedule'); },
       color: '#8B5CF6',
     },
   ];
@@ -649,6 +660,27 @@ export default function RadiologyTechnicianDashboard() {
     }
   };
 
+  // Redirect if not authenticated (after all hooks)
+  if (!isLoading && !user) {
+    return <Redirect to="/login" />;
+  }
+  if (!isLoading && user) {
+    const userRole = user.role?.toUpperCase();
+    if (userRole !== 'RADIOLOGY_TECHNICIAN') {
+      message.warning('You do not have access to this dashboard');
+      switch (userRole) {
+        case 'PATIENT': return <Redirect to="/dashboard/patient" />;
+        case 'DOCTOR': return <Redirect to="/dashboard/doctor" />;
+        case 'RECEPTIONIST': return <Redirect to="/dashboard/receptionist" />;
+        case 'HOSPITAL': return <Redirect to="/dashboard/hospital" />;
+        case 'LAB': return <Redirect to="/dashboard/lab" />;
+        case 'NURSE': return <Redirect to="/dashboard/nurse" />;
+        case 'PHARMACIST': return <Redirect to="/dashboard/pharmacist" />;
+        default: return <Redirect to="/login" />;
+      }
+    }
+  }
+
   if (isLoading || isLoadingProfile) {
     return (
       <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh' }}>
@@ -656,6 +688,15 @@ export default function RadiologyTechnicianDashboard() {
       </div>
     );
   }
+
+  const handleMenuClick = (key: string) => {
+    if (key === 'logout') {
+      logout();
+    } else {
+      setSidebarView(key);
+      setLocation(key === 'dashboard' ? '/dashboard/radiology-technician' : `/dashboard/radiology-technician?view=${key}`);
+    }
+  };
 
   return (
     <Layout style={{ minHeight: '100vh', backgroundColor: radiologyTheme.background }}>
@@ -703,13 +744,7 @@ export default function RadiologyTechnicianDashboard() {
           <Menu
             mode="inline"
             selectedKeys={[selectedMenuKey]}
-            onClick={({ key }) => {
-              if (key === 'logout') {
-                logout();
-              } else {
-                setSelectedMenuKey(key);
-              }
-            }}
+            onClick={({ key }) => handleMenuClick(key)}
             style={{ border: 'none', marginTop: 8 }}
             items={[
               ...menuItems,
@@ -758,12 +793,8 @@ export default function RadiologyTechnicianDashboard() {
             mode="inline"
             selectedKeys={[selectedMenuKey]}
             onClick={({ key }) => {
-              if (key === 'logout') {
-                logout();
-              } else {
-                setSelectedMenuKey(key);
-                setMobileDrawerOpen(false);
-              }
+              handleMenuClick(key);
+              setMobileDrawerOpen(false);
             }}
             items={[
               ...menuItems,
@@ -791,24 +822,8 @@ export default function RadiologyTechnicianDashboard() {
         <TopHeader
           userName={user?.fullName || 'Radiology Technician'}
           userRole="Radiology"
-          userId={useMemo(() => {
-            if (user?.id) {
-              const year = new Date().getFullYear();
-              const idNum = String(user.id).padStart(3, '0');
-              return `RAD-${year}-${idNum}`;
-            }
-            return 'RAD-2024-001';
-          }, [user?.id])}
-          userInitials={useMemo(() => {
-            if (user?.fullName) {
-              const names = user.fullName.split(' ');
-              if (names.length >= 2) {
-                return `${names[0][0]}${names[1][0]}`.toUpperCase();
-              }
-              return user.fullName.substring(0, 2).toUpperCase();
-            }
-            return 'RT';
-          }, [user?.fullName])}
+          userId={radiologyUserId}
+          userInitials={radiologyUserInitials}
           notificationCount={0}
         />
 

@@ -258,9 +258,9 @@ export default function RadiologyTechnicianOnboarding() {
             <Button size="large" onClick={handlePrev} style={{ borderRadius: 12 }}>Previous</Button>
             <Button type="primary" size="large" onClick={handleNext} icon={<RightOutlined />} iconPosition="end" style={{ borderRadius: 12, background: '#059669', borderColor: '#059669' }}>Next</Button>
           </>
-        )}
-      </div>
-    </Form>
+                )}
+              </div>
+            </Form>
   );
 
   return (

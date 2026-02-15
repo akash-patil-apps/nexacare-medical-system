@@ -1,8 +1,10 @@
 import React from 'react';
-import { Button, message } from 'antd';
-import { UserOutlined, DashboardOutlined, ExperimentOutlined, FileSearchOutlined, CheckCircleOutlined, UploadOutlined, BarChartOutlined, LogoutOutlined } from '@ant-design/icons';
+import { Button } from 'antd';
+import { UserOutlined, DashboardOutlined, ExperimentOutlined, FileSearchOutlined, CheckCircleOutlined, LogoutOutlined } from '@ant-design/icons';
 import { useLocation } from 'wouter';
 import { useAuth } from '../../hooks/use-auth';
+
+const LAB_VIEWS = ['dashboard', 'pending-orders', 'result-entry', 'report-release'] as const;
 
 interface LabTechnicianSidebarProps {
   selectedMenuKey?: string;
@@ -14,9 +16,15 @@ export const LabTechnicianSidebar: React.FC<LabTechnicianSidebarProps> = ({
   selectedMenuKey = 'dashboard',
   onMenuClick,
 }) => {
+  const [, setLocation] = useLocation();
   const { logout } = useAuth();
   const handleMenuClick = (key: string) => {
     if (onMenuClick) onMenuClick(key);
+    if (key && LAB_VIEWS.includes(key as any)) {
+      const path = key === 'dashboard' ? '/dashboard/lab' : `/dashboard/lab?view=${key}`;
+      if (typeof window !== 'undefined') window.history.replaceState(null, '', path);
+      setLocation(path);
+    }
   };
 
   return (
@@ -62,6 +70,7 @@ export const LabTechnicianSidebar: React.FC<LabTechnicianSidebarProps> = ({
             borderRadius: '8px',
           }}
           onClick={() => handleMenuClick('dashboard')}
+          title="Dashboard"
         />
         
         <Button
@@ -77,6 +86,7 @@ export const LabTechnicianSidebar: React.FC<LabTechnicianSidebarProps> = ({
             borderRadius: '8px',
           }}
           onClick={() => handleMenuClick('pending-orders')}
+          title="Pending orders"
         />
         
         <Button
@@ -92,6 +102,7 @@ export const LabTechnicianSidebar: React.FC<LabTechnicianSidebarProps> = ({
             borderRadius: '8px',
           }}
           onClick={() => handleMenuClick('result-entry')}
+          title="Result entry"
         />
         
         <Button
@@ -107,51 +118,7 @@ export const LabTechnicianSidebar: React.FC<LabTechnicianSidebarProps> = ({
             borderRadius: '8px',
           }}
           onClick={() => handleMenuClick('report-release')}
-        />
-        
-        <Button
-          type="text"
-          icon={<ExperimentOutlined style={{ fontSize: '20px', color: selectedMenuKey === 'reports' ? '#1A8FE3' : '#6B7280' }} />}
-          style={{
-            width: '48px',
-            height: '48px',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            background: selectedMenuKey === 'reports' ? '#E3F2FF' : 'transparent',
-            borderRadius: '8px',
-          }}
-          onClick={() => handleMenuClick('reports')}
-        />
-        
-        <Button
-          type="text"
-          icon={<UploadOutlined style={{ fontSize: '20px', color: selectedMenuKey === 'upload' ? '#1A8FE3' : '#6B7280' }} />}
-          style={{
-            width: '48px',
-            height: '48px',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-            background: selectedMenuKey === 'upload' ? '#E3F2FF' : 'transparent',
-            borderRadius: '8px',
-          }}
-          onClick={() => handleMenuClick('upload')}
-        />
-        
-        <Button
-          type="text"
-          icon={<BarChartOutlined style={{ fontSize: '20px', color: selectedMenuKey === 'analytics' ? '#1A8FE3' : '#6B7280' }} />}
-          style={{
-            width: '48px',
-            height: '48px',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            background: selectedMenuKey === 'analytics' ? '#E3F2FF' : 'transparent',
-            borderRadius: '8px',
-          }}
-          onClick={() => handleMenuClick('analytics')}
+          title="Report release"
         />
             </div>
 

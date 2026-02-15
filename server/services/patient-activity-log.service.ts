@@ -189,9 +189,9 @@ export const getActorFromRequest = async (req: any): Promise<ActivityActor | nul
     }
   } else if (userRole === 'NURSE') {
     const { getNurseByUserId } = await import('./nurses.service');
-    const nurse = await getNurseByUserId(userId);
-    if (nurse) {
-      entityId = nurse.id;
+    const nurseResult = await getNurseByUserId(userId);
+    if (nurseResult) {
+      entityId = nurseResult.nurse.id;
       entityType = 'nurse';
     }
   } else if (userRole === 'RECEPTIONIST') {

@@ -11,11 +11,11 @@ import {
   sendPasswordResetOtp,
   verifyPasswordResetOtp,
   resetPassword,
-} from '../services/auth.service';
+} from '../services/auth.service.js';
 import {
   registrationSchema,
   loginSchema,
-} from '../../shared/schema';
+} from '../../shared/schema.js';
 
 const router = Router();
 
@@ -162,7 +162,7 @@ router.get('/login', (_req, res) => {
 // Login with password
 router.post('/login', async (req, res) => {
   try {
-    const validated = loginSchema.parse(req.body);
+    const validated = loginSchema.parse(req.body) as { mobileNumber: string; password: string };
     const result = await loginUser(validated);
     res.json(result);
   } catch (error) {

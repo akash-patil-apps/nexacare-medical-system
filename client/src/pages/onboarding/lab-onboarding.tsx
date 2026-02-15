@@ -81,79 +81,79 @@ export default function LabOnboarding() {
             <Col span={12}>
               <Form.Item name="name" label="Lab Name" rules={[{ required: true, message: 'Please enter lab name' }]}>
                 <Input placeholder="Enter lab name" size="large" style={fieldStyle} />
-              </Form.Item>
-            </Col>
+            </Form.Item>
+          </Col>
             <Col span={12}>
               <Form.Item name="licenseNumber" label="License Number" rules={[{ required: true, message: 'Please enter license number' }]}>
                 <Input placeholder="Enter license number" size="large" style={fieldStyle} />
-              </Form.Item>
-            </Col>
-            <Col span={24}>
+            </Form.Item>
+          </Col>
+          <Col span={24}>
               <Form.Item name="address" label="Street Address" rules={[{ required: true, message: 'Please enter address' }]}>
                 <Input placeholder="Enter street address" size="large" style={fieldStyle} />
-              </Form.Item>
-            </Col>
+            </Form.Item>
+          </Col>
             <Col span={8}>
               <Form.Item name="city" label="City" rules={[{ required: true, message: 'Please enter city' }]}>
                 <Input placeholder="Enter city" size="large" style={fieldStyle} />
-              </Form.Item>
-            </Col>
+            </Form.Item>
+          </Col>
             <Col span={8}>
               <Form.Item name="state" label="State" rules={[{ required: true, message: 'Please enter state' }]}>
                 <Input placeholder="Enter state" size="large" style={fieldStyle} />
-              </Form.Item>
-            </Col>
+            </Form.Item>
+          </Col>
             <Col span={8}>
               <Form.Item name="zipCode" label="Zip Code" rules={[{ required: true, message: 'Please enter zip code' }]}>
                 <Input placeholder="Enter zip code" size="large" style={fieldStyle} />
-              </Form.Item>
-            </Col>
-          </Row>
+            </Form.Item>
+          </Col>
+        </Row>
         )}
         {currentStep === 1 && (
           <Row gutter={[16, 8]}>
-            <Col span={12}>
-              <Form.Item name="contactEmail" label="Contact Email">
+          <Col span={12}>
+            <Form.Item name="contactEmail" label="Contact Email">
                 <Input type="email" placeholder="Enter contact email" size="large" style={fieldStyle} />
-              </Form.Item>
-            </Col>
-            <Col span={12}>
-              <Form.Item name="operatingHours" label="Operating Hours">
+            </Form.Item>
+          </Col>
+          <Col span={12}>
+            <Form.Item name="operatingHours" label="Operating Hours">
                 <TimePicker.RangePicker format="HH:mm" style={{ width: '100%', borderRadius: 12 }} size="large" />
-              </Form.Item>
-            </Col>
+            </Form.Item>
+          </Col>
             <Col span={8}>
-              <Form.Item name="specializations" label="Specializations">
+            <Form.Item name="specializations" label="Specializations">
                 <Select mode="tags" placeholder="Add specializations" size="large" style={fieldStyle}>
-                  <Option value="Pathology">Pathology</Option>
-                  <Option value="Microbiology">Microbiology</Option>
-                  <Option value="Biochemistry">Biochemistry</Option>
-                  <Option value="Hematology">Hematology</Option>
-                  <Option value="Immunology">Immunology</Option>
-                </Select>
-              </Form.Item>
-            </Col>
+                <Option value="Pathology">Pathology</Option>
+                <Option value="Microbiology">Microbiology</Option>
+                <Option value="Biochemistry">Biochemistry</Option>
+                <Option value="Hematology">Hematology</Option>
+                <Option value="Immunology">Immunology</Option>
+              </Select>
+            </Form.Item>
+          </Col>
             <Col span={8}>
-              <Form.Item name="testCategories" label="Test Categories">
+            <Form.Item name="testCategories" label="Test Categories">
                 <Select mode="tags" placeholder="Add test categories" size="large" style={fieldStyle}>
-                  <Option value="Blood Tests">Blood Tests</Option>
-                  <Option value="Urine Tests">Urine Tests</Option>
-                  <Option value="Stool Tests">Stool Tests</Option>
-                  <Option value="Culture Tests">Culture Tests</Option>
-                </Select>
-              </Form.Item>
-            </Col>
+                <Option value="Blood Tests">Blood Tests</Option>
+                <Option value="Urine Tests">Urine Tests</Option>
+                <Option value="Stool Tests">Stool Tests</Option>
+                <Option value="Culture Tests">Culture Tests</Option>
+              </Select>
+            </Form.Item>
+          </Col>
             <Col span={8}>
-              <Form.Item name="equipment" label="Equipment">
+            <Form.Item name="equipment" label="Equipment">
                 <Select mode="tags" placeholder="Add equipment" size="large" style={fieldStyle} />
-              </Form.Item>
-            </Col>
-            <Col span={24}>
-              <Form.Item name="accreditation" label="Accreditation">
+            </Form.Item>
+          </Col>
+          <Col span={24}>
+            <Form.Item name="accreditation" label="Accreditation">
                 <TextArea rows={2} placeholder="Enter accreditations and certifications" style={{ borderRadius: 12 }} />
-              </Form.Item>
-            </Col>
-          </Row>
+            </Form.Item>
+          </Col>
+        </Row>
         )}
         <div style={{ marginTop: 12, display: 'flex', justifyContent: 'space-between' }}>
           {currentStep === 0 ? (
@@ -171,9 +171,9 @@ export default function LabOnboarding() {
               <Button size="large" onClick={() => setCurrentStep(0)} style={{ borderRadius: 12 }}>Previous</Button>
               <Button type="primary" size="large" onClick={handleNext} icon={<RightOutlined />} iconPosition="end" style={{ borderRadius: 12, background: '#059669', borderColor: '#059669' }}>Next</Button>
             </>
-          )}
-        </div>
-      </Form>
+                )}
+              </div>
+            </Form>
     </OnboardingStepsLayout>
   );
 }
