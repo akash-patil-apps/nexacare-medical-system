@@ -1,6 +1,6 @@
 import React, { useMemo } from 'react';
-import { Button, message } from 'antd';
-import { UserOutlined, TeamOutlined, CalendarOutlined, UserAddOutlined, PhoneOutlined, MessageOutlined, LogoutOutlined } from '@ant-design/icons';
+import { Button } from 'antd';
+import { UserOutlined, TeamOutlined, CalendarOutlined, PhoneOutlined, MessageOutlined, LogoutOutlined } from '@ant-design/icons';
 import { useLocation } from 'wouter';
 import { useAuth } from '../../hooks/use-auth';
 
@@ -36,9 +36,6 @@ export const ReceptionistSidebar: React.FC<ReceptionistSidebarProps> = ({
         break;
       case 'appointments':
         setLocation('/receptionist/appointments');
-        break;
-      case 'walkin':
-        message.info('Walk-in registration is available from the dashboard.');
         break;
       case 'contacts':
         setLocation('/dashboard/receptionist/contact-directory');
@@ -109,21 +106,7 @@ export const ReceptionistSidebar: React.FC<ReceptionistSidebarProps> = ({
             borderRadius: '8px',
           }}
           onClick={() => handleMenuClick('appointments')}
-        />
-        
-        <Button
-          type="text"
-          icon={<UserAddOutlined style={{ fontSize: '20px', color: selectedMenuKey === 'walkin' ? '#1A8FE3' : '#6B7280' }} />}
-          style={{
-            width: '48px',
-            height: '48px',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            background: selectedMenuKey === 'walkin' ? '#E3F2FF' : 'transparent',
-            borderRadius: '8px',
-          }}
-          onClick={() => handleMenuClick('walkin')}
+          title="Appointments"
         />
         
         <Button
@@ -139,6 +122,7 @@ export const ReceptionistSidebar: React.FC<ReceptionistSidebarProps> = ({
             borderRadius: '8px',
           }}
           onClick={() => handleMenuClick('contacts')}
+          title="Contact directory"
         />
 
         <Button

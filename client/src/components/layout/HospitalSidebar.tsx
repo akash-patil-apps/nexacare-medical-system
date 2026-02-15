@@ -1,10 +1,9 @@
 import React from 'react';
-import { Button, message } from 'antd';
+import { Button } from 'antd';
 import {
   UserOutlined,
   BankOutlined,
   MessageOutlined,
-  FileTextOutlined,
   BarChartOutlined,
   SolutionOutlined,
   LogoutOutlined,
@@ -40,9 +39,6 @@ export const HospitalSidebar: React.FC<HospitalSidebarProps> = ({
       }
       case 'messages':
         setLocation('/admin/messages');
-        break;
-      case 'reports':
-        message.info('Lab Reports page coming soon.');
         break;
       case 'revenue':
         setLocation('/dashboard/hospital/revenue');
@@ -109,7 +105,6 @@ export const HospitalSidebar: React.FC<HospitalSidebarProps> = ({
         {btn('dashboard', <BankOutlined style={{ fontSize: '20px', color: icon('dashboard') }} />, 'Dashboard')}
         {btn('patients', <UserOutlined style={{ fontSize: '20px', color: icon('patients') }} />, 'Patients')}
         {btn('messages', <MessageOutlined style={{ fontSize: '20px', color: icon('messages') }} />, 'Messages')}
-        {btn('reports', <FileTextOutlined style={{ fontSize: '20px', color: icon('reports') }} />, 'Lab Reports')}
         {btn('revenue', <BarChartOutlined style={{ fontSize: '20px', color: icon('revenue') }} />, 'Revenue')}
         {btn('staff', <SolutionOutlined style={{ fontSize: '20px', color: icon('staff') }} />, 'Staff management')}
       </div>

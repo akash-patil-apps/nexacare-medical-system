@@ -68,14 +68,14 @@ export const getEncounterActivityLog = async (encounterId: number, limit = 100) 
     .orderBy(desc(nurseActivityLogs.createdAt))
     .limit(limit);
 
-  return logs.map(l => ({
-    ...l.log,
+  return logs.map((l: Record<string, unknown>) => ({
+    ...(l.log as object),
     nurse: {
-      ...l.nurse,
+      ...(l.nurse as object),
       user: l.nurseUser,
     },
     patient: {
-      ...l.patient,
+      ...(l.patient as object),
       user: l.patientUser,
     },
   }));

@@ -1,6 +1,6 @@
 import React from 'react';
 import { Button, message } from 'antd';
-import { UserOutlined, DashboardOutlined, MedicineBoxOutlined, ShoppingCartOutlined, FileTextOutlined, LogoutOutlined } from '@ant-design/icons';
+import { UserOutlined, DashboardOutlined, MedicineBoxOutlined, ShoppingCartOutlined, FileTextOutlined, LogoutOutlined, CheckCircleOutlined } from '@ant-design/icons';
 import { useLocation } from 'wouter';
 import { useAuth } from '../../hooks/use-auth';
 
@@ -10,6 +10,8 @@ interface PharmacistSidebarProps {
   hospitalName?: string | null;
 }
 
+const PHARMACIST_VIEWS = ['dashboard', 'prescriptions', 'dispensing', 'inventory', 'reports'] as const;
+
 export const PharmacistSidebar: React.FC<PharmacistSidebarProps> = ({ 
   selectedMenuKey = 'dashboard',
   onMenuClick,
@@ -18,6 +20,11 @@ export const PharmacistSidebar: React.FC<PharmacistSidebarProps> = ({
   const { logout } = useAuth();
   const handleMenuClick = (key: string) => {
     if (onMenuClick) onMenuClick(key);
+    if (key && PHARMACIST_VIEWS.includes(key as any)) {
+      const path = key === 'dashboard' ? '/dashboard/pharmacist' : `/dashboard/pharmacist?view=${key}`;
+      if (typeof window !== 'undefined') window.history.replaceState(null, '', path);
+      setLocation(path);
+    }
   };
 
   return (
@@ -78,8 +85,23 @@ export const PharmacistSidebar: React.FC<PharmacistSidebarProps> = ({
             borderRadius: '8px',
           }}
           onClick={() => handleMenuClick('prescriptions')}
+          title="Prescriptions"
         />
-        
+        <Button
+          type="text"
+          icon={<CheckCircleOutlined style={{ fontSize: '20px', color: selectedMenuKey === 'dispensing' ? '#1A8FE3' : '#6B7280' }} />}
+          style={{
+            width: '48px',
+            height: '48px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            background: selectedMenuKey === 'dispensing' ? '#E3F2FF' : 'transparent',
+            borderRadius: '8px',
+          }}
+          onClick={() => handleMenuClick('dispensing')}
+          title="Dispensing"
+        />
         <Button
           type="text"
           icon={<ShoppingCartOutlined style={{ fontSize: '20px', color: selectedMenuKey === 'inventory' ? '#1A8FE3' : '#6B7280' }} />}

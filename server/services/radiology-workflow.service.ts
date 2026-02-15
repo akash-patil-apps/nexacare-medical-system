@@ -106,15 +106,15 @@ export const getRadiologyOrders = async (
       .where(eq(radiologyOrders.hospitalId, hospitalId));
 
     if (filters?.status) {
-      query = query.where(eq(radiologyOrders.status, filters.status));
+      query = (query as any).where(eq(radiologyOrders.status, filters.status));
     }
 
     if (filters?.patientId) {
-      query = query.where(eq(radiologyOrders.patientId, filters.patientId));
+      query = (query as any).where(eq(radiologyOrders.patientId, filters.patientId));
     }
 
     if (filters?.doctorId) {
-      query = query.where(eq(radiologyOrders.doctorId, filters.doctorId));
+      query = (query as any).where(eq(radiologyOrders.doctorId, filters.doctorId));
     }
 
     const results = await query.orderBy(desc(radiologyOrders.createdAt));
@@ -136,7 +136,7 @@ export const getRadiologyOrders = async (
           patient: result.patient
             ? {
                 id: result.patient.id,
-                fullName: result.patient.fullName,
+                fullName: (result.patient as { fullName?: string }).fullName ?? (result as { patientUser?: { fullName?: string } }).patientUser?.fullName ?? 'Patient',
               }
             : null,
           doctor: result.doctorUser

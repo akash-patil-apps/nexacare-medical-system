@@ -10,6 +10,8 @@ interface NurseSidebarProps {
   hospitalName?: string | null;
 }
 
+const NURSE_VIEWS = ['dashboard', 'patients', 'vitals', 'notes'] as const;
+
 export const NurseSidebar: React.FC<NurseSidebarProps> = ({ 
   selectedMenuKey = 'dashboard',
   onMenuClick,
@@ -18,6 +20,11 @@ export const NurseSidebar: React.FC<NurseSidebarProps> = ({
   const { logout } = useAuth();
   const handleMenuClick = (key: string) => {
     if (onMenuClick) onMenuClick(key);
+    if (key && NURSE_VIEWS.includes(key as any)) {
+      const path = key === 'dashboard' ? '/dashboard/nurse' : `/dashboard/nurse?view=${key}`;
+      if (typeof window !== 'undefined') window.history.replaceState(null, '', path);
+      setLocation(path);
+    }
   };
 
   return (

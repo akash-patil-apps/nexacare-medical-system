@@ -183,18 +183,18 @@ export default function RegisterWithRole() {
       const mobile = form.getFieldValue('mobileNumber');
       setOtpModalLoading(true);
       try {
-        const response = await fetch('/api/auth/otp/verify', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+      const response = await fetch('/api/auth/otp/verify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ mobileNumber: mobile, otp: otpInput }),
-        });
-        const data = await response.json();
-        if (response.ok) {
+      });
+      const data = await response.json();
+      if (response.ok) {
           messageApi.success('Mobile number verified.');
           setMobileVerified(true);
           setOtpModalOpen(null);
           setOtpInput('');
-        } else {
+      } else {
           messageApi.error(data.message || 'Invalid OTP');
         }
       } catch {
@@ -328,13 +328,13 @@ export default function RegisterWithRole() {
         return (
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
             {ROLE_OPTIONS.map((role) => (
-              <button
-                key={role.key}
-                type="button"
+                  <button
+                    key={role.key}
+                    type="button"
                 style={roleCardStyle(role.key === selectedRole)}
-                onClick={() => handleRoleSelect(role.key)}
-                disabled={!role.available}
-              >
+                    onClick={() => handleRoleSelect(role.key)}
+                    disabled={!role.available}
+                  >
                 <span style={{ fontSize: 28 }}>{role.emoji}</span>
                 <Text strong style={{ fontSize: 13, color: '#111827', textAlign: 'center' }}>
                   {role.label}
@@ -342,7 +342,7 @@ export default function RegisterWithRole() {
                 <Text style={{ fontSize: 11, color: '#6B7280', textAlign: 'center' }}>
                   {role.caption}
                 </Text>
-              </button>
+                  </button>
             ))}
           </div>
         );
@@ -350,33 +350,33 @@ export default function RegisterWithRole() {
       case 'account':
         return (
           <>
-            <Form
-              form={form}
-              layout="vertical"
+          <Form
+            form={form}
+            layout="vertical"
               onFinish={handleCompleteRegistration}
               initialValues={{ ...registrationData, password: '', confirmPassword: '' }}
+          >
+            <Form.Item
+              name="fullName"
+              label="Full Name"
+              rules={[{ required: true, message: 'Please enter your full name' }]}
             >
-              <Form.Item
-                name="fullName"
-                label="Full Name"
-                rules={[{ required: true, message: 'Please enter your full name' }]}
-              >
                 <Input prefix={<UserOutlined />} placeholder="Enter your full name" size="large" style={inputStyle} />
-              </Form.Item>
+            </Form.Item>
 
-              <Form.Item
-                name="email"
+            <Form.Item
+              name="email"
                 label={isPatient ? 'Email (optional)' : 'Email'}
-                rules={[
+              rules={[
                   ...(emailRequired ? [{ required: true, message: 'Please enter your email' }] : []),
                   { type: 'email', message: 'Please enter a valid email', validateTrigger: 'onSubmit' },
-                ]}
-              >
+              ]}
+            >
                 <div className="register-verify-input-group" style={inputGroupStyle}>
-                  <Input
-                    prefix={<MailOutlined />}
+              <Input
+                prefix={<MailOutlined />}
                     placeholder={isPatient ? 'Optional' : 'Enter your email address'}
-                    size="large"
+                size="large"
                     bordered={false}
                     style={{ ...inputStyle, ...inputWrapStyle }}
                   />
@@ -389,22 +389,22 @@ export default function RegisterWithRole() {
                     Verify
                   </Button>
                 </div>
-              </Form.Item>
+            </Form.Item>
 
-              <Form.Item
-                name="mobileNumber"
-                label="Mobile Number"
-                rules={[
-                  { required: true, message: 'Please enter mobile number' },
-                  { pattern: /^[0-9]{10}$/, message: 'Enter a valid 10-digit mobile number' },
-                ]}
-              >
+            <Form.Item
+              name="mobileNumber"
+              label="Mobile Number"
+              rules={[
+                { required: true, message: 'Please enter mobile number' },
+                { pattern: /^[0-9]{10}$/, message: 'Enter a valid 10-digit mobile number' },
+              ]}
+            >
                 <div className="register-verify-input-group" style={inputGroupStyle}>
-                  <Input
-                    prefix={<PhoneOutlined />}
-                    placeholder="10-digit mobile number"
-                    maxLength={10}
-                    size="large"
+              <Input
+                prefix={<PhoneOutlined />}
+                placeholder="10-digit mobile number"
+                maxLength={10}
+                size="large"
                     bordered={false}
                     style={{ ...inputStyle, ...inputWrapStyle }}
                   />
@@ -415,40 +415,40 @@ export default function RegisterWithRole() {
                   >
                     {mobileVerified ? <CheckCircleFilled style={{ color: '#059669', marginRight: 6 }} /> : null}
                     Verify
-                  </Button>
+                </Button>
                 </div>
-              </Form.Item>
+            </Form.Item>
 
               <Row gutter={16}>
                 <Col span={12}>
-                  <Form.Item
-                    name="password"
-                    label="Password"
-                    rules={[
-                      { required: true, message: 'Please enter a password' },
-                      { min: 6, message: 'Password must be at least 6 characters' },
-                    ]}
-                  >
+            <Form.Item
+              name="password"
+              label="Password"
+              rules={[
+                { required: true, message: 'Please enter a password' },
+                { min: 6, message: 'Password must be at least 6 characters' },
+              ]}
+            >
                     <Input.Password prefix={<LockOutlined />} placeholder="Create a password" size="large" style={inputStyle} />
-                  </Form.Item>
+            </Form.Item>
                 </Col>
                 <Col span={12}>
-                  <Form.Item
-                    name="confirmPassword"
-                    label="Confirm Password"
-                    dependencies={['password']}
-                    rules={[
-                      { required: true, message: 'Please confirm your password' },
-                      ({ getFieldValue }) => ({
-                        validator(_, value) {
+            <Form.Item
+              name="confirmPassword"
+              label="Confirm Password"
+              dependencies={['password']}
+              rules={[
+                { required: true, message: 'Please confirm your password' },
+                ({ getFieldValue }) => ({
+                  validator(_, value) {
                           if (!value || getFieldValue('password') === value) return Promise.resolve();
-                          return Promise.reject(new Error('Passwords do not match'));
-                        },
-                      }),
-                    ]}
-                  >
+                    return Promise.reject(new Error('Passwords do not match'));
+                  },
+                }),
+              ]}
+            >
                     <Input.Password prefix={<LockOutlined />} placeholder="Re-enter password" size="large" style={inputStyle} />
-                  </Form.Item>
+            </Form.Item>
                 </Col>
               </Row>
 
@@ -466,7 +466,7 @@ export default function RegisterWithRole() {
                   Complete Registration
                 </Button>
               </div>
-            </Form>
+          </Form>
 
             <Modal
               title={otpModalOpen === 'email' ? 'Verify your email' : 'Verify your mobile number'}
@@ -534,7 +534,7 @@ export default function RegisterWithRole() {
       showHelpLink={currentStep !== 'complete'}
       hideBackButton={currentStep === 'complete'}
     >
-      {renderStepContent()}
+          {renderStepContent()}
     </OnboardingStepsLayout>
   );
 }

@@ -18,7 +18,7 @@ async function getHospitalId(req: AuthenticatedRequest): Promise<number | null> 
       .limit(1);
     return hospital[0]?.id || null;
   }
-  return req.user?.hospitalId || null;
+  return null;
 }
 
 /**

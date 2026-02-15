@@ -8,7 +8,7 @@ import {
   type LabReport, type InsertLabReport, type OtpVerification, type InsertOtp
 } from "@shared/schema";
 import { db } from "../db";
-import { eq, and, gte, desc, asc } from "drizzle-orm";
+import { eq, and, gte, lt, desc, asc } from "drizzle-orm";
 
 export interface IStorage {
   // User management
@@ -164,8 +164,8 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getPatientsByHospitalId(hospitalId: number): Promise<Patient[]> {
-    // Get patients through appointments
-    return db
+    // Get patients through appointments (select returns partial row; cast to Patient[])
+    const rows = await db
       .select({
         id: patients.id,
         userId: patients.userId,
@@ -182,6 +182,7 @@ export class DatabaseStorage implements IStorage {
       .from(patients)
       .innerJoin(appointments, eq(patients.id, appointments.patientId))
       .where(eq(appointments.hospitalId, hospitalId));
+    return rows as unknown as Patient[];
   }
 
   async updatePatient(id: number, patient: Partial<InsertPatient>): Promise<Patient> {
@@ -263,7 +264,7 @@ export class DatabaseStorage implements IStorage {
         and(
           eq(appointments.doctorId, doctorId),
           gte(appointments.appointmentDate, today),
-          gte(tomorrow, appointments.appointmentDate)
+          lt(appointments.appointmentDate, tomorrow)
         )
       )
       .orderBy(asc(appointments.appointmentTime));

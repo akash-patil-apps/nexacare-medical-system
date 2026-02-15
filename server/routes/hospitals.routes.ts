@@ -8,6 +8,8 @@ import { AuthenticatedRequest } from '../types';
 import { db } from '../db';
 import { hospitals } from '../../shared/schema';
 import { eq } from 'drizzle-orm';
+import * as hospitalPatientsService from '../services/hospital-patients.service';
+import { getPatientInfo } from '../services/reception.service';
 
 const VALID_STAFF_ROLES: StaffRole[] = ['doctor', 'nurse', 'receptionist', 'pharmacist', 'radiology_technician'];
 
@@ -36,7 +38,7 @@ router.get('/', async (_req, res) => {
 // POST /hospitals - Register a new hospital
 router.post('/', async (req, res) => {
   try {
-    const data = insertHospitalSchema.parse(req.body);
+    const data = insertHospitalSchema.parse(req.body) as unknown as Parameters<typeof createHospital>[0];
     const hospital = await createHospital(data);
     res.status(201).json({ hospital });
   } catch (err) {
@@ -48,7 +50,7 @@ router.post('/', async (req, res) => {
 // POST /hospitals/register - Alternative registration endpoint
 router.post('/register', async (req, res) => {
   try {
-    const data = insertHospitalSchema.parse(req.body);
+    const data = insertHospitalSchema.parse(req.body) as unknown as Parameters<typeof createHospital>[0];
     const hospital = await createHospital(data);
     res.status(201).json({ hospital });
   } catch (err) {
@@ -132,6 +134,60 @@ router.delete(
     } catch (err: any) {
       console.error('Remove staff error:', err);
       res.status(500).json({ message: err?.message || 'Failed to remove staff' });
+    }
+  }
+);
+
+// Encountered patients: only patients who have at least one appointment at this hospital (for admin Patients page)
+router.get(
+  '/my/encountered-patients',
+  authenticateToken,
+  authorizeRoles('HOSPITAL'),
+  async (req: AuthenticatedRequest, res) => {
+    try {
+      const userId = req.user!.id;
+      const [hospital] = await db.select().from(hospitals).where(eq(hospitals.userId, userId)).limit(1);
+      if (!hospital) {
+        return res.status(404).json({ message: 'Hospital not found for this user' });
+      }
+      const search = typeof req.query.search === 'string' ? req.query.search : undefined;
+      const list = await hospitalPatientsService.getEncounteredPatientsAppointments(hospital.id, { search });
+      res.json({ appointments: list });
+    } catch (err: any) {
+      console.error('Encountered patients error:', err);
+      res.status(500).json({ message: err?.message || 'Failed to fetch encountered patients' });
+    }
+  }
+);
+
+// Patient detail (only if patient has at least one encounter at this hospital)
+router.get(
+  '/my/patients/:patientId',
+  authenticateToken,
+  authorizeRoles('HOSPITAL'),
+  async (req: AuthenticatedRequest, res) => {
+    try {
+      const userId = req.user!.id;
+      const [hospital] = await db.select().from(hospitals).where(eq(hospitals.userId, userId)).limit(1);
+      if (!hospital) {
+        return res.status(404).json({ message: 'Hospital not found for this user' });
+      }
+      const patientId = parseInt(req.params.patientId, 10);
+      if (!Number.isInteger(patientId) || patientId <= 0) {
+        return res.status(400).json({ message: 'Invalid patient ID' });
+      }
+      const allowed = await hospitalPatientsService.patientHasEncounterAtHospital(patientId, hospital.id);
+      if (!allowed) {
+        return res.status(403).json({ message: 'Patient has no encounter at this hospital' });
+      }
+      const info = await getPatientInfo(patientId);
+      if (!info) {
+        return res.status(404).json({ message: 'Patient not found' });
+      }
+      res.json(info);
+    } catch (err: any) {
+      console.error('Patient detail error:', err);
+      res.status(500).json({ message: err?.message || 'Failed to fetch patient details' });
     }
   }
 );

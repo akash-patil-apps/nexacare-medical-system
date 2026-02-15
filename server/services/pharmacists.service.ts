@@ -2,7 +2,7 @@
 import { db } from '../db';
 import { pharmacists, users, hospitals } from '../../shared/schema';
 import type { InsertPharmacist } from '../../shared/schema';
-import { eq, like, and } from 'drizzle-orm';
+import { eq, like, and, sql } from 'drizzle-orm';
 
 /**
  * Create a new pharmacist profile.
@@ -26,7 +26,7 @@ export const getAllPharmacists = async () => {
   const result = await db
     .select()
     .from(pharmacists)
-    .where(() => true);
+    .where(sql`true`);
 
   return result;
 };

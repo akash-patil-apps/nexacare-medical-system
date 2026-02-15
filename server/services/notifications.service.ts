@@ -67,7 +67,7 @@ export const getUserNotifications = async (userId: number) => {
           ? appointment.appointmentDate 
           : new Date(appointment.appointmentDate);
         
-        const timeStr = appointment.appointmentTime || appointment.timeSlot?.split('-')[0] || '09:00';
+        const timeStr = appointment.appointmentTime || (appointment as { timeSlot?: string }).timeSlot?.split('-')[0] || '09:00';
         const [hours, minutes] = timeStr.split(':').map(Number);
         
         eventTime = new Date(appointmentDate);

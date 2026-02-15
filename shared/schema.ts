@@ -182,6 +182,9 @@ export const patients = pgTable("patients", {
   maritalStatus: text("marital_status"),
   governmentIdType: text("government_id_type"), // aadhaar, pan, driving_license, passport
   governmentIdNumber: text("government_id_number"),
+  // When DOB is unknown: age as of a reference date; current age = ageAtReference + years since ageReferenceDate
+  ageAtReference: integer("age_at_reference"),
+  ageReferenceDate: timestamp("age_reference_date"),
   createdAt: timestamp("created_at").defaultNow(),
 });
 
@@ -1001,6 +1004,8 @@ export const invoices = pgTable("invoices", {
   hospitalId: integer("hospital_id").references(() => hospitals.id).notNull(),
   patientId: integer("patient_id").references(() => patients.id).notNull(),
   appointmentId: integer("appointment_id").references(() => appointments.id), // 1 invoice per appointment in v1
+  doctorId: integer("doctor_id").references(() => doctors.id), // Denormalized for analytics
+  encounterId: integer("encounter_id").references(() => ipdEncounters.id), // For IPD billing
   invoiceNumber: varchar("invoice_number", { length: 100 }).notNull(), // Unique per hospital
   status: text("status").default("draft").notNull(), // draft, issued, paid, partially_paid, refunded, void
   subtotal: decimal("subtotal", { precision: 10, scale: 2 }).notNull(),
@@ -1261,6 +1266,7 @@ export const insertPrescriptionSchema = z.object({
   diagnosis: z.string().min(1),
   medications: z.string().min(1), // JSON string
   instructions: z.string().optional().nullable(),
+  followUpDate: z.union([z.string(), z.date()]).optional().nullable(),
   isActive: z.boolean().optional().default(true),
 });
 
@@ -1357,18 +1363,6 @@ export type VitalsChart = InferSelectModel<typeof vitalsChart>;
 
 export type InsertNursingNote = InferInsertModel<typeof nursingNotes>;
 export type NursingNote = InferSelectModel<typeof nursingNotes>;
-
-export type InsertMedicationOrder = InferInsertModel<typeof medicationOrders>;
-export type MedicationOrder = InferSelectModel<typeof medicationOrders>;
-
-export type InsertMedicationAdministration = InferInsertModel<typeof medicationAdministrations>;
-export type MedicationAdministration = InferSelectModel<typeof medicationAdministrations>;
-
-export type InsertNurseActivityLog = InferInsertModel<typeof nurseActivityLogs>;
-export type NurseActivityLog = InferSelectModel<typeof nurseActivityLogs>;
-
-export type InsertNurseAssignment = InferInsertModel<typeof nurseAssignments>;
-export type NurseAssignment = InferSelectModel<typeof nurseAssignments>;
 
 export type InsertMedicationOrder = InferInsertModel<typeof medicationOrders>;
 export type MedicationOrder = InferSelectModel<typeof medicationOrders>;

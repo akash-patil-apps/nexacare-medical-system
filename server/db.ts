@@ -16,7 +16,6 @@ const sql = postgres(connectionString, {
   idle_timeout: 60, // 60 seconds before idle connection is closed
   max_lifetime: 60 * 30, // 30 minutes max connection lifetime
   max: 20, // Maximum number of connections in the pool
-  statement_timeout: 60000, // 60 seconds per query (avoids read ETIMEDOUT on slow responses)
   prepare: false, // Disable prepared statements for faster queries (can help with connection issues)
   connection: {
     application_name: 'nexacare-medical-system',
@@ -68,7 +67,29 @@ END $$;
   }
 }
 
+async function ensurePatientAgeReferenceColumns() {
+  try {
+    // When DOB is unknown: store age as of a reference date (see drizzle/0023_patient_age_reference.sql)
+    await sql.unsafe(`ALTER TABLE "patients" ADD COLUMN IF NOT EXISTS "age_at_reference" integer;`);
+    await sql.unsafe(`ALTER TABLE "patients" ADD COLUMN IF NOT EXISTS "age_reference_date" timestamp;`);
+  } catch (e) {
+    console.warn('⚠️ Could not ensure patient age_reference columns (continuing):', e);
+  }
+}
+
+async function ensureInvoicesMissingColumns() {
+  try {
+    // Invoices table: ensure schema columns exist for revenue queries (migrations may not have been run)
+    await sql.unsafe(`ALTER TABLE "invoices" ADD COLUMN IF NOT EXISTS "doctor_id" integer REFERENCES "doctors"("id");`);
+    await sql.unsafe(`ALTER TABLE "invoices" ADD COLUMN IF NOT EXISTS "encounter_id" integer REFERENCES "ipd_encounters"("id");`);
+  } catch (e) {
+    console.warn('⚠️ Could not ensure invoices columns (continuing):', e);
+  }
+}
+
 console.log('🗄️  Connected to real PostgreSQL database');
 console.log('📝 Using Neon database for production data');
 console.log('🧩 DB target:', redactDbUrl(connectionString));
 void ensureAppointmentRescheduleColumns();
+void ensurePatientAgeReferenceColumns();
+void ensureInvoicesMissingColumns();

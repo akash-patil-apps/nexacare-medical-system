@@ -1,6 +1,6 @@
 // server/services/doctors.service.ts
 import { db } from '../db';
-import { doctors, appointments, users, hospitals } from '../../drizzle/schema';
+import { doctors, appointments, users, hospitals } from '../../shared/schema';
 import type { InsertDoctor } from '../../shared/schema-types';
 import { eq, like, and, or, sql } from 'drizzle-orm';
 
@@ -8,14 +8,16 @@ import { eq, like, and, or, sql } from 'drizzle-orm';
  * Create a new doctor profile.
  */
 export const createDoctor = async (data: Omit<InsertDoctor, 'id' | 'createdAt'>) => {
-  console.log(`👨‍⚕️ Creating doctor profile for ${data.fullName}`);
+  const displayName = (data as { fullName?: string }).fullName ?? 'Doctor';
+  console.log(`👨‍⚕️ Creating doctor profile for ${displayName}`);
   
+  const { fullName: _fn, ...rest } = data as Omit<InsertDoctor, 'id' | 'createdAt'> & { fullName?: string };
   const doctorData = {
-    ...data,
-    createdAt: new Date()
+    ...rest,
+    createdAt: new Date(),
   };
 
-  const result = await db.insert(doctors).values(doctorData).returning();
+  const result = await db.insert(doctors).values(doctorData as InsertDoctor).returning();
   console.log(`✅ Doctor created: ${result[0]?.id}`);
   
   return result;
@@ -29,7 +31,7 @@ export const getAllDoctors = async () => {
   const result = await db
     .select()
     .from(doctors)
-    .where(() => true);
+    .where(sql`true`);
   
   return result;
 };
@@ -82,19 +84,20 @@ export const getDoctorById = async (doctorId: number) => {
       const rawResult = await db.execute(
         sql`SELECT id, user_id, hospital_id, specialty, consultation_fee, qualification, license_number, is_available, is_verified, created_at FROM doctors WHERE id = ${doctorId} LIMIT 1`
       );
-      if (rawResult.rows && rawResult.rows.length > 0) {
-        const row = rawResult.rows[0] as any;
+      const rawRows = (rawResult as unknown as { rows?: Record<string, unknown>[] }).rows;
+      if (rawRows?.length) {
+        const row = rawRows[0];
         doctor = {
-          id: row.id,
-          userId: row.user_id,
-          hospitalId: row.hospital_id,
-          specialty: row.specialty,
-          consultationFee: row.consultation_fee,
-          qualification: row.qualification,
-          licenseNumber: row.license_number,
-          isAvailable: row.is_available,
-          isVerified: row.is_verified,
-          createdAt: row.created_at,
+          id: row.id as number,
+          userId: row.user_id as number,
+          hospitalId: row.hospital_id as number,
+          specialty: row.specialty as string,
+          consultationFee: row.consultation_fee as string,
+          qualification: row.qualification as string,
+          licenseNumber: row.license_number as string,
+          isAvailable: row.is_available as boolean,
+          isVerified: (row as Record<string, unknown>).is_verified as boolean,
+          createdAt: row.created_at as Date,
         };
       }
     }
@@ -318,9 +321,8 @@ export const verifyDoctor = async (doctorId: number) => {
   console.log(`👨‍⚕️ Verifying doctor ${doctorId}`);
   const result = await db
     .update(doctors)
-    .set({ 
+.set({
       isVerified: true,
-      updatedAt: new Date()
     })
     .where(eq(doctors.id, doctorId))
     .returning();
@@ -348,9 +350,8 @@ export const updateDoctorAvailability = async (doctorId: number, isAvailable: bo
   console.log(`👨‍⚕️ Updating doctor ${doctorId} availability to ${isAvailable}`);
   const result = await db
     .update(doctors)
-    .set({ 
+.set({
       isAvailable,
-      updatedAt: new Date()
     })
     .where(eq(doctors.id, doctorId))
     .returning();
@@ -364,14 +365,10 @@ export const updateDoctorAvailability = async (doctorId: number, isAvailable: bo
  */
 export const updateDoctorProfile = async (doctorId: number, data: Partial<InsertDoctor>) => {
   console.log(`👨‍⚕️ Updating doctor ${doctorId} profile`);
-  const updateData = {
-    ...data,
-    updatedAt: new Date()
-  };
-  
+  const { updatedAt: _u, ...rest } = data as Partial<InsertDoctor> & { updatedAt?: unknown };
   const result = await db
     .update(doctors)
-    .set(updateData)
+    .set(rest)
     .where(eq(doctors.id, doctorId))
     .returning();
   

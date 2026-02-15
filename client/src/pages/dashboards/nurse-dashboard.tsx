@@ -51,8 +51,10 @@ import { NotificationBell } from '../../components/notifications/NotificationBel
 import { TopHeader } from '../../components/layout/TopHeader';
 import { VitalsEntryForm } from '../../components/clinical/VitalsEntryForm';
 import { NursingNotesForm } from '../../components/clinical/NursingNotesForm';
+import { ShiftHandoverModal } from '../../components/clinical/ShiftHandoverModal';
 import { IpdEncountersList } from '../../components/ipd/IpdEncountersList';
 import { NurseSidebar } from '../../components/layout/NurseSidebar';
+import EMAR from '../../pages/ipd/emar';
 import dayjs from 'dayjs';
 import relativeTime from 'dayjs/plugin/relativeTime';
 import { getISTNow } from '../../lib/timezone';
@@ -76,52 +78,50 @@ export default function NurseDashboard() {
   const { user, isLoading } = useAuth();
   const { notification: notificationApi } = App.useApp();
   const queryClient = useQueryClient();
-  const [, setLocation] = useLocation();
+  const [location, setLocation] = useLocation();
   const { isMobile, isTablet } = useResponsive();
   const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false);
-  const [selectedMenuKey, setSelectedMenuKey] = useState<string>('dashboard');
+  // Derive view from router location so sidebar navigation and direct URLs update content
+  const urlView = useMemo(() => {
+    const search = location.includes('?') ? location.split('?')[1] || '' : '';
+    let view = new URLSearchParams(search).get('view');
+    if (view && ['dashboard', 'patients', 'vitals', 'notes', 'emar'].includes(view)) return view;
+    // Fallback for direct load when router may not include search in location
+    if (typeof window !== 'undefined') {
+      view = new URLSearchParams(window.location.search).get('view');
+      if (view && ['dashboard', 'patients', 'vitals', 'notes', 'emar'].includes(view)) return view;
+    }
+    return 'dashboard';
+  }, [location]);
+  const [overrideView, setOverrideView] = useState<'ipd-patient-detail' | 'emar' | null>(null);
+  // Track view from sidebar click so vitals/notes work even if router doesn't expose query in location
+  const [sidebarView, setSidebarView] = useState<string | null>(null);
+  const selectedMenuKey = overrideView ?? sidebarView ?? urlView;
   const [isVitalsModalOpen, setIsVitalsModalOpen] = useState(false);
   const [isNotesModalOpen, setIsNotesModalOpen] = useState(false);
   const [isMedicationsModalOpen, setIsMedicationsModalOpen] = useState(false);
   const [isAdministerModalOpen, setIsAdministerModalOpen] = useState(false);
+  const [isShiftHandoverModalOpen, setIsShiftHandoverModalOpen] = useState(false);
   const [selectedEncounterId, setSelectedEncounterId] = useState<number | undefined>(undefined);
   const [selectedPatientId, setSelectedPatientId] = useState<number | undefined>(undefined);
   const [selectedPatientName, setSelectedPatientName] = useState<string | undefined>(undefined);
   const [selectedEncounter, setSelectedEncounter] = useState<any>(null);
   const [selectedEncounterForDetail, setSelectedEncounterForDetail] = useState<number | null>(null);
 
-  // Redirect if not authenticated
-  if (!isLoading && !user) {
-    return <Redirect to="/login" />;
-  }
+  // Keep router and sidebar view in sync with URL on direct load (e.g. /dashboard/nurse?view=vitals)
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const pathname = window.location.pathname;
+    const search = window.location.search || '';
+    if (!pathname.startsWith('/dashboard/nurse')) return;
+    const fullUrl = pathname + search;
+    if (search && fullUrl !== location) setLocation(fullUrl);
+    const view = new URLSearchParams(search).get('view');
+    if (view && ['dashboard', 'patients', 'vitals', 'notes', 'emar'].includes(view)) setSidebarView(view);
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- run once on mount to sync URL
+  }, []);
 
-  // Redirect if user doesn't have NURSE role
-  if (!isLoading && user) {
-    const userRole = user.role?.toUpperCase();
-    if (userRole !== 'NURSE') {
-      message.warning('You do not have access to this dashboard');
-      switch (userRole) {
-        case 'PATIENT':
-          return <Redirect to="/dashboard/patient" />;
-        case 'DOCTOR':
-          return <Redirect to="/dashboard/doctor" />;
-        case 'RECEPTIONIST':
-          return <Redirect to="/dashboard/receptionist" />;
-        case 'HOSPITAL':
-          return <Redirect to="/dashboard/hospital" />;
-        case 'LAB':
-          return <Redirect to="/dashboard/lab" />;
-        case 'PHARMACIST':
-          return <Redirect to="/dashboard/pharmacist" />;
-        case 'RADIOLOGY_TECHNICIAN':
-          return <Redirect to="/dashboard/radiology-technician" />;
-        default:
-          return <Redirect to="/login" />;
-      }
-    }
-  }
-
-  // Get nurse profile
+  // Get nurse profile (all hooks must run unconditionally — no early returns before hooks)
   const { data: nurseProfile, isLoading: isLoadingProfile } = useQuery({
     queryKey: ['/api/nurses/profile'],
     queryFn: async () => {
@@ -354,6 +354,26 @@ export default function NurseDashboard() {
     ];
   }, [ipdEncounters, vitalsHistory]);
 
+  // TopHeader display values — must be hooks at top level so hook order is stable
+  const nurseUserId = useMemo(() => {
+    if (user?.id) {
+      const year = new Date().getFullYear();
+      const idNum = String(user.id).padStart(3, '0');
+      return `NUR-${year}-${idNum}`;
+    }
+    return 'NUR-2024-001';
+  }, [user?.id]);
+  const nurseUserInitials = useMemo(() => {
+    if (user?.fullName) {
+      const names = user.fullName.split(' ');
+      if (names.length >= 2) {
+        return `${names[0][0]}${names[1][0]}`.toUpperCase();
+      }
+      return user.fullName.substring(0, 2).toUpperCase();
+    }
+    return 'NU';
+  }, [user?.fullName]);
+
   // Quick actions for nurses
   const quickActions = [
     {
@@ -367,21 +387,34 @@ export default function NurseDashboard() {
       title: 'Add Nursing Note',
       description: 'Document patient assessment',
       icon: <FileTextOutlined />,
-      action: () => message.info('Nursing notes feature coming soon'),
+      action: () => {
+        if (selectedPatientId && selectedEncounterId) {
+          setSelectedEncounter(ipdEncounters.find((e: any) => e.id === selectedEncounterId) || null);
+          setIsNotesModalOpen(true);
+        } else {
+          message.info('Select a patient from My Ward Patients first, then click "Add Note"');
+        }
+      },
       color: nurseTheme.accent,
     },
     {
       title: 'Medication Admin',
       description: 'Record medication given',
       icon: <MedicineBoxOutlined />,
-      action: () => message.info('Medication administration feature coming soon'),
+      action: () => {
+        if (selectedEncounter?.id) {
+          setIsAdministerModalOpen(true);
+        } else {
+          message.info('Select a patient from My Ward Patients first, then click "Administer Medication" on that row');
+        }
+      },
       color: '#10B981',
     },
     {
       title: 'Shift Handover',
       description: 'Document shift notes',
       icon: <ClockCircleOutlined />,
-      action: () => message.info('Shift handover feature coming soon'),
+      action: () => setIsShiftHandoverModalOpen(true),
       color: '#8B5CF6',
     },
   ];
@@ -457,7 +490,7 @@ export default function NurseDashboard() {
           onViewPatient={(encounter) => {
             if (encounter.id) {
               setSelectedEncounterForDetail(encounter.id);
-              setSelectedMenuKey('ipd-patient-detail');
+              setOverrideView('ipd-patient-detail');
             }
           }}
           onRecordVitals={(encounterId, patientId, patientName) => {
@@ -552,7 +585,7 @@ export default function NurseDashboard() {
           // Show IPD patient detail page
           if (encounter.id) {
             setSelectedEncounterForDetail(encounter.id);
-            setSelectedMenuKey('emar');
+            setOverrideView('emar');
           }
         }}
         onRecordVitals={(encounterId, patientId, patientName) => {
@@ -570,12 +603,12 @@ export default function NurseDashboard() {
         onViewMedications={(encounter) => {
           setSelectedEncounter(encounter);
           setSelectedEncounterForDetail(encounter.id);
-          setSelectedMenuKey('emar');
+          setOverrideView('emar');
         }}
         onAdministerMedication={(encounter) => {
           setSelectedEncounter(encounter);
           setSelectedEncounterForDetail(encounter.id);
-          setSelectedMenuKey('emar');
+          setOverrideView('emar');
         }}
       />
     </Card>
@@ -677,7 +710,7 @@ export default function NurseDashboard() {
             style={{ marginBottom: 16 }}
             onClick={() => {
               setSelectedEncounterForDetail(null);
-              setSelectedMenuKey('dashboard');
+              setOverrideView(null);
             }}
           >
             ← Back to List
@@ -700,6 +733,37 @@ export default function NurseDashboard() {
         return renderDashboard();
     }
   };
+
+  // Redirect if not authenticated (after all hooks)
+  if (!isLoading && !user) {
+    return <Redirect to="/login" />;
+  }
+
+  // Redirect if user doesn't have NURSE role
+  if (!isLoading && user) {
+    const userRole = user.role?.toUpperCase();
+    if (userRole !== 'NURSE') {
+      message.warning('You do not have access to this dashboard');
+      switch (userRole) {
+        case 'PATIENT':
+          return <Redirect to="/dashboard/patient" />;
+        case 'DOCTOR':
+          return <Redirect to="/dashboard/doctor" />;
+        case 'RECEPTIONIST':
+          return <Redirect to="/dashboard/receptionist" />;
+        case 'HOSPITAL':
+          return <Redirect to="/dashboard/hospital" />;
+        case 'LAB':
+          return <Redirect to="/dashboard/lab" />;
+        case 'PHARMACIST':
+          return <Redirect to="/dashboard/pharmacist" />;
+        case 'RADIOLOGY_TECHNICIAN':
+          return <Redirect to="/dashboard/radiology-technician" />;
+        default:
+          return <Redirect to="/login" />;
+      }
+    }
+  }
 
   if (isLoading || isLoadingProfile) {
     return (
@@ -795,9 +859,7 @@ export default function NurseDashboard() {
           >
             <NurseSidebar 
               selectedMenuKey={selectedMenuKey}
-              onMenuClick={(key) => {
-                if (key) setSelectedMenuKey(key);
-              }}
+              onMenuClick={(key) => { setOverrideView(null); if (key) setSidebarView(key); setLocation(key === 'dashboard' ? '/dashboard/nurse' : `/dashboard/nurse?view=${key}`); }}
               hospitalName={hospitalName}
           />
         </Sider>
@@ -815,10 +877,7 @@ export default function NurseDashboard() {
           >
             <NurseSidebar 
               selectedMenuKey={selectedMenuKey}
-              onMenuClick={(key) => {
-                if (key) setSelectedMenuKey(key);
-              setMobileDrawerOpen(false);
-            }}
+              onMenuClick={(key) => { setOverrideView(null); if (key) setSidebarView(key); setLocation(key === 'dashboard' ? '/dashboard/nurse' : `/dashboard/nurse?view=${key}`); setMobileDrawerOpen(false); }}
               hospitalName={hospitalName}
           />
         </Drawer>
@@ -838,24 +897,8 @@ export default function NurseDashboard() {
           <TopHeader
             userName={user?.fullName || 'Nurse'}
             userRole="Nurse"
-            userId={useMemo(() => {
-              if (user?.id) {
-                const year = new Date().getFullYear();
-                const idNum = String(user.id).padStart(3, '0');
-                return `NUR-${year}-${idNum}`;
-              }
-              return 'NUR-2024-001';
-            }, [user?.id])}
-            userInitials={useMemo(() => {
-              if (user?.fullName) {
-                const names = user.fullName.split(' ');
-                if (names.length >= 2) {
-                  return `${names[0][0]}${names[1][0]}`.toUpperCase();
-                }
-                return user.fullName.substring(0, 2).toUpperCase();
-              }
-              return 'NU';
-            }, [user?.fullName])}
+            userId={nurseUserId}
+            userInitials={nurseUserInitials}
             notificationCount={0}
           />
 
@@ -895,8 +938,8 @@ export default function NurseDashboard() {
         </Layout>
       </Layout>
 
-      {/* Vitals Modal */}
-      {selectedPatientId && (
+      {/* Vitals Modal - show form when patient selected, or prompt to select when opened from Quick Action */}
+      {selectedPatientId ? (
         <VitalsEntryForm
           open={isVitalsModalOpen}
           patientId={selectedPatientId}
@@ -918,6 +961,20 @@ export default function NurseDashboard() {
             setSelectedPatientName(undefined);
           }}
         />
+      ) : (
+        <Modal
+          title="Record Vitals"
+          open={isVitalsModalOpen}
+          onCancel={() => setIsVitalsModalOpen(false)}
+          footer={[
+            <Button key="close" onClick={() => setIsVitalsModalOpen(false)}>Close</Button>,
+            <Button key="go" type="primary" onClick={() => { setIsVitalsModalOpen(false); setOverrideView(null); setLocation('/dashboard/nurse?view=patients'); }}>
+              Go to Patient List
+            </Button>,
+          ]}
+        >
+          <p>Select a patient from <strong>My Ward Patients</strong> below and click &quot;Record Vitals&quot; to enter vitals, or go to the Patient List view.</p>
+        </Modal>
       )}
 
       {/* Nursing Notes Modal */}
@@ -966,24 +1023,34 @@ export default function NurseDashboard() {
         )}
       </Modal>
 
-      {/* Administer Medication Modal */}
+      {/* Shift Handover Modal */}
+      <ShiftHandoverModal
+        open={isShiftHandoverModalOpen}
+        onCancel={() => setIsShiftHandoverModalOpen(false)}
+        onSuccess={() => setIsShiftHandoverModalOpen(false)}
+        encounters={ipdEncounters.map((e: any) => ({
+          id: e.id,
+          patientId: e.patientId,
+          patientName: e.patientName || e.patient?.fullName || e.patient?.user?.fullName,
+          patient: e.patient,
+        }))}
+        hospitalId={nurseProfile?.hospitalId}
+      />
+
+      {/* Administer Medication Modal - eMAR for selected patient */}
       <Modal
-        title="Administer Medication"
+        title={`Administer Medication — ${selectedEncounter?.patientName || 'Patient'}`}
         open={isAdministerModalOpen}
         onCancel={() => {
           setIsAdministerModalOpen(false);
           setSelectedEncounter(null);
         }}
         footer={null}
-        width={800}
+        width={900}
+        destroyOnClose
       >
         {selectedEncounter && (
-          <div>
-            <p>Medication administration form will be displayed here.</p>
-            <p>Patient: {selectedEncounter.patientName || 'Unknown'}</p>
-            <p>Encounter ID: {selectedEncounter.id}</p>
-            {/* TODO: Add medication administration component */}
-          </div>
+          <EMAR encounterId={selectedEncounter.id} nurseId={nurseProfile?.id} />
         )}
       </Modal>
     </>

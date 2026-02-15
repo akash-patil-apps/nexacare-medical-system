@@ -13,6 +13,8 @@ export interface BaseAuditLogData {
   before?: any;
   after?: any;
   summary?: string;
+  /** Human-readable message (stored in patient_audit_logs.message); use summary for generic audit_logs. */
+  message?: string;
   reason?: string;
   ipAddress?: string;
   userAgent?: string;
@@ -71,7 +73,7 @@ export const logPatientAudit = async (data: PatientAuditLogData) => {
       entityId: data.entityId || null,
       before: data.before ? JSON.stringify(data.before) : null,
       after: data.after ? JSON.stringify(data.after) : null,
-      message: data.summary || null,
+      message: data.message ?? data.summary ?? null,
       ipAddress: data.ipAddress || null,
       userAgent: data.userAgent || null,
       createdAt: sql`NOW()`,

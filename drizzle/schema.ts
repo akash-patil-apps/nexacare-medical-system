@@ -173,6 +173,8 @@ export const patients = pgTable("patients", {
 	insuranceNumber: text("insurance_number"),
 	occupation: text(),
 	maritalStatus: text("marital_status"),
+	ageAtReference: integer("age_at_reference"),
+	ageReferenceDate: timestamp("age_reference_date", { mode: 'string' }),
 	createdAt: timestamp("created_at", { mode: 'string' }).defaultNow(),
 }, (table) => [
 	foreignKey({

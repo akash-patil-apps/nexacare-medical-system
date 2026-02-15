@@ -17,7 +17,7 @@ export const getPatientTransactions = async (patientId: number, filters?: {
   const conditions = [or(
     eq(invoices.patientId, patientId),
     sql`EXISTS (SELECT 1 FROM appointments WHERE appointments.id = ${invoices.appointmentId} AND appointments.patient_id = ${patientId})`,
-    sql`EXISTS (SELECT 1 FROM ipd_encounters WHERE ipd_encounters.id = ${invoices.encounter_id} AND ipd_encounters.patient_id = ${patientId})`
+    sql`EXISTS (SELECT 1 FROM ipd_encounters WHERE ipd_encounters.id = ${invoices.encounterId} AND ipd_encounters.patient_id = ${patientId})`
   )];
 
   // Apply date filters

@@ -50,12 +50,12 @@ export const getMedicationsDue = async (data: {
       );
 
     if (data.encounterId) {
-      query = query.where(eq(medicationOrders.encounterId, data.encounterId));
+      query = (query as any).where(eq(medicationOrders.encounterId, data.encounterId));
     }
 
     if (data.nurseId) {
       // Filter by nurse's assigned encounters
-      query = query.where(eq(ipdEncounters.assignedNurseId, data.nurseId));
+      query = (query as any).where(eq(ipdEncounters.assignedNurseId, data.nurseId));
     }
 
     const orders = await query.orderBy(desc(medicationOrders.createdAt));
@@ -86,7 +86,7 @@ export const getMedicationsDue = async (data: {
         patient: order.patient
           ? {
               id: order.patient.id,
-              fullName: order.patient.fullName,
+              fullName: (order.patient as { fullName?: string }).fullName ?? (order as { patientUser?: { fullName?: string } }).patientUser?.fullName ?? 'Patient',
             }
           : null,
         doctor: order.doctorUser
@@ -250,7 +250,7 @@ export const getMedicationHistory = async (data: {
     }
 
     if (conditions.length > 0) {
-      query = query.where(and(...conditions));
+      query = (query as any).where(and(...conditions));
     }
 
     const results = await query.orderBy(desc(medicationAdministrations.administeredAt));

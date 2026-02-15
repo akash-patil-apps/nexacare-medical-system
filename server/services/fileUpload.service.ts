@@ -26,7 +26,7 @@ export const upload = multer({
     if (allowedTypes.includes(file.mimetype)) {
       cb(null, true);
     } else {
-      cb(new Error('File type not allowed'), false);
+      (cb as (err: Error | null, accept?: boolean) => void)(new Error('File type not allowed'), false);
     }
   },
 });

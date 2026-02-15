@@ -107,15 +107,15 @@ export const getLabOrders = async (
       .where(eq(labOrders.hospitalId, hospitalId));
 
     if (filters?.status) {
-      query = query.where(eq(labOrders.status, filters.status));
+      query = (query as any).where(eq(labOrders.status, filters.status));
     }
 
     if (filters?.patientId) {
-      query = query.where(eq(labOrders.patientId, filters.patientId));
+      query = (query as any).where(eq(labOrders.patientId, filters.patientId));
     }
 
     if (filters?.doctorId) {
-      query = query.where(eq(labOrders.doctorId, filters.doctorId));
+      query = (query as any).where(eq(labOrders.doctorId, filters.doctorId));
     }
 
     const results = await query.orderBy(desc(labOrders.createdAt));
@@ -137,7 +137,7 @@ export const getLabOrders = async (
           patient: result.patient
             ? {
                 id: result.patient.id,
-                fullName: result.patient.fullName,
+                fullName: (result.patient as { fullName?: string }).fullName ?? (result as { patientUser?: { fullName?: string } }).patientUser?.fullName ?? 'Patient',
               }
             : null,
           doctor: result.doctorUser
@@ -197,7 +197,6 @@ export const collectSample = async (data: {
       .update(labOrderItems)
       .set({
         status: "sample_collected",
-        updatedAt: new Date(),
       })
       .where(eq(labOrderItems.id, data.labOrderItemId));
 
@@ -217,7 +216,6 @@ export const collectSample = async (data: {
         .update(labOrders)
         .set({
           status: "sample_collected",
-          updatedAt: new Date(),
         })
         .where(eq(labOrders.id, data.labOrderId));
     }
@@ -268,7 +266,6 @@ export const enterTestResult = async (data: {
       .update(labOrderItems)
       .set({
         status: "processing",
-        updatedAt: new Date(),
       })
       .where(eq(labOrderItems.id, data.labOrderItemId));
 
@@ -293,7 +290,6 @@ export const validateTestResult = async (data: {
         validatedByUserId: data.validatedByUserId,
         validatedAt: new Date(),
         status: "validated",
-        updatedAt: new Date(),
       })
       .where(eq(labResults.id, data.resultId));
 
@@ -407,7 +403,6 @@ export const releaseLabReport = async (data: {
       .update(labOrders)
       .set({
         status: "completed",
-        updatedAt: new Date(),
       })
       .where(eq(labOrders.id, data.labOrderId));
 

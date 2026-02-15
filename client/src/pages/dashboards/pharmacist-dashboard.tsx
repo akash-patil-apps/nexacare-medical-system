@@ -77,10 +77,32 @@ export default function PharmacistDashboard() {
   const { user, isLoading } = useAuth();
   const { notification: notificationApi } = App.useApp();
   const queryClient = useQueryClient();
-  const [, setLocation] = useLocation();
+  const [location, setLocation] = useLocation();
   const { isMobile, isTablet } = useResponsive();
   const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false);
-  const [selectedMenuKey, setSelectedMenuKey] = useState<string>('dashboard');
+  const urlView = useMemo(() => {
+    const search = location.includes('?') ? location.split('?')[1] || '' : '';
+    let view = new URLSearchParams(search).get('view');
+    if (view && ['dashboard', 'prescriptions', 'dispensing', 'inventory', 'reports'].includes(view)) return view;
+    if (typeof window !== 'undefined') {
+      view = new URLSearchParams(window.location.search).get('view');
+      if (view && ['dashboard', 'prescriptions', 'dispensing', 'inventory', 'reports'].includes(view)) return view;
+    }
+    return 'dashboard';
+  }, [location]);
+  const [sidebarView, setSidebarView] = useState<string | null>(null);
+  const selectedMenuKey = sidebarView ?? urlView;
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const pathname = window.location.pathname;
+    const search = window.location.search || '';
+    if (!pathname.startsWith('/dashboard/pharmacist')) return;
+    const fullUrl = pathname + search;
+    if (search && fullUrl !== location) setLocation(fullUrl);
+    const view = new URLSearchParams(search).get('view');
+    if (view && ['dashboard', 'prescriptions', 'dispensing', 'inventory', 'reports'].includes(view)) setSidebarView(view);
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- run once on mount to sync URL
+  }, []);
   const [nonConsultingDispenseModalOpen, setNonConsultingDispenseModalOpen] = useState(false);
   const [nonConsultingDispenseForm] = Form.useForm();
   const previousPrescriptionCountRef = useRef<number>(0);
@@ -276,7 +298,7 @@ export default function PharmacistDashboard() {
             });
           }
           if (type.includes('prescription')) {
-            setSelectedMenuKey('dispensing');
+            (setSidebarView('dispensing'), setLocation('/dashboard/pharmacist?view=dispensing'));
           }
         },
         onClose: () => {
@@ -351,7 +373,7 @@ export default function PharmacistDashboard() {
       title: 'Dispense Medicine',
       description: 'Process prescription dispensing',
       icon: <MedicineBoxOutlined />,
-      action: () => setSelectedMenuKey('dispensing'),
+      action: () => (setSidebarView('dispensing'), setLocation('/dashboard/pharmacist?view=dispensing')),
       color: pharmacistTheme.primary,
     },
     {
@@ -365,21 +387,29 @@ export default function PharmacistDashboard() {
       title: 'Check Inventory',
       description: 'View medicine stock levels',
       icon: <ShoppingCartOutlined />,
-      action: () => setSelectedMenuKey('inventory'),
+      action: () => { setSidebarView('inventory'); setLocation('/dashboard/pharmacist?view=inventory'); },
       color: pharmacistTheme.accent,
     },
     {
       title: 'Patient Counseling',
       description: 'Record medication counseling',
       icon: <FileTextOutlined />,
-      action: () => message.info('Patient counseling feature coming soon'),
+      action: () => {
+        setSidebarView('prescriptions');
+        setLocation('/dashboard/pharmacist?view=prescriptions');
+        message.info('Complete counseling when dispensing from the Prescriptions queue');
+      },
       color: '#059669',
     },
     {
       title: 'Stock Alerts',
       description: 'Manage low stock notifications',
       icon: <BellOutlined />,
-      action: () => message.info('Stock alerts feature coming soon'),
+      action: () => {
+        setSidebarView('inventory');
+        setLocation('/dashboard/pharmacist?view=inventory');
+        message.info('Check Inventory for current stock levels and low-stock items');
+      },
       color: '#8B5CF6',
     },
   ];
@@ -542,7 +572,10 @@ export default function PharmacistDashboard() {
                 <Button
                   type="primary"
                   size="small"
-                  onClick={() => message.info('Dispense feature coming soon')}
+                  onClick={() => {
+                    setSidebarView('dispensing');
+                    setLocation('/dashboard/pharmacist?view=dispensing');
+                  }}
                 >
                   Dispense
                 </Button>
@@ -723,7 +756,8 @@ export default function PharmacistDashboard() {
           <PharmacistSidebar 
             selectedMenuKey={selectedMenuKey}
             onMenuClick={(key) => {
-              if (key) setSelectedMenuKey(key);
+              if (key) setSidebarView(key);
+              setLocation(key === 'dashboard' ? '/dashboard/pharmacist' : `/dashboard/pharmacist?view=${key}`);
             }}
             hospitalName={hospitalName}
           />
@@ -740,7 +774,8 @@ export default function PharmacistDashboard() {
           <PharmacistSidebar 
             selectedMenuKey={selectedMenuKey}
             onMenuClick={(key) => {
-              if (key) setSelectedMenuKey(key);
+              if (key) setSidebarView(key);
+              setLocation(key === 'dashboard' ? '/dashboard/pharmacist' : `/dashboard/pharmacist?view=${key}`);
               setMobileDrawerOpen(false);
             }}
             hospitalName={hospitalName}

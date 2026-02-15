@@ -372,8 +372,6 @@ export const createPrnAdministration = async (data: {
     .returning();
 
   // Log activity - need to get nurse ID from user ID
-  const { db } = await import('../db');
-  const { nurses } = await import('../../shared/schema');
   const [nurse] = await db
     .select()
     .from(nurses)

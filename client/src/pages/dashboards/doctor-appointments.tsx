@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { 
   Layout, 
@@ -22,8 +22,10 @@ import {
   Select,
   Modal,
   Divider,
-  message
+  message,
+  Drawer,
 } from 'antd';
+import dayjs, { type Dayjs } from 'dayjs';
 import { 
   UserOutlined, 
   CalendarOutlined, 
@@ -44,14 +46,15 @@ import {
   SearchOutlined,
   FilterOutlined,
   PhoneOutlined,
-  VideoCameraOutlined
+  VideoCameraOutlined,
+  LeftOutlined,
+  RightOutlined,
 } from '@ant-design/icons';
 import { useAuth } from '../../hooks/use-auth';
 import { formatDate } from '../../lib/utils';
 import { TopHeader } from '../../components/layout/TopHeader';
 import { useResponsive } from '../../hooks/use-responsive';
 import { useLocation } from 'wouter';
-import { Drawer } from 'antd';
 import { MenuUnfoldOutlined } from '@ant-design/icons';
 
 const { Content, Sider } = Layout;
@@ -60,13 +63,24 @@ const { Search } = Input;
 const { Option } = Select;
 
 export default function DoctorAppointments() {
-  const { user } = useAuth();
+  const { user, logout } = useAuth();
   const [, setLocation] = useLocation();
   const { isMobile, isTablet } = useResponsive();
   const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false);
   const [filter, setFilter] = useState('all'); // all, pending, confirmed, completed
   const [searchTerm, setSearchTerm] = useState('');
-  
+  const [selectedDate, setSelectedDate] = useState<Dayjs | null>(null);
+  const [calendarMonth, setCalendarMonth] = useState<Dayjs>(() => dayjs());
+  const [selectedAppointment, setSelectedAppointment] = useState<any | null>(null);
+  const scrollContainerRef = React.useRef<HTMLDivElement>(null);
+  const todayMonthRef = React.useRef<HTMLDivElement>(null);
+  const [patientUpdateSaving, setPatientUpdateSaving] = useState(false);
+  const [patientUpdateForm, setPatientUpdateForm] = useState<{ gender?: string; bloodGroup?: string; weight?: string; height?: string; dateOfBirth?: string; ageAtReference?: number }>({});
+
+  useEffect(() => {
+    if (selectedAppointment) setPatientUpdateForm({});
+  }, [selectedAppointment?.id]);
+
   // Get notifications for TopHeader
   const { data: notifications = [] } = useQuery({
     queryKey: ['/api/notifications/me'],
@@ -83,187 +97,54 @@ export default function DoctorAppointments() {
   
   const siderWidth = isMobile ? 0 : 80; // Narrow sidebar width matching PatientSidebar
   
-  // Sidebar content component - matching doctor dashboard
+  // Sidebar: same as doctor dashboard so it does not "change" when on appointments page (Appointments highlighted)
   const SidebarContent = ({ onMenuClick }: { onMenuClick?: () => void }) => {
-    const handleMenuClick = (key: string) => {
+    const nav = (key: string) => {
       if (onMenuClick) onMenuClick();
-      switch (key) {
-        case 'dashboard':
-          setLocation('/dashboard/doctor');
-          break;
-        case 'appointments':
-          setLocation('/dashboard/doctor/appointments');
-          break;
-        case 'patients':
-          message.info('Patients page coming soon.');
-          break;
-        case 'prescriptions':
-          setLocation('/dashboard/doctor/prescriptions');
-          break;
-        case 'reports':
-          message.info('Lab Reports page coming soon.');
-          break;
-        case 'ipd':
-          message.info('IPD Patients page coming soon.');
-          break;
-        case 'availability':
-          message.info('Availability page coming soon.');
-          break;
-        default:
-          break;
-      }
+      if (key === 'dashboard') setLocation('/dashboard/doctor');
+      if (key === 'appointments') setLocation('/dashboard/doctor/appointments');
+      if (key === 'prescriptions' || key === 'ipd' || key === 'availability') setLocation('/dashboard/doctor');
     };
-
+    const btn = (key: string, icon: React.ReactNode, title: string, active: boolean) => (
+      <Button
+        type="text"
+        icon={icon}
+        title={title}
+        style={{
+          width: '48px',
+          height: '48px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          background: active ? '#E3F2FF' : 'transparent',
+          borderRadius: '8px',
+        }}
+        onClick={() => nav(key)}
+      />
+    );
     return (
-      <div style={{ 
-        display: 'flex', 
-        flexDirection: 'column', 
-        height: '100%',
-        background: '#fff',
-        width: '80px',
-        alignItems: 'center',
-        padding: '16px 0',
-        gap: '12px',
-        borderRight: '1px solid #E5E7EB',
-      }}>
+      <div style={{ display: 'flex', flexDirection: 'column', height: '100%', background: '#fff', width: '80px', alignItems: 'center', padding: '16px 0', gap: '12px', borderRight: '1px solid #E5E7EB' }}>
         <Button
           type="text"
           icon={<UserOutlined style={{ fontSize: '20px', color: '#1A8FE3' }} />}
-          style={{
-            width: '48px',
-            height: '48px',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            background: '#E3F2FF',
-            borderRadius: '8px',
-          }}
+          style={{ width: '48px', height: '48px', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#E3F2FF', borderRadius: '8px' }}
           onClick={() => setLocation('/dashboard/profile')}
+          title="Profile"
         />
         <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', flex: 1, alignItems: 'center' }}>
-          <Button
-            type="text"
-            icon={<UserOutlined style={{ fontSize: '20px', color: '#6B7280' }} />}
-            style={{
-              width: '48px',
-              height: '48px',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              background: 'transparent',
-              borderRadius: '8px',
-            }}
-            onClick={() => handleMenuClick('dashboard')}
-          />
-          <Button
-            type="text"
-            icon={<CalendarOutlined style={{ fontSize: '20px', color: '#1A8FE3' }} />}
-            style={{
-              width: '48px',
-              height: '48px',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              background: '#E3F2FF',
-              borderRadius: '8px',
-            }}
-            onClick={() => handleMenuClick('appointments')}
-          />
-          <Button
-            type="text"
-            icon={<TeamOutlined style={{ fontSize: '20px', color: '#6B7280' }} />}
-            style={{
-              width: '48px',
-              height: '48px',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              background: 'transparent',
-              borderRadius: '8px',
-            }}
-            onClick={() => handleMenuClick('patients')}
-          />
-          <Button
-            type="text"
-            icon={<MedicineBoxOutlined style={{ fontSize: '20px', color: '#6B7280' }} />}
-            style={{
-              width: '48px',
-              height: '48px',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              background: 'transparent',
-              borderRadius: '8px',
-            }}
-            onClick={() => handleMenuClick('prescriptions')}
-          />
-          <Button
-            type="text"
-            icon={<FileTextOutlined style={{ fontSize: '20px', color: '#6B7280' }} />}
-            style={{
-              width: '48px',
-              height: '48px',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              background: 'transparent',
-              borderRadius: '8px',
-            }}
-            onClick={() => handleMenuClick('reports')}
-          />
-          <Button
-            type="text"
-            icon={<TeamOutlined style={{ fontSize: '20px', color: '#6B7280' }} />}
-            style={{
-              width: '48px',
-              height: '48px',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              background: 'transparent',
-              borderRadius: '8px',
-            }}
-            onClick={() => handleMenuClick('ipd')}
-          />
-          <Button
-            type="text"
-            icon={<SettingOutlined style={{ fontSize: '20px', color: '#6B7280' }} />}
-            style={{
-              width: '48px',
-              height: '48px',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              background: 'transparent',
-              borderRadius: '8px',
-            }}
-            onClick={() => handleMenuClick('availability')}
-          />
+          {btn('dashboard', <UserOutlined style={{ fontSize: '20px', color: '#6B7280' }} />, 'Dashboard', false)}
+          {btn('appointments', <CalendarOutlined style={{ fontSize: '20px', color: '#1A8FE3' }} />, 'Appointments', true)}
+          {btn('prescriptions', <MedicineBoxOutlined style={{ fontSize: '20px', color: '#6B7280' }} />, 'Prescriptions', false)}
+          {btn('ipd', <TeamOutlined style={{ fontSize: '20px', color: '#6B7280' }} />, 'IPD', false)}
+          {btn('availability', <SettingOutlined style={{ fontSize: '20px', color: '#6B7280' }} />, 'Availability', false)}
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', alignItems: 'center' }}>
           <Button
             type="text"
-            icon={<BellOutlined style={{ fontSize: '20px', color: '#6B7280' }} />}
-            style={{
-              width: '48px',
-              height: '48px',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-            }}
-            onClick={() => message.info('Notifications coming soon.')}
-          />
-          <Button
-            type="text"
-            icon={<SettingOutlined style={{ fontSize: '20px', color: '#6B7280' }} />}
-            style={{
-              width: '48px',
-              height: '48px',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-            }}
-            onClick={() => message.info('Settings coming soon.')}
+            icon={<LogoutOutlined style={{ fontSize: '20px', color: '#EF4444' }} />}
+            style={{ width: '48px', height: '48px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+            onClick={() => logout()}
+            title="Logout"
           />
         </div>
       </div>
@@ -283,11 +164,22 @@ export default function DoctorAppointments() {
       if (!response.ok) throw new Error('Failed to fetch appointments');
       const data = await response.json();
       // Transform API data to match expected format
-      return data.map((apt: any) => ({
+      return data.map((apt: any) => {
+        // Prefer API-computed age (from DOB or from age_at_reference + reference date)
+        const patientAge = apt.patientAge != null ? apt.patientAge : (() => {
+          const dob = apt.patientDateOfBirth ? dayjs(apt.patientDateOfBirth) : null;
+          return dob && dob.isValid() ? Math.floor(dayjs().diff(dob, 'year', true)) : null;
+        })();
+        return {
         id: apt.id,
+        patientId: apt.patientId,
         patientName: apt.patientName || 'Unknown Patient',
-        patientAge: 0, // Not available in API response
-        patientGender: 'Unknown', // Not available in API response
+        patientAge,
+        patientGender: apt.patientGender ?? null,
+        patientBloodGroup: apt.patientBloodGroup ?? null,
+        patientWeight: apt.patientWeight ?? null,
+        patientHeight: apt.patientHeight ?? null,
+        patientDateOfBirth: apt.patientDateOfBirth ?? null,
         appointmentDate: apt.appointmentDate || new Date().toISOString(),
         appointmentTime: apt.appointmentTime || apt.timeSlot?.split('-')[0] || 'N/A',
         timeSlot: apt.timeSlot || `${apt.appointmentTime}-${apt.appointmentTime}`,
@@ -301,7 +193,8 @@ export default function DoctorAppointments() {
         allergies: '', // Not available in API response
         createdAt: apt.createdAt || new Date().toISOString(),
         completedAt: apt.completedAt
-      }));
+      };
+      });
     },
     refetchInterval: 3000, // Refetch every 3 seconds for faster updates
     refetchOnWindowFocus: true,
@@ -345,6 +238,61 @@ export default function DoctorAppointments() {
   }, [refetchAppointments]);
 
   const appointments = appointmentsData;
+
+  // Group appointment counts by date (YYYY-MM-DD) for calendar
+  const countByDate = useMemo(() => {
+    const map: Record<string, number> = {};
+    (appointments || []).forEach((apt: any) => {
+      const d = apt.appointmentDate;
+      if (!d) return;
+      const dateStr = dayjs(d).format('YYYY-MM-DD');
+      map[dateStr] = (map[dateStr] || 0) + 1;
+    });
+    return map;
+  }, [appointments]);
+
+  // Appointments for the selected calendar date
+  const appointmentsForSelectedDate = useMemo(() => {
+    if (!selectedDate) return [];
+    const dateStr = selectedDate.format('YYYY-MM-DD');
+    return (appointments || []).filter((apt: any) => {
+      const aptStr = apt.appointmentDate ? dayjs(apt.appointmentDate).format('YYYY-MM-DD') : '';
+      return aptStr === dateStr;
+    });
+  }, [appointments, selectedDate]);
+
+  // Appointments grouped by date (YYYY-MM-DD) for calendar cells
+  const appointmentsByDate = useMemo(() => {
+    const map: Record<string, any[]> = {};
+    (appointments || []).forEach((apt: any) => {
+      const d = apt.appointmentDate;
+      if (!d) return;
+      const dateStr = dayjs(d).format('YYYY-MM-DD');
+      if (!map[dateStr]) map[dateStr] = [];
+      map[dateStr].push(apt);
+    });
+    return map;
+  }, [appointments]);
+
+  // Build calendar grid for any month: Sunday-first, 6 weeks
+  const buildGridForMonth = (month: Dayjs) => {
+    const first = month.startOf('month');
+    const start = first.subtract(first.day(), 'day');
+    const cells: { date: Dayjs; isCurrentMonth: boolean }[] = [];
+    for (let i = 0; i < 42; i++) {
+      const date = start.add(i, 'day');
+      cells.push({ date, isCurrentMonth: date.month() === month.month() });
+    }
+    return cells;
+  };
+
+  // Months to show in scroll: 12 months back, current, 3 months ahead
+  const scrollMonths = useMemo(() => {
+    const start = dayjs().subtract(12, 'month').startOf('month');
+    const list: Dayjs[] = [];
+    for (let i = 0; i < 16; i++) list.push(start.add(i, 'month'));
+    return list;
+  }, []);
 
   const userMenuItems = [
     {
@@ -608,8 +556,329 @@ export default function DoctorAppointments() {
               <CalendarOutlined style={{ marginRight: '8px' }} />
               My Appointments
             </Title>
-            <Text type="secondary">Manage your patient appointments</Text>
+            <Text type="secondary">Manage your patient appointments — click a date to see that day&apos;s bookings</Text>
           </div>
+
+          {/* Calendar: full width, vertical scroll through months, fixed cell height, no dropdowns */}
+          <Card style={{ marginBottom: 24 }}>
+            <div style={{ width: '100%', margin: 0 }}>
+              <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 12 }}>
+                <Button
+                  type="primary"
+                  icon={<CalendarOutlined />}
+                  onClick={() => {
+                    setSelectedDate(dayjs());
+                    todayMonthRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                  }}
+                >
+                  Go to today
+                </Button>
+              </div>
+              <div
+                ref={scrollContainerRef}
+                style={{
+                  overflowY: 'auto',
+                  maxHeight: 'calc(100vh - 280px)',
+                  minHeight: 320,
+                  width: '100%',
+                  border: '1px solid #f0f0f0',
+                  borderRadius: 8,
+                }}
+              >
+                {scrollMonths.map((month) => {
+                  const grid = buildGridForMonth(month);
+                  const isCurrentMonth = month.isSame(dayjs(), 'month');
+                  return (
+                    <div
+                      key={month.format('YYYY-MM')}
+                      ref={isCurrentMonth ? todayMonthRef : undefined}
+                      style={{ padding: '20px 16px', borderBottom: '1px solid #f0f0f0' }}
+                    >
+                      <div
+                        style={{
+                          fontSize: 18,
+                          fontWeight: 700,
+                          color: isCurrentMonth ? '#1890ff' : '#333',
+                          marginBottom: 12,
+                          paddingBottom: 8,
+                          borderBottom: isCurrentMonth ? '2px solid #1890ff' : '1px solid #e8e8e8',
+                        }}
+                      >
+                        {month.format('MMMM YYYY')}
+                      </div>
+                      <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed', borderSpacing: 0 }}>
+                        <thead>
+                          <tr>
+                            {['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'].map((d, i) => (
+                              <th
+                                key={d}
+                                style={{
+                                  padding: '12px 8px',
+                                  textAlign: 'center',
+                                  fontWeight: 600,
+                                  color: '#555',
+                                  borderBottom: '2px solid #e8e8e8',
+                                  borderRight: i < 6 ? '1px solid #e8e8e8' : undefined,
+                                  fontSize: 14,
+                                }}
+                              >
+                                {d}
+                              </th>
+                            ))}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {[0, 1, 2, 3, 4, 5].map((row) => (
+                            <tr key={row}>
+                              {[0, 1, 2, 3, 4, 5, 6].map((col) => {
+                                const { date, isCurrentMonth: inMonth } = grid[row * 7 + col];
+                                const dateStr = date.format('YYYY-MM-DD');
+                                const list = appointmentsByDate[dateStr] || [];
+                                const hasAppointments = list.length > 0;
+                                const isSelected = selectedDate && selectedDate.format('YYYY-MM-DD') === dateStr;
+                                const isToday = dateStr === dayjs().format('YYYY-MM-DD');
+                                const isPast = dayjs(dateStr).isBefore(dayjs(), 'day');
+                                const dateNum = String(date.date()).padStart(2, '0');
+                                return (
+                                  <td
+                                    key={dateStr}
+                                    style={{
+                                      padding: '8px 4px',
+                                      textAlign: 'center',
+                                      borderBottom: '1px solid #e8e8e8',
+                                      borderRight: col < 6 ? '1px solid #e8e8e8' : undefined,
+                                      cursor: 'pointer',
+                                      background: isSelected ? '#e6f7ff' : hasAppointments && !isSelected ? '#f6ffed' : undefined,
+                                      color: inMonth ? undefined : '#bfbfbf',
+                                      height: 56,
+                                      verticalAlign: 'middle',
+                                      ...(isSelected ? { borderLeft: '3px solid #1890ff', borderTop: '2px solid #1890ff', borderBottom: '2px solid #1890ff' } : {}),
+                                    }}
+                                    onClick={() => setSelectedDate(date)}
+                                  >
+                                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: 40, gap: 4 }}>
+                                      <span
+                                        style={{
+                                          display: 'inline-flex',
+                                          alignItems: 'center',
+                                          justifyContent: 'center',
+                                          width: 36,
+                                          height: 36,
+                                          borderRadius: 18,
+                                          fontWeight: isToday ? 700 : 600,
+                                          fontSize: 14,
+                                          flexShrink: 0,
+                                          ...(isSelected
+                                            ? { background: '#1890ff', color: '#fff', boxShadow: '0 1px 2px rgba(0,0,0,0.1)' }
+                                            : hasAppointments && !isSelected
+                                              ? { background: '#f6ffed', color: '#52c41a', border: '2px solid #52c41a' }
+                                              : isToday
+                                                ? { border: '2px solid #1890ff', color: '#1890ff' }
+                                                : { color: inMonth ? '#333' : '#bfbfbf' }
+                                          ),
+                                        }}
+                                      >
+                                        {dateNum}
+                                      </span>
+                                      <span style={{ height: 14, fontSize: 10, lineHeight: 1.2, color: hasAppointments ? '#52c41a' : 'transparent' }}>
+                                        {hasAppointments ? `${list.length}` : '\u00a0'}
+                                      </span>
+                                    </div>
+                                  </td>
+                                );
+                              })}
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </Card>
+
+          {/* Appointment detail drawer */}
+          <Drawer
+            title="Appointment details"
+            placement="right"
+            width={400}
+            open={!!selectedAppointment}
+            onClose={() => setSelectedAppointment(null)}
+            footer={
+              selectedAppointment && (
+                <Space>
+                  {selectedAppointment.status === 'pending' && (
+                    <Button type="primary" onClick={() => { handleConfirmAppointment(selectedAppointment.id); setSelectedAppointment(null); }}>Confirm</Button>
+                  )}
+                  {selectedAppointment.status === 'confirmed' && (
+                    <Button type="primary" onClick={() => { handleCompleteAppointment(selectedAppointment.id); setSelectedAppointment(null); }}>Complete</Button>
+                  )}
+                  <Button onClick={() => setSelectedAppointment(null)}>Close</Button>
+                </Space>
+              )
+            }
+          >
+            {selectedAppointment && (
+              <>
+                <p><strong>Patient:</strong> {selectedAppointment.patientName}</p>
+                <p><strong>Reason:</strong> {selectedAppointment.reason}</p>
+                <p><strong>Date:</strong> {dayjs(selectedAppointment.appointmentDate).format('ddd, D MMM YYYY')}</p>
+                <p><strong>Time:</strong> {selectedAppointment.appointmentTime || selectedAppointment.timeSlot || '—'}</p>
+                <p><strong>Type:</strong> {selectedAppointment.type || 'consultation'}</p>
+                <p><strong>Status:</strong> {getStatusTag(selectedAppointment.status)}</p>
+                {selectedAppointment.patientBloodGroup != null && <p><strong>Blood group:</strong> {selectedAppointment.patientBloodGroup}</p>}
+                <Divider />
+                <Title level={5}>Add or update patient info</Title>
+                <Text type="secondary" style={{ display: 'block', marginBottom: 8 }}>Save to database so it appears everywhere (prescriptions, reports, etc.).</Text>
+                <Space direction="vertical" style={{ width: '100%' }} size="small">
+                  <div>
+                    <Text type="secondary" style={{ fontSize: 12 }}>Gender</Text>
+                    <Select
+                      placeholder="Gender"
+                      allowClear
+                      style={{ width: '100%', marginTop: 4 }}
+                      value={patientUpdateForm.gender ?? selectedAppointment.patientGender ?? undefined}
+                      onChange={(v) => setPatientUpdateForm((f) => ({ ...f, gender: v ?? undefined }))}
+                      options={[{ value: 'Male', label: 'Male' }, { value: 'Female', label: 'Female' }, { value: 'Other', label: 'Other' }]}
+                    />
+                  </div>
+                  <div>
+                    <Text type="secondary" style={{ fontSize: 12 }}>Blood group</Text>
+                    <Select
+                      placeholder="Blood group"
+                      allowClear
+                      style={{ width: '100%', marginTop: 4 }}
+                      value={patientUpdateForm.bloodGroup ?? selectedAppointment.patientBloodGroup ?? undefined}
+                      onChange={(v) => setPatientUpdateForm((f) => ({ ...f, bloodGroup: v ?? undefined }))}
+                      options={['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'].map((g) => ({ value: g, label: g }))}
+                    />
+                  </div>
+                  <div>
+                    <Text type="secondary" style={{ fontSize: 12 }}>Weight (kg)</Text>
+                    <Input
+                      type="number"
+                      placeholder="Weight"
+                      value={patientUpdateForm.weight ?? selectedAppointment.patientWeight ?? ''}
+                      onChange={(e) => setPatientUpdateForm((f) => ({ ...f, weight: e.target.value || undefined }))}
+                      style={{ marginTop: 4 }}
+                    />
+                  </div>
+                  <div>
+                    <Text type="secondary" style={{ fontSize: 12 }}>Height (cm)</Text>
+                    <Input
+                      type="number"
+                      placeholder="Height"
+                      value={patientUpdateForm.height ?? selectedAppointment.patientHeight ?? ''}
+                      onChange={(e) => setPatientUpdateForm((f) => ({ ...f, height: e.target.value || undefined }))}
+                      style={{ marginTop: 4 }}
+                    />
+                  </div>
+                  {!selectedAppointment.patientDateOfBirth && (
+                    <div>
+                      <Text type="secondary" style={{ fontSize: 12 }}>Age (if DOB unknown)</Text>
+                      <Input
+                        type="number"
+                        min={0}
+                        max={150}
+                        placeholder="e.g. 83 — age as of today; we’ll recalc each year"
+                        value={patientUpdateForm.ageAtReference ?? ''}
+                        onChange={(e) => {
+                          const v = e.target.value === '' ? undefined : parseInt(e.target.value, 10);
+                          setPatientUpdateForm((f) => ({ ...f, ageAtReference: isNaN(v as number) ? undefined : v }));
+                        }}
+                        style={{ marginTop: 4 }}
+                      />
+                    </div>
+                  )}
+                  <Button
+                    type="default"
+                    loading={patientUpdateSaving}
+                    onClick={async () => {
+                      if (!selectedAppointment?.patientId) return;
+                      const payload: Record<string, unknown> = {
+                        gender: patientUpdateForm.gender || selectedAppointment.patientGender || null,
+                        bloodGroup: patientUpdateForm.bloodGroup || selectedAppointment.patientBloodGroup || null,
+                        weight: patientUpdateForm.weight || selectedAppointment.patientWeight || null,
+                        height: patientUpdateForm.height || selectedAppointment.patientHeight || null,
+                        dateOfBirth: patientUpdateForm.dateOfBirth || (selectedAppointment.patientDateOfBirth ? dayjs(selectedAppointment.patientDateOfBirth).format('YYYY-MM-DD') : null),
+                      };
+                      if (patientUpdateForm.ageAtReference != null && !selectedAppointment.patientDateOfBirth) {
+                        payload.ageAtReference = patientUpdateForm.ageAtReference;
+                      }
+                      setPatientUpdateSaving(true);
+                      try {
+                        const token = localStorage.getItem('auth-token');
+                        const res = await fetch(`/api/patients/staff-update/${selectedAppointment.patientId}`, {
+                          method: 'PATCH',
+                          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+                          body: JSON.stringify(payload),
+                        });
+                        if (!res.ok) throw new Error((await res.json()).message || 'Update failed');
+                        message.success('Patient info saved');
+                        refetchAppointments();
+                        setPatientUpdateForm({});
+                      } catch (e: any) {
+                        message.error(e?.message || 'Failed to save');
+                      } finally {
+                        setPatientUpdateSaving(false);
+                      }
+                    }}
+                  >
+                    Save to patient profile
+                  </Button>
+                </Space>
+              </>
+            )}
+          </Drawer>
+
+          {/* Selected date: show that day's appointments */}
+          {selectedDate && (
+            <Card title={`Appointments on ${selectedDate.format('ddd, D MMM YYYY')}`} style={{ marginBottom: 24 }} extra={<Button type="link" onClick={() => setSelectedDate(null)}>Clear date</Button>}>
+              {loading ? (
+                <div style={{ padding: 24, textAlign: 'center' }}>Loading...</div>
+              ) : appointmentsForSelectedDate.length === 0 ? (
+                <div style={{ padding: 24, textAlign: 'center' }}>
+                  <Text type="secondary">No appointments on this date.</Text>
+                </div>
+              ) : (
+                <List
+                  dataSource={appointmentsForSelectedDate}
+                  renderItem={(appointment: any) => (
+                    <List.Item
+                      key={appointment.id}
+                      style={{ alignItems: 'flex-start', cursor: 'pointer' }}
+                      onClick={() => setSelectedAppointment(appointment)}
+                      actions={[
+                        getStatusTag(appointment.status),
+                        appointment.status === 'pending' && (
+                          <Button type="primary" size="small" onClick={(e) => { e.stopPropagation(); handleConfirmAppointment(appointment.id); }}>Confirm</Button>
+                        ),
+                        appointment.status === 'confirmed' && (
+                          <Button type="primary" size="small" onClick={(e) => { e.stopPropagation(); handleCompleteAppointment(appointment.id); }}>Complete</Button>
+                        ),
+                      ].filter(Boolean)}
+                    >
+                      <List.Item.Meta
+                        avatar={<Avatar style={{ backgroundColor: '#1890ff' }}>{appointment.patientName?.charAt(0) || 'P'}</Avatar>}
+                        title={<Space>{appointment.patientName} {getStatusIcon(appointment.status)}</Space>}
+                        description={
+                          <>
+                            <Text type="secondary" style={{ display: 'block' }}>{appointment.reason}</Text>
+                            <Space>
+                              <ClockCircleOutlined />
+                              <Text type="secondary">{appointment.appointmentTime || appointment.timeSlot || '—'}</Text>
+                              <Tag>{appointment.type || 'consultation'}</Tag>
+                            </Space>
+                          </>
+                        }
+                      />
+                    </List.Item>
+                  )}
+                />
+              )}
+            </Card>
+          )}
 
           {/* Filters and Search */}
           <Card style={{ marginBottom: '24px' }}>
@@ -676,8 +945,9 @@ export default function DoctorAppointments() {
               {filteredAppointments.map((appointment: any) => (
                 <Card 
                   key={appointment.id} 
-                  style={{ marginBottom: '16px' }}
+                  style={{ marginBottom: '16px', cursor: 'pointer' }}
                   hoverable
+                  onClick={() => setSelectedAppointment(appointment)}
                 >
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                     <div style={{ display: 'flex', alignItems: 'flex-start', gap: '16px', flex: 1 }}>
@@ -696,7 +966,7 @@ export default function DoctorAppointments() {
                           {getPriorityTag(appointment.priority)}
                         </div>
                         <Text type="secondary" style={{ display: 'block', marginBottom: '4px' }}>
-                          {appointment.patientAge} years old • {appointment.patientGender}
+                          {appointment.patientAge != null ? `${appointment.patientAge} years old` : 'Age not specified'} • {appointment.patientGender || 'Gender not specified'}
                         </Text>
                         <Text style={{ display: 'block', marginBottom: '8px' }}>
                           {appointment.reason}
@@ -724,14 +994,14 @@ export default function DoctorAppointments() {
                       </div>
                     </div>
                     
-                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '8px' }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '8px' }} onClick={(e) => e.stopPropagation()}>
                       {getStatusTag(appointment.status)}
                       <Space>
                         {appointment.status === 'pending' && (
                           <Button 
                             type="primary"
                             size="small"
-                            onClick={() => handleConfirmAppointment(appointment.id)}
+                            onClick={(e) => { e.stopPropagation(); handleConfirmAppointment(appointment.id); }}
                           >
                             Confirm
                           </Button>
@@ -741,19 +1011,20 @@ export default function DoctorAppointments() {
                             <Button 
                               size="small" 
                               icon={<PhoneOutlined />}
+                              onClick={(e) => e.stopPropagation()}
                             >
                               Start Call
                             </Button>
                             <Button 
                               type="primary"
                               size="small"
-                              onClick={() => handleCompleteAppointment(appointment.id)}
+                              onClick={(e) => { e.stopPropagation(); handleCompleteAppointment(appointment.id); }}
                             >
                               Complete
                             </Button>
                           </>
                         )}
-                        <Button size="small">
+                        <Button size="small" onClick={(e) => { e.stopPropagation(); setSelectedAppointment(appointment); }}>
                           View Details
                         </Button>
                       </Space>
