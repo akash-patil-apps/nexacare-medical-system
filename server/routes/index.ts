@@ -43,6 +43,7 @@ import storageRoutes from "./storage.routes.js";
 import analyticsRoutes from "./analytics.routes.js";
 import auditRoutes from "./audit.routes.js";
 import insuranceRoutes from "./insurance.routes.js";
+import presenceRoutes from "./presence.routes.js";
 
 
 const router = Router();
@@ -94,7 +95,8 @@ export async function registerRoutes(app: Express) {
   app.use("/api/analytics", analyticsRoutes);
   app.use("/api/audit", auditRoutes);
   app.use("/api/insurance", insuranceRoutes);
-  
+  app.use("/api/presence", presenceRoutes);
+
   // NOTE: /api/prescriptions/my should use /api/prescriptions/patient for patients
   // The prescriptions router handles all prescription endpoints
   

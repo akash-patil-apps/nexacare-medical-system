@@ -2,6 +2,7 @@ import { Router } from "express";
 import jwt from "jsonwebtoken";
 import { getJwtSecret } from "../env";
 import { onAppointmentEvent } from "../events/appointments.events";
+import { setOnline, setOffline, heartbeat } from "../presence/store.js";
 import { db } from "../db";
 import { eq } from "drizzle-orm";
 import { hospitals, receptionists } from "../../shared/schema";
@@ -85,6 +86,9 @@ router.get("/appointments", async (req, res) => {
 
   send({ type: "connected", at: new Date().toISOString() });
 
+  // Presence: mark user online while SSE is connected
+  setOnline(user.id, role);
+
   const unsubscribe = onAppointmentEvent((evt) => {
     // Filter events to only what's relevant for this connected user.
     if (role === "PATIENT") {
@@ -100,10 +104,11 @@ router.get("/appointments", async (req, res) => {
     send(evt);
   });
 
-  // Send periodic keep-alive to prevent connection timeout
+  // Send periodic keep-alive to prevent connection timeout; also refresh presence
   const keepAliveInterval = setInterval(() => {
     if (!res.headersSent) {
       try {
+        heartbeat(user.id);
         res.write(': keep-alive\n\n');
       } catch (e) {
         clearInterval(keepAliveInterval);
@@ -113,6 +118,7 @@ router.get("/appointments", async (req, res) => {
   }, 30000); // Every 30 seconds
 
   const cleanup = () => {
+    setOffline(user.id);
     clearInterval(keepAliveInterval);
     unsubscribe();
     if (!res.headersSent) {

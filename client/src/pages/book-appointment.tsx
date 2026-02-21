@@ -57,6 +57,8 @@ import { PatientSidebar } from '../components/layout/PatientSidebar';
 import { useResponsive } from '../hooks/use-responsive';
 import { formatTimeSlot12h, parseTimeTo24h } from '../lib/time';
 import { playNotificationSound } from '../lib/notification-sounds';
+import { useDoctorsPresence } from '../hooks/use-doctors-presence';
+import { PresenceDot } from '../components/presence/PresenceDot';
 
 const { Option } = Select;
 const { TextArea } = Input;
@@ -131,6 +133,10 @@ export default function BookAppointment() {
 
   const isPatient = user?.role?.toUpperCase() === 'PATIENT';
   const [actingPatientId, setActingPatientId] = useActingPatient();
+
+  // Presence: which doctors are online (for showing green/gray dot)
+  const doctorUserIds = doctors.length > 0 ? doctors.map((d) => d.userId).filter(Boolean) : null;
+  const presence = useDoctorsPresence(doctorUserIds);
 
   // Current user's patient profile ID (for "Self" in For whom)
   const { data: patientProfile } = useQuery({
@@ -1229,12 +1235,15 @@ export default function BookAppointment() {
                                               {!doctor.photo && getDoctorInitials(doctor.fullName || 'Dr. Unknown')}
                                             </Avatar>
                                             <div style={{ flex: 1, minWidth: 0 }}>
-                                              <Title level={4} style={{ margin: 0, fontSize: '20px', fontWeight: 700, color: '#111827', marginBottom: '4px' }}>
-                              {doctor.fullName || 'Dr. Unknown'}
-                            </Title>
+                                              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                                                <Title level={4} style={{ margin: 0, fontSize: '20px', fontWeight: 700, color: '#111827' }}>
+                                                  {doctor.fullName || 'Dr. Unknown'}
+                                                </Title>
+                                                <PresenceDot status={presence[doctor.userId] === 'online' ? 'online' : 'offline'} size={10} label={presence[doctor.userId] === 'online' ? 'Online now' : 'Offline'} />
+                                              </div>
                                               <Text style={{ fontSize: '14px', color: '#6B7280' }}>
-                              {doctor.specialty}
-                            </Text>
+                                                {doctor.specialty}
+                                              </Text>
                                             </div>
                           </div>
                           
