@@ -57,6 +57,9 @@ import { normalizeStatus, APPOINTMENT_STATUS } from '../../lib/appointment-statu
 import type { IpdEncounter } from '../../types/ipd';
 import ReportsPage from '../reports/ReportsPage';
 import AuditLogsPage from '../audit/audit-logs';
+import { useAllPresence } from '../../hooks/use-all-presence';
+import { PresencePanel } from '../../components/presence/PresencePanel';
+import { updateMyPresence } from '../../lib/presence';
 
 const { Content, Sider } = Layout;
 const { Title, Text } = Typography;
@@ -94,6 +97,8 @@ export default function HospitalDashboard() {
   const [selectedEncounterForDetail, setSelectedEncounterForDetail] = useState<number | null>(null);
   const [patientsSearch, setPatientsSearch] = useState('');
   const [loadingPatientId, setLoadingPatientId] = useState<number | null>(null);
+
+  const onlinePresence = useAllPresence(!!user);
 
   // Redirect if not authenticated
   if (!isLoading && !user) {
@@ -1327,7 +1332,9 @@ export default function HospitalDashboard() {
               </div>
             )}
 
-          {/* Appointment Status Summary - Similar to Receptionist Queue Status */}
+          {/* Appointment Status Summary + Who's online */}
+          <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
+            <Col xs={24} lg={isMobile ? 24 : 18}>
           <Card 
             variant="borderless"
             style={{ 
@@ -1335,7 +1342,6 @@ export default function HospitalDashboard() {
               boxShadow: '0 2px 8px rgba(0, 0, 0, 0.08)',
               border: '1px solid #E5E7EB',
               background: '#fff',
-              marginBottom: 24,
             }}
           >
             <div style={{ 
@@ -1371,6 +1377,22 @@ export default function HospitalDashboard() {
               </div>
             </div>
           </Card>
+            </Col>
+            {!isMobile && (
+            <Col xs={24} lg={6}>
+              <PresencePanel
+                presence={onlinePresence}
+                title="Who's online"
+                currentUserId={user?.id}
+                onUpdateMyStatus={async (payload) => {
+                  const token = localStorage.getItem('auth-token');
+                  await updateMyPresence(token, payload);
+                  queryClient.invalidateQueries({ queryKey: ['presence', 'all'] });
+                }}
+              />
+            </Col>
+            )}
+          </Row>
 
             {/* Main Tabs: Appointments and IPD Management */}
             <div style={{ 

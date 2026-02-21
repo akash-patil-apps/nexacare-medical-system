@@ -69,6 +69,7 @@ import { AdmissionModal } from '../../components/ipd/AdmissionModal';
 import type { IpdEncounter } from '../../types/ipd';
 import IPDPatientDetail from '../ipd/patient-detail';
 import BedManagement from '../ipd/bed-management';
+import { StatusSetter } from '../../components/presence/StatusSetter';
 
 const { Content, Sider } = Layout;
 const { Title, Text } = Typography;
@@ -1897,6 +1898,9 @@ export default function DoctorDashboard() {
                     trendBg={stats.unreadNotifications > 0 ? "#FFEAD5" : "#F3F4F6"}
                     onView={() => message.info('Notifications widget below')}
                   />
+                </div>
+                <div style={{ flex: '0 0 auto', alignSelf: 'flex-start' }}>
+                  <StatusSetter />
                 </div>
               </div>
             )}
