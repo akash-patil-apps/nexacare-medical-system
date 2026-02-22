@@ -80,7 +80,8 @@ router.post('/otp/verify', async (req, res) => {
 // Register user (after OTP is verified)
 router.post('/register', async (req, res) => {
   try {
-    const validated = registrationSchema.parse(req.body) as z.infer<typeof registrationSchema> & { email?: string };
+    const body = { ...req.body, role: typeof req.body?.role === 'string' ? req.body.role.toLowerCase() : req.body?.role };
+    const validated = registrationSchema.parse(body) as z.infer<typeof registrationSchema> & { email?: string };
     if (validated.role !== 'patient' && (!validated.email || !String(validated.email).trim())) {
       return res.status(400).json({ message: 'Email is required for this role' });
     }
@@ -89,11 +90,20 @@ router.post('/register', async (req, res) => {
     }
     const result = await registerUser(validated as Parameters<typeof registerUser>[0]);
     res.json(result);
-  } catch (error) {
+  } catch (error: any) {
     console.error('Registration error:', error);
-    res.status(400).json({ 
-      message: 'Registration failed',
-      error: error instanceof Error ? error.message : 'Unknown error'
+    const code = error?.cause?.code ?? error?.code;
+    const constraint = error?.cause?.constraint_name ?? error?.constraint_name;
+    if (code === '23505') {
+      const field = constraint === 'users_email_unique' ? 'email' : constraint === 'users_mobile_number_unique' ? 'mobile number' : 'email or mobile number';
+      return res.status(409).json({
+        message: `A user with this ${field} already exists. Use the patient search (first step) to find them and book an appointment.`,
+        code: 'DUPLICATE_USER',
+      });
+    }
+    res.status(400).json({
+      message: error instanceof Error ? error.message : 'Registration failed',
+      error: error instanceof Error ? error.message : 'Unknown error',
     });
   }
 });

@@ -135,6 +135,39 @@ body {
   -moz-osx-font-smoothing: grayscale;
 }
 
+/* Modal & Drawer: one consistent colour – no blue/white/grey mix (header + content same) */
+body .ant-modal-wrap .ant-modal .ant-modal-content,
+.ant-modal .ant-modal-content {
+  background: #F3F4F6 !important;
+}
+body .ant-modal-wrap .ant-modal .ant-modal-header,
+body .ant-modal .ant-modal-header,
+.ant-modal-wrap .ant-modal .ant-modal-header,
+.ant-modal .ant-modal-header,
+div.ant-modal-header {
+  background: #F3F4F6 !important;
+  border-bottom: 1px solid #E5E7EB !important;
+}
+body .ant-modal-wrap .ant-modal .ant-modal-body,
+body .ant-modal .ant-modal-body,
+.ant-modal .ant-modal-body {
+  background: #F3F4F6 !important;
+}
+body .ant-drawer .ant-drawer-content,
+.ant-drawer .ant-drawer-content {
+  background: #F3F4F6 !important;
+}
+body .ant-drawer .ant-drawer-header,
+.ant-drawer .ant-drawer-header,
+div.ant-drawer-header {
+  background: #F3F4F6 !important;
+  border-bottom: 1px solid #E5E7EB !important;
+}
+body .ant-drawer .ant-drawer-body,
+.ant-drawer .ant-drawer-body {
+  background: #F3F4F6 !important;
+}
+
 /* ============================================
    Container & Layout
    ============================================ */

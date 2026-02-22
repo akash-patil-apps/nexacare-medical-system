@@ -100,7 +100,7 @@ export const DischargeModal: React.FC<DischargeModalProps> = ({
       footer={null}
       width={600}
     >
-      <div style={{ marginBottom: 16, padding: 12, background: '#f0f9ff', borderRadius: 8 }}>
+      <div style={{ marginBottom: 16, padding: 12, background: 'var(--ant-color-primary-bg, #f0f9ff)', borderRadius: 8, border: '1px solid var(--ant-color-primary-border, #91caff)' }}>
         <Space direction="vertical" size="small">
           <div>
             <strong>Patient:</strong> {encounter.patient?.user?.fullName || 'Unknown'}

@@ -140,7 +140,7 @@ export const IpdEncountersList: React.FC<IpdEncountersListProps> = ({
           || 'Unknown';
         return (
           <Space size="small">
-            <UserOutlined style={{ color: '#1890ff' }} />
+            <UserOutlined style={{ color: 'var(--ant-color-primary)' }} />
             <Text strong style={{ fontSize: '13px' }}>{patientName}</Text>
           </Space>
         );

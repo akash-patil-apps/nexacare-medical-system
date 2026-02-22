@@ -362,10 +362,10 @@ export const LabTestsConfirmationModal: React.FC<LabTestsConfirmationModalProps>
                     flexDirection: 'column',
                     alignItems: 'center',
                     justifyContent: 'center',
-                    border: isSelected ? '2px solid #1890ff' : '2px solid #d9d9d9',
+                    border: isSelected ? '2px solid var(--ant-color-primary)' : '2px solid #d9d9d9',
                     borderRadius: 12,
-                    backgroundColor: isSelected ? '#e6f7ff' : '#fff',
-                    color: isSelected ? '#1890ff' : '#000',
+                    backgroundColor: isSelected ? 'var(--ant-color-primary-bg, #e6f7ff)' : '#fff',
+                    color: isSelected ? 'var(--ant-color-primary)' : '#000',
                     transition: 'all 0.3s',
                   }}
                   onClick={() => {
@@ -373,7 +373,7 @@ export const LabTestsConfirmationModal: React.FC<LabTestsConfirmationModalProps>
                     form.validateFields(['method']);
                   }}
                 >
-                  <div style={{ marginBottom: 8, color: isSelected ? '#1890ff' : 'inherit' }}>
+                  <div style={{ marginBottom: 8, color: isSelected ? 'var(--ant-color-primary)' : 'inherit' }}>
                     {method.icon}
                   </div>
                   <div style={{ fontSize: 14, fontWeight: 500 }}>{method.label}</div>
@@ -447,7 +447,7 @@ export const LabTestsConfirmationModal: React.FC<LabTestsConfirmationModalProps>
             <Divider style={{ margin: '8px 0' }} />
             <Space style={{ width: '100%', justifyContent: 'space-between' }}>
               <Text strong style={{ fontSize: 18 }}>Total Amount:</Text>
-              <Text strong style={{ fontSize: 20, color: '#1890ff' }}>
+              <Text strong style={{ fontSize: 20, color: 'var(--ant-color-primary)' }}>
                 ₹{totalAmount.toFixed(2)}
               </Text>
             </Space>

@@ -44,6 +44,7 @@ import ContactDirectory from './pages/contact-directory';
 import MessagesPage from './pages/messages';
 import ProfilePage from './pages/profile';
 import ReceptionistAppointmentsPage from './pages/receptionist-appointments';
+import ReceptionistIpdPage from './pages/dashboards/receptionist-ipd';
 import { getMessagesPathForRole } from './lib/messages-route';
 import NotFound from './pages/not-found';
 
@@ -194,6 +195,7 @@ function App() {
                   <Route path="/dashboard/radiology-technician" component={RadiologyTechnicianDashboard} />
                   <Route path="/dashboard/receptionist" component={ReceptionistDashboard} />
                   <Route path="/dashboard/receptionist/contact-directory" component={ContactDirectory} />
+                  <Route path="/dashboard/receptionist/ipd" component={ReceptionistIpdPage} />
                   <Route path="/receptionist/appointments" component={ReceptionistAppointmentsPage} />
                   {/* Role-based messages routes */}
                   <Route path="/patient/messages" component={MessagesPage} />

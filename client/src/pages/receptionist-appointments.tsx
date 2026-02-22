@@ -1,6 +1,7 @@
 import React, { useState, useMemo, useRef } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Redirect, useLocation } from 'wouter';
+import { ConfigProvider } from 'antd';
 import {
   Layout,
   Card,
@@ -13,6 +14,8 @@ import {
   Empty,
 } from 'antd';
 import { CalendarOutlined } from '@ant-design/icons';
+import { getThemeForRole } from '../antd.config';
+import { ROLE_PRIMARY } from '../design-tokens';
 import { useAuth } from '../hooks/use-auth';
 import { useResponsive } from '../hooks/use-responsive';
 import { ReceptionistSidebar } from '../components/layout/ReceptionistSidebar';
@@ -27,6 +30,7 @@ const { Text } = Typography;
 
 const SIDER_WIDTH = 80;
 const PAGE_BACKGROUND = '#F3F4F6';
+const RECEPTIONIST_PRIMARY = ROLE_PRIMARY.receptionist;
 
 function getAuthHeaders(): HeadersInit {
   const token = localStorage.getItem('auth-token');
@@ -192,6 +196,7 @@ export default function ReceptionistAppointmentsPage() {
   const isOnAppointmentsPage = location === '/receptionist/appointments';
 
   return (
+    <ConfigProvider theme={getThemeForRole('receptionist')}>
     <Layout style={{ minHeight: '100vh', width: '100%', background: PAGE_BACKGROUND }}>
       {!isMobile && (
         <Sider
@@ -203,7 +208,7 @@ export default function ReceptionistAppointmentsPage() {
             height: '100vh',
             width: SIDER_WIDTH,
             background: '#fff',
-            boxShadow: '0 2px 16px rgba(26, 143, 227, 0.08)',
+            boxShadow: '0 2px 16px rgba(0,0,0,0.08)',
             display: 'flex',
             flexDirection: 'column',
             zIndex: 10,
@@ -231,6 +236,7 @@ export default function ReceptionistAppointmentsPage() {
           userRole={user?.role?.replace('_', ' ') || 'Receptionist'}
           userId={headerUserId}
           userInitials={userInitials}
+          primaryColor={RECEPTIONIST_PRIMARY}
         />
 
         <Content style={{ padding: 24, overflow: 'auto', flex: 1 }}>
@@ -238,7 +244,7 @@ export default function ReceptionistAppointmentsPage() {
             <Card
               title={
                 <Space>
-                  <CalendarOutlined style={{ color: '#1A8FE3' }} />
+                  <CalendarOutlined style={{ color: RECEPTIONIST_PRIMARY }} />
                   <Text strong>All Appointments</Text>
                 </Space>
               }
@@ -302,5 +308,6 @@ export default function ReceptionistAppointmentsPage() {
         </Content>
       </Layout>
     </Layout>
+    </ConfigProvider>
   );
 }

@@ -58,6 +58,71 @@ const staffUpdatePatientSchema = z.object({
   chronicConditions: z.string().optional().nullable(),
 });
 
+// POST /patients - create patient profile for existing user (e.g. receptionist walk-in after auth/register)
+const createPatientBodySchema = z.object({
+  userId: z.coerce.number().int().positive(),
+  gender: z.string().optional().nullable(),
+  bloodGroup: z.string().optional().nullable(),
+  address: z.string().optional().nullable(),
+  city: z.string().optional().nullable(),
+  state: z.string().optional().nullable(),
+  zipCode: z.string().optional().nullable(),
+  dateOfBirth: z.union([z.string(), z.date()]).optional().nullable(),
+  emergencyContact: z.string().optional().nullable(),
+  emergencyContactName: z.string().optional().nullable(),
+  emergencyRelation: z.string().optional().nullable(),
+  medicalHistory: z.string().optional().nullable(),
+  allergies: z.string().optional().nullable(),
+  currentMedications: z.string().optional().nullable(),
+  chronicConditions: z.string().optional().nullable(),
+  insuranceProvider: z.string().optional().nullable(),
+  insuranceNumber: z.string().optional().nullable(),
+  occupation: z.string().optional().nullable(),
+  maritalStatus: z.string().optional().nullable(),
+});
+
+router.post(
+  "/",
+  authenticateToken,
+  authorizeRoles("RECEPTIONIST", "ADMIN", "HOSPITAL", "NURSE", "DOCTOR"),
+  async (req: AuthenticatedRequest, res) => {
+    try {
+      const raw = createPatientBodySchema.parse(req.body);
+      const data: Record<string, unknown> = { userId: raw.userId };
+      if (raw.gender != null) data.gender = raw.gender;
+      if (raw.bloodGroup != null) data.bloodGroup = raw.bloodGroup;
+      if (raw.address != null) data.address = raw.address;
+      if (raw.city != null) data.city = raw.city;
+      if (raw.state != null) data.state = raw.state;
+      if (raw.zipCode != null) data.zipCode = raw.zipCode;
+      if (raw.dateOfBirth != null) {
+        const d = raw.dateOfBirth instanceof Date ? raw.dateOfBirth : new Date(String(raw.dateOfBirth));
+        data.dateOfBirth = isNaN(d.getTime()) ? null : d;
+      }
+      if (raw.emergencyContact != null) data.emergencyContact = raw.emergencyContact;
+      if (raw.emergencyContactName != null) data.emergencyContactName = raw.emergencyContactName;
+      if (raw.emergencyRelation != null) data.emergencyRelation = raw.emergencyRelation;
+      if (raw.medicalHistory != null) data.medicalHistory = raw.medicalHistory;
+      if (raw.allergies != null) data.allergies = raw.allergies;
+      if (raw.currentMedications != null) data.currentMedications = raw.currentMedications;
+      if (raw.chronicConditions != null) data.chronicConditions = raw.chronicConditions;
+      if (raw.insuranceProvider != null) data.insuranceProvider = raw.insuranceProvider;
+      if (raw.insuranceNumber != null) data.insuranceNumber = raw.insuranceNumber;
+      if (raw.occupation != null) data.occupation = raw.occupation;
+      if (raw.maritalStatus != null) data.maritalStatus = raw.maritalStatus;
+      const result = await patientsService.createPatient(data as Omit<import('../../shared/schema-types').InsertPatient, 'id' | 'createdAt'>);
+      const patient = Array.isArray(result) ? result[0] : result;
+      res.status(201).json({ patient });
+    } catch (err: any) {
+      console.error("Create patient profile error:", err);
+      res.status(400).json({
+        message: err?.message || "Failed to create patient profile",
+        error: err?.errors || err,
+      });
+    }
+  }
+);
+
 // POST /patients/register
 router.post("/register", async (req, res) => {
   try {

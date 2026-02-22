@@ -1,46 +1,41 @@
 import React from 'react';
 import { ConfigProvider } from 'antd';
 import type { ThemeConfig } from 'antd';
+import { ROLE_PRIMARY, FIGMA_COLORS } from './design-tokens';
 
 /**
  * NexaCare Medical System - Design System
- * Inspired by modern medical platforms (TrueToken, Evergreen Hospital, Mediczen)
- * 
- * Design Principles:
- * - Clean, professional medical aesthetics
- * - WCAG AA compliant accessibility
- * - Consistent design language
- * - Intuitive user experience
+ * Figma-aligned tokens (Option A): shared neutrals + semantic; role primary via getThemeForRole().
  */
 export const medicalTheme: ThemeConfig = {
   token: {
-    // Primary Colors - Medical Blue (Trust & Professional)
+    // Primary: default (patient/global); dashboards override via getThemeForRole()
     colorPrimary: '#1890ff',
-    colorSuccess: '#52c41a',
-    colorWarning: '#faad14',
-    colorError: '#ff4d4f',
+    colorSuccess: FIGMA_COLORS.success,
+    colorWarning: FIGMA_COLORS.warning,
+    colorError: FIGMA_COLORS.error,
     colorInfo: '#1890ff',
     
-    // Background Colors
+    // Background Colors (Figma-aligned)
     colorPrimaryBg: '#e6f7ff',
     colorSuccessBg: '#f6ffed',
     colorWarningBg: '#fffbe6',
     colorErrorBg: '#fff2f0',
     
-    // Text Colors
-    colorText: '#262626',           // Primary text
-    colorTextSecondary: '#595959',  // Secondary text
-    colorTextTertiary: '#8c8c8c',   // Tertiary text
-    colorTextDisabled: '#bfbfbf',   // Disabled text
+    // Text Colors (Figma)
+    colorText: FIGMA_COLORS.textPrimary,
+    colorTextSecondary: FIGMA_COLORS.textSecondary,
+    colorTextTertiary: FIGMA_COLORS.textMuted,
+    colorTextDisabled: '#bfbfbf',
     
-    // Border Colors
-    colorBorder: '#d9d9d9',
+    // Border (Figma)
+    colorBorder: FIGMA_COLORS.border,
     colorBorderSecondary: '#f0f0f0',
     
-    // Background Colors
-    colorBgContainer: '#ffffff',
-    colorBgElevated: '#fafafa',
-    colorBgLayout: '#f5f5f5',
+    // Background Colors (Figma)
+    colorBgContainer: FIGMA_COLORS.backgroundCard,
+    colorBgElevated: FIGMA_COLORS.backgroundPageAlt,
+    colorBgLayout: FIGMA_COLORS.backgroundPage,
     
     // Typography - Inter font family
     fontFamily: `'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', sans-serif`,
@@ -59,11 +54,11 @@ export const medicalTheme: ThemeConfig = {
     lineHeightHeading2: 1.3,
     lineHeightHeading3: 1.4,
     
-    // Border Radius - Modern rounded corners
-    borderRadius: 6,          // Default
-    borderRadiusLG: 12,       // Cards
-    borderRadiusSM: 4,       // Small elements
-    borderRadiusXS: 2,       // Extra small
+    // Border Radius (Figma: 8px buttons, 16px cards)
+    borderRadius: 8,          // Default / buttons
+    borderRadiusLG: 16,        // Cards
+    borderRadiusSM: 6,        // Small elements
+    borderRadiusXS: 2,        // Extra small
     
     // Spacing Scale (8px base)
     padding: 16,
@@ -89,9 +84,9 @@ export const medicalTheme: ThemeConfig = {
     motionEaseInOut: 'cubic-bezier(0.645, 0.045, 0.355, 1)',
   },
   components: {
-    // Button Component
+    // Button Component (Figma receptionist: 10px)
     Button: {
-      borderRadius: 6,
+      borderRadius: 10,
       controlHeight: 40,
       fontWeight: 500,
       primaryShadow: '0 2px 4px rgba(24, 144, 255, 0.2)',
@@ -102,9 +97,9 @@ export const medicalTheme: ThemeConfig = {
       defaultHoverBorderColor: '#1890ff',
     },
     
-    // Input Component
+    // Input Component (Figma: 10px)
     Input: {
-      borderRadius: 6,
+      borderRadius: 10,
       controlHeight: 40,
       paddingInline: 12,
       paddingBlock: 8,
@@ -113,12 +108,12 @@ export const medicalTheme: ThemeConfig = {
       activeShadow: '0 0 0 2px rgba(24, 144, 255, 0.2)',
     },
     
-    // Card Component
+    // Card Component (Figma: 16px radius, light shadow)
     Card: {
-      borderRadius: 12,
+      borderRadius: 16,
       paddingLG: 24,
       boxShadow: '0 2px 8px rgba(0, 0, 0, 0.08)',
-      headerBg: '#fafafa',
+      headerBg: '#ffffff',
       headerFontSize: 18,
       headerFontWeight: 600,
     },
@@ -170,10 +165,10 @@ export const medicalTheme: ThemeConfig = {
       iconSize: 20,
     },
     
-    // Modal Component
+    // Modal Component – header matches page grey so no white strip on grey background
     Modal: {
       borderRadius: 12,
-      headerBg: '#ffffff',
+      headerBg: FIGMA_COLORS.backgroundPage,
       titleFontSize: 18,
       titleFontWeight: 600,
       paddingContentHorizontal: 24,
@@ -194,9 +189,9 @@ export const medicalTheme: ThemeConfig = {
       errorIconFontSize: 16,
     },
     
-    // Select Component
+    // Select Component (Figma: 10px)
     Select: {
-      borderRadius: 6,
+      borderRadius: 10,
       controlHeight: 40,
       optionSelectedBg: '#e6f7ff',
       optionActiveBg: '#f5f5f5',
@@ -244,6 +239,32 @@ export const medicalTheme: ThemeConfig = {
     },
   },
 };
+
+/**
+ * Returns theme with role-specific colorPrimary. Use in dashboard layout so buttons/tabs/active states use role primary.
+ */
+export function getThemeForRole(role: string): ThemeConfig {
+  const roleKey = role.toLowerCase().replace(/\s+/g, '_');
+  const primary = ROLE_PRIMARY[roleKey] ?? ROLE_PRIMARY.receptionist;
+  return {
+    ...medicalTheme,
+    token: {
+      ...medicalTheme.token,
+      colorPrimary: primary,
+      colorPrimaryBg: `${primary}14`,
+      colorPrimaryBorder: primary,
+      colorPrimaryHover: primary,
+      colorPrimaryActive: primary,
+    },
+    components: {
+      ...medicalTheme.components,
+      Button: {
+        ...medicalTheme.components?.Button,
+        primaryShadow: `0 2px 4px ${primary}33`,
+      },
+    },
+  } as ThemeConfig;
+}
 
 // Export the theme provider component
 export const MedicalThemeProvider = ({ children }: { children: React.ReactNode }) => {

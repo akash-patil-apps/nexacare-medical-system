@@ -1,15 +1,16 @@
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Redirect, useLocation } from "wouter";
-import { 
-  Layout, 
-  Card, 
-  Row, 
-  Col, 
-  Button, 
-  Table, 
-  Tag, 
-  Space, 
+import {
+  ConfigProvider,
+  Layout,
+  Card,
+  Row,
+  Col,
+  Button,
+  Table,
+  Tag,
+  Space,
   Typography,
   Modal,
   Spin,
@@ -29,6 +30,8 @@ import {
   Empty,
   notification as antdNotification,
 } from 'antd';
+import { getThemeForRole } from '../../antd.config';
+import { FIGMA_COLORS, ROLE_PRIMARY, FIGMA_RECEPTIONIST } from '../../design-tokens';
 import { 
   CalendarOutlined, 
   CheckCircleOutlined,
@@ -49,6 +52,7 @@ import {
   MobileOutlined,
   CreditCardOutlined,
   BankOutlined,
+  PlusOutlined,
 } from '@ant-design/icons';
 import { useAuth } from '../../hooks/use-auth';
 import { useResponsive } from '../../hooks/use-responsive';
@@ -90,13 +94,7 @@ import medicalIcon from '../../assets/images/medical.png';
 const { Content, Sider } = Layout;
 const { Title, Text } = Typography;
 
-const receptionistTheme = {
-  primary: '#F97316', // Orange
-  secondary: '#6366F1', // Indigo
-  accent: '#22C55E', // Green
-  background: '#F3F4F6', // Light grey (matching patient dashboard)
-  highlight: '#FFEAD5', // Lighter orange
-};
+const RECEPTIONIST_PRIMARY = ROLE_PRIMARY.receptionist;
 
 export default function ReceptionistDashboard() {
   const [location] = useLocation();
@@ -138,23 +136,20 @@ export default function ReceptionistDashboard() {
   const [selectedEncounter, setSelectedEncounter] = useState<IpdEncounter | null>(null);
   const [isTransferModalOpen, setIsTransferModalOpen] = useState(false);
   const [isDischargeModalOpen, setIsDischargeModalOpen] = useState(false);
-  const [activeMainTab, setActiveMainTab] = useState<string>('appointments');
   const appointmentsSectionRef = useRef<HTMLDivElement>(null);
   // When on receptionist dashboard page, always highlight Dashboard icon in sidebar (not Appointments)
   const selectedMenuKey = 'dashboard';
 
   const handleAppointmentsIconClick = () => {
-    setActiveMainTab('appointments');
     setTimeout(() => {
       appointmentsSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }, 100);
   };
 
-  // Open Appointments tab when navigating with ?tab=appointments (e.g. from sidebar when on another page)
+  // Scroll to appointments section when navigating with ?tab=appointments (e.g. from sidebar)
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     if (params.get('tab') === 'appointments') {
-      setActiveMainTab('appointments');
       setTimeout(() => {
         appointmentsSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
       }, 200);
@@ -1178,20 +1173,20 @@ export default function ReceptionistDashboard() {
   const appointmentTabs = useMemo(() => {
     const tabs: Array<{ key: string; label: string; count: number }> = [];
     
-    // Fixed OPD ops tabs (Today)
-    tabs.push({ key: 'queue', label: 'Queue Management', count: 0 }); // Queue tab always visible
-    tabs.push({ key: 'today_all', label: `Today (${todayAllAppointments.length})`, count: todayAllAppointments.length });
-    tabs.push({ key: 'pending', label: `Pending (${pendingAppointments.length})`, count: pendingAppointments.length });
-    tabs.push({ key: 'confirmed', label: `Confirmed (${confirmedAppointments.length})`, count: confirmedAppointments.length });
-    tabs.push({ key: 'checkedin', label: `Checked In (${checkedInTodayAppointments.length})`, count: checkedInTodayAppointments.length });
-    tabs.push({ key: 'inconsultation', label: `In Consultation (${inConsultationTodayAppointments.length})`, count: inConsultationTodayAppointments.length });
-    tabs.push({ key: 'completed', label: `Completed (${completedTodayAppointments.length})`, count: completedTodayAppointments.length });
+    // Fixed OPD ops tabs (design: "Queue Management", "Today 48", etc.)
+    tabs.push({ key: 'queue', label: 'Queue Management', count: 0 });
+    tabs.push({ key: 'today_all', label: `Today ${todayAllAppointments.length}`, count: todayAllAppointments.length });
+    tabs.push({ key: 'pending', label: `Pending ${pendingAppointments.length}`, count: pendingAppointments.length });
+    tabs.push({ key: 'confirmed', label: `Confirmed ${confirmedAppointments.length}`, count: confirmedAppointments.length });
+    tabs.push({ key: 'checkedin', label: `Checked In ${checkedInTodayAppointments.length}`, count: checkedInTodayAppointments.length });
+    tabs.push({ key: 'inconsultation', label: `In Consultation ${inConsultationTodayAppointments.length}`, count: inConsultationTodayAppointments.length });
+    tabs.push({ key: 'completed', label: `Completed ${completedTodayAppointments.length}`, count: completedTodayAppointments.length });
     
     // Tomorrow tab
     if (appointmentsByDate.tomorrow && appointmentsByDate.tomorrow.length > 0) {
       tabs.push({
         key: 'tomorrow',
-        label: `Tomorrow (${appointmentsByDate.tomorrow.length})`,
+        label: `Tomorrow ${appointmentsByDate.tomorrow.length}`,
         count: appointmentsByDate.tomorrow.length,
       });
     }
@@ -1206,7 +1201,7 @@ export default function ReceptionistDashboard() {
           const displayDate = dayjs(dateKey).format('DD MMM');
           tabs.push({
             key: dateKey,
-            label: `${displayDate} (${appointments.length})`,
+            label: `${displayDate} ${appointments.length}`,
             count: appointments.length,
           });
         }
@@ -1868,17 +1863,19 @@ export default function ReceptionistDashboard() {
     setSelectedLabTestForPayment(null);
   };
 
-  // Get appointment status with better labels
+  // Get appointment status (design: pill badges - Waiting grey, Checked In green)
   const getStatusConfig = (status: string) => {
+    const s = (status || '').toLowerCase();
     const statusConfig: Record<string, { color: string; label: string }> = {
-      pending: { color: 'orange', label: 'WAITING' },
-      confirmed: { color: 'blue', label: 'CONFIRMED' },
-      'checked-in': { color: 'cyan', label: 'CHECKED IN' },
-      attended: { color: 'cyan', label: 'IN CONSULTATION' },
-      completed: { color: 'green', label: 'COMPLETED' },
-      cancelled: { color: 'red', label: 'CANCELLED' },
+      pending: { color: FIGMA_COLORS.statusNeutral, label: 'Waiting' },
+      confirmed: { color: FIGMA_COLORS.statusNeutral, label: 'Waiting' },
+      'checked-in': { color: FIGMA_COLORS.success, label: 'Checked In' },
+      attended: { color: '#0EA5E9', label: 'In Consultation' },
+      in_consultation: { color: '#0EA5E9', label: 'In Consultation' },
+      completed: { color: FIGMA_COLORS.success, label: 'Completed' },
+      cancelled: { color: FIGMA_COLORS.error, label: 'Cancelled' },
     };
-    return statusConfig[status.toLowerCase()] || { color: 'default', label: status.toUpperCase() };
+    return statusConfig[s] || { color: 'default', label: (status || 'Unknown').replace(/_/g, ' ') };
   };
 
   // Get booking source label
@@ -2038,7 +2035,7 @@ export default function ReceptionistDashboard() {
                 height: 'auto', 
                 fontSize: 14, 
                 fontWeight: 600,
-                color: '#1890ff',
+                color: RECEPTIONIST_PRIMARY,
               }}
               className="patient-name-link"
               onClick={() => record.patientId && handleViewPatientInfo(record.patientId)}
@@ -2130,16 +2127,19 @@ export default function ReceptionistDashboard() {
 
   const appointmentColumns = [
     {
-      title: '#',
-      key: 'serial',
-      width: 50,
-      align: 'center' as const,
-      render: (_: any, __: any, index: number) => (
-        <Text type="secondary" style={{ fontWeight: 500 }}>{index + 1}</Text>
-      ),
+      title: 'Token',
+      dataIndex: 'tokenDisplay',
+      key: 'tokenDisplay',
+      width: 88,
+      render: (tokenDisplay: string | number | null | undefined) =>
+        tokenDisplay != null && tokenDisplay !== '' ? (
+          <span style={{ fontFamily: 'monospace', fontWeight: 600, fontSize: 14, color: FIGMA_COLORS.textPrimary }}>{String(tokenDisplay)}</span>
+        ) : (
+          <Text type="secondary">-</Text>
+        ),
     },
     {
-      title: 'Patient',
+      title: 'Patient Name',
       dataIndex: 'patient',
       key: 'patient',
       width: 170,
@@ -2174,7 +2174,7 @@ export default function ReceptionistDashboard() {
             style={{ 
               padding: 0, 
               height: 'auto',
-              color: '#1890ff',
+              color: RECEPTIONIST_PRIMARY,
             }}
             className="patient-name-link"
             onClick={() => record.patientId && handleViewPatientInfo(record.patientId)}
@@ -2203,86 +2203,57 @@ export default function ReceptionistDashboard() {
       },
     },
     {
-      title: 'Date & Time',
-      key: 'dateTime',
-      width: 130,
-      render: (_: any, record: any) => {
-        const dateLabel = (() => {
-        if (!record.dateObj && !record.date) return 'N/A';
-        const date = record.dateObj || new Date(record.date);
-        const today = new Date();
-        today.setHours(0, 0, 0, 0);
-        const appointmentDate = new Date(date);
-        appointmentDate.setHours(0, 0, 0, 0);
-          if (appointmentDate.getTime() === today.getTime()) return 'Today';
-        const tomorrow = new Date(today);
-        tomorrow.setDate(tomorrow.getDate() + 1);
-          if (appointmentDate.getTime() === tomorrow.getTime()) return 'Tomorrow';
-        return dayjs(date).format('DD MMM YYYY');
-        })();
-
-        const timeLabel = record.time ? formatTimeSlot12h(record.time) : 'N/A';
-
-        return (
-          <Space direction="vertical" size={0} style={{ lineHeight: 1.2 }}>
-            <Text>{dateLabel}</Text>
-            <Text type="secondary" style={{ fontSize: 12 }}>{timeLabel}</Text>
-          </Space>
-        );
-      },
-    },
-    {
-      title: 'Token',
-      dataIndex: 'tokenDisplay',
-      key: 'tokenDisplay',
-      width: 72,
-      align: 'center' as const,
-      render: (tokenDisplay: string | number | null | undefined) =>
-        tokenDisplay != null && tokenDisplay !== '' ? <Text strong>{String(tokenDisplay)}</Text> : <Text type="secondary">-</Text>,
-    },
-    {
       title: 'Doctor',
       dataIndex: 'doctor',
       key: 'doctor',
-      width: 130,
+      width: 120,
       ellipsis: true,
+      render: (doctor: string) => (
+        <span style={{ fontSize: 14, color: FIGMA_COLORS.textMuted }}>{doctor || '—'}</span>
+      ),
     },
     {
-      title: 'Details',
-      key: 'details',
-      width: 130,
+      title: 'Time',
+      key: 'arrivalTime',
+      width: 100,
       render: (_: any, record: any) => (
-        <Space direction="vertical" size={0}>
-          <Text type="secondary" style={{ fontSize: 12 }}>{record.department || 'General'}</Text>
-          <Space size={6} wrap>
-            {(() => {
-              const src = getSourceConfig(record.type);
-              return <Tag color={src.color} style={{ margin: 0 }}>{src.label}</Tag>;
-            })()}
-            {(() => {
-              const pay = getPaymentConfig(record.paymentStatus, record);
-              return <Tag color={pay.color} style={{ margin: 0 }}>{pay.label}</Tag>;
-            })()}
-          </Space>
-        </Space>
+        <span style={{ fontSize: 14, color: FIGMA_COLORS.textMuted }}>{record.time ? formatTimeSlot12h(record.time) : 'N/A'}</span>
       ),
     },
     {
       title: 'Status',
       dataIndex: 'status',
       key: 'status',
-      width: 100,
+      width: 120,
       render: (status: string) => {
         const config = getStatusConfig(status);
-        return <Tag color={config.color}>{config.label}</Tag>;
+        const isSuccess = config.color === FIGMA_COLORS.success;
+        const isBlue = config.color === '#0EA5E9';
+        const isError = config.color === FIGMA_COLORS.error;
+        const filled = isSuccess || isBlue || isError;
+        return (
+          <Tag
+            style={{
+              margin: 0,
+              borderRadius: 12,
+              border: 'none',
+              padding: '4px 12px',
+              fontSize: 12,
+              fontWeight: 500,
+              background: filled ? config.color : FIGMA_COLORS.backgroundPage,
+              color: filled ? '#fff' : FIGMA_COLORS.textPrimary,
+            }}
+          >
+            {config.label}
+          </Tag>
+        );
       },
     },
     {
       title: 'Actions',
       key: 'actions',
-      width: 180,
-      fixed: 'right' as const,
-      render: (record: any) => {
+      width: 220,
+      render: (_: any, record: any) => {
         // Check if appointment is in the past
         const now = new Date();
         const todayStart = new Date(now);
@@ -2308,7 +2279,7 @@ export default function ReceptionistDashboard() {
         }
         
           return (
-          <Space>
+          <Space size={8} wrap>
             {/* Confirm button - for pending appointments */}
             {record.status === 'pending' && (
               <>
@@ -2332,18 +2303,20 @@ export default function ReceptionistDashboard() {
               </>
             )}
             
-            {/* Check-in button - for confirmed appointments (when patient arrives) */}
+            {/* Check-in - orange filled (design) */}
             {record.status === 'confirmed' && (
               <Button
                 size="small"
-                type="default"
-                icon={<img src={checkInIcon} alt="Check-in" style={{ width: 16, height: 16 }} />}
+                type="primary"
+                icon={<img src={checkInIcon} alt="" style={{ width: 14, height: 14 }} />}
                 onClick={() => handleCheckIn(record.id)}
-                title="Check-in patient"
-              />
+                style={{ borderRadius: 10 }}
+              >
+                Check-in
+              </Button>
             )}
             
-            {/* Record Vitals button - for checked-in appointments (before doctor sees patient) */}
+            {/* Vitals - light grey (design) */}
             {['checked-in', 'attended', 'in_consultation'].includes(String(record.status || '').toLowerCase()) && record.patientId && (
               <Button
                 size="small"
@@ -2357,16 +2330,13 @@ export default function ReceptionistDashboard() {
                   });
                   setIsVitalsModalOpen(true);
                 }}
-                title="Record vitals"
-                style={{
-                  background: '#f0f9ff',
-                  border: '1px solid #91caff',
-                  color: '#1890ff'
-                }}
-              />
+                style={{ borderColor: FIGMA_COLORS.border, color: FIGMA_COLORS.textMuted, borderRadius: 10 }}
+              >
+                Vitals
+              </Button>
             )}
             
-            {/* Request Lab Test button - for checked-in appointments (before doctor sees patient) */}
+            {/* Lab - light grey (design) */}
             {['checked-in', 'attended', 'in_consultation'].includes(String(record.status || '').toLowerCase()) && record.patientId && (
               <Button
                 size="small"
@@ -2381,13 +2351,10 @@ export default function ReceptionistDashboard() {
                   });
                   setIsLabRequestModalOpen(true);
                 }}
-                title="Request lab test"
-                style={{
-                  background: '#fff7e6',
-                  border: '1px solid #ffd591',
-                  color: '#fa8c16'
-                }}
-              />
+                style={{ borderColor: FIGMA_COLORS.border, color: FIGMA_COLORS.textMuted, borderRadius: 10 }}
+              >
+                Lab
+              </Button>
             )}
 
             {/* Reschedule - for pending/confirmed/attended (NOT checked-in, as patient has already arrived) */}
@@ -2431,9 +2398,9 @@ export default function ReceptionistDashboard() {
                 }}
                 title="Admit patient to IPD"
                 style={{ 
-                  background: '#f0f9ff', 
-                  border: '1px solid #91caff',
-                  color: '#1890ff'
+                  background: '#FFEAD5', 
+                  border: `1px solid ${RECEPTIONIST_PRIMARY}`,
+                  color: RECEPTIONIST_PRIMARY,
                 }}
               />
             )}
@@ -2450,7 +2417,8 @@ export default function ReceptionistDashboard() {
                     <Button
                       size="small"
                       type="default"
-                      icon={<DollarOutlined />}
+                      icon={<FileTextOutlined />}
+                      style={{ borderColor: FIGMA_COLORS.border, color: FIGMA_COLORS.textMuted, borderRadius: 10 }}
                       onClick={() => {
                         // Pass all available appointment data including patient and doctor info
                         setSelectedAppointmentForInvoice({
@@ -2469,16 +2437,12 @@ export default function ReceptionistDashboard() {
                         });
                         setIsInvoiceModalOpen(true);
                       }}
-                      title="Create invoice"
-                      style={{
-                        background: '#f6ffed',
-                        border: '1px solid #b7eb8f',
-                        color: '#52c41a'
-                      }}
-                    />
+                    >
+                      Invoice
+                    </Button>
                   )}
 
-                  {/* Record Payment button - show if invoice exists and has balance */}
+                  {/* Record Payment - show if invoice exists and has balance */}
                   {invoice && balance !== null && balance > 0 && (
                     <Button
                       size="small"
@@ -2488,27 +2452,26 @@ export default function ReceptionistDashboard() {
                         setSelectedInvoiceForPayment(invoice.id);
                         setIsPaymentModalOpen(true);
                       }}
-                      title="Record payment"
-                      style={{
-                        background: '#fff7e6',
-                        border: '1px solid #ffd591',
-                        color: '#fa8c16'
-                      }}
-                    />
+                      style={{ borderColor: FIGMA_COLORS.border, color: FIGMA_COLORS.textMuted, borderRadius: 10 }}
+                    >
+                      Pay
+                    </Button>
                   )}
 
-                  {/* View Invoice button - show if invoice exists */}
-                  {invoice && (
+                  {/* View Invoice - show if invoice exists, no balance or paid */}
+                  {invoice && (balance === null || balance <= 0) && (
                     <Button
                       size="small"
-                      type="link"
+                      type="default"
                       icon={<FileTextOutlined />}
                       onClick={() => {
                         setSelectedInvoiceForView(invoice.id);
                         setIsInvoiceViewModalOpen(true);
                       }}
-                      title="View invoice"
-                    />
+                      style={{ borderColor: FIGMA_COLORS.border, color: FIGMA_COLORS.textMuted, borderRadius: 10 }}
+                    >
+                      Invoice
+                    </Button>
                   )}
 
       {/* Vitals Entry Modal */}
@@ -2874,7 +2837,7 @@ export default function ReceptionistDashboard() {
         },
         body: JSON.stringify({
           mobileNumber,
-          role: 'PATIENT',
+          role: 'patient',
         }),
       });
 
@@ -2946,7 +2909,7 @@ export default function ReceptionistDashboard() {
           fullName: values.fullName,
           email: `${values.mobileNumber}@nexacare.com`, // Generate email
           password: `WalkIn@${values.mobileNumber.slice(-4)}`, // Temporary password
-          role: 'PATIENT',
+          role: 'patient',
         }),
       });
 
@@ -3419,7 +3382,7 @@ export default function ReceptionistDashboard() {
           color: #595959 !important;
         }
         .receptionist-dashboard-menu .ant-menu-item-selected {
-          background: #1A8FE3 !important;
+          background: #F97316 !important;
           font-weight: 500 !important;
           border: none !important;
           padding-left: 16px !important;
@@ -3454,6 +3417,19 @@ export default function ReceptionistDashboard() {
           width: 18px !important;
           height: 18px !important;
         }
+        /* Upcoming Appointments tabs: orange underline for active (design) */
+        .receptionist-dashboard-wrapper .receptionist-appointment-tabs .ant-tabs-ink-bar {
+          background: ${RECEPTIONIST_PRIMARY} !important;
+        }
+        .receptionist-dashboard-wrapper .receptionist-appointment-tabs .ant-tabs-tab.ant-tabs-tab-active .ant-tabs-tab-btn {
+          color: ${RECEPTIONIST_PRIMARY} !important;
+        }
+        .receptionist-dashboard-wrapper .receptionist-queue-doctor-tabs .ant-tabs-ink-bar {
+          background: ${RECEPTIONIST_PRIMARY} !important;
+        }
+        .receptionist-dashboard-wrapper .receptionist-queue-doctor-tabs .ant-tabs-tab.ant-tabs-tab-active .ant-tabs-tab-btn {
+          color: ${RECEPTIONIST_PRIMARY} !important;
+        }
         /* Pending appointments row highlight */
         .receptionist-dashboard-wrapper .appointment-row-pending td {
           background: #FEF2F2 !important; /* light red */
@@ -3464,42 +3440,87 @@ export default function ReceptionistDashboard() {
           transition: all 0.2s ease !important;
         }
         .receptionist-dashboard-wrapper .patient-name-link:hover {
-          color: #40a9ff !important;
+          color: #F97316 !important;
           text-decoration: underline !important;
           transform: translateX(2px);
         }
         .receptionist-dashboard-wrapper .patient-name-link:active {
-          color: #096dd9 !important;
+          color: #EA580C !important;
         }
         /* Reduce table cell padding to make more room for columns */
         .receptionist-dashboard-wrapper .ant-table-thead > tr > th,
         .receptionist-dashboard-wrapper .ant-table-tbody > tr > td {
-          padding: 8px 8px !important;
+          padding: ${FIGMA_RECEPTIONIST.tableCellPadding}px !important;
         }
-        /* Ensure Actions column is always visible with proper spacing and shadow */
-        .receptionist-dashboard-wrapper .ant-table-cell-fix-right {
-          background: var(--ant-table-bg) !important;
-          box-shadow: -2px 0 8px rgba(0, 0, 0, 0.1) !important;
+        .receptionist-dashboard-wrapper .ant-table-tbody > tr > td {
+          height: ${FIGMA_RECEPTIONIST.tableRowHeight}px;
+        }
+        .receptionist-dashboard-wrapper .ant-table-thead > tr > th {
+          height: ${FIGMA_RECEPTIONIST.tableHeaderHeight}px;
+        }
+        /* Upcoming appointments table: full width, no fixed columns, no horizontal scroll (design) */
+        .receptionist-dashboard-wrapper .receptionist-appointments-table .ant-table {
+          width: 100% !important;
+          min-width: 100% !important;
+        }
+        .receptionist-dashboard-wrapper .receptionist-appointments-table .ant-table-body {
+          overflow-x: hidden !important;
+        }
+        .receptionist-dashboard-wrapper .receptionist-appointments-table .ant-table-thead > tr > th:last-child {
+          text-align: right;
+        }
+        .receptionist-dashboard-wrapper .receptionist-appointments-table .ant-table-tbody > tr > td:last-child {
+          text-align: right;
+        }
+        .receptionist-dashboard-wrapper .receptionist-appointments-table .ant-table-tbody > tr:hover > td {
+          background: #FAFAFA !important;
+        }
+        .receptionist-dashboard-wrapper .receptionist-appointments-table .ant-table-thead > tr > th {
+          padding: 12px 16px !important;
+          font-size: 14px !important;
+          font-weight: 600 !important;
+          color: #262626 !important;
+          background: #FAFAFA !important;
+          border-bottom: 1px solid #E5E7EB !important;
+        }
+        .receptionist-dashboard-wrapper .receptionist-appointments-table .ant-table-tbody > tr > td {
+          border-bottom: 1px solid #E5E7EB !important;
+        }
+        .receptionist-dashboard-wrapper .receptionist-appointment-tabs .ant-tabs-nav {
+          padding-left: 24px !important;
+          padding-right: 24px !important;
+          margin-bottom: 0 !important;
+          border-bottom: 1px solid #E5E7EB !important;
+        }
+        .receptionist-dashboard-wrapper .receptionist-appointment-tabs .ant-tabs-tab {
+          padding: 12px 16px !important;
+        }
+        .receptionist-dashboard-wrapper .receptionist-appointments-table .ant-table-tbody .ant-btn {
+          font-size: 12px !important;
+          border-radius: 8px !important;
+          padding: 6px 12px !important;
         }
       `}</style>
-      <Layout className="receptionist-dashboard-wrapper" style={{ minHeight: '100vh', background: receptionistTheme.background }}>
+      <ConfigProvider theme={getThemeForRole('receptionist')}>
+      <Layout className="receptionist-dashboard-wrapper" style={{ minHeight: '100vh', background: FIGMA_COLORS.backgroundPage }}>
       {/* Desktop/Tablet Sidebar */}
       {!isMobile && (
-        <Sider 
+        <Sider
           width={80}
           style={{
             position: 'fixed',
             top: 0,
             left: 0,
             height: '100vh',
-            width: 260,
-            background: '#fff',
-            boxShadow: '0 2px 16px rgba(26, 143, 227, 0.08)',
+            width: 80,
+            minWidth: 80,
+            maxWidth: 80,
+            background: FIGMA_COLORS.backgroundCard,
+            boxShadow: '0 2px 8px rgba(0, 0, 0, 0.08)',
             display: 'flex',
             flexDirection: 'column',
             zIndex: 10,
-            borderLeft: '1px solid #E3F2FF',
-            borderBottom: '1px solid #E3F2FF',
+            borderRight: `1px solid ${FIGMA_COLORS.border}`,
           }}
         >
           <ReceptionistSidebar selectedMenuKey={selectedMenuKey} hospitalName={hospitalName} onDashboardClick={handleAppointmentsIconClick} onAppointmentsClick={handleAppointmentsIconClick} />
@@ -3524,10 +3545,10 @@ export default function ReceptionistDashboard() {
         style={{
           marginLeft: siderWidth,
           minHeight: '100vh',
-          background: receptionistTheme.background,
+          background: FIGMA_COLORS.backgroundPage,
           display: 'flex',
           flexDirection: 'column',
-          height: '100vh', // Fixed height to enable scrolling
+          height: '100vh',
         }}
       >
         {/* TopHeader - Matching Patient Dashboard Design */}
@@ -3537,21 +3558,19 @@ export default function ReceptionistDashboard() {
           userId={userId}
           userInitials={userInitials}
           notificationCount={notifications.filter((n: any) => !n.isRead).length}
+          primaryColor={RECEPTIONIST_PRIMARY}
         />
 
         <Content
           style={{
-            background: receptionistTheme.background,
+            background: FIGMA_COLORS.backgroundPage,
             flex: 1,
             overflowY: 'auto',
             overflowX: 'hidden',
-            minHeight: 0, // Important for flex scrolling
-            // Responsive padding - reduced to save side space
+            minHeight: 0,
             padding: isMobile 
-              ? '12px 12px 16px'  // Mobile: smaller side padding
-              : isTablet 
-                ? '12px 16px 20px'  // Tablet: medium side padding
-                : '12px 16px 20px', // Desktop: reduced padding
+              ? '12px 12px 12px'
+              : FIGMA_RECEPTIONIST.contentPadding,
             display: 'flex',
             flexDirection: 'column',
             margin: 0,
@@ -3563,6 +3582,7 @@ export default function ReceptionistDashboard() {
             flexDirection: 'column', 
             flex: 1,
             minHeight: 0,
+            gap: FIGMA_RECEPTIONIST.contentGap,
           }}>
             {/* Mobile Menu Button */}
             {isMobile && (
@@ -3583,17 +3603,16 @@ export default function ReceptionistDashboard() {
               <div style={{ 
                 display: 'flex', 
                 overflowX: 'auto', 
-                gap: 16, 
-                marginBottom: 24,
+                gap: FIGMA_RECEPTIONIST.sidebarGap, 
                 paddingBottom: 8,
                 scrollSnapType: 'x mandatory',
                 WebkitOverflowScrolling: 'touch',
               }}>
                 {[
-                  { label: "Pending Confirmation", value: stats.pendingAppointments || 0, icon: <ClockCircleOutlined />, trendLabel: "Awaiting action", trendColor: "#F97316", trendBg: "#FFEAD5", onView: () => message.info('View pending appointments') },
-                  { label: "Confirmed Today", value: stats.confirmedAppointments || 0, icon: <CheckCircleOutlined />, trendLabel: "Ready", trendColor: "#22C55E", trendBg: "#D1FAE5", onView: () => message.info('View confirmed appointments') },
-                  { label: "Walk-ins Waiting", value: stats.walkInPatients || 0, icon: <UserAddOutlined />, trendLabel: "In queue", trendColor: "#6366F1", trendBg: "#E0E7FF", onView: () => message.info('View walk-in patients') },
-                  { label: "Completed Today", value: stats.completedAppointments || 0, icon: <TeamOutlined />, trendLabel: "Today", trendColor: "#16a34a", trendBg: "#D1FAE5", onView: () => message.info('View completed appointments') },
+                  { label: "Pending Confirmation", value: stats.pendingAppointments || 0, icon: <ClockCircleOutlined />, trendLabel: "Awaiting action", trendColor: RECEPTIONIST_PRIMARY, trendBg: "#FFEAD5", onView: () => message.info('View pending appointments') },
+                  { label: "Confirmed Today", value: stats.confirmedAppointments || 0, icon: <CheckCircleOutlined />, trendLabel: "Ready", trendColor: FIGMA_COLORS.success, trendBg: "#D1FAE5", onView: () => message.info('View confirmed appointments') },
+                  { label: "Walk-ins Waiting", value: stats.walkInPatients || 0, icon: <UserAddOutlined />, trendLabel: "In queue", trendColor: FIGMA_COLORS.statusNeutral, trendBg: FIGMA_COLORS.backgroundPage, onView: () => message.info('View walk-in patients') },
+                  { label: "Completed Today", value: stats.completedAppointments || 0, icon: <TeamOutlined />, trendLabel: "Today", trendColor: FIGMA_COLORS.success, trendBg: "#D1FAE5", onView: () => message.info('View completed appointments') },
                 ].map((kpi, idx) => (
                   <div key={idx} style={{ minWidth: 220, scrollSnapAlign: 'start' }}>
                     <KpiCard {...kpi} />
@@ -3601,7 +3620,7 @@ export default function ReceptionistDashboard() {
                 ))}
               </div>
             ) : (
-              <div style={{ display: 'flex', gap: 16, marginBottom: 24, width: '100%' }}>
+              <div style={{ display: 'flex', gap: FIGMA_RECEPTIONIST.sidebarGap, width: '100%' }}>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <KpiCard
                     label="Pending Confirmation"
@@ -3609,7 +3628,7 @@ export default function ReceptionistDashboard() {
                     icon={<ClockCircleOutlined />}
                     trendLabel="Awaiting action"
                     trendType={stats.pendingAppointments > 0 ? "negative" : "neutral"}
-                    trendColor="#F97316"
+                    trendColor={RECEPTIONIST_PRIMARY}
                     trendBg="#FFEAD5"
                     onView={() => message.info('View pending appointments')}
                   />
@@ -3621,7 +3640,7 @@ export default function ReceptionistDashboard() {
                     icon={<CheckCircleOutlined />}
                     trendLabel="Ready"
                     trendType="positive"
-                    trendColor="#22C55E"
+                    trendColor={FIGMA_COLORS.success}
                     trendBg="#D1FAE5"
                     onView={() => message.info('View confirmed appointments')}
                   />
@@ -3632,9 +3651,9 @@ export default function ReceptionistDashboard() {
                     value={stats.walkInPatients || 0}
                     icon={<UserAddOutlined />}
                     trendLabel="In queue"
-                    trendType={stats.walkInPatients > 0 ? "negative" : "neutral"}
-                    trendColor="#6366F1"
-                    trendBg="#E0E7FF"
+                    trendType="neutral"
+                    trendColor={FIGMA_COLORS.statusNeutral}
+                    trendBg={FIGMA_COLORS.backgroundPage}
                     onView={() => message.info('View walk-in patients')}
                   />
                 </div>
@@ -3645,7 +3664,7 @@ export default function ReceptionistDashboard() {
                     icon={<TeamOutlined />}
                     trendLabel="Today"
                     trendType="positive"
-                    trendColor="#16a34a"
+                    trendColor={FIGMA_COLORS.success}
                     trendBg="#D1FAE5"
                     onView={() => message.info('View completed appointments')}
                   />
@@ -3663,7 +3682,7 @@ export default function ReceptionistDashboard() {
                 boxShadow: '0 2px 8px rgba(0, 0, 0, 0.08)',
                 border: '1px solid #E5E7EB',
                 background: '#fff',
-                marginBottom: 24,
+                padding: FIGMA_RECEPTIONIST.queueBarPadding,
               }}
             >
               <div style={{ 
@@ -3671,26 +3690,26 @@ export default function ReceptionistDashboard() {
                 justifyContent: 'space-between', 
                 alignItems: 'center',
                 flexWrap: isMobile ? 'wrap' : 'nowrap',
-                gap: isMobile ? 16 : 24,
+                gap: isMobile ? 12 : FIGMA_RECEPTIONIST.sidebarGap,
               }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, flex: 1 }}>
                   <Text type="secondary" style={{ fontSize: 14, minWidth: 80 }}>Pending:</Text>
-                  <Text strong style={{ fontSize: 16, color: '#F97316' }}>{stats.pendingAppointments || 0}</Text>
+                  <Text strong style={{ fontSize: 16, color: FIGMA_COLORS.statusNeutral }}>{stats.pendingAppointments || 0}</Text>
                 </div>
                 <Divider type="vertical" style={{ height: 24, margin: 0 }} />
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, flex: 1 }}>
                   <Text type="secondary" style={{ fontSize: 14, minWidth: 100 }}>Waiting:</Text>
-                  <Text strong style={{ fontSize: 16, color: '#6366F1' }}>{stats.waitingAppointments || 0}</Text>
+                  <Text strong style={{ fontSize: 16, color: FIGMA_COLORS.statusNeutral }}>{stats.waitingAppointments || 0}</Text>
                 </div>
                 <Divider type="vertical" style={{ height: 24, margin: 0 }} />
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, flex: 1 }}>
                   <Text type="secondary" style={{ fontSize: 14, minWidth: 120 }}>Checked In:</Text>
-                  <Text strong style={{ fontSize: 16, color: '#16a34a' }}>{stats.checkedInAppointments || 0}</Text>
+                  <Text strong style={{ fontSize: 16, color: FIGMA_COLORS.success }}>{stats.checkedInAppointments || 0}</Text>
                 </div>
                 <Divider type="vertical" style={{ height: 24, margin: 0 }} />
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, flex: 1 }}>
                   <Text type="secondary" style={{ fontSize: 14, minWidth: 100 }}>Completed:</Text>
-                  <Text strong style={{ fontSize: 16, color: '#22C55E' }}>{stats.completedAppointments || 0}</Text>
+                  <Text strong style={{ fontSize: 16, color: FIGMA_COLORS.success }}>{stats.completedAppointments || 0}</Text>
                 </div>
                 <div style={{ marginLeft: 'auto', textAlign: 'right' }}>
                   <Text type="secondary" style={{ fontSize: 12 }}>
@@ -3699,6 +3718,57 @@ export default function ReceptionistDashboard() {
                 </div>
               </div>
           </Card>
+
+            {/* Reschedule Requests - Section (not a tab), shown when there are requests */}
+            <div ref={appointmentsSectionRef} style={{ marginBottom: 16 }}>
+              <RescheduleRequestsQueue
+                hospitalId={hospitalId}
+                onApprove={async (requestId: number) => {
+                  try {
+                    const token = localStorage.getItem('auth-token');
+                    const response = await fetch(`/api/appointments/reschedule-requests/${requestId}/approve`, {
+                      method: 'PATCH',
+                      headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json',
+                      },
+                    });
+                    if (response.ok) {
+                      message.success('Reschedule request approved');
+                      await refetchRescheduleRequests();
+                      await refetchAppointments();
+                    } else {
+                      const error = await response.json();
+                      message.error(error.message || 'Failed to approve request');
+                    }
+                  } catch (error: any) {
+                    message.error(error.message || 'Failed to approve request');
+                  }
+                }}
+                onReject={async (requestId: number, reason: string) => {
+                  try {
+                    const token = localStorage.getItem('auth-token');
+                    const response = await fetch(`/api/appointments/reschedule-requests/${requestId}/reject`, {
+                      method: 'PATCH',
+                      headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json',
+                      },
+                      body: JSON.stringify({ rejectionReason: reason }),
+                    });
+                    if (response.ok) {
+                      message.success('Reschedule request rejected');
+                      await refetchRescheduleRequests();
+                    } else {
+                      const error = await response.json();
+                      message.error(error.message || 'Failed to reject request');
+                    }
+                  } catch (error: any) {
+                    message.error(error.message || 'Failed to reject request');
+                  }
+                }}
+              />
+            </div>
 
             {/* Upcoming Appointments - Full width, fills remaining height */}
           <Row gutter={[16, 16]} style={{ flex: 1, minHeight: 0, display: 'flex' }}>
@@ -3709,26 +3779,7 @@ export default function ReceptionistDashboard() {
                 flexDirection: 'column', 
                 flex: 1, 
                 minHeight: 0,
-                marginBottom: 24,
               }}>
-              <Tabs
-                activeKey={activeMainTab}
-                onChange={setActiveMainTab}
-                type="line"
-                style={{ 
-                  display: 'flex',
-                  flexDirection: 'column',
-                  flex: 1,
-                  minHeight: 0,
-                  width: '100%',
-                }}
-                items={[
-                  {
-                    key: 'appointments',
-                    label: 'Appointments',
-                    children: (
-                      <div ref={appointmentsSectionRef} style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
-                      <>
               <Card 
                 variant="borderless"
                 style={{ 
@@ -3741,52 +3792,31 @@ export default function ReceptionistDashboard() {
                   flex: 1,
                   minHeight: 0,
                 }}
-                title={
-                  <Space align="center" size={12} wrap>
-                    <Text strong>Upcoming Appointments</Text>
+                title={<Text strong style={{ fontSize: 18, fontWeight: 600, lineHeight: '28px' }}>Upcoming Appointments</Text>}
+                extra={
+                  <Space size={12} wrap>
                     <Button
                       type="primary"
                       size={isMobile ? "middle" : "small"}
-                      icon={<CalendarOutlined />}
+                      icon={<PlusOutlined />}
                       onClick={openWalkInModal}
-                      style={{ borderRadius: 8 }}
+                      style={{ height: 36, borderRadius: 10 }}
                     >
                       Create Appointment (Walk-in)
                     </Button>
-                            <Button
-                              type="default"
-                              size={isMobile ? "middle" : "small"}
-                              icon={<UserAddOutlined />}
-                              onClick={() => setIsAdmissionModalOpen(true)}
-                              style={{ borderRadius: 8 }}
-                            >
-                              Admit to IPD
-                            </Button>
+                    <Button
+                      type="primary"
+                      size={isMobile ? "middle" : "small"}
+                      icon={<UserAddOutlined />}
+                      onClick={() => setIsAdmissionModalOpen(true)}
+                      style={{ height: 36, borderRadius: 10 }}
+                    >
+                      Admit to IPD
+                    </Button>
                   </Space>
                 }
-                extra={<Button type="link" onClick={() => {
-                  // Show all appointments in a modal or navigate to appointments page
-                  const allAppointments = [...upcomingAppointments, ...pastAppointments];
-                  Modal.info({
-                    title: 'All Appointments',
-                    width: 800,
-                    content: (
-                      <Table
-                        dataSource={allAppointments}
-                        columns={[
-                          { title: 'Patient', dataIndex: ['patient', 'fullName'], key: 'patient' },
-                          { title: 'Doctor', dataIndex: ['doctor', 'fullName'], key: 'doctor' },
-                          { title: 'Date', dataIndex: 'appointmentDate', key: 'date', render: (date) => dayjs(date).format('DD/MM/YYYY') },
-                          { title: 'Time', dataIndex: 'appointmentTime', key: 'time' },
-                          { title: 'Status', dataIndex: 'status', key: 'status', render: (status) => <Tag color={status === 'confirmed' ? 'green' : status === 'pending' ? 'orange' : 'default'}>{status}</Tag> },
-                        ]}
-                        pagination={{ pageSize: 10 }}
-                        size="small"
-                      />
-                    ),
-                  });
-                }}>View All</Button>}
-                styles={{ 
+                styles={{
+                  header: { padding: '16px 24px', borderBottom: `1px solid ${FIGMA_COLORS.border}` },
                   body: {
                     flex: 1, 
                     minHeight: 0, 
@@ -3803,7 +3833,7 @@ export default function ReceptionistDashboard() {
                   display: 'flex', 
                   flexDirection: 'column',
                   overflow: 'hidden',
-                  padding: isMobile ? 12 : 16,
+                  padding: 0,
                 }}>
                 {appointmentTabs.length === 0 ? (
                   <div style={{ textAlign: 'center', padding: '40px 0' }}>
@@ -3822,20 +3852,43 @@ export default function ReceptionistDashboard() {
                   <Tabs
                     activeKey={activeAppointmentTab}
                     onChange={setActiveAppointmentTab}
-                    items={appointmentTabs.map(tab => ({
+                    className="receptionist-appointment-tabs"
+                    type="line"
+                    items={appointmentTabs.map(tab => {
+                      const labelText = tab.key === 'queue' ? 'Queue Management' : tab.label.replace(/\s+\d+$/, '').trim() || tab.label;
+                      const count = tab.count;
+                      const isActive = activeAppointmentTab === tab.key;
+                      return {
                       key: tab.key,
-                      label: tab.key === 'pending' && tab.count > 0 ? (
-                        <span style={{ color: '#ff4d4f', fontWeight: 600 }}>{tab.label}</span>
-                      ) : tab.label,
+                      label: (
+                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+                          <span style={{ color: isActive ? RECEPTIONIST_PRIMARY : FIGMA_COLORS.textMuted, fontWeight: 500, fontSize: 14 }}>
+                            {labelText}
+                          </span>
+                          {tab.key !== 'queue' && (
+                            <span style={{
+                              marginLeft: 2,
+                              padding: '2px 8px',
+                              borderRadius: 12,
+                              fontSize: 12,
+                              background: isActive ? RECEPTIONIST_PRIMARY : FIGMA_COLORS.backgroundPage,
+                              color: isActive ? '#fff' : FIGMA_COLORS.textMuted,
+                            }}>
+                              {count}
+                            </span>
+                          )}
+                        </span>
+                      ),
                       children: (
-                        <div style={{ 
+                        <                        div style={{ 
                           flex: 1,
                           minHeight: 0,
-                            height: '100%',
+                          height: '100%',
                           overflow: 'hidden',
                           display: 'flex',
                           flexDirection: 'column',
-                          paddingTop: 16,
+                          padding: '24px 24px 24px 24px',
+                          paddingTop: 24,
                         }}>
                           {tab.key === 'queue' ? (
                             // Queue Management: tabs for each doctor with appointments today
@@ -3845,10 +3898,11 @@ export default function ReceptionistDashboard() {
                               ) : (
                                 <Tabs
                                   defaultActiveKey={String(todayDoctorsForQueue[0]?.doctorId ?? '')}
+                                  className="receptionist-queue-doctor-tabs"
                                   style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}
                                   items={todayDoctorsForQueue.map((doc) => ({
                                     key: String(doc.doctorId),
-                                    label: `${doc.doctorName} (${doc.count})`,
+                                    label: `${doc.doctorName} ${doc.count}`,
                                     children: (
                                       <div style={{ paddingTop: 8 }}>
                                         <QueuePanel doctorId={doc.doctorId} date={dayjs().format('YYYY-MM-DD')} />
@@ -3870,32 +3924,31 @@ export default function ReceptionistDashboard() {
                               )}
                             </Space>
                           ) : (
-                              // Desktop/tablet: scroll container wraps the table
-                              <div style={{ flex: 1, height: '100%', overflow: 'hidden', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
-                                <div style={{ flex: 1, height: '100%', overflowY: 'auto', overflowX: 'auto', minHeight: 0 }}>
-                                  <div style={{ paddingBottom: 40 }}>
+                              // Desktop/tablet: table fits container, vertical scroll only (design: no horizontal scroll)
+                              <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+                                <div style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden', minHeight: 0 }}>
+                                  <div style={{ paddingBottom: 24 }}>
                           <Table
+                            className="receptionist-appointments-table"
                             columns={appointmentColumns}
                             dataSource={appointmentsToShow}
                             pagination={false}
                             rowKey="id"
                             loading={appointmentsLoading}
                             size={isMobile ? "small" : "middle"}
-                                scroll={{ 
-                                        x: 'max-content',
-                                        ...(appointmentsToShow.length > 3 ? { y: 'calc(100vh - 520px)' } : {}),
-                                }}
-                                rowClassName={(record: any) =>
-                                  record.status === 'pending' ? 'appointment-row-pending' : ''
-                                }
-                              />
+                            scroll={appointmentsToShow.length > 5 ? { y: 'calc(100vh - 520px)' } : undefined}
+                            rowClassName={(record: any) =>
+                              record.status === 'pending' ? 'appointment-row-pending' : ''
+                            }
+                          />
                                   </div>
-                            </div>
+                                </div>
                           </div>
                           )}
                         </div>
                       ),
-                    }))}
+                    };
+                    })}
                     style={{ 
                         marginTop: 0,
                       display: 'flex',
@@ -3907,125 +3960,6 @@ export default function ReceptionistDashboard() {
                 )}
                 </div>
               </Card>
-
-              {/* Past Appointments moved to /receptionist/appointments */}
-                      </>
-                      </div>
-                    ),
-                  },
-                  {
-                    key: 'ipd',
-                    label: 'IPD Management',
-                    children: (
-                      <Card 
-                        variant="borderless"
-                        style={{ 
-                          borderRadius: 16,
-                          boxShadow: '0 2px 8px rgba(0, 0, 0, 0.08)',
-                          border: '1px solid #E5E7EB',
-                          background: '#fff',
-                          display: 'flex',
-                          flexDirection: 'column',
-                          flex: 1,
-                          minHeight: 0,
-                        }}
-                        title={<Text strong>Active IPD Patients</Text>}
-                        styles={{ 
-                          body: {
-                            flex: 1, 
-                            minHeight: 0, 
-                            display: 'flex', 
-                            flexDirection: 'column',
-                            overflow: 'hidden',
-                            padding: isMobile ? 12 : 16,
-                          }
-                        }}
-                      >
-                        <div style={{ 
-                          flex: 1, 
-                          minHeight: 0, 
-                          display: 'flex', 
-                          flexDirection: 'column',
-                          overflow: 'hidden',
-                        }}>
-                          <IpdEncountersList
-                            hospitalId={hospitalId}
-                            onTransfer={(encounter: IpdEncounter) => {
-                              setSelectedEncounter(encounter);
-                              setIsTransferModalOpen(true);
-                            }}
-                            onDischarge={(encounter: IpdEncounter) => {
-                              setSelectedEncounter(encounter);
-                              setIsDischargeModalOpen(true);
-                            }}
-                          />
-                        </div>
-                      </Card>
-                    ),
-                  },
-                  {
-                    key: 'reschedule-requests',
-                    label: (
-                      <Space>
-                        <span>Reschedule Requests</span>
-                        {(() => {
-                          const pendingCount = rescheduleRequests.filter((r: any) => r.status === 'requested').length;
-                          return pendingCount > 0 ? (
-                            <Tag color="orange" style={{ margin: 0 }}>{pendingCount}</Tag>
-                          ) : null;
-                        })()}
-                      </Space>
-                    ),
-                    children: <RescheduleRequestsQueue 
-                      hospitalId={hospitalId}
-                      onApprove={async (requestId: number) => {
-                        try {
-                          const token = localStorage.getItem('auth-token');
-                          const response = await fetch(`/api/appointments/reschedule-requests/${requestId}/approve`, {
-                            method: 'PATCH',
-                            headers: {
-                              'Authorization': `Bearer ${token}`,
-                              'Content-Type': 'application/json',
-                            },
-                          });
-                          if (response.ok) {
-                            message.success('Reschedule request approved');
-                            await refetchRescheduleRequests();
-                            await refetchAppointments();
-                          } else {
-                            const error = await response.json();
-                            message.error(error.message || 'Failed to approve request');
-                          }
-                        } catch (error: any) {
-                          message.error(error.message || 'Failed to approve request');
-                        }
-                      }}
-                      onReject={async (requestId: number, reason: string) => {
-                        try {
-                          const token = localStorage.getItem('auth-token');
-                          const response = await fetch(`/api/appointments/reschedule-requests/${requestId}/reject`, {
-                            method: 'PATCH',
-                            headers: {
-                              'Authorization': `Bearer ${token}`,
-                              'Content-Type': 'application/json',
-                            },
-                            body: JSON.stringify({ rejectionReason: reason }),
-                          });
-                          if (response.ok) {
-                            message.success('Reschedule request rejected');
-                            await refetchRescheduleRequests();
-                          } else {
-                            const error = await response.json();
-                            message.error(error.message || 'Failed to reject request');
-                          }
-                        } catch (error: any) {
-                          message.error(error.message || 'Failed to reject request');
-                        }
-                      }}
-                    />,
-                  },
-                ]}
-              />
               </div>
             </Col>
           </Row>
@@ -4039,7 +3973,7 @@ export default function ReceptionistDashboard() {
             width={600}
           >
             <div style={{ textAlign: 'center', padding: '40px' }}>
-              <CalendarOutlined style={{ fontSize: '48px', color: '#1890ff', marginBottom: '16px' }} />
+              <CalendarOutlined style={{ fontSize: '48px', color: RECEPTIONIST_PRIMARY, marginBottom: '16px' }} />
               <Title level={3}>Appointment Booking</Title>
               <Text type="secondary">
                 This feature will be implemented in the next phase
@@ -4084,7 +4018,7 @@ export default function ReceptionistDashboard() {
             width={1000}
             styles={{ 
               body: { 
-                padding: '24px 32px', 
+                padding: 24, 
                 maxHeight: '90vh', 
                 overflow: 'hidden',
                 display: 'flex',
@@ -4529,7 +4463,7 @@ export default function ReceptionistDashboard() {
                                             hoverable
                                             onClick={() => handleDoctorSelect(doctor.id)}
                                             style={{
-                                              border: selectedDoctor?.id === doctor.id ? '2px solid #1A8FE3' : '1px solid #E5E7EB',
+                                              border: selectedDoctor?.id === doctor.id ? `2px solid ${RECEPTIONIST_PRIMARY}` : `1px solid ${FIGMA_COLORS.border}`,
                                               borderRadius: '16px',
                                               boxShadow: selectedDoctor?.id === doctor.id 
                                                 ? '0 4px 12px rgba(26, 143, 227, 0.15)' 
@@ -4546,7 +4480,7 @@ export default function ReceptionistDashboard() {
                                                   size={64}
                                                   src={doctor.photo || undefined}
                                                   style={{
-                                                    backgroundColor: '#1A8FE3',
+                                                    backgroundColor: RECEPTIONIST_PRIMARY,
                                                     fontSize: '20px',
                                                     fontWeight: 600,
                                                     flexShrink: 0,
@@ -4667,8 +4601,8 @@ export default function ReceptionistDashboard() {
                                   minWidth: '80px',
                                   padding: '10px 8px',
                                   borderRadius: 12,
-                                  border: `1px solid ${isSelected ? '#1A8FE3' : '#d1d5db'}`,
-                                  background: isSelected ? '#1A8FE3' : '#ffffff',
+                                  border: `1px solid ${isSelected ? RECEPTIONIST_PRIMARY : '#d1d5db'}`,
+                                  background: isSelected ? RECEPTIONIST_PRIMARY : FIGMA_COLORS.backgroundCard,
                                   color: isSelected ? '#ffffff' : '#111827',
                                   cursor: 'pointer',
                                   transition: 'all 0.2s ease',
@@ -5142,10 +5076,10 @@ export default function ReceptionistDashboard() {
                     {patientInfo.ipdStatus?.isAdmitted && (
                       <>
                         <Divider style={{ margin: '8px 0' }} />
-                        <div style={{ padding: 12, background: '#f0f9ff', borderRadius: 8, border: '1px solid #91caff' }}>
+                        <div style={{ padding: 12, background: '#FFEAD5', borderRadius: 8, border: `1px solid ${RECEPTIONIST_PRIMARY}` }}>
                           <Space direction="vertical" size="small" style={{ width: '100%' }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                              <Tag color="blue" style={{ margin: 0 }}>IPD ADMITTED</Tag>
+                              <Tag color="orange" style={{ margin: 0 }}>IPD ADMITTED</Tag>
                               <Text type="secondary" style={{ fontSize: 12 }}>
                                 Status: {patientInfo.ipdStatus.status}
                               </Text>
@@ -5977,6 +5911,7 @@ export default function ReceptionistDashboard() {
         />
       )}
     </Layout>
+    </ConfigProvider>
     </>
   );
 }

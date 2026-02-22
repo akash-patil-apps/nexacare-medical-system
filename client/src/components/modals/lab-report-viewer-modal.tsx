@@ -112,7 +112,7 @@ Generated on: ${dayjs().format('DD MMM YYYY, hh:mm A')}
     <Modal
       title={
         <Space>
-          <ExperimentOutlined style={{ fontSize: '20px', color: '#1890ff' }} />
+          <ExperimentOutlined style={{ fontSize: '20px', color: 'var(--ant-color-primary)' }} />
           <span>Lab Report</span>
         </Space>
       }
