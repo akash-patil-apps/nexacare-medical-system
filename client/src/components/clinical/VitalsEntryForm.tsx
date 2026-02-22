@@ -448,7 +448,7 @@ export const VitalsEntryForm: React.FC<VitalsEntryFormProps> = ({
                     patientData?.patient?.height && !isHeightEditable ? (
                       <EditOutlined 
                         onClick={() => setIsHeightEditable(true)}
-                        style={{ cursor: 'pointer', color: '#1890ff' }}
+                        style={{ cursor: 'pointer', color: 'var(--ant-color-primary)' }}
                       />
                     ) : null
                   }

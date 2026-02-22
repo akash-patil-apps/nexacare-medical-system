@@ -2,9 +2,6 @@
 import React, { useState } from 'react';
 import {
   Card,
-  Table,
-  Tag,
-  Space,
   Button,
   Typography,
   Modal,
@@ -18,10 +15,12 @@ import {
   CheckCircleOutlined,
   CloseCircleOutlined,
   ClockCircleOutlined,
-  ReloadOutlined,
 } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import { formatTimeSlot12h } from '../../lib/time';
+import { FIGMA_COLORS, FIGMA_RECEPTIONIST, ROLE_PRIMARY } from '../../design-tokens';
+
+const RECEPTIONIST_PRIMARY = ROLE_PRIMARY.receptionist;
 
 const { Text } = Typography;
 const { TextArea } = Input;
@@ -42,11 +41,8 @@ export const RescheduleRequestsQueue: React.FC<RescheduleRequestsQueueProps> = (
   const [rejectForm] = Form.useForm();
   const [isProcessing, setIsProcessing] = useState(false);
 
-  // This component will receive data via props or fetch it
-  // For now, we'll assume data is passed or fetched by parent
   const [requests, setRequests] = useState<any[]>([]);
 
-  // Fetch reschedule requests
   React.useEffect(() => {
     const fetchRequests = async () => {
       try {
@@ -65,7 +61,7 @@ export const RescheduleRequestsQueue: React.FC<RescheduleRequestsQueueProps> = (
       }
     };
     fetchRequests();
-    const interval = setInterval(fetchRequests, 10000); // Poll every 10 seconds
+    const interval = setInterval(fetchRequests, 10000);
     return () => clearInterval(interval);
   }, []);
 
@@ -103,148 +99,103 @@ export const RescheduleRequestsQueue: React.FC<RescheduleRequestsQueueProps> = (
     rejectForm.resetFields();
   };
 
-  const columns = [
-    {
-      title: 'Patient',
-      key: 'patient',
-      render: (_: any, record: any) => (
-        <Text strong>{record.patient?.user?.fullName || record.appointment?.patient?.user?.fullName || 'Unknown'}</Text>
-      ),
-    },
-    {
-      title: 'Doctor',
-      key: 'doctor',
-      render: (_: any, record: any) => (
-        <Text>{record.doctor?.fullName || record.appointment?.doctor?.fullName || 'Unknown'}</Text>
-      ),
-    },
-    {
-      title: 'Current Appointment',
-      key: 'current',
-      render: (_: any, record: any) => {
-        const oldDate = record.oldDate ? dayjs(record.oldDate).format('DD MMM YYYY') : 'N/A';
-        const oldSlot = record.oldTimeSlot || 'N/A';
-        return (
-          <Space direction="vertical" size={0}>
-            <Text>{oldDate}</Text>
-            <Text type="secondary" style={{ fontSize: '12px' }}>{formatTimeSlot12h(oldSlot)}</Text>
-          </Space>
-        );
-      },
-    },
-    {
-      title: 'Requested New Time',
-      key: 'new',
-      render: (_: any, record: any) => {
-        const newDate = record.newDate ? dayjs(record.newDate).format('DD MMM YYYY') : 'N/A';
-        const newSlot = record.newTimeSlot || 'N/A';
-        return (
-          <Space direction="vertical" size={0}>
-            <Text strong style={{ color: '#10B981' }}>{newDate}</Text>
-            <Text type="secondary" style={{ fontSize: '12px' }}>{formatTimeSlot12h(newSlot)}</Text>
-          </Space>
-        );
-      },
-    },
-    {
-      title: 'Reason',
-      key: 'reason',
-      render: (_: any, record: any) => (
-        <Text type="secondary" style={{ fontSize: '12px' }}>
-          {record.reasonNote || 'No reason provided'}
-        </Text>
-      ),
-    },
-    {
-      title: 'Requested',
-      key: 'requested',
-      render: (_: any, record: any) => (
-        <Text type="secondary" style={{ fontSize: '12px' }}>
-          {record.createdAt ? dayjs(record.createdAt).fromNow() : 'N/A'}
-        </Text>
-      ),
-    },
-    {
-      title: 'Actions',
-      key: 'actions',
-      render: (_: any, record: any) => (
-        <Space>
-          <Popconfirm
-            title="Approve Reschedule Request"
-            description="Are you sure you want to approve this reschedule request? The appointment will be moved to the new date and time."
-            onConfirm={() => handleApprove(record)}
-            okText="Yes, Approve"
-            cancelText="No"
-          >
-            <Button
-              type="primary"
-              size="small"
-              icon={<CheckCircleOutlined />}
-              loading={isProcessing}
-            >
-              Approve
-            </Button>
-          </Popconfirm>
-          <Button
-            danger
-            size="small"
-            icon={<CloseCircleOutlined />}
-            onClick={() => openRejectModal(record)}
-            loading={isProcessing}
-          >
-            Reject
-          </Button>
-        </Space>
-      ),
-    },
-  ];
+  const pendingCount = requests.length;
 
   return (
     <>
       <Card
-        title={
-          <Space>
-            <ClockCircleOutlined style={{ color: '#F97316' }} />
-            <Text strong>Pending Reschedule Requests</Text>
-            <Tag color="orange">{requests.length}</Tag>
-          </Space>
-        }
-        extra={
-          <Button
-            icon={<ReloadOutlined />}
-            onClick={() => {
-              const token = localStorage.getItem('auth-token');
-              fetch('/api/appointments/reschedule-requests?status=requested', {
-                headers: {
-                  'Authorization': `Bearer ${token}`
-                }
-              })
-                .then(res => res.json())
-                .then(data => setRequests(data || []))
-                .catch(err => console.error('Error refreshing:', err));
-            }}
-          >
-            Refresh
-          </Button>
-        }
+        variant="borderless"
+        style={{
+          borderRadius: 16,
+          boxShadow: '0 2px 8px rgba(0, 0, 0, 0.08)',
+          border: `1px solid ${FIGMA_COLORS.border}`,
+          background: FIGMA_COLORS.backgroundCard,
+          padding: FIGMA_RECEPTIONIST.rescheduleCardPadding,
+        }}
       >
-        {requests.length === 0 ? (
-          <Empty
-            description="No pending reschedule requests"
-            image={Empty.PRESENTED_IMAGE_SIMPLE}
-          />
-        ) : (
-          <Table
-            columns={columns}
-            dataSource={requests}
-            rowKey="id"
-            pagination={{ pageSize: 10 }}
-            size="small"
-          />
-        )}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: FIGMA_RECEPTIONIST.rescheduleCardGap }}>
+          <div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+              <ClockCircleOutlined style={{ color: RECEPTIONIST_PRIMARY, fontSize: 20 }} />
+              <Text strong style={{ fontSize: 18, fontWeight: 600 }}>
+                Reschedule Requests ({pendingCount})
+              </Text>
+            </div>
+            <Text type="secondary" style={{ fontSize: 14 }}>
+              Patients waiting for reschedule approval.
+            </Text>
+          </div>
+
+          {requests.length === 0 ? (
+            <Empty
+              description="No pending reschedule requests"
+              image={Empty.PRESENTED_IMAGE_SIMPLE}
+              style={{ padding: '24px 0' }}
+            />
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: FIGMA_RECEPTIONIST.rescheduleCardGap }}>
+              {requests.map((record: any) => {
+                const patientName = record.patient?.user?.fullName || record.appointment?.patient?.user?.fullName || 'Unknown';
+                const fromDate = record.oldDate ? dayjs(record.oldDate).format('MMM D, YYYY') : 'N/A';
+                const toDate = record.newDate ? dayjs(record.newDate).format('MMM D, YYYY') : 'N/A';
+                const timeStr = record.newTimeSlot ? formatTimeSlot12h(record.newTimeSlot) : '';
+                const fromToLabel = `From ${fromDate} → ${toDate}${timeStr ? ` at ${timeStr}` : ''}`;
+
+                return (
+                  <div
+                    key={record.id}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      minHeight: FIGMA_RECEPTIONIST.rescheduleRowHeight,
+                      padding: '0 16px',
+                      background: FIGMA_COLORS.backgroundPage,
+                      borderRadius: FIGMA_RECEPTIONIST.rescheduleRowRadius,
+                      flexWrap: 'wrap',
+                      gap: 12,
+                    }}
+                  >
+                    <div style={{ flex: 1, minWidth: 200 }}>
+                      <Text strong style={{ display: 'block', marginBottom: 2 }}>{patientName}</Text>
+                      <Text type="secondary" style={{ fontSize: 14 }}>{fromToLabel}</Text>
+                    </div>
+                    <Space size={8}>
+                      <Popconfirm
+                        title="Approve Reschedule Request"
+                        description="Are you sure you want to approve this reschedule request? The appointment will be moved to the new date and time."
+                        onConfirm={() => handleApprove(record)}
+                        okText="Yes, Approve"
+                        cancelText="No"
+                      >
+                        <Button
+                          type="primary"
+                          size="small"
+                          icon={<CheckCircleOutlined />}
+                          loading={isProcessing}
+                          style={{ background: FIGMA_COLORS.success, borderColor: FIGMA_COLORS.success }}
+                        >
+                          Approve
+                        </Button>
+                      </Popconfirm>
+                      <Button
+                        size="small"
+                        icon={<CloseCircleOutlined />}
+                        onClick={() => openRejectModal(record)}
+                        loading={isProcessing}
+                        style={{ borderColor: FIGMA_COLORS.border, color: FIGMA_COLORS.textPrimary }}
+                      >
+                        Reject
+                      </Button>
+                    </Space>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
       </Card>
 
-      {/* Reject Modal */}
       <Modal
         title="Reject Reschedule Request"
         open={rejectModalOpen}
@@ -262,17 +213,15 @@ export const RescheduleRequestsQueue: React.FC<RescheduleRequestsQueueProps> = (
             layout="vertical"
             onFinish={handleReject}
           >
-            <Space direction="vertical" size="middle" style={{ width: '100%', marginBottom: 16 }}>
-              <div>
-                <Text strong>Patient:</Text> {selectedRequest.patient?.user?.fullName || 'Unknown'}
-              </div>
-              <div>
-                <Text strong>Current:</Text> {selectedRequest.oldDate ? dayjs(selectedRequest.oldDate).format('DD MMM YYYY') : 'N/A'} ({formatTimeSlot12h(selectedRequest.oldTimeSlot || '')})
-              </div>
-              <div>
-                <Text strong>Requested:</Text> {selectedRequest.newDate ? dayjs(selectedRequest.newDate).format('DD MMM YYYY') : 'N/A'} ({formatTimeSlot12h(selectedRequest.newTimeSlot || '')})
-              </div>
-            </Space>
+            <div style={{ marginBottom: 16 }}>
+              <Text strong>Patient:</Text> {selectedRequest.patient?.user?.fullName || 'Unknown'}
+            </div>
+            <div style={{ marginBottom: 16 }}>
+              <Text strong>Current:</Text> {selectedRequest.oldDate ? dayjs(selectedRequest.oldDate).format('DD MMM YYYY') : 'N/A'} ({formatTimeSlot12h(selectedRequest.oldTimeSlot || '')})
+            </div>
+            <div style={{ marginBottom: 16 }}>
+              <Text strong>Requested:</Text> {selectedRequest.newDate ? dayjs(selectedRequest.newDate).format('DD MMM YYYY') : 'N/A'} ({formatTimeSlot12h(selectedRequest.newTimeSlot || '')})
+            </div>
 
             <Form.Item
               name="rejectionReason"

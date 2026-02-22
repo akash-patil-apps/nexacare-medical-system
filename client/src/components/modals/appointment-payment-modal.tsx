@@ -104,7 +104,7 @@ export default function AppointmentPaymentModal({
             <Title level={4} style={{ marginBottom: 8 }}>
               Consultation Fee
             </Title>
-            <Text style={{ fontSize: 32, fontWeight: 'bold', color: '#1890ff' }}>
+            <Text style={{ fontSize: 32, fontWeight: 'bold', color: 'var(--ant-color-primary)' }}>
               ₹{amount.toFixed(2)}
             </Text>
           </div>
@@ -123,11 +123,11 @@ export default function AppointmentPaymentModal({
                       hoverable
                       style={{
                         marginLeft: 8,
-                        border: paymentMethod === 'online' ? '2px solid #1890ff' : '1px solid #d9d9d9',
+                        border: paymentMethod === 'online' ? '2px solid var(--ant-color-primary)' : '1px solid #d9d9d9',
                       }}
                     >
                       <Space>
-                        <CreditCardOutlined style={{ fontSize: 24, color: '#1890ff' }} />
+                        <CreditCardOutlined style={{ fontSize: 24, color: 'var(--ant-color-primary)' }} />
                         <div>
                           <Text strong>Pay Online</Text>
                           <br />
@@ -144,7 +144,7 @@ export default function AppointmentPaymentModal({
                       hoverable
                       style={{
                         marginLeft: 8,
-                        border: paymentMethod === 'counter' ? '2px solid #1890ff' : '1px solid #d9d9d9',
+                        border: paymentMethod === 'counter' ? '2px solid var(--ant-color-primary)' : '1px solid #d9d9d9',
                       }}
                     >
                       <Space>
@@ -164,7 +164,7 @@ export default function AppointmentPaymentModal({
             </Form.Item>
 
             {paymentMethod === 'online' && (
-              <div style={{ marginTop: 16, padding: 16, background: '#f0f9ff', borderRadius: 8 }}>
+              <div style={{ marginTop: 16, padding: 16, background: 'var(--ant-color-primary-bg, #f0f9ff)', borderRadius: 8 }}>
                 <Text type="secondary" style={{ fontSize: 12 }}>
                   You will be redirected to a secure payment gateway. Demo payment will be processed automatically.
                 </Text>
@@ -192,7 +192,7 @@ export default function AppointmentPaymentModal({
 
       {paymentStep === 'processing' && (
         <div style={{ textAlign: 'center', padding: '40px 20px' }}>
-          <Spin indicator={<LoadingOutlined style={{ fontSize: 48, color: '#1890ff' }} spin />} />
+          <Spin indicator={<LoadingOutlined style={{ fontSize: 48, color: 'var(--ant-color-primary)' }} spin />} />
           <div style={{ marginTop: 24 }}>
             <Title level={4}>Processing Payment...</Title>
             <Text type="secondary">Please wait while we process your payment</Text>

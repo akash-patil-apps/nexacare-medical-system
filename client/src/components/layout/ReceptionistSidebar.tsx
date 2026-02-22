@@ -1,8 +1,11 @@
-import React, { useMemo } from 'react';
+import React from 'react';
 import { Button } from 'antd';
-import { UserOutlined, TeamOutlined, CalendarOutlined, PhoneOutlined, MessageOutlined, LogoutOutlined } from '@ant-design/icons';
+import { UserOutlined, TeamOutlined, CalendarOutlined, PhoneOutlined, MessageOutlined, LogoutOutlined, MedicineBoxOutlined } from '@ant-design/icons';
 import { useLocation } from 'wouter';
 import { useAuth } from '../../hooks/use-auth';
+import { ROLE_PRIMARY, FIGMA_COLORS, FIGMA_RECEPTIONIST } from '../../design-tokens';
+
+const RECEPTIONIST_PRIMARY = ROLE_PRIMARY.receptionist;
 
 interface ReceptionistSidebarProps {
   selectedMenuKey?: string;
@@ -37,6 +40,9 @@ export const ReceptionistSidebar: React.FC<ReceptionistSidebarProps> = ({
       case 'appointments':
         setLocation('/receptionist/appointments');
         break;
+      case 'ipd':
+        setLocation('/dashboard/receptionist/ipd');
+        break;
       case 'contacts':
         setLocation('/dashboard/receptionist/contact-directory');
         break;
@@ -48,112 +54,96 @@ export const ReceptionistSidebar: React.FC<ReceptionistSidebarProps> = ({
     }
   };
 
-  return (
-    <div style={{ 
-      display: 'flex', 
-      flexDirection: 'column', 
-      height: '100%',
-      background: '#fff', // White background matching PatientSidebar
-      width: '80px', // Narrow vertical bar
-      alignItems: 'center',
-      padding: '16px 0',
-      gap: '12px',
-      borderRight: '1px solid #E5E7EB', // Light border on right
-    }}>
-      {/* User Icon at Top */}
+  const navBtn = (key: string, Icon: React.ComponentType<{ style?: React.CSSProperties }>) => {
+    const isActive = selectedMenuKey === key;
+    return (
       <Button
         type="text"
-        icon={<UserOutlined style={{ fontSize: '20px', color: '#1A8FE3' }} />}
+        icon={<Icon style={{ fontSize: FIGMA_RECEPTIONIST.sidebarIconSize, color: isActive ? '#fff' : FIGMA_COLORS.textMuted }} />}
         style={{
-          width: '48px',
-          height: '48px',
+          width: FIGMA_RECEPTIONIST.sidebarButtonSize,
+          height: FIGMA_RECEPTIONIST.sidebarButtonSize,
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
-          background: '#E3F2FF', // Light blue background for active user icon
-          borderRadius: '8px',
+          background: isActive ? RECEPTIONIST_PRIMARY : 'transparent',
+          borderRadius: 10,
+        }}
+        onClick={() => handleMenuClick(key)}
+      />
+    );
+  };
+
+  return (
+    <div style={{
+      display: 'flex',
+      flexDirection: 'column',
+      height: '100%',
+      background: FIGMA_COLORS.backgroundCard,
+      width: 80,
+      alignItems: 'center',
+      padding: FIGMA_RECEPTIONIST.sidebarPadding,
+      gap: FIGMA_RECEPTIONIST.sidebarGap,
+      borderRight: `1px solid ${FIGMA_COLORS.border}`,
+    }}>
+      {/* Profile - neutral (Figma: icon only) */}
+      <Button
+        type="text"
+        icon={<UserOutlined style={{ fontSize: FIGMA_RECEPTIONIST.sidebarIconSize, color: FIGMA_COLORS.textMuted }} />}
+        style={{
+          width: FIGMA_RECEPTIONIST.sidebarButtonSize,
+          height: FIGMA_RECEPTIONIST.sidebarButtonSize,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          background: FIGMA_COLORS.backgroundPage,
+          borderRadius: 10,
         }}
         onClick={() => setLocation('/dashboard/profile')}
+        title="Profile"
       />
 
-      {/* Navigation Icons - Vertical Stack */}
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', flex: 1, alignItems: 'center' }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: FIGMA_RECEPTIONIST.sidebarGap, flex: 1, alignItems: 'center' }}>
+        {navBtn('dashboard', TeamOutlined)}
         <Button
           type="text"
-          icon={<TeamOutlined style={{ fontSize: '20px', color: selectedMenuKey === 'dashboard' ? '#1A8FE3' : '#6B7280' }} />}
+          icon={<CalendarOutlined style={{ fontSize: FIGMA_RECEPTIONIST.sidebarIconSize, color: selectedMenuKey === 'appointments' ? '#fff' : FIGMA_COLORS.textMuted }} />}
           style={{
-            width: '48px',
-            height: '48px',
-              display: 'flex',
+            width: FIGMA_RECEPTIONIST.sidebarButtonSize,
+            height: FIGMA_RECEPTIONIST.sidebarButtonSize,
+            display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            background: selectedMenuKey === 'dashboard' ? '#E3F2FF' : 'transparent',
-            borderRadius: '8px',
-          }}
-          onClick={() => handleMenuClick('dashboard')}
-        />
-        
-        <Button
-          type="text"
-          icon={<CalendarOutlined style={{ fontSize: '20px', color: selectedMenuKey === 'appointments' ? '#1A8FE3' : '#6B7280' }} />}
-          style={{
-            width: '48px',
-            height: '48px',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-            background: selectedMenuKey === 'appointments' ? '#E3F2FF' : 'transparent',
-            borderRadius: '8px',
+            background: selectedMenuKey === 'appointments' ? RECEPTIONIST_PRIMARY : 'transparent',
+            borderRadius: 10,
           }}
           onClick={() => handleMenuClick('appointments')}
           title="Appointments"
         />
-        
         <Button
           type="text"
-          icon={<PhoneOutlined style={{ fontSize: '20px', color: selectedMenuKey === 'contacts' ? '#1A8FE3' : '#6B7280' }} />}
+          icon={<MedicineBoxOutlined style={{ fontSize: FIGMA_RECEPTIONIST.sidebarIconSize, color: selectedMenuKey === 'ipd' ? '#fff' : FIGMA_COLORS.textMuted }} />}
           style={{
-            width: '48px',
-            height: '48px',
-              display: 'flex',
+            width: FIGMA_RECEPTIONIST.sidebarButtonSize,
+            height: FIGMA_RECEPTIONIST.sidebarButtonSize,
+            display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            background: selectedMenuKey === 'contacts' ? '#E3F2FF' : 'transparent',
-            borderRadius: '8px',
+            background: selectedMenuKey === 'ipd' ? RECEPTIONIST_PRIMARY : 'transparent',
+            borderRadius: 10,
           }}
-          onClick={() => handleMenuClick('contacts')}
-          title="Contact directory"
+          onClick={() => handleMenuClick('ipd')}
+          title="IPD Management"
         />
+        {navBtn('contacts', PhoneOutlined)}
+        {navBtn('messages', MessageOutlined)}
+      </div>
 
+      <div style={{ display: 'flex', flexDirection: 'column', gap: FIGMA_RECEPTIONIST.sidebarGap, alignItems: 'center' }}>
         <Button
           type="text"
-          icon={<MessageOutlined style={{ fontSize: '20px', color: selectedMenuKey === 'messages' ? '#1A8FE3' : '#6B7280' }} />}
-          style={{
-            width: '48px',
-            height: '48px',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            background: selectedMenuKey === 'messages' ? '#E3F2FF' : 'transparent',
-            borderRadius: '8px',
-          }}
-          onClick={() => handleMenuClick('messages')}
-          title="Messages"
-        />
-              </div>
-              
-      {/* Bottom Icons */}
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', alignItems: 'center' }}>
-              <Button 
-                type="text" 
-          icon={<LogoutOutlined style={{ fontSize: '20px', color: '#EF4444' }} />}
-          style={{
-            width: '48px',
-            height: '48px',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-          }}
+          icon={<LogoutOutlined style={{ fontSize: FIGMA_RECEPTIONIST.sidebarIconSize, color: FIGMA_COLORS.error }} />}
+          style={{ width: FIGMA_RECEPTIONIST.sidebarButtonSize, height: FIGMA_RECEPTIONIST.sidebarButtonSize, display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: 10 }}
           onClick={() => logout()}
           title="Logout"
         />

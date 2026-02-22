@@ -552,7 +552,7 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({
               : undefined,
           }}
         >
-          <div style={{ marginBottom: 16, padding: 12, background: '#f0f9ff', borderRadius: 8 }}>
+          <div style={{ marginBottom: 16, padding: 12, background: 'var(--ant-color-primary-bg, #f0f9ff)', borderRadius: 8, border: '1px solid var(--ant-color-primary-border, #91caff)' }}>
             <Space direction="vertical" size="small">
               <Text strong>Appointment ID: {appointmentId}</Text>
               <Text>
@@ -752,7 +752,7 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({
               <Divider style={{ margin: '8px 0' }} />
               <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                 <Text strong style={{ fontSize: 16 }}>Total:</Text>
-                <Text strong style={{ fontSize: 18, color: '#1890ff' }}>₹{totals.total.toFixed(2)}</Text>
+                <Text strong style={{ fontSize: 18, color: 'var(--ant-color-primary)' }}>₹{totals.total.toFixed(2)}</Text>
               </div>
             </Space>
           </div>

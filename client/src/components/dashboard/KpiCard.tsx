@@ -1,5 +1,6 @@
 import { Card, Space, Tag, Typography, Button } from 'antd';
 import { ReactNode } from 'react';
+import { FIGMA_RECEPTIONIST, FIGMA_RADIUS_KPI_ICON } from '../../design-tokens';
 
 const { Text, Title } = Typography;
 
@@ -54,27 +55,27 @@ export function KpiCard({
           display: 'flex', 
           flexDirection: 'column', 
           flex: 1, 
-          padding: 12, // p-3 = 12px from Figma (optimized version)
-          minHeight: '120px',
+          padding: FIGMA_RECEPTIONIST.kpiCardPadding,
+          minHeight: 120,
         }
       }}
       onClick={onView}
     >
       {/* Label on top */}
-      <Text type="secondary" style={{ fontSize: '13px', fontWeight: 400, color: '#6b7280', lineHeight: 1.5, marginBottom: 12 }}>
+      <Text type="secondary" style={{ fontSize: 14, fontWeight: 400, color: '#6B7280', lineHeight: '20px', marginBottom: 8 }}>
         {label}
       </Text>
       
       {/* Value and Icon in same row - Icon on right (matching Figma) */}
-      <div style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+      <div style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 0 }}>
         <Title 
           level={1} 
           style={{ 
             margin: 0, 
-            fontSize: '32px', 
-            lineHeight: '40px', 
+            fontSize: 30, 
+            lineHeight: '36px', 
             wordBreak: 'break-word',
-            fontWeight: 700,
+            fontWeight: 600,
             color: '#262626',
             textAlign: 'left',
             flex: 1,
@@ -84,12 +85,14 @@ export function KpiCard({
         </Title>
         {icon && (
           <div style={{ 
-            fontSize: '24px',
+            width: FIGMA_RECEPTIONIST.kpiIconBoxSize,
+            height: FIGMA_RECEPTIONIST.kpiIconBoxSize,
+            borderRadius: FIGMA_RADIUS_KPI_ICON,
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            color: '#6b7280',
-            marginLeft: 8,
+            background: 'var(--ant-color-primary-bg, #F3F4F6)',
+            flexShrink: 0,
           }}>
             {icon}
           </div>
@@ -102,13 +105,15 @@ export function KpiCard({
           <Tag 
             style={{ 
               borderRadius: 9999,
-              padding: '4px 10px',
-              fontSize: '11px',
+              padding: FIGMA_RECEPTIONIST.kpiTagPadding,
+              fontSize: 12,
+              lineHeight: '16px',
               fontWeight: 500,
               color: tagColor,
               background: tagBg,
               border: 'none',
               margin: 0,
+              height: 24,
             }}
           >
             {trendLabel}

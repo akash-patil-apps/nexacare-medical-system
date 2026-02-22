@@ -40,7 +40,11 @@ interface TopHeaderProps {
   notificationCount?: number;
   onSearch?: (query: string) => void;
   bgColor?: string;
+  /** Role primary color for avatar (e.g. receptionist #F97316). When not set, uses default blue. */
+  primaryColor?: string;
 }
+
+const DEFAULT_HEADER_PRIMARY = '#1A8FE3';
 
 export const TopHeader: React.FC<TopHeaderProps> = ({
   userName,
@@ -49,6 +53,7 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
   userInitials,
   notificationCount = 0,
   onSearch,
+  primaryColor = DEFAULT_HEADER_PRIMARY,
 }) => {
   const { logout, user } = useAuth();
   const [, setLocation] = useLocation();
@@ -208,8 +213,8 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
       style={{
         background: '#fff',
         borderBottom: '1px solid #E5E7EB',
-        padding: '0 16px', // Reduced from 24px to save space
-        height: '56px', // Reduced from 64px
+        padding: '0 24px',
+        height: '85px',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'space-between',
@@ -323,7 +328,7 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
             <Avatar
               size="small"
               style={{
-                backgroundColor: '#1A8FE3',
+                backgroundColor: primaryColor,
                 color: '#fff',
                 fontWeight: 600,
               }}
