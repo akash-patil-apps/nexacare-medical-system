@@ -1,10 +1,17 @@
 // server/services/medicine-reminder.service.ts
 // Medicine reminder service for OPD prescriptions
 import { db } from '../db';
-import { prescriptions, patients, notifications } from '../../shared/schema';
-import { eq, and, gte, lte, sql, ilike } from 'drizzle-orm';
+import { prescriptions, patients, notifications, patientReminderSettings, medicineAdherence } from '../../shared/schema';
+import { eq, and, gte, lte, sql, ilike, asc } from 'drizzle-orm';
 import { NotificationService } from './localNotification.service';
 import dayjs from 'dayjs';
+
+export interface ReminderTimeSettings {
+  morningTime?: string;   // HH:mm, e.g. 08:00 or 09:00
+  noonTime?: string;     // 12:00 or 13:00
+  afternoonTime?: string;
+  nightTime?: string;    // 20:00 or 21:00
+}
 
 interface Medication {
   name: string;
@@ -17,77 +24,75 @@ interface Medication {
   unit: string;
 }
 
+/** Apply patient reminder time overrides (alarm settings) to a time slot */
+function applyTimeSettings(time: string, settings?: ReminderTimeSettings): string {
+  if (!settings) return time;
+  const t = time.slice(0, 5); // HH:mm
+  if (t === '09:00' || t === '08:00') return settings.morningTime ?? time;
+  if (t === '12:00' || t === '13:00') return settings.noonTime ?? time;
+  if (t === '14:00') return settings.afternoonTime ?? time;
+  if (t === '20:00' || t === '21:00') return settings.nightTime ?? time;
+  return time;
+}
+
 /**
  * Parse frequency string to reminder times
- * Returns array of times in HH:mm format
+ * Returns array of times in HH:mm format. Optional settings override default alarm times (morning/noon/afternoon/night).
  */
-function parseFrequencyToTimes(frequency: string, timing: string, dosage?: string): string[] {
+function parseFrequencyToTimes(
+  frequency: string,
+  timing: string,
+  dosage?: string,
+  settings?: ReminderTimeSettings
+): string[] {
   const freq = (frequency ?? '').toString().toLowerCase().trim();
   const timingLower = (timing ?? '').toString().toLowerCase().trim();
   const dosageStr = dosage?.trim() || '';
-  
+  const m = () => applyTimeSettings('09:00', settings);
+  const a = () => applyTimeSettings('14:00', settings);
+  const n = () => applyTimeSettings('20:00', settings);
+  const noon = () => applyTimeSettings('12:00', settings);
+
   // Check for dosage format like "1-0-1" or "1-1-1" (morning-afternoon-night)
   const dosagePattern = /^(\d+)-(\d+)-(\d+)$/;
   const dosageMatch = dosageStr.match(dosagePattern);
-  
+
   if (dosageMatch) {
     const [, morning, afternoon, night] = dosageMatch;
     const times: string[] = [];
-    
-    // Morning: 9 AM
-    if (morning !== '0') {
-      times.push('09:00');
-    }
-    
-    // Afternoon: 2 PM
-    if (afternoon !== '0') {
-      times.push('14:00');
-    }
-    
-    // Night: 8 PM
-    if (night !== '0') {
-      times.push('20:00');
-    }
-    
+    if (morning !== '0') times.push(m());
+    if (afternoon !== '0') times.push(a());
+    if (night !== '0') times.push(n());
     return times;
   }
-  
-  // Common frequencies
+
   if (freq.includes('qid') || freq.includes('4 times') || freq === '4x') {
-    // 4 times daily: 9 AM, 2 PM, 6 PM, 10 PM
-    return ['09:00', '14:00', '18:00', '22:00'];
-  } else if (freq.includes('tid') || freq.includes('3 times') || freq === '3x') {
-    // 3 times daily: 9 AM, 2 PM, 8 PM
-    return ['09:00', '14:00', '20:00'];
-  } else if (freq.includes('bid') || freq.includes('2 times') || freq === '2x' || freq === 'twice') {
-    // 2 times daily: 9 AM, 8 PM
-    return ['09:00', '20:00'];
-  } else if (freq.includes('qd') || freq.includes('once daily') || freq === '1x' || freq === 'once') {
-    // Once daily: 9 AM (or based on timing)
-    if (timingLower.includes('morning')) {
-      return ['09:00'];
-    } else if (timingLower.includes('evening') || timingLower.includes('night')) {
-      return ['20:00'];
-    } else if (timingLower.includes('afternoon')) {
-      return ['14:00'];
-    }
-    return ['09:00']; // Default to morning
-  } else if (freq.includes('q8h') || freq.includes('every 8 hours')) {
-    // Every 8 hours: 9 AM, 5 PM, 1 AM
-    return ['09:00', '17:00', '01:00'];
-  } else if (freq.includes('q12h') || freq.includes('every 12 hours')) {
-    // Every 12 hours: 9 AM, 9 PM
-    return ['09:00', '21:00'];
-  } else if (freq.includes('q6h') || freq.includes('every 6 hours')) {
-    // Every 6 hours: 9 AM, 3 PM, 9 PM, 3 AM
-    return ['09:00', '15:00', '21:00', '03:00'];
-  } else if (freq.includes('prn') || freq.includes('as needed')) {
-    // PRN - no scheduled reminders
-    return [];
+    return [m(), a(), applyTimeSettings('18:00', settings) || '18:00', '22:00'];
   }
-  
-  // Default: once daily in morning
-  return ['09:00'];
+  if (freq.includes('tid') || freq.includes('3 times') || freq === '3x') {
+    return [m(), a(), n()];
+  }
+  if (freq.includes('bid') || freq.includes('2 times') || freq === '2x' || freq === 'twice') {
+    return [m(), n()];
+  }
+  if (freq.includes('qd') || freq.includes('once daily') || freq === '1x' || freq === 'once') {
+    if (timingLower.includes('morning')) return [m()];
+    if (timingLower.includes('evening') || timingLower.includes('night')) return [n()];
+    if (timingLower.includes('afternoon')) return [a()];
+    return [m()];
+  }
+  if (freq.includes('q8h') || freq.includes('every 8 hours')) {
+    return [m(), '17:00', '01:00'];
+  }
+  if (freq.includes('q12h') || freq.includes('every 12 hours')) {
+    return [m(), applyTimeSettings('21:00', settings) || '21:00'];
+  }
+  if (freq.includes('q6h') || freq.includes('every 6 hours')) {
+    return [m(), '15:00', '21:00', '03:00'];
+  }
+  if (freq.includes('prn') || freq.includes('as needed')) return [];
+
+  return [m()];
 }
 
 /**
@@ -317,22 +322,87 @@ export async function sendDailyMedicineReminders() {
 }
 
 export interface PatientReminderItem {
-  time: string;
+  time: string;           // ISO-like YYYY-MM-DDTHH:mm for sorting/display
   timeLabel: string;
   medicationName: string;
   dosage: string;
   frequency?: string;
   prescriptionId: number;
+  scheduledDate?: string; // YYYY-MM-DD for adherence API
+  scheduledTime?: string; // HH:mm for adherence API
 }
 
 /**
- * Get today's and tomorrow's medicine reminder schedule for a patient (for display on dashboard)
+ * Get patient's reminder alarm time settings (morning/noon/afternoon/night). Creates defaults if missing.
+ */
+export async function getPatientReminderSettings(patientId: number): Promise<ReminderTimeSettings & { id?: number }> {
+  const [row] = await db
+    .select()
+    .from(patientReminderSettings)
+    .where(eq(patientReminderSettings.patientId, patientId))
+    .limit(1);
+  if (row) {
+    return {
+      id: row.id,
+      morningTime: row.morningTime ?? '09:00',
+      noonTime: row.noonTime ?? '12:00',
+      afternoonTime: row.afternoonTime ?? '14:00',
+      nightTime: row.nightTime ?? '20:00',
+    };
+  }
+  return {
+    morningTime: '09:00',
+    noonTime: '12:00',
+    afternoonTime: '14:00',
+    nightTime: '20:00',
+  };
+}
+
+/**
+ * Upsert patient reminder alarm times (for morning 8/9am, noon 12/1pm, afternoon 2pm, night 8/9pm).
+ */
+export async function upsertPatientReminderSettings(
+  patientId: number,
+  data: ReminderTimeSettings
+): Promise<ReminderTimeSettings & { id: number }> {
+  const [existing] = await db
+    .select()
+    .from(patientReminderSettings)
+    .where(eq(patientReminderSettings.patientId, patientId))
+    .limit(1);
+  const now = new Date();
+  const payload = {
+    morningTime: data.morningTime ?? '09:00',
+    noonTime: data.noonTime ?? '12:00',
+    afternoonTime: data.afternoonTime ?? '14:00',
+    nightTime: data.nightTime ?? '20:00',
+    updatedAt: now,
+  };
+  if (existing) {
+    const [updated] = await db
+      .update(patientReminderSettings)
+      .set(payload)
+      .where(eq(patientReminderSettings.patientId, patientId))
+      .returning();
+    return { ...payload, id: updated!.id };
+  }
+  const [inserted] = await db
+    .insert(patientReminderSettings)
+    .values({ patientId, ...payload })
+    .returning();
+  return { ...payload, id: inserted!.id };
+}
+
+/**
+ * Get today's and tomorrow's medicine reminder schedule for a patient (for display on dashboard).
+ * Uses patient's alarm time settings (morning/noon/afternoon/night) when set.
  */
 export async function getPatientReminderSchedule(patientId: number): Promise<PatientReminderItem[]> {
   const items: PatientReminderItem[] = [];
   const [patient] = await db.select().from(patients).where(eq(patients.id, patientId)).limit(1);
   if (!patient) return items;
 
+  const settings = await getPatientReminderSettings(patientId);
   const activePrescriptions = await db
     .select()
     .from(prescriptions)
@@ -354,7 +424,7 @@ export async function getPatientReminderSchedule(patientId: number): Promise<Pat
 
     for (const med of medications) {
       if (med.frequency?.toLowerCase().includes('prn') || !med.frequency) continue;
-      const times = parseFrequencyToTimes(med.frequency, med.timing ?? '', med.dosage);
+      const times = parseFrequencyToTimes(med.frequency, med.timing ?? '', med.dosage, settings);
       const name = med.name || 'Medication';
       const dosage = med.dosage || '';
 
@@ -363,13 +433,18 @@ export async function getPatientReminderSchedule(patientId: number): Promise<Pat
           const [hours, minutes] = time.split(':').map(Number);
           const timeLabel = dayjs().hour(hours).minute(minutes).format('h:mm A');
           const dateLabel = day.isSame(today, 'day') ? 'Today' : 'Tomorrow';
+          const timeStr = `${day.format('YYYY-MM-DD')}T${time}`;
+          const scheduledDate = day.format('YYYY-MM-DD');
+          const scheduledTime = time.length >= 5 ? time.slice(0, 5) : time;
           items.push({
-            time: `${day.format('YYYY-MM-DD')}T${time}`,
+            time: timeStr,
             timeLabel: `${dateLabel} ${timeLabel}`,
             medicationName: name,
             dosage,
             frequency: med.frequency,
             prescriptionId: prescription.id,
+            scheduledDate,
+            scheduledTime,
           });
         }
       }
@@ -378,4 +453,116 @@ export async function getPatientReminderSchedule(patientId: number): Promise<Pat
 
   items.sort((a, b) => a.time.localeCompare(b.time));
   return items;
+}
+
+// --- Medicine adherence (taken / skipped) ---
+
+export type AdherenceStatus = 'taken' | 'skipped';
+
+export interface AdherenceRecord {
+  id: number;
+  patientId: number;
+  prescriptionId: number;
+  medicationName: string;
+  scheduledDate: Date;
+  scheduledTime: string;
+  status: AdherenceStatus;
+  takenAt: Date | null;
+  createdAt: Date;
+}
+
+/**
+ * Record or update adherence for a reminder slot (patient marks taken or skipped).
+ */
+export async function recordAdherence(
+  patientId: number,
+  data: {
+    prescriptionId: number;
+    medicationName: string;
+    scheduledDate: string; // YYYY-MM-DD
+    scheduledTime: string; // HH:mm
+    status: AdherenceStatus;
+  }
+): Promise<AdherenceRecord> {
+  const scheduledDate = dayjs(data.scheduledDate).startOf('day').toDate();
+  const takenAt = data.status === 'taken' ? new Date() : null;
+  const existing = await db
+    .select()
+    .from(medicineAdherence)
+    .where(
+      and(
+        eq(medicineAdherence.patientId, patientId),
+        eq(medicineAdherence.prescriptionId, data.prescriptionId),
+        eq(medicineAdherence.medicationName, data.medicationName),
+        eq(medicineAdherence.scheduledDate, scheduledDate),
+        eq(medicineAdherence.scheduledTime, data.scheduledTime)
+      )
+    )
+    .limit(1);
+  if (existing.length > 0) {
+    const [updated] = await db
+      .update(medicineAdherence)
+      .set({ status: data.status, takenAt, createdAt: new Date() })
+      .where(eq(medicineAdherence.id, existing[0].id))
+      .returning();
+    return updated as AdherenceRecord;
+  }
+  const [inserted] = await db
+    .insert(medicineAdherence)
+    .values({
+      patientId,
+      prescriptionId: data.prescriptionId,
+      medicationName: data.medicationName,
+      scheduledDate,
+      scheduledTime: data.scheduledTime,
+      status: data.status,
+      takenAt,
+    })
+    .returning();
+  return inserted as AdherenceRecord;
+}
+
+/**
+ * Get adherence records for a patient (for dashboard/history). Optional date range.
+ */
+export async function getAdherenceForPatient(
+  patientId: number,
+  fromDate?: string,
+  toDate?: string
+): Promise<AdherenceRecord[]> {
+  const conditions = [eq(medicineAdherence.patientId, patientId)];
+  if (fromDate) {
+    conditions.push(gte(medicineAdherence.scheduledDate, dayjs(fromDate).startOf('day').toDate()));
+  }
+  if (toDate) {
+    conditions.push(lte(medicineAdherence.scheduledDate, dayjs(toDate).endOf('day').toDate()));
+  }
+  const rows = await db
+    .select()
+    .from(medicineAdherence)
+    .where(and(...conditions))
+    .orderBy(asc(medicineAdherence.scheduledDate), asc(medicineAdherence.scheduledTime));
+  return rows as AdherenceRecord[];
+}
+
+/**
+ * Get adherence status for reminder slots (today + tomorrow) so UI can show taken/skipped.
+ * Returns a Set of keys "prescriptionId|medicationName|scheduledDate|scheduledTime" -> status.
+ */
+export async function getAdherenceMapForReminders(
+  patientId: number,
+  reminderItems: PatientReminderItem[]
+): Promise<Map<string, AdherenceStatus>> {
+  if (reminderItems.length === 0) return new Map();
+  const dates = [...new Set(reminderItems.map((r) => r.scheduledDate).filter(Boolean))] as string[];
+  if (dates.length === 0) return new Map();
+  const from = dates.reduce((a, b) => (a < b ? a : b));
+  const to = dates.reduce((a, b) => (a > b ? a : b));
+  const records = await getAdherenceForPatient(patientId, from, to);
+  const map = new Map<string, AdherenceStatus>();
+  for (const r of records) {
+    const dateStr = dayjs(r.scheduledDate).format('YYYY-MM-DD');
+    map.set(`${r.prescriptionId}|${r.medicationName}|${dateStr}|${r.scheduledTime}`, r.status);
+  }
+  return map;
 }

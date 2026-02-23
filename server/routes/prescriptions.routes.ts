@@ -168,7 +168,7 @@ router.get(
         console.error("❌ Patient profile not found for user ID:", req.user!.id);
         return res.status(404).json({ error: "Patient profile not found" });
       }
-      const prescriptions = await prescriptionService.getPrescriptionsForPatient(patientProfile.id);
+      const prescriptions = await prescriptionService.getPrescriptionsForPatientWithDetails(patientProfile.id);
       res.json(prescriptions);
     } catch (err) {
       console.error("Fetch patient prescriptions failed:", err);
@@ -204,7 +204,7 @@ router.get(
   }
 );
 
-// 3b. Get medicine reminder schedule for logged-in patient (today + tomorrow)
+// 3b. Get medicine reminder schedule for logged-in patient (today + tomorrow), with adherence status
 router.get(
   "/patient/reminders",
   authenticateToken,
@@ -216,10 +216,123 @@ router.get(
         return res.status(404).json({ error: "Patient profile not found" });
       }
       const reminders = await medicineReminderService.getPatientReminderSchedule(patientProfile.id);
-      res.json(reminders);
+      const adherenceMap = await medicineReminderService.getAdherenceMapForReminders(patientProfile.id, reminders);
+      const withAdherence = reminders.map((r) => {
+        const key = r.scheduledDate && r.scheduledTime
+          ? `${r.prescriptionId}|${r.medicationName}|${r.scheduledDate}|${r.scheduledTime}`
+          : null;
+        return { ...r, adherence: key ? adherenceMap.get(key) ?? null : null };
+      });
+      res.json(withAdherence);
     } catch (err) {
       console.error("Patient reminders error:", err);
       res.status(500).json({ error: "Failed to fetch reminders" });
+    }
+  }
+);
+
+// 3c. Get patient reminder alarm time settings (morning/noon/afternoon/night)
+router.get(
+  "/patient/reminder-settings",
+  authenticateToken,
+  authorizeRoles("PATIENT"),
+  async (req: AuthenticatedRequest, res) => {
+    try {
+      const patientProfile = await patientsService.getPatientByUserId(req.user!.id);
+      if (!patientProfile?.id) {
+        return res.status(404).json({ error: "Patient profile not found" });
+      }
+      const settings = await medicineReminderService.getPatientReminderSettings(patientProfile.id);
+      res.json(settings);
+    } catch (err) {
+      console.error("Patient reminder settings get error:", err);
+      res.status(500).json({ error: "Failed to fetch reminder settings" });
+    }
+  }
+);
+
+// 3d. Update patient reminder alarm times (set alarm for morning 8/9am, noon 12/1pm, night 8/9pm, etc.)
+router.put(
+  "/patient/reminder-settings",
+  authenticateToken,
+  authorizeRoles("PATIENT"),
+  async (req: AuthenticatedRequest, res) => {
+    try {
+      const patientProfile = await patientsService.getPatientByUserId(req.user!.id);
+      if (!patientProfile?.id) {
+        return res.status(404).json({ error: "Patient profile not found" });
+      }
+      const body = req.body || {};
+      const settings = await medicineReminderService.upsertPatientReminderSettings(patientProfile.id, {
+        morningTime: body.morningTime,
+        noonTime: body.noonTime,
+        afternoonTime: body.afternoonTime,
+        nightTime: body.nightTime,
+      });
+      res.json(settings);
+    } catch (err) {
+      console.error("Patient reminder settings update error:", err);
+      res.status(500).json({ error: "Failed to update reminder settings" });
+    }
+  }
+);
+
+// 3e. Record medicine adherence (taken or skipped) for a reminder slot
+router.post(
+  "/patient/adherence",
+  authenticateToken,
+  authorizeRoles("PATIENT"),
+  async (req: AuthenticatedRequest, res) => {
+    try {
+      const patientProfile = await patientsService.getPatientByUserId(req.user!.id);
+      if (!patientProfile?.id) {
+        return res.status(404).json({ error: "Patient profile not found" });
+      }
+      const { prescriptionId, medicationName, scheduledDate, scheduledTime, status } = req.body || {};
+      if (!prescriptionId || !medicationName || !scheduledDate || !scheduledTime || !status) {
+        return res.status(400).json({
+          error: "prescriptionId, medicationName, scheduledDate (YYYY-MM-DD), scheduledTime (HH:mm), and status (taken|skipped) are required",
+        });
+      }
+      if (status !== "taken" && status !== "skipped") {
+        return res.status(400).json({ error: "status must be 'taken' or 'skipped'" });
+      }
+      const record = await medicineReminderService.recordAdherence(patientProfile.id, {
+        prescriptionId: Number(prescriptionId),
+        medicationName: String(medicationName),
+        scheduledDate: String(scheduledDate),
+        scheduledTime: String(scheduledTime),
+        status,
+      });
+      res.json(record);
+    } catch (err) {
+      console.error("Patient adherence record error:", err);
+      res.status(500).json({ error: "Failed to record adherence" });
+    }
+  }
+);
+
+// 3f. Get adherence history for patient (optional from, to query params)
+router.get(
+  "/patient/adherence",
+  authenticateToken,
+  authorizeRoles("PATIENT"),
+  async (req: AuthenticatedRequest, res) => {
+    try {
+      const patientProfile = await patientsService.getPatientByUserId(req.user!.id);
+      if (!patientProfile?.id) {
+        return res.status(404).json({ error: "Patient profile not found" });
+      }
+      const { from, to } = req.query;
+      const records = await medicineReminderService.getAdherenceForPatient(
+        patientProfile.id,
+        from as string | undefined,
+        to as string | undefined
+      );
+      res.json(records);
+    } catch (err) {
+      console.error("Patient adherence get error:", err);
+      res.status(500).json({ error: "Failed to fetch adherence" });
     }
   }
 );

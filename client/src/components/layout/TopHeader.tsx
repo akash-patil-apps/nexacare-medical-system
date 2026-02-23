@@ -22,6 +22,7 @@ import {
   MoonOutlined,
   SunOutlined,
   SwapOutlined,
+  DownOutlined,
 } from '@ant-design/icons';
 import { useAuth } from '../../hooks/use-auth';
 import { useLocation } from 'wouter';
@@ -207,6 +208,113 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
     );
     return items;
   }, [setLocation, switchAccountChildren, logout]);
+
+  const isPatientHeader = userRole === 'Patient';
+
+  // Figma Patient Header: Welcome back, Patient ID, notification bell 40x40, profile (32px avatar, name, "Patient", chevron)
+  if (isPatientHeader) {
+    return (
+      <header
+        style={{
+          background: '#fff',
+          borderBottom: `1px solid #E5E7EB`,
+          paddingLeft: 24,
+          paddingRight: 24,
+          paddingTop: 16,
+          paddingBottom: 16,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          position: 'sticky',
+          top: 0,
+          zIndex: 100,
+        }}
+      >
+        <div>
+          <h1 style={{ margin: 0, fontSize: 20, fontWeight: 500, color: '#262626', lineHeight: 1.5 }}>
+            Welcome back
+          </h1>
+          <p style={{ margin: 0, marginTop: 2, fontSize: 14, color: '#6B7280', lineHeight: 1.5 }}>
+            Patient ID: {displayUserId}
+          </p>
+        </div>
+        <Space size={16}>
+          <Badge count={notificationCount} size="small" offset={[-2, 2]}>
+            <button
+              type="button"
+              style={{
+                width: 40,
+                height: 40,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                borderRadius: 8,
+                border: 'none',
+                background: 'transparent',
+                cursor: 'pointer',
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.background = '#F3F4F6';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = 'transparent';
+              }}
+              onClick={() => message.info('Notifications')}
+            >
+              <BellOutlined style={{ fontSize: 20, color: '#6B7280' }} />
+            </button>
+          </Badge>
+          <Dropdown menu={{ items: userMenuItems }} placement="bottomRight" trigger={['click']}>
+            <button
+              type="button"
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 12,
+                padding: '8px 12px',
+                borderRadius: 8,
+                border: 'none',
+                background: 'transparent',
+                cursor: 'pointer',
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.background = '#F3F4F6';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = 'transparent';
+              }}
+            >
+              <div
+                style={{
+                  width: 32,
+                  height: 32,
+                  borderRadius: '50%',
+                  background: primaryColor,
+                  color: '#fff',
+                  fontSize: 14,
+                  fontWeight: 500,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
+              >
+                {displayInitials}
+              </div>
+              <div style={{ textAlign: 'left' }}>
+                <p style={{ margin: 0, fontSize: 14, color: '#262626', fontWeight: 400, lineHeight: 1.3 }}>
+                  {displayName}
+                </p>
+                <p style={{ margin: 0, fontSize: 12, color: '#6B7280', lineHeight: 1.3 }}>
+                  {userRole}
+                </p>
+              </div>
+              <DownOutlined style={{ fontSize: 16, color: '#6B7280' }} />
+            </button>
+          </Dropdown>
+        </Space>
+      </header>
+    );
+  }
 
   return (
     <div

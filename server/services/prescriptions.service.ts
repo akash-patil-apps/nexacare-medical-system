@@ -4,6 +4,19 @@ import { db } from '../db';
 import { prescriptions } from '../../shared/schema';
 import type { InsertPrescription } from '../../shared/schema-types';
 
+/** Parse medication duration string to days (e.g. "5 days" -> 5, "1 week" -> 7, "2 (Tot: 0 Tab)" -> 2) */
+function parseDurationToDays(durationStr: string): number {
+  if (!durationStr || typeof durationStr !== 'string') return 7;
+  const s = durationStr.toLowerCase().trim();
+  if (s.includes('week')) return (parseInt(s, 10) || 1) * 7;
+  if (s.includes('month')) return (parseInt(s, 10) || 1) * 30;
+  if (s.includes('day')) return parseInt(s, 10) || 7;
+  // Leading number as days (e.g. "2", "2 (Tot: 0 Tab)", "3 weeks")
+  const leadingNum = parseInt(s, 10);
+  if (!Number.isNaN(leadingNum) && leadingNum > 0) return leadingNum;
+  return 7;
+}
+
 const buildAndCondition = (conditions: any[]) => {
   if (conditions.length === 1) return conditions[0];
   return and(...conditions);
@@ -167,4 +180,42 @@ export const getPrescriptionById = async (prescriptionId: number, userId: number
   if (userRole === 'PATIENT' && prescription.patientId !== userId) return null;
   return prescription;
 };
+
+/**
+ * Deactivate prescriptions whose medication duration has ended (duration-based auto deactivation).
+ * Called by scheduler (e.g. daily). Prescription end date = createdAt + max duration across all medications.
+ */
+export async function deactivatePrescriptionsPastDuration(): Promise<number> {
+  const active = await db
+    .select()
+    .from(prescriptions)
+    .where(eq(prescriptions.isActive, true));
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  let deactivated = 0;
+  for (const rx of active) {
+    let maxDays = 0;
+    try {
+      const meds = typeof rx.medications === 'string' ? JSON.parse(rx.medications) : rx.medications;
+      if (Array.isArray(meds)) {
+        for (const m of meds) {
+          const d = parseDurationToDays(m.duration ?? '');
+          if (d > maxDays) maxDays = d;
+        }
+      }
+    } catch {
+      continue;
+    }
+    if (maxDays === 0) continue;
+    const start = rx.createdAt ? new Date(rx.createdAt) : new Date();
+    const endDate = new Date(start);
+    endDate.setDate(endDate.getDate() + maxDays);
+    endDate.setHours(0, 0, 0, 0);
+    if (endDate < today) {
+      await deactivatePrescription(rx.id);
+      deactivated += 1;
+    }
+  }
+  return deactivated;
+}
 
