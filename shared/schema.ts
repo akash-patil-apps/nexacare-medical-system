@@ -332,6 +332,31 @@ export const prescriptionAudits = pgTable("prescription_audits", {
   createdAt: timestamp("created_at").defaultNow(),
 });
 
+// Patient medicine reminder alarm times (morning/noon/afternoon/night)
+export const patientReminderSettings = pgTable("patient_reminder_settings", {
+  id: serial("id").primaryKey(),
+  patientId: integer("patient_id").references(() => patients.id, { onDelete: "cascade" }).notNull().unique(),
+  morningTime: text("morning_time").default("09:00"),   // e.g. 08:00 or 09:00
+  noonTime: text("noon_time").default("12:00"),         // 12:00 or 13:00
+  afternoonTime: text("afternoon_time").default("14:00"),
+  nightTime: text("night_time").default("20:00"),       // 20:00 or 21:00
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at"),
+});
+
+// Medicine adherence: patient marks taken/skipped for each reminder slot
+export const medicineAdherence = pgTable("medicine_adherence", {
+  id: serial("id").primaryKey(),
+  patientId: integer("patient_id").references(() => patients.id, { onDelete: "cascade" }).notNull(),
+  prescriptionId: integer("prescription_id").references(() => prescriptions.id, { onDelete: "cascade" }).notNull(),
+  medicationName: text("medication_name").notNull(),
+  scheduledDate: timestamp("scheduled_date").notNull(), // date of the slot
+  scheduledTime: text("scheduled_time").notNull(),      // HH:mm
+  status: text("status").notNull(),                     // taken | skipped
+  takenAt: timestamp("taken_at"),                        // when marked (for taken)
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
 // Insurance Providers - master list (can be global or hospital-specific)
 export const insuranceProviders = pgTable("insurance_providers", {
   id: serial("id").primaryKey(),
@@ -509,6 +534,8 @@ export const patientsRelations = relations(patients, ({ one, many }) => ({
   insurancePolicies: many(patientInsurancePolicies),
   familyAsPrimary: many(patientFamilyMembers, { relationName: "primary" }),
   familyAsRelated: many(patientFamilyMembers, { relationName: "related" }),
+  reminderSettings: one(patientReminderSettings),
+  medicineAdherence: many(medicineAdherence),
 }));
 
 export const patientFamilyMembersRelations = relations(patientFamilyMembers, ({ one }) => ({
@@ -581,10 +608,20 @@ export const appointmentReschedulesRelations = relations(appointmentReschedules,
   reviewedBy: one(users, { fields: [appointmentReschedules.reviewedByUserId], references: [users.id] }),
 }));
 
-export const prescriptionsRelations = relations(prescriptions, ({ one }) => ({
+export const prescriptionsRelations = relations(prescriptions, ({ one, many }) => ({
   appointment: one(appointments, { fields: [prescriptions.appointmentId], references: [appointments.id] }),
   patient: one(patients, { fields: [prescriptions.patientId], references: [patients.id] }),
   doctor: one(doctors, { fields: [prescriptions.doctorId], references: [doctors.id] }),
+  medicineAdherence: many(medicineAdherence),
+}));
+
+export const patientReminderSettingsRelations = relations(patientReminderSettings, ({ one }) => ({
+  patient: one(patients, { fields: [patientReminderSettings.patientId], references: [patients.id] }),
+}));
+
+export const medicineAdherenceRelations = relations(medicineAdherence, ({ one }) => ({
+  patient: one(patients, { fields: [medicineAdherence.patientId], references: [patients.id] }),
+  prescription: one(prescriptions, { fields: [medicineAdherence.prescriptionId], references: [prescriptions.id] }),
 }));
 
 export const labReportsRelations = relations(labReports, ({ one }) => ({

@@ -1,7 +1,8 @@
 // server/scheduler.ts
-// In-process scheduler for medicine reminders and follow-up reminders
+// In-process scheduler for medicine reminders, follow-up reminders, and duration-based prescription deactivation
 import * as medicineReminderService from './services/medicine-reminder.service';
 import * as followupReminderService from './services/followup-reminder.service';
+import * as prescriptionsService from './services/prescriptions.service';
 
 const REMINDER_CHECK_INTERVAL_MS = 30 * 60 * 1000; // 30 minutes
 
@@ -42,6 +43,10 @@ export function stopMedicineReminderScheduler() {
  */
 async function runMedicineReminderCheck() {
   try {
+    const deactivated = await prescriptionsService.deactivatePrescriptionsPastDuration();
+    if (deactivated > 0) {
+      console.log(`✅ Auto-deactivated ${deactivated} prescription(s) past duration`);
+    }
     await medicineReminderService.sendDailyMedicineReminders();
     await followupReminderService.sendFollowUpReminders();
   } catch (error) {

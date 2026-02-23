@@ -85,3 +85,66 @@ export const FIGMA_RECEPTIONIST = {
   demoCardGap: 16,
   demoButtonHeight: 38,
 } as const;
+
+/** Figma Patient Dashboard exact dimensions (from Figma export: patients dashboard). */
+export const FIGMA_PATIENT = {
+  /** Page: bg #F7FBFF, main content p-6 (24px), space-y-6 (24px gap) */
+  pageBg: '#F7FBFF',
+  contentPadding: 24,
+  contentGap: 24,
+  /** Sidebar: w-20 (80px), py-6 (24px), border #E5E7EB, items mb-4 (16px gap) */
+  sidebarWidth: 80,
+  sidebarPaddingY: 24,
+  sidebarItemGap: 16,
+  sidebarButtonSize: 48,
+  sidebarIconSize: 24,
+  sidebarRadius: 8,
+  /** Active: bg #1A8FE3 text white; inactive: text #6B7280 hover:bg #F3F4F6 */
+  sidebarActiveBg: '#1A8FE3',
+  sidebarInactiveText: '#6B7280',
+  sidebarHoverBg: '#F3F4F6',
+  /** Header: px-6 py-4, border-b #E5E7EB, title text-xl (#262626), subtitle text-sm (#6B7280) */
+  headerPaddingX: 24,
+  headerPaddingY: 16,
+  headerTitleSize: 20,
+  headerSubtitleSize: 14,
+  /** Header notification: w-10 h-10 (40px), rounded-lg, Bell w-5 h-5 (20px) */
+  headerNotifySize: 40,
+  headerNotifyIconSize: 20,
+  /** Header profile: avatar w-8 h-8 (32px), gap-3 (12px), px-3 py-2, name text-sm, role text-xs */
+  headerAvatarSize: 32,
+  headerProfileGap: 12,
+  /** Cards: bg white, rounded-2xl (16px), border #E5E7EB, p-6 (24px), shadow 0 2px 8px rgba(0,0,0,0.08) */
+  cardRadius: 16,
+  cardPadding: 24,
+  cardShadow: '0 2px 8px rgba(0, 0, 0, 0.08)',
+  /** KPI: grid gap-4 (16px), icon box 48x48 rounded-xl (12px), icon 24px, tag text-xs, label text-sm #6B7280, value text-3xl (30px) font-semibold #262626 */
+  kpiGridGap: 16,
+  kpiIconBoxSize: 48,
+  kpiIconBoxRadius: 12,
+  kpiIconSize: 24,
+  kpiTagFontSize: 12,
+  kpiLabelFontSize: 14,
+  kpiValueFontSize: 30,
+  /** Quick actions: title mb-4 (16px), flex gap-3 (12px), button px-4 py-2 rounded-lg (8px) text-sm, primary #1A8FE3 hover #1578C5, default border #E5E7EB hover #F3F4F6, icon 16px */
+  quickActionsTitleMargin: 16,
+  quickActionsGap: 12,
+  quickActionsButtonPaddingX: 16,
+  quickActionsButtonPaddingY: 8,
+  quickActionsButtonRadius: 8,
+  quickActionsButtonFontSize: 14,
+  quickActionsIconSize: 16,
+  primaryHover: '#1578C5',
+  /** Medicine reminders: header icon box w-10 h-10 (40px) bg #E3F2FF rounded-lg, Clock 20px #1A8FE3, row p-3 bg #FAFAFA rounded-lg, inner icon 32x32 */
+  medicineIconBoxSize: 40,
+  medicineRowPadding: 12,
+  medicineRowRadius: 8,
+  medicineInnerIconSize: 32,
+  /** Upcoming appointments: item p-4 border #E5E7EB rounded-lg, status px-3 py-1 rounded-full text-xs */
+  appointmentItemPadding: 16,
+  appointmentItemRadius: 8,
+  statusTagPaddingX: 12,
+  statusTagPaddingY: 4,
+  statusTagRadius: 9999,
+  statusTagFontSize: 12,
+} as const;

@@ -1,6 +1,6 @@
 // server/services/prescription.service.ts
 import { db } from "../db";
-import { prescriptions, prescriptionAudits } from "../../shared/schema";
+import { prescriptions, prescriptionAudits, doctors, users, hospitals } from "../../shared/schema";
 import { eq, and, gte, lte } from "drizzle-orm";
 import { InsertPrescription } from "../../shared/schema-types";
 
@@ -49,6 +49,28 @@ export const getPrescriptionsForPatient = async (patientId: number) => {
     .select()
     .from(prescriptions)
     .where(eq(prescriptions.patientId, patientId));
+};
+
+// 2b. Get prescriptions for a patient with doctor (fullName) and hospital (name, address) for display
+export const getPrescriptionsForPatientWithDetails = async (patientId: number) => {
+  const rows = await db
+    .select({
+      prescription: prescriptions,
+      doctorFullName: users.fullName,
+      hospitalName: hospitals.name,
+      hospitalAddress: hospitals.address,
+    })
+    .from(prescriptions)
+    .leftJoin(doctors, eq(prescriptions.doctorId, doctors.id))
+    .leftJoin(users, eq(doctors.userId, users.id))
+    .leftJoin(hospitals, eq(prescriptions.hospitalId, hospitals.id))
+    .where(eq(prescriptions.patientId, patientId));
+
+  return rows.map((r) => ({
+    ...r.prescription,
+    doctor: { fullName: r.doctorFullName ?? undefined },
+    hospital: r.hospitalName != null ? { name: r.hospitalName, address: r.hospitalAddress ?? undefined } : undefined,
+  }));
 };
 
 // 3. Get filtered prescriptions for a patient by hospital/date range

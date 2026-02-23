@@ -21,9 +21,12 @@ import {
   InputNumber,
   Breadcrumb,
   Drawer,
-  Modal
+  Modal,
+  Steps,
 } from 'antd';
+import { FIGMA_PATIENT, FIGMA_COLORS, ROLE_PRIMARY } from '../design-tokens';
 
+const PATIENT_PRIMARY = ROLE_PRIMARY.patient || '#1A8FE3';
 const { Content, Sider } = Layout;
 import {
   CalendarOutlined,
@@ -103,7 +106,17 @@ interface Doctor {
   photo?: string;
 }
 
-export default function BookAppointment() {
+export interface BookAppointmentProps {
+  /** When true, renders only the flow content (no Layout/Sider). Used inside BookAppointmentModal. */
+  embeddedInModal?: boolean;
+  /** Called when booking succeeds (and optionally when user closes receipt). */
+  onSuccess?: () => void;
+  /** Called when user cancels or closes (e.g. Back on first step). */
+  onCancel?: () => void;
+}
+
+export default function BookAppointment(props: BookAppointmentProps = {}) {
+  const { embeddedInModal, onSuccess, onCancel } = props;
   const { user } = useAuth();
   const [, setLocation] = useLocation();
   const queryClient = useQueryClient();
@@ -679,6 +692,10 @@ export default function BookAppointment() {
   // Auto-advance functions - no manual Next/Previous needed
 
   const handleCancel = () => {
+    if (embeddedInModal && onCancel) {
+      onCancel();
+      return;
+    }
     setLocation('/dashboard/patient/appointments');
   };
 
@@ -799,9 +816,13 @@ export default function BookAppointment() {
           setShowReceipt(true);
         } else {
           message.success('Appointment booked successfully! Please pay at the counter when you arrive.');
-          setTimeout(() => {
-            setLocation('/dashboard/patient/appointments');
-          }, 1500);
+          if (embeddedInModal && onSuccess) {
+            onSuccess();
+          } else {
+            setTimeout(() => {
+              setLocation('/dashboard/patient/appointments');
+            }, 1500);
+          }
         }
       } else {
         const errorData = await response.json();
@@ -818,52 +839,63 @@ export default function BookAppointment() {
     }
   };
 
-  // Build "For whom" options
-  const forWhomOptions: { value: number | null; label: string }[] = [];
+  // Build "For whom" options (always show step for patients with at least Self)
+  const forWhomOptions: { value: number | null; primaryLabel: string; subLabel: string }[] = [];
+  const selfDisplayName = patientProfile?.fullName || (user as { name?: string })?.name || 'You';
   if (myPatientId != null) {
-    forWhomOptions.push({ value: myPatientId, label: 'Self' });
+    forWhomOptions.push({ value: myPatientId, primaryLabel: `Self (${selfDisplayName})`, subLabel: 'Self' });
   }
   familyMembers.forEach((m: { relatedPatientId: number; relationship: string; fullName: string }) => {
-    const label = `${m.relationship.charAt(0).toUpperCase() + m.relationship.slice(1)} (${m.fullName})`;
-    forWhomOptions.push({ value: m.relatedPatientId, label });
+    const subLabel = m.relationship.charAt(0).toUpperCase() + m.relationship.slice(1);
+    forWhomOptions.push({ value: m.relatedPatientId, primaryLabel: m.fullName, subLabel });
   });
-  
+
   const [selectedForWhom, setSelectedForWhom] = useState<number | null>(() => {
-    // Initialize with current acting patient ID if set
     const actingId = getActingPatientId();
     return actingId ?? (myPatientId || null);
   });
-  
-  // Helper: check if we have "For whom" step
-  const hasForWhomStep = isPatient && forWhomOptions.length > 1;
-  // Helper: get base step (0 = hospital, 1 = doctor, 2 = date/time, 3 = details)
+
+  // Show "For whom" step at start for all patients (self only or self + family)
+  const hasForWhomStep = isPatient && forWhomOptions.length >= 1;
   const getBaseStep = (step: number) => hasForWhomStep ? step - 1 : step;
   const baseStep = getBaseStep(currentStep);
 
   const steps = [
-    ...(isPatient && forWhomOptions.length > 1 ? [{
+    ...(isPatient && forWhomOptions.length >= 1 ? [{
       title: 'For Whom',
       icon: <UserOutlined />,
       content: (
         <div style={{ padding: '24px 0', textAlign: 'center' }}>
-          <Text style={{ fontSize: '16px', color: '#6B7280', display: 'block', marginBottom: 24 }}>
+          <UserOutlined style={{ fontSize: 48, color: '#9CA3AF', marginBottom: 16 }} />
+          <Title level={4} style={{ margin: 0, marginBottom: 8, color: FIGMA_COLORS.textPrimary }}>
             Who is this appointment for?
+          </Title>
+          <Text style={{ fontSize: 16, color: FIGMA_COLORS.textMuted, display: 'block', marginBottom: 24 }}>
+            Select who needs to see the doctor
           </Text>
-          <Select
-            value={selectedForWhom}
-            onChange={(v) => {
-              setSelectedForWhom(v);
-              setActingPatientId(v);
-              // Auto-advance to next step
-              setTimeout(() => {
-                setCurrentStep(1);
-              }, 300);
-            }}
-            options={forWhomOptions}
-            style={{ width: '100%', maxWidth: 400 }}
-            size="large"
-            placeholder="Select person"
-          />
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12, maxWidth: 400, margin: '0 auto' }}>
+            {forWhomOptions.map((opt) => (
+              <Card
+                key={opt.value ?? 'self'}
+                hoverable
+                onClick={() => {
+                  setSelectedForWhom(opt.value);
+                  setActingPatientId(opt.value);
+                  setTimeout(() => setCurrentStep(1), 300);
+                }}
+                style={{
+                  textAlign: 'left',
+                  borderRadius: FIGMA_PATIENT.cardRadius,
+                  border: selectedForWhom === opt.value ? `2px solid ${PATIENT_PRIMARY}` : `1px solid ${FIGMA_COLORS.border}`,
+                  boxShadow: selectedForWhom === opt.value ? `0 12px 24px ${PATIENT_PRIMARY}1F` : FIGMA_PATIENT.cardShadow,
+                  cursor: 'pointer',
+                }}
+              >
+                <div style={{ fontWeight: 600, fontSize: 16, color: FIGMA_COLORS.textPrimary }}>{opt.primaryLabel}</div>
+                <div style={{ fontSize: 14, color: FIGMA_COLORS.textMuted, marginTop: 4 }}>{opt.subLabel}</div>
+              </Card>
+            ))}
+          </div>
         </div>
       ),
     }] : []),
@@ -965,13 +997,9 @@ export default function BookAppointment() {
                 const departments = typeof hospital.departments === 'string' 
                   ? JSON.parse(hospital.departments) 
                   : hospital.departments || [];
-                // Hospital status logic:
-                // - "Pending" (Yellow): hospital.isVerified === false (not yet verified by admin)
-                // - "Available" (Green): hospital.isVerified === true (verified and approved)
                 const status = hospital.isVerified ? 'Available' : 'Pending';
                 const statusColor = hospital.isVerified ? '#10B981' : '#F59E0B';
                 const statusBg = hospital.isVerified ? '#D1FAE5' : '#FEF3C7';
-                
                 return (
                 <Col xs={24} sm={12} lg={8} key={hospital.id}>
                   <Card
@@ -981,11 +1009,11 @@ export default function BookAppointment() {
                       height: '100%',
                       display: 'flex',
                       flexDirection: 'column',
-                      borderRadius: '16px',
-                      border: selectedHospital?.id === hospital.id ? '2px solid #2563eb' : '1px solid #E5E7EB',
+                      borderRadius: FIGMA_PATIENT.cardRadius,
+                      border: selectedHospital?.id === hospital.id ? `2px solid ${PATIENT_PRIMARY}` : `1px solid ${FIGMA_COLORS.border}`,
                       boxShadow: selectedHospital?.id === hospital.id
-                        ? '0 12px 24px rgba(37, 99, 235, 0.12)'
-                          : '0 2px 8px rgba(0, 0, 0, 0.08)',
+                        ? `0 12px 24px ${PATIENT_PRIMARY}1F`
+                        : FIGMA_PATIENT.cardShadow,
                       transition: 'all 0.2s ease',
                       cursor: 'pointer',
                       background: '#ffffff',
@@ -1206,11 +1234,11 @@ export default function BookAppointment() {
                         <Card
                           hoverable
                           style={{
-                                          border: selectedDoctor?.id === doctor.id ? '2px solid #1A8FE3' : '1px solid #E5E7EB',
-                                          borderRadius: '16px',
+                                          border: selectedDoctor?.id === doctor.id ? `2px solid ${PATIENT_PRIMARY}` : `1px solid ${FIGMA_COLORS.border}`,
+                                          borderRadius: FIGMA_PATIENT.cardRadius,
                                           boxShadow: selectedDoctor?.id === doctor.id 
-                                            ? '0 4px 12px rgba(26, 143, 227, 0.15)' 
-                                            : '0 2px 8px rgba(0, 0, 0, 0.08)',
+                                            ? `0 4px 12px ${PATIENT_PRIMARY}26` 
+                                            : FIGMA_PATIENT.cardShadow,
                             cursor: 'pointer',
                             height: '100%',
                                           background: '#fff',
@@ -1333,8 +1361,8 @@ export default function BookAppointment() {
       icon: <CalendarOutlined />,
       content: (
         <div>
-          {/* Date Selection */}
-          <Card variant="borderless" style={{ borderRadius: '12px', border: '1px solid #e2e8f0', marginBottom: 24 }}>
+          {/* Date Selection (Figma card style) */}
+          <Card variant="borderless" style={{ borderRadius: FIGMA_PATIENT.cardRadius, border: `1px solid ${FIGMA_COLORS.border}`, marginBottom: FIGMA_PATIENT.contentPadding, boxShadow: FIGMA_PATIENT.cardShadow }}>
                 <div
                   style={{
                     display: 'flex',
@@ -1361,13 +1389,13 @@ export default function BookAppointment() {
                       flex: 1,
                           padding: '10px 14px',
                           borderRadius: 12,
-                          border: `1px solid ${isSelected ? '#ff385c' : '#d1d5db'}`,
-                          background: isSelected ? '#ff385c' : '#ffffff',
-                          color: isSelected ? '#ffffff' : '#111827',
+                          border: `1px solid ${isSelected ? PATIENT_PRIMARY : FIGMA_COLORS.border}`,
+                          background: isSelected ? PATIENT_PRIMARY : FIGMA_COLORS.backgroundCard,
+                          color: isSelected ? '#ffffff' : FIGMA_COLORS.textPrimary,
                           cursor: isDisabled ? 'not-allowed' : 'pointer',
                           opacity: isDisabled ? 0.4 : 1,
                           transition: 'all 0.2s ease',
-                          boxShadow: isSelected ? '0 4px 12px rgba(255, 56, 92, 0.2)' : undefined,
+                          boxShadow: isSelected ? `0 4px 12px ${PATIENT_PRIMARY}33` : undefined,
                         }}
                       >
                     <Text style={{ fontSize: 12, letterSpacing: '0.08em', fontWeight: 500 }}>
@@ -1383,7 +1411,7 @@ export default function BookAppointment() {
               </Card>
 
           {/* Time Slots Section */}
-          <Card variant="borderless" style={{ borderRadius: '12px', border: '1px solid #e2e8f0', marginBottom: 24, background: '#ffffff' }}>
+          <Card variant="borderless" style={{ borderRadius: FIGMA_PATIENT.cardRadius, border: `1px solid ${FIGMA_COLORS.border}`, marginBottom: FIGMA_PATIENT.contentPadding, background: FIGMA_COLORS.backgroundCard, boxShadow: FIGMA_PATIENT.cardShadow }}>
                 <div
                   style={{
                     display: 'grid',
@@ -1401,25 +1429,25 @@ export default function BookAppointment() {
                   // If slot is fully booked (red), disable it
                   const isDisabled = !isAvailable;
                   
-                  // Lighter green background with darker border for available slots
+                  // Selected slot uses patient primary (Figma); availability colors unchanged
                   const finalBgColor = isSelected 
-                    ? '#16a34a' 
+                    ? PATIENT_PRIMARY 
                     : isDisabled 
-                      ? '#F3F4F6' 
+                      ? FIGMA_COLORS.backgroundPage 
                       : slotAvailability.color === 'green'
-                        ? '#ECFDF5' // Lighter green
+                        ? '#ECFDF5'
                         : slotAvailability.color === 'yellow'
-                          ? '#FFFBEB' // Lighter yellow
+                          ? '#FFFBEB'
                           : bgColor;
                   
                   const finalBorderColor = isSelected 
-                    ? '#16a34a' 
+                    ? PATIENT_PRIMARY 
                     : isDisabled 
                       ? '#D1D5DB' 
                       : slotAvailability.color === 'green'
-                        ? '#10B981' // Darker green border
+                        ? '#10B981'
                         : slotAvailability.color === 'yellow'
-                          ? '#F59E0B' // Darker yellow border
+                          ? '#F59E0B'
                           : borderColor;
                   
                       return (
@@ -1435,11 +1463,11 @@ export default function BookAppointment() {
                         color: isSelected 
                           ? '#ffffff' 
                           : isDisabled 
-                            ? '#9CA3AF' 
+                            ? FIGMA_COLORS.textMuted 
                             : slotAvailability.color === 'green'
-                              ? '#047857' // Darker green text
+                              ? '#047857'
                               : slotAvailability.color === 'yellow'
-                                ? '#92400E' // Darker yellow text
+                                ? '#92400E'
                                 : textColor,
                             fontWeight: 600,
                             fontSize: 14,
@@ -1556,27 +1584,27 @@ export default function BookAppointment() {
               gap: 16,
               justifyContent: 'center',
             }}>
-              {/* Confirm Appointment Title Card */}
+              {/* Confirm Appointment Title Card (Figma: white card, 16px radius, border, shadow) */}
               <div style={{ 
-                background: '#FFFFFF', 
-                borderRadius: 16,
-                padding: '20px',
-                border: '1px solid #E5E7EB',
-                boxShadow: '0 2px 8px rgba(0, 0, 0, 0.06)',
+                background: FIGMA_COLORS.backgroundCard, 
+                borderRadius: FIGMA_PATIENT.cardRadius,
+                padding: 20,
+                border: `1px solid ${FIGMA_COLORS.border}`,
+                boxShadow: FIGMA_PATIENT.cardShadow,
                 textAlign: 'center',
               }}>
-                <Title level={3} style={{ margin: 0, fontSize: '24px', fontWeight: 700, color: '#111827' }}>
+                <Title level={3} style={{ margin: 0, fontSize: 24, fontWeight: 700, color: FIGMA_COLORS.textPrimary }}>
                   Confirm Appointment
                 </Title>
                 </div>
 
-              {/* Main Appointment Info - Professional */}
+              {/* Main Appointment Info */}
               <div style={{ 
-                background: '#FFFFFF', 
-                borderRadius: 16, 
-                padding: '24px',
-                border: '1px solid #E5E7EB',
-                boxShadow: '0 2px 8px rgba(0, 0, 0, 0.06)',
+                background: FIGMA_COLORS.backgroundCard, 
+                borderRadius: FIGMA_PATIENT.cardRadius, 
+                padding: FIGMA_PATIENT.cardPadding,
+                border: `1px solid ${FIGMA_COLORS.border}`,
+                boxShadow: FIGMA_PATIENT.cardShadow,
               }}>
                 <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', paddingBottom: 16, borderBottom: '1px solid #E5E7EB' }}>
                   <div style={{ flex: 1, textAlign: 'left' }}>
@@ -1601,11 +1629,11 @@ export default function BookAppointment() {
 
                 {/* Priority Selection */}
               <div style={{ 
-                background: '#FFFFFF', 
-                borderRadius: 16, 
-                padding: '20px',
-                border: '1px solid #E5E7EB',
-                boxShadow: '0 2px 8px rgba(0, 0, 0, 0.06)',
+                background: FIGMA_COLORS.backgroundCard, 
+                borderRadius: FIGMA_PATIENT.cardRadius, 
+                padding: 20,
+                border: `1px solid ${FIGMA_COLORS.border}`,
+                boxShadow: FIGMA_PATIENT.cardShadow,
                 marginBottom: 16,
               }}>
                 <Text strong style={{ fontSize: 14, color: '#111827', marginBottom: 12, display: 'block', textAlign: 'center' }}>Priority</Text>
@@ -1643,13 +1671,13 @@ export default function BookAppointment() {
                 </div>
                 </div>
 
-              {/* Payment Selection - Professional */}
+              {/* Payment Selection */}
               <div style={{ 
-                background: '#FFFFFF', 
-                borderRadius: 16, 
-                padding: '20px',
-                border: '1px solid #E5E7EB',
-                boxShadow: '0 2px 8px rgba(0, 0, 0, 0.06)',
+                background: FIGMA_COLORS.backgroundCard, 
+                borderRadius: FIGMA_PATIENT.cardRadius, 
+                padding: 20,
+                border: `1px solid ${FIGMA_COLORS.border}`,
+                boxShadow: FIGMA_PATIENT.cardShadow,
                 marginBottom: 16,
               }}>
                 <Text strong style={{ fontSize: 14, color: '#111827', marginBottom: 12, display: 'block', textAlign: 'center' }}>
@@ -1743,7 +1771,7 @@ export default function BookAppointment() {
                 </div>
               </div>
 
-              {/* Confirm Button */}
+              {/* Confirm Button (Figma: primary #1A8FE3) */}
               <Button
                 type="primary"
                 size="large"
@@ -1752,11 +1780,13 @@ export default function BookAppointment() {
                 loading={loading}
                 disabled={!selectedPaymentMethod}
                 style={{
-                  height: '48px',
-                  borderRadius: '12px',
-                  fontSize: '15px',
+                  height: 48,
+                  borderRadius: FIGMA_PATIENT.quickActionsButtonRadius,
+                  fontSize: 15,
                   fontWeight: 600,
                   marginTop: 'auto',
+                  background: PATIENT_PRIMARY,
+                  borderColor: PATIENT_PRIMARY,
                 }}
               >
                 {selectedPaymentMethod && ['googlepay', 'phonepe', 'card'].includes(selectedPaymentMethod) 
@@ -1795,6 +1825,134 @@ export default function BookAppointment() {
       )
     }
   ];
+
+  // When embedded in modal, render only the flow content (no Layout/Sider)
+  if (embeddedInModal) {
+    return (
+      <>
+        <style>{`
+          .book-appointment-wrapper .book-appointment-steps.ant-steps .ant-steps-item-process .ant-steps-item-icon {
+            background: #1A8FE3 !important;
+            border-color: #1A8FE3 !important;
+          }
+          .book-appointment-wrapper .book-appointment-steps.ant-steps .ant-steps-item-process .ant-steps-item-title {
+            color: #1A8FE3 !important;
+          }
+          .book-appointment-wrapper .book-appointment-steps.ant-steps .ant-steps-item-finish .ant-steps-item-icon {
+            background: #1A8FE3 !important;
+            border-color: #1A8FE3 !important;
+          }
+          .book-appointment-wrapper .book-appointment-steps.ant-steps .ant-steps-item-finish .ant-steps-item-tail::after {
+            background: #1A8FE3 !important;
+          }
+          .book-appointment-wrapper .book-appointment-steps.ant-steps .ant-steps-item-wait .ant-steps-item-title {
+            color: #6B7280 !important;
+          }
+        `}</style>
+        <div className="book-appointment-wrapper" style={{ background: FIGMA_PATIENT.pageBg, minHeight: '100%', paddingBottom: 24 }}>
+          {/* Step indicator */}
+          <div style={{ padding: `0 ${FIGMA_PATIENT.contentPadding}px`, paddingTop: 24, paddingBottom: 16, background: FIGMA_PATIENT.pageBg }}>
+            <Steps
+              current={currentStep}
+              size="small"
+              items={steps.map((s, i) => ({
+                title: s.title,
+                icon: s.icon,
+                status: i < currentStep ? 'finish' : i === currentStep ? 'process' : 'wait',
+              }))}
+              style={{ marginBottom: 0 }}
+              className="book-appointment-steps"
+            />
+          </div>
+          {/* Headers - same as page */}
+          {currentStep === 0 && (
+            <div style={{ background: FIGMA_PATIENT.pageBg, padding: `${FIGMA_PATIENT.contentPadding}px ${FIGMA_PATIENT.contentPadding + 8}px` }}>
+              <div style={{ display: 'flex', alignItems: 'center', position: 'relative', marginBottom: 24 }}>
+                <div style={{ position: 'absolute', left: 0 }}>
+                  <Button icon={<ArrowLeftOutlined />} onClick={handleCancel} type="text" style={{ padding: 0, height: 'auto', fontSize: 14, color: FIGMA_COLORS.textMuted, display: 'flex', alignItems: 'center', gap: 4 }}>Back</Button>
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', textAlign: 'center', width: '100%', flex: 1 }}>
+                  <Title level={2} style={{ margin: 0, fontSize: 28, fontWeight: 700, color: FIGMA_COLORS.textPrimary, lineHeight: 1.2 }}>{steps[currentStep]?.title || 'Select Hospital'}</Title>
+                  <Text style={{ fontSize: 16, color: FIGMA_COLORS.textMuted, marginTop: 8 }}>{steps[currentStep]?.title === 'For Whom' ? 'Who is this appointment for?' : 'Choose a hospital in your region'}</Text>
+                </div>
+              </div>
+            </div>
+          )}
+          {baseStep === 1 && selectedHospital && (
+            <div style={{ background: FIGMA_PATIENT.pageBg, padding: `${FIGMA_PATIENT.contentPadding}px ${FIGMA_PATIENT.contentPadding + 8}px` }}>
+              <div style={{ display: 'flex', alignItems: 'center', position: 'relative', marginBottom: 24 }}>
+                <div style={{ position: 'absolute', left: 0 }}>
+                  <Button icon={<ArrowLeftOutlined />} onClick={handlePrevious} type="text" style={{ padding: 0, height: 'auto', fontSize: 14, color: FIGMA_COLORS.textMuted, display: 'flex', alignItems: 'center', gap: 4 }}>Back</Button>
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', textAlign: 'center', width: '100%', flex: 1 }}>
+                  <Title level={2} style={{ margin: 0, fontSize: 28, fontWeight: 700, color: FIGMA_COLORS.textPrimary, lineHeight: 1.2 }}>Select Doctor</Title>
+                  <Text style={{ fontSize: 16, color: FIGMA_COLORS.textMuted, marginTop: 8 }}>{selectedHospital.name}</Text>
+                </div>
+              </div>
+            </div>
+          )}
+          {baseStep === 2 && selectedDoctor && selectedHospital && (
+            <div style={{ background: FIGMA_PATIENT.pageBg, padding: `${FIGMA_PATIENT.contentPadding}px ${FIGMA_PATIENT.contentPadding + 8}px` }}>
+              <div style={{ display: 'flex', alignItems: 'center', position: 'relative', marginBottom: 24 }}>
+                <div style={{ position: 'absolute', left: 0 }}>
+                  <Button icon={<ArrowLeftOutlined />} onClick={handlePrevious} type="text" style={{ padding: 0, height: 'auto', fontSize: 14, color: FIGMA_COLORS.textMuted, display: 'flex', alignItems: 'center', gap: 4 }}>Back</Button>
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', textAlign: 'center', width: '100%', flex: 1 }}>
+                  <Title level={2} style={{ margin: 0, fontSize: 28, fontWeight: 700, color: FIGMA_COLORS.textPrimary, lineHeight: 1.2 }}>Select Date & Time</Title>
+                  <Text style={{ fontSize: 16, color: FIGMA_COLORS.textMuted, marginTop: 8 }}>{selectedDoctor.fullName} - {selectedHospital.name}</Text>
+                </div>
+              </div>
+            </div>
+          )}
+          {/* Content */}
+          <div style={{ padding: (baseStep < 3) ? `0 ${FIGMA_PATIENT.contentPadding}px ${FIGMA_PATIENT.contentPadding}px` : 0, width: '100%', height: baseStep === 3 ? 'auto' : 'auto', overflow: baseStep === 3 ? 'hidden' : 'auto', background: FIGMA_PATIENT.pageBg, position: 'relative' }}>
+            <Spin spinning={loading} tip={loading ? (baseStep === 0 ? 'Loading hospitals...' : baseStep === 1 ? 'Loading doctors...' : 'Loading...') : undefined}>
+              {baseStep === 3 && (
+                <div style={{ position: 'absolute', top: 16, left: 24, zIndex: 10 }}>
+                  <Button icon={<ArrowLeftOutlined />} onClick={handlePrevious} type="text" style={{ padding: 0, height: 'auto', fontSize: 14, color: FIGMA_COLORS.textMuted, display: 'flex', alignItems: 'center', gap: 4 }}>Back</Button>
+                </div>
+              )}
+              <Form form={form} layout="vertical" requiredMark={false}>
+                {steps[currentStep]?.content ?? <div style={{ textAlign: 'center', padding: 40 }}><Text>Loading...</Text></div>}
+              </Form>
+            </Spin>
+          </div>
+        </div>
+        {showReceipt && receiptData && (
+          <Modal title="Payment Receipt" open={showReceipt} onCancel={() => { setShowReceipt(false); setReceiptData(null); if (embeddedInModal && onSuccess) onSuccess(); else setLocation('/dashboard/patient/appointments'); }} footer={[<Button key="close" type="primary" onClick={() => { setShowReceipt(false); setReceiptData(null); if (embeddedInModal && onSuccess) onSuccess(); else setLocation('/dashboard/patient/appointments'); }} style={{ background: PATIENT_PRIMARY, borderColor: PATIENT_PRIMARY }}>View My Appointments</Button>]} width={500}>
+            <div style={{ padding: '12px 0' }}>
+              <div style={{ textAlign: 'center', marginBottom: 20 }}>
+                <CheckCircleOutlined style={{ fontSize: 48, color: FIGMA_COLORS.success, marginBottom: 12 }} />
+                <Title level={4} style={{ color: FIGMA_COLORS.success, marginBottom: 4, fontSize: 18 }}>Payment Successful!</Title>
+                <Text type="secondary" style={{ fontSize: 12 }}>Your appointment has been confirmed</Text>
+              </div>
+              <Divider style={{ margin: '16px 0' }} />
+              <div style={{ marginBottom: 16 }}>
+                <Text strong style={{ fontSize: 14, marginBottom: 12, display: 'block' }}>Appointment Details</Text>
+                <Row gutter={[12, 8]}>
+                  <Col span={12}><Text type="secondary" style={{ fontSize: 12 }}>Appointment ID</Text><div style={{ fontWeight: 600, marginTop: 2, fontSize: 13 }}>#{receiptData.appointment.id || receiptData.appointment.appointment?.id}</div></Col>
+                  <Col span={12}><Text type="secondary" style={{ fontSize: 12 }}>Date</Text><div style={{ fontWeight: 600, marginTop: 2, fontSize: 13 }}>{receiptData.date.format('DD/MM/YYYY')}</div></Col>
+                  <Col span={12}><Text type="secondary" style={{ fontSize: 12 }}>Time</Text><div style={{ fontWeight: 600, marginTop: 2, fontSize: 13 }}>{formatTimeSlot12h(receiptData.slot)}</div></Col>
+                  <Col span={12}><Text type="secondary" style={{ fontSize: 12 }}>Doctor</Text><div style={{ fontWeight: 600, marginTop: 2, fontSize: 13 }}>{receiptData.doctor.fullName}</div></Col>
+                  <Col span={24}><Text type="secondary" style={{ fontSize: 12 }}>Hospital</Text><div style={{ fontWeight: 600, marginTop: 2, fontSize: 13 }}>{receiptData.hospital.name}</div></Col>
+                </Row>
+              </div>
+              <Divider style={{ margin: '16px 0' }} />
+              <div>
+                <Text strong style={{ fontSize: 14, marginBottom: 12, display: 'block' }}>Payment Details</Text>
+                <Row gutter={[12, 8]}>
+                  <Col span={12}><Text type="secondary" style={{ fontSize: 12 }}>Transaction ID</Text><div style={{ fontWeight: 600, marginTop: 2, fontSize: 13, display: 'flex', alignItems: 'center', gap: 8 }}>{receiptData.payment.transactionId}<CopyIcon text={receiptData.payment.transactionId} label="Transaction ID" size={12} /></div></Col>
+                  <Col span={12}><Text type="secondary" style={{ fontSize: 12 }}>Payment Method</Text><div style={{ fontWeight: 600, marginTop: 2, fontSize: 13 }}>{receiptData.payment.paymentMethod.toUpperCase()}</div></Col>
+                  <Col span={12}><Text type="secondary" style={{ fontSize: 12 }}>Amount Paid</Text><div style={{ fontWeight: 600, marginTop: 2, fontSize: 16, color: FIGMA_COLORS.success }}>₹{receiptData.payment.amount.toFixed(2)}</div></Col>
+                  <Col span={12}><Text type="secondary" style={{ fontSize: 12 }}>Status</Text><div style={{ fontWeight: 600, marginTop: 2, fontSize: 13, color: FIGMA_COLORS.success }}>Paid</div></Col>
+                </Row>
+              </div>
+            </div>
+          </Modal>
+        )}
+      </>
+    );
+  }
 
   return (
     <>
@@ -1871,24 +2029,42 @@ export default function BookAppointment() {
           width: 18px !important;
           height: 18px !important;
         }
+        /* Book appointment step indicator: current step primary #1A8FE3 (Figma) */
+        .book-appointment-wrapper .book-appointment-steps.ant-steps .ant-steps-item-process .ant-steps-item-icon {
+          background: #1A8FE3 !important;
+          border-color: #1A8FE3 !important;
+        }
+        .book-appointment-wrapper .book-appointment-steps.ant-steps .ant-steps-item-process .ant-steps-item-title {
+          color: #1A8FE3 !important;
+        }
+        .book-appointment-wrapper .book-appointment-steps.ant-steps .ant-steps-item-finish .ant-steps-item-icon {
+          background: #1A8FE3 !important;
+          border-color: #1A8FE3 !important;
+        }
+        .book-appointment-wrapper .book-appointment-steps.ant-steps .ant-steps-item-finish .ant-steps-item-tail::after {
+          background: #1A8FE3 !important;
+        }
+        .book-appointment-wrapper .book-appointment-steps.ant-steps .ant-steps-item-wait .ant-steps-item-title {
+          color: #6B7280 !important;
+        }
       `}</style>
-      <Layout style={{ minHeight: '100vh', background: '#F3F4F6' }} className="book-appointment-wrapper">
+      <Layout style={{ minHeight: '100vh', background: FIGMA_PATIENT.pageBg }} className="book-appointment-wrapper">
         {/* Desktop/Tablet Sidebar */}
         {!isMobile && (
           <Sider
-            width={80}
+            width={FIGMA_PATIENT.sidebarWidth}
             style={{
               position: 'fixed',
               top: 0,
               left: 0,
               height: '100vh',
-              width: 80,
-              background: '#fff',
-              boxShadow: '0 2px 16px rgba(26, 143, 227, 0.08)',
+              width: FIGMA_PATIENT.sidebarWidth,
+              background: FIGMA_COLORS.backgroundCard,
+              boxShadow: `0 2px 16px ${PATIENT_PRIMARY}14`,
               display: 'flex',
               flexDirection: 'column',
               zIndex: 10,
-              borderRight: '1px solid #E5E7EB',
+              borderRight: `1px solid ${FIGMA_COLORS.border}`,
             }}
           >
             <PatientSidebar selectedMenuKey="appointments" />
@@ -1911,38 +2087,53 @@ export default function BookAppointment() {
 
         <Layout
           style={{
-            marginLeft: isMobile ? 0 : 80,
+            marginLeft: isMobile ? 0 : FIGMA_PATIENT.sidebarWidth,
             minHeight: '100vh',
-            background: '#F3F4F6',
+            background: FIGMA_PATIENT.pageBg,
             overflow: 'hidden',
           }}
         >
         <Content
           style={{
-            background: '#F3F4F6',
+            background: FIGMA_PATIENT.pageBg,
             height: '100vh',
             overflowY: 'auto',
             padding: 0,
           }}
         >
           {/* Mobile Menu Button */}
-          {(isMobile && (currentStep === 0 || currentStep === 1 || (isPatient && forWhomOptions.length > 1 && currentStep === 0))) && (
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '16px', background: '#F3F4F6' }}>
+          {(isMobile && (currentStep === 0 || currentStep === 1)) && (
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: 16, background: FIGMA_PATIENT.pageBg }}>
               <Button
                 type="text"
                 icon={<MenuUnfoldOutlined />}
                 onClick={() => setMobileDrawerOpen(true)}
-                style={{ fontSize: '18px' }}
+                style={{ fontSize: 18 }}
               />
-              <div style={{ width: 32 }} /> {/* Spacer for centering */}
+              <div style={{ width: 32 }} />
             </div>
           )}
 
+          {/* Step indicator (Figma: current step in primary, completed checkmark, future gray) */}
+          <div style={{ padding: `0 ${FIGMA_PATIENT.contentPadding}px`, paddingTop: 24, paddingBottom: 16, background: FIGMA_PATIENT.pageBg }}>
+            <Steps
+              current={currentStep}
+              size="small"
+              items={steps.map((s, i) => ({
+                title: s.title,
+                icon: s.icon,
+                status: i < currentStep ? 'finish' : i === currentStep ? 'process' : 'wait',
+              }))}
+              style={{ marginBottom: 0 }}
+              className="book-appointment-steps"
+            />
+          </div>
+
           {/* Header - For Whom or Select Hospital step */}
-          {((isPatient && forWhomOptions.length > 1 && currentStep === 0) || (!isPatient || forWhomOptions.length <= 1) && currentStep === 0) && (
+          {currentStep === 0 && (
           <div style={{ 
-            background: '#F3F4F6', 
-            padding: '24px 32px 24px 32px',
+            background: FIGMA_PATIENT.pageBg, 
+            padding: `${FIGMA_PATIENT.contentPadding}px ${FIGMA_PATIENT.contentPadding + 8}px`,
           }}>
             <div style={{ 
               display: 'flex', 
@@ -1954,7 +2145,7 @@ export default function BookAppointment() {
               <div style={{ position: 'absolute', left: 0 }}>
                 <Button 
                   icon={<ArrowLeftOutlined />} 
-                  onClick={() => setLocation('/dashboard/patient')}
+                  onClick={handleCancel}
                   type="text"
                   style={{ 
                     padding: 0, 
@@ -1966,7 +2157,7 @@ export default function BookAppointment() {
                     gap: '4px',
                   }}
                 >
-                  ← Back
+                  Back
                 </Button>
               </div>
               
@@ -1996,8 +2187,8 @@ export default function BookAppointment() {
           {/* Header - Select Doctor step */}
           {baseStep === 1 && selectedHospital && (
           <div style={{ 
-            background: '#F3F4F6', 
-            padding: '24px 32px 24px 32px',
+            background: FIGMA_PATIENT.pageBg, 
+            padding: `${FIGMA_PATIENT.contentPadding}px ${FIGMA_PATIENT.contentPadding + 8}px`,
           }}>
             <div style={{ 
               display: 'flex', 
@@ -2021,7 +2212,7 @@ export default function BookAppointment() {
                     gap: '4px',
                   }}
                 >
-                  ← Back
+                  Back
                 </Button>
               </div>
               
@@ -2049,8 +2240,8 @@ export default function BookAppointment() {
       {/* Header - Select Date & Time step */}
       {baseStep === 2 && selectedDoctor && selectedHospital && (
         <div style={{ 
-          background: '#F3F4F6', 
-          padding: '24px 32px 24px 32px',
+          background: FIGMA_PATIENT.pageBg, 
+          padding: `${FIGMA_PATIENT.contentPadding}px ${FIGMA_PATIENT.contentPadding + 8}px`,
         }}>
           <div style={{ 
             display: 'flex', 
@@ -2074,7 +2265,7 @@ export default function BookAppointment() {
                   gap: '4px',
                 }}
               >
-                ← Back
+                Back
               </Button>
             </div>
             
@@ -2102,11 +2293,11 @@ export default function BookAppointment() {
 
       {/* Content */}
       <div style={{ 
-            padding: (baseStep < 3) ? '0 32px 32px 32px' : '0', 
+            padding: (baseStep < 3) ? `0 ${FIGMA_PATIENT.contentPadding}px ${FIGMA_PATIENT.contentPadding}px` : '0', 
             width: '100%', 
             height: baseStep === 3 ? '100vh' : 'auto',
             overflow: baseStep === 3 ? 'hidden' : 'auto',
-            background: '#F3F4F6',
+            background: FIGMA_PATIENT.pageBg,
             position: 'relative',
           }}>
         <Spin spinning={loading} tip={loading ? (baseStep === 0 ? 'Loading hospitals...' : baseStep === 1 ? 'Loading doctors...' : 'Loading...') : undefined}>
@@ -2127,7 +2318,7 @@ export default function BookAppointment() {
                   gap: '4px',
                 }}
               >
-                ← Back
+                Back
               </Button>
       </div>
       )}
@@ -2163,14 +2354,21 @@ export default function BookAppointment() {
       onCancel={() => {
           setShowReceipt(false);
           setReceiptData(null);
-        setLocation('/dashboard/patient/appointments');
+          if (embeddedInModal && onSuccess) onSuccess();
+          else setLocation('/dashboard/patient/appointments');
       }}
         footer={[
-          <Button key="close" type="primary" onClick={() => {
-            setShowReceipt(false);
-            setReceiptData(null);
-            setLocation('/dashboard/patient/appointments');
-          }}>
+          <Button
+            key="close"
+            type="primary"
+            onClick={() => {
+              setShowReceipt(false);
+              setReceiptData(null);
+              if (embeddedInModal && onSuccess) onSuccess();
+              else setLocation('/dashboard/patient/appointments');
+            }}
+            style={{ background: PATIENT_PRIMARY, borderColor: PATIENT_PRIMARY }}
+          >
             View My Appointments
           </Button>
         ]}
@@ -2178,8 +2376,8 @@ export default function BookAppointment() {
       >
         <div style={{ padding: '12px 0' }}>
           <div style={{ textAlign: 'center', marginBottom: 20 }}>
-            <CheckCircleOutlined style={{ fontSize: 48, color: '#52c41a', marginBottom: 12 }} />
-            <Title level={4} style={{ color: '#52c41a', marginBottom: 4, fontSize: '18px' }}>Payment Successful!</Title>
+            <CheckCircleOutlined style={{ fontSize: 48, color: FIGMA_COLORS.success, marginBottom: 12 }} />
+            <Title level={4} style={{ color: FIGMA_COLORS.success, marginBottom: 4, fontSize: 18 }}>Payment Successful!</Title>
             <Text type="secondary" style={{ fontSize: '12px' }}>Your appointment has been confirmed</Text>
           </div>
 
@@ -2235,7 +2433,7 @@ export default function BookAppointment() {
               </Col>
               <Col span={12}>
                 <Text type="secondary" style={{ fontSize: 12 }}>Status</Text>
-                <div style={{ fontWeight: 600, marginTop: 2, fontSize: 13, color: '#52c41a' }}>Paid</div>
+                <div style={{ fontWeight: 600, marginTop: 2, fontSize: 13, color: FIGMA_COLORS.success }}>Paid</div>
               </Col>
             </Row>
           </div>

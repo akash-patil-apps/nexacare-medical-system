@@ -51,6 +51,7 @@ import dayjs from 'dayjs';
 import { getISTNow, getISTStartOfDay, isSameDayIST, toIST } from '../../lib/timezone';
 import { PrescriptionPreview } from '../../components/prescription/PrescriptionPreview';
 import LabReportViewerModal from '../../components/modals/lab-report-viewer-modal';
+import BookAppointmentModal from '../../components/modals/BookAppointmentModal';
 
 const { Content, Sider } = Layout;
 const { Title, Text } = Typography;
@@ -129,6 +130,7 @@ export default function PatientAppointments() {
   const [rescheduleRequestAvailableSlots, setRescheduleRequestAvailableSlots] = useState<string[]>([]);
   const [rescheduleRequestSlotBookings, setRescheduleRequestSlotBookings] = useState<Record<string, number>>({});
   const [isSubmittingRescheduleRequest, setIsSubmittingRescheduleRequest] = useState(false);
+  const [bookAppointmentModalOpen, setBookAppointmentModalOpen] = useState(false);
   const [rescheduleRequests, setRescheduleRequests] = useState<any[]>([]);
 
   const parseLocalDateTime = (dateStr?: string, timeStr?: string): Date | null => {
@@ -1324,7 +1326,7 @@ export default function PatientAppointments() {
                     <Button
                       type="primary"
                       icon={<PlusOutlined />}
-                      onClick={() => setLocation('/book-appointment')}
+                      onClick={() => setBookAppointmentModalOpen(true)}
                       size="large"
                       style={{ width: '100%', borderRadius: '8px' }}
                     >
@@ -1694,7 +1696,7 @@ export default function PatientAppointments() {
             <PrescriptionPreview
               hospitalName={selectedPrescription.hospital?.name}
               hospitalAddress={selectedPrescription.hospital?.address}
-              doctorName={selectedPrescription.doctor?.fullName || 'Dr. Unknown'}
+              doctorName={selectedPrescription.doctor?.fullName ? `Dr. ${selectedPrescription.doctor.fullName}` : 'Dr. Unknown'}
               doctorQualification="M.S."
               doctorRegNo="MMC 2018"
               patientId={selectedPrescription.patientId}
@@ -1821,6 +1823,16 @@ export default function PatientAppointments() {
           <Text>No vitals data found.</Text>
         )}
       </Modal>
+
+      <BookAppointmentModal
+        open={bookAppointmentModalOpen}
+        onCancel={() => setBookAppointmentModalOpen(false)}
+        onSuccess={() => {
+          setBookAppointmentModalOpen(false);
+          queryClient.invalidateQueries({ queryKey: ['/api/appointments/my'] });
+          queryClient.invalidateQueries({ queryKey: ['patient-appointments'] });
+        }}
+      />
     </>
   );
 }

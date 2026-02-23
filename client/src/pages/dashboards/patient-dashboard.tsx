@@ -1,5 +1,5 @@
 import React, { useMemo, useState, useEffect } from 'react';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query';
 import { Redirect, useLocation } from 'wouter';
 import { 
   Layout, 
@@ -17,6 +17,7 @@ import {
   Modal,
   App,
   Input,
+  Select,
 } from 'antd';
 import dayjs from 'dayjs';
 import { PrescriptionPreview } from '../../components/prescription/PrescriptionPreview';
@@ -35,6 +36,9 @@ import {
   EnvironmentOutlined,
   ClockCircleOutlined,
   UserOutlined,
+  SettingOutlined,
+  CheckCircleOutlined,
+  CloseCircleOutlined,
 } from '@ant-design/icons';
 import { useAuth } from '../../hooks/use-auth';
 import { useOnboardingCheck } from '../../hooks/use-onboarding-check';
@@ -50,6 +54,7 @@ import { getShownNotificationIds, markNotificationAsShown } from '../../lib/noti
 import { PatientSidebar } from '../../components/layout/PatientSidebar';
 import { NotificationBell } from '../../components/notifications/NotificationBell';
 import { TopHeader } from '../../components/layout/TopHeader';
+import BookAppointmentModal from '../../components/modals/BookAppointmentModal';
 
 const { Content, Sider } = Layout;
 const { Title, Text } = Typography;
@@ -62,6 +67,25 @@ type DashboardPrescription = {
   refillsRemaining: string;
   adherence: number;
   createdAt: string | null;
+};
+
+type MedicineReminderItem = {
+  time: string;
+  timeLabel: string;
+  medicationName: string;
+  dosage: string;
+  frequency?: string;
+  prescriptionId: number;
+  scheduledDate?: string;
+  scheduledTime?: string;
+  adherence?: 'taken' | 'skipped' | null;
+};
+
+type ReminderSettings = {
+  morningTime?: string;
+  noonTime?: string;
+  afternoonTime?: string;
+  nightTime?: string;
 };
 
 const fetchWithAuth = async <T,>(url: string, init?: RequestInit): Promise<T> => {
@@ -97,6 +121,9 @@ export default function PatientDashboard() {
   const [selectedPrescription, setSelectedPrescription] = useState<any>(null);
   const [isPrescriptionDetailOpen, setIsPrescriptionDetailOpen] = useState(false);
   const [refillPrescription, setRefillPrescription] = useState<any>(null);
+  const [reminderSettingsModalOpen, setReminderSettingsModalOpen] = useState(false);
+  const [reminderSettingsForm, setReminderSettingsForm] = useState<ReminderSettings>({});
+  const [bookAppointmentModalOpen, setBookAppointmentModalOpen] = useState(false);
   const [refillNotes, setRefillNotes] = useState('');
   const [refillSubmitting, setRefillSubmitting] = useState(false);
   const [selectedMenuKey] = useState<string>('dashboard');
@@ -406,13 +433,59 @@ export default function PatientDashboard() {
 
   const { data: medicineReminders = [] } = useQuery({
     queryKey: ['patient-medicine-reminders'],
-    queryFn: () => fetchWithAuth<Array<{ timeLabel: string; medicationName: string; dosage: string }>>('/api/prescriptions/patient/reminders'),
+    queryFn: () => fetchWithAuth<MedicineReminderItem[]>('/api/prescriptions/patient/reminders'),
     enabled: !!user,
   });
 
+  const { data: reminderSettings } = useQuery({
+    queryKey: ['patient-reminder-settings'],
+    queryFn: () => fetchWithAuth<ReminderSettings & { id?: number }>('/api/prescriptions/patient/reminder-settings'),
+    enabled: !!user && reminderSettingsModalOpen,
+  });
+
+  const recordAdherenceMutation = useMutation({
+    mutationFn: (body: { prescriptionId: number; medicationName: string; scheduledDate: string; scheduledTime: string; status: 'taken' | 'skipped' }) =>
+      fetchWithAuth('/api/prescriptions/patient/adherence', {
+        method: 'POST',
+        body: JSON.stringify(body),
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['patient-medicine-reminders'] });
+      message.success('Updated');
+    },
+    onError: () => message.error('Failed to update'),
+  });
+
+  const saveReminderSettingsMutation = useMutation({
+    mutationFn: (body: ReminderSettings) =>
+      fetchWithAuth('/api/prescriptions/patient/reminder-settings', {
+        method: 'PUT',
+        body: JSON.stringify(body),
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['patient-medicine-reminders'] });
+      queryClient.invalidateQueries({ queryKey: ['patient-reminder-settings'] });
+      setReminderSettingsModalOpen(false);
+      message.success('Alarm times saved');
+    },
+    onError: () => message.error('Failed to save alarm times'),
+  });
+
+  useEffect(() => {
+    if (reminderSettingsModalOpen && reminderSettings) {
+      setReminderSettingsForm({
+        morningTime: reminderSettings.morningTime ?? '09:00',
+        noonTime: reminderSettings.noonTime ?? '12:00',
+        afternoonTime: reminderSettings.afternoonTime ?? '14:00',
+        nightTime: reminderSettings.nightTime ?? '20:00',
+      });
+    }
+  }, [reminderSettingsModalOpen, reminderSettings]);
+
 
   const prescriptionCards: DashboardPrescription[] = useMemo(() => {
-    return prescriptionsData.map((rx: any) => {
+    const activeOnly = prescriptionsData.filter((rx: any) => rx.isActive !== false);
+    return activeOnly.map((rx: any) => {
       let medications: any[] = [];
       try {
         medications = rx.medications ? JSON.parse(rx.medications) : [];
@@ -438,11 +511,11 @@ export default function PatientDashboard() {
 
   const stats = {
     totalAppointments: futureAppointments.length,
-    upcomingAppointments: futureAppointments.filter((apt: any) => 
+    upcomingAppointments: futureAppointments.filter((apt: any) =>
       apt.status === 'confirmed' || apt.status === 'pending'
     ).length,
     completedAppointments: futureAppointments.filter((apt: any) => apt.status === 'completed').length,
-    prescriptions: prescriptionCards.length,
+    prescriptions: prescriptionCards.length, // already filtered to active only
     labReports: labReportsData.length,
   };
 
@@ -454,7 +527,7 @@ export default function PatientDashboard() {
   const handleQuickAction = (key: 'book' | 'refill' | 'upload' | 'message' | 'history') => {
     switch (key) {
       case 'book':
-        setLocation('/book-appointment');
+        setBookAppointmentModalOpen(true);
         break;
       case 'refill':
         // Refill modal opened per-card via onRequestRefill
@@ -564,11 +637,11 @@ export default function PatientDashboard() {
             left: 0,
             height: '100vh',
             width: 80,
-            background: '#fff', // White background matching Figma
+            background: '#fff',
             display: 'flex',
             flexDirection: 'column',
             zIndex: 10,
-            boxShadow: '1px 0 4px rgba(0,0,0,0.04)',
+            borderRight: '1px solid #E5E7EB',
           }}
         >
           <PatientSidebar selectedMenuKey={selectedMenuKey} />
@@ -630,18 +703,13 @@ export default function PatientDashboard() {
             flex: 1,
             overflowY: 'auto',
             overflowX: 'hidden',
-            minHeight: 0, // Important for flex scrolling
-            // Responsive padding - reduced to save side space
-            padding: isMobile 
-              ? '12px 12px 16px'  // Mobile: smaller side padding
-              : isTablet 
-                ? '12px 16px 20px'  // Tablet: medium side padding
-                : '12px 16px 20px', // Desktop: reduced from 20px to 16px side padding
-            margin: 0, // Removed auto margin to eliminate side margins
-            width: '100%', // Use full available width
+            minHeight: 0,
+            padding: isMobile ? 12 : 24,
+            margin: 0,
+            width: '100%',
           }}
         >
-          <div style={{ paddingBottom: 24 }}>
+          <div style={{ paddingBottom: 24, display: 'flex', flexDirection: 'column', gap: 24 }}>
             {/* Mobile Menu Button */}
             {isMobile && (
               <div style={{ display: 'flex', justifyContent: 'flex-start', alignItems: 'center', marginBottom: 16 }}>
@@ -656,172 +724,143 @@ export default function PatientDashboard() {
 
             {/* Floating Notifications - Auto-dismiss after 10 seconds (handled by useEffect) */}
 
-            {/* KPI Cards - Matching Figma Design (gap-3 = 12px, p-3 = 12px padding) */}
+            {/* KPI Cards - Figma: grid gap-4 (16px), card p-6 rounded-2xl, icon 48x48 rounded-xl, tag top-right, label text-sm #6B7280, value text-3xl */}
             {isMobile ? (
-              <div style={{ 
-                display: 'flex', 
-                overflowX: 'auto', 
-                gap: 12, // gap-3 from Figma
-                marginBottom: 16, // space-y-4 = 16px
-                paddingBottom: 8,
-                scrollSnapType: 'x mandatory',
-                WebkitOverflowScrolling: 'touch',
-              }}>
+              <div style={{ display: 'flex', overflowX: 'auto', gap: 16, paddingBottom: 8, scrollSnapType: 'x mandatory', WebkitOverflowScrolling: 'touch' }}>
                 {[
-                  { label: "Upcoming Appointments", value: stats.upcomingAppointments, icon: <CalendarOutlined />, trendLabel: "Updated", trendColor: "#10B981", trendBg: "#D1FAE5", onView: () => setLocation('/dashboard/patient/appointments') },
-                  { label: "Active Prescriptions", value: stats.prescriptions, icon: <MedicineBoxOutlined />, trendLabel: "Current", trendColor: "#2563eb", trendBg: "#DBEAFE", onView: () => setLocation('/dashboard/patient/prescriptions') },
-                  { label: "Lab Reports", value: stats.labReports, icon: <ExperimentOutlined />, trendLabel: "Latest", trendColor: "#F59E0B", trendBg: "#FEF3C7", onView: () => {
-                    if (labReportsData.length > 0) {
-                      setSelectedLabReport(labReportsData[0]);
-                      setIsLabReportModalOpen(true);
-                    } else {
-                      message.info('No lab reports available yet.');
-                    }
-                  } },
-                  { label: "Messages", value: messageCounts.total, icon: <MessageOutlined />, trendLabel: messageCounts.unread > 0 ? `${messageCounts.unread} new` : "0 new", trendColor: "#7C3AED", trendBg: "#E9D5FF", onView: () => message.info('Messages coming soon.') },
+                  { label: "Upcoming Appointments", value: stats.upcomingAppointments, icon: <CalendarOutlined style={{ color: '#1A8FE3', fontSize: 24 }} />, trendLabel: "View", trendColor: "#1A8FE3", trendBg: "transparent", onView: () => setLocation('/dashboard/patient/appointments') },
+                  { label: "Active Prescriptions", value: stats.prescriptions, icon: <MedicineBoxOutlined style={{ color: '#6B7280', fontSize: 24 }} />, trendLabel: "Current", trendColor: "#6B7280", trendBg: "transparent", onView: () => setLocation('/dashboard/patient/prescriptions') },
+                  { label: "Lab Reports", value: stats.labReports, icon: <ExperimentOutlined style={{ color: '#6B7280', fontSize: 24 }} />, trendLabel: "Latest", trendColor: "#6B7280", trendBg: "transparent", onView: () => { if (labReportsData.length > 0) { setSelectedLabReport(labReportsData[0]); setIsLabReportModalOpen(true); } else { message.info('No lab reports available yet.'); } } },
+                  { label: "Messages", value: messageCounts.total, icon: <MessageOutlined style={{ color: '#6B7280', fontSize: 24 }} />, trendLabel: messageCounts.unread > 0 ? `${messageCounts.unread} new` : "0 new", trendColor: "#22C55E", trendBg: "transparent", onView: () => message.info('Messages coming soon.') },
                 ].map((kpi, idx) => (
                   <div key={idx} style={{ minWidth: 220, scrollSnapAlign: 'start' }}>
-                    <KpiCard {...kpi} />
+                    <KpiCard {...kpi} variant="patient" />
                   </div>
                 ))}
               </div>
             ) : (
-              <Row gutter={[12, 12]} style={{ marginBottom: 16 }}> {/* gap-3 = 12px from Figma */}
+              <Row gutter={[16, 16]}>
                 <Col xs={24} sm={12} lg={6}>
-                  <KpiCard
-                    label="Upcoming Appointments"
-                    value={stats.upcomingAppointments}
-                    icon={<CalendarOutlined />}
-                    trendLabel="Updated"
-                    trendType="positive"
-                    trendColor="#10B981"
-                    trendBg="#D1FAE5"
-                    onView={() => setLocation('/dashboard/patient/appointments')}
-                  />
+                  <KpiCard variant="patient" label="Upcoming Appointments" value={stats.upcomingAppointments} icon={<CalendarOutlined style={{ color: '#1A8FE3', fontSize: 24 }} />} trendLabel="View" trendColor="#1A8FE3" trendBg="transparent" onView={() => setLocation('/dashboard/patient/appointments')} />
                 </Col>
                 <Col xs={24} sm={12} lg={6}>
-                  <KpiCard
-                    label="Active Prescriptions"
-                    value={stats.prescriptions}
-                    icon={<MedicineBoxOutlined />}
-                    trendLabel="Current"
-                    trendType="neutral"
-                    trendColor="#2563eb"
-                    trendBg="#DBEAFE"
-                    onView={() => setLocation('/dashboard/patient/prescriptions')}
-                  />
+                  <KpiCard variant="patient" label="Active Prescriptions" value={stats.prescriptions} icon={<MedicineBoxOutlined style={{ color: '#6B7280', fontSize: 24 }} />} trendLabel="Current" trendColor="#6B7280" trendBg="transparent" onView={() => setLocation('/dashboard/patient/prescriptions')} />
                 </Col>
                 <Col xs={24} sm={12} lg={6}>
-                  <KpiCard
-                    label="Lab Reports"
-                    value={stats.labReports}
-                    icon={<ExperimentOutlined />}
-                    trendLabel="Latest"
-                    trendType="neutral"
-                    trendColor="#F59E0B"
-                    trendBg="#FEF3C7"
-                    onView={() => {
-                      if (labReportsData.length > 0) {
-                        setSelectedLabReport(labReportsData[0]);
-                        setIsLabReportModalOpen(true);
-                      } else {
-                        message.info('No lab reports available yet.');
-                      }
-                    }}
-                  />
+                  <KpiCard variant="patient" label="Lab Reports" value={stats.labReports} icon={<ExperimentOutlined style={{ color: '#6B7280', fontSize: 24 }} />} trendLabel="Latest" trendColor="#6B7280" trendBg="transparent" onView={() => { if (labReportsData.length > 0) { setSelectedLabReport(labReportsData[0]); setIsLabReportModalOpen(true); } else { message.info('No lab reports available yet.'); } }} />
                 </Col>
                 <Col xs={24} sm={12} lg={6}>
-                  <KpiCard
-                    label="Messages"
-                    value={messageCounts.total}
-                    icon={<MessageOutlined />}
-                    trendLabel={messageCounts.unread > 0 ? `${messageCounts.unread} new` : "0 new"}
-                    trendType="neutral"
-                    trendColor="#7C3AED"
-                    trendBg="#E9D5FF"
-                    onView={() => message.info('Messages coming soon.')}
-                  />
+                  <KpiCard variant="patient" label="Messages" value={messageCounts.total} icon={<MessageOutlined style={{ color: '#6B7280', fontSize: 24 }} />} trendLabel={messageCounts.unread > 0 ? `${messageCounts.unread} new` : "0 new"} trendColor="#22C55E" trendBg="transparent" onView={() => message.info('Messages coming soon.')} />
                 </Col>
               </Row>
             )}
 
-            {/* Quick Actions - Matching Figma (gap-2 = 8px, h-9 = 36px) */}
-            <Row gutter={[8, 8]} style={{ marginBottom: 16 }}> {/* gap-2 = 8px from Figma */}
-              <Col xs={24} sm={12} lg={5}>
+            {/* Quick Actions - Figma: card white rounded-2xl p-6, title "Quick Actions" mb-4, flex wrap gap-3, primary #1A8FE3 hover #1578C5, default border #E5E7EB */}
+            <Card
+              style={{
+                borderRadius: 16,
+                boxShadow: '0 2px 8px rgba(0,0,0,0.08)',
+                border: '1px solid #E5E7EB',
+                background: '#fff',
+              }}
+              styles={{ body: { padding: 24 } }}
+            >
+              <h3 style={{ margin: 0, marginBottom: 16, fontSize: 16, fontWeight: 600, color: '#262626' }}>Quick Actions</h3>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
                 <Button
                   type="primary"
-                icon={<PlusOutlined />}
-                onClick={() => handleQuickAction('book')}
-                  block
+                  icon={<PlusOutlined style={{ fontSize: 16 }} />}
+                  onClick={() => handleQuickAction('book')}
                   style={{
-                    height: 36, // h-9 from Figma
-                    fontSize: 14, // text-sm
-                    borderRadius: 10, // Style guide value
+                    padding: '8px 16px',
+                    height: 'auto',
+                    fontSize: 14,
                     fontWeight: 500,
+                    borderRadius: 8,
+                    background: '#1A8FE3',
+                    borderColor: '#1A8FE3',
                   }}
+                  onMouseEnter={(e) => { e.currentTarget.style.background = '#1578C5'; e.currentTarget.style.borderColor = '#1578C5'; }}
+                  onMouseLeave={(e) => { e.currentTarget.style.background = '#1A8FE3'; e.currentTarget.style.borderColor = '#1A8FE3'; }}
                 >
                   New Appointment
                 </Button>
-              </Col>
-              <Col xs={24} sm={12} lg={5}>
                 <Button
-                icon={<ReloadOutlined />}
-                onClick={() => handleQuickAction('refill')}
-                  block
+                  icon={<ReloadOutlined style={{ fontSize: 16 }} />}
+                  onClick={() => handleQuickAction('refill')}
                   style={{
-                    height: 36,
+                    padding: '8px 16px',
+                    height: 'auto',
                     fontSize: 14,
-                    borderRadius: 10,
+                    fontWeight: 500,
+                    borderRadius: 8,
+                    color: '#262626',
+                    border: '1px solid #E5E7EB',
+                    background: '#fff',
                   }}
+                  onMouseEnter={(e) => { e.currentTarget.style.background = '#F3F4F6'; }}
+                  onMouseLeave={(e) => { e.currentTarget.style.background = '#fff'; }}
                 >
                   Request Refill
                 </Button>
-              </Col>
-              <Col xs={24} sm={12} lg={5}>
                 <Button
-                icon={<UploadOutlined />}
-                onClick={() => handleQuickAction('upload')}
-                  block
+                  icon={<UploadOutlined style={{ fontSize: 16 }} />}
+                  onClick={() => handleQuickAction('upload')}
                   style={{
-                    height: 36,
+                    padding: '8px 16px',
+                    height: 'auto',
                     fontSize: 14,
-                    borderRadius: 10,
+                    fontWeight: 500,
+                    borderRadius: 8,
+                    color: '#262626',
+                    border: '1px solid #E5E7EB',
+                    background: '#fff',
                   }}
+                  onMouseEnter={(e) => { e.currentTarget.style.background = '#F3F4F6'; }}
+                  onMouseLeave={(e) => { e.currentTarget.style.background = '#fff'; }}
                 >
                   Upload Document
                 </Button>
-              </Col>
-              <Col xs={24} sm={12} lg={5}>
                 <Button
-                icon={<SendOutlined />}
-                onClick={() => handleQuickAction('message')}
-                  block
+                  icon={<SendOutlined style={{ fontSize: 16 }} />}
+                  onClick={() => handleQuickAction('message')}
                   style={{
-                    height: 36,
+                    padding: '8px 16px',
+                    height: 'auto',
                     fontSize: 14,
-                    borderRadius: 10,
+                    fontWeight: 500,
+                    borderRadius: 8,
+                    color: '#262626',
+                    border: '1px solid #E5E7EB',
+                    background: '#fff',
                   }}
+                  onMouseEnter={(e) => { e.currentTarget.style.background = '#F3F4F6'; }}
+                  onMouseLeave={(e) => { e.currentTarget.style.background = '#fff'; }}
                 >
                   Send Message
                 </Button>
-              </Col>
-              <Col xs={24} sm={12} lg={4}>
                 <Button
-                icon={<HistoryOutlined />}
-                onClick={() => handleQuickAction('history')}
-                  block
+                  icon={<HistoryOutlined style={{ fontSize: 16 }} />}
+                  onClick={() => handleQuickAction('history')}
                   style={{
-                    height: 36,
+                    padding: '8px 16px',
+                    height: 'auto',
                     fontSize: 14,
-                    borderRadius: 10,
+                    fontWeight: 500,
+                    borderRadius: 8,
+                    color: '#262626',
+                    border: '1px solid #E5E7EB',
+                    background: '#fff',
                   }}
+                  onMouseEnter={(e) => { e.currentTarget.style.background = '#F3F4F6'; }}
+                  onMouseLeave={(e) => { e.currentTarget.style.background = '#fff'; }}
                 >
                   View History
                 </Button>
-              </Col>
-            </Row>
+              </div>
+            </Card>
 
-            {/* Medicine Reminders - Today's schedule from active prescriptions */}
+            {/* Medicine Reminders - with adherence (taken/skipped) and alarm time settings */}
             {medicineReminders.length > 0 && (
               <Card
                 variant="borderless"
@@ -830,89 +869,193 @@ export default function PatientDashboard() {
                   boxShadow: '0 2px 8px rgba(0, 0, 0, 0.08)',
                   border: '1px solid #E5E7EB',
                   background: '#fff',
-                  marginBottom: 16,
                 }}
-                styles={{ body: { padding: 16 } }}
+                styles={{ body: { padding: 24 } }}
                 title={
-                  <Space>
-                    <ClockCircleOutlined style={{ color: patientTheme.primary }} />
-                    <Title level={5} style={{ margin: 0, color: '#111827', fontWeight: 600, fontSize: 18 }}>
-                      Medicine reminders
-                    </Title>
-                  </Space>
-                }
-                extra={
-                  <Button
-                    type="link"
-                    style={{ color: patientTheme.primary, fontWeight: 500, padding: 0, fontSize: 14, height: 'auto' }}
-                    onClick={() => setLocation('/dashboard/patient/prescriptions')}
-                  >
-                    Prescriptions →
-                  </Button>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                      <div style={{ width: 40, height: 40, background: '#E3F2FF', borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                        <ClockCircleOutlined style={{ color: '#1A8FE3', fontSize: 20 }} />
+                      </div>
+                      <span style={{ color: '#262626', fontWeight: 600, fontSize: 16 }}>Medicine Reminders</span>
+                    </div>
+                    <Space size={8}>
+                      <Button
+                        type="default"
+                        size="small"
+                        icon={<SettingOutlined />}
+                        style={{ color: '#1A8FE3', borderColor: '#1A8FE3' }}
+                        onClick={() => { setReminderSettingsModalOpen(true); }}
+                      >
+                        Set alarm times
+                      </Button>
+                      <Button
+                        type="link"
+                        style={{ color: '#1A8FE3', fontWeight: 500, padding: 0, fontSize: 14, height: 'auto', display: 'flex', alignItems: 'center', gap: 4 }}
+                        onClick={() => setLocation('/dashboard/patient/prescriptions')}
+                      >
+                        Prescriptions
+                        <span style={{ fontSize: 16 }}>→</span>
+                      </Button>
+                    </Space>
+                  </div>
                 }
               >
-                <Space direction="vertical" size={8} style={{ width: '100%' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
                   {medicineReminders.slice(0, 8).map((r, idx) => (
                     <div
                       key={idx}
                       style={{
                         display: 'flex',
                         alignItems: 'center',
-                        justifyContent: 'space-between',
-                        padding: '8px 12px',
-                        background: patientTheme.highlight,
-                        borderRadius: 10,
-                        border: '1px solid #E3F2FF',
+                        gap: 12,
+                        padding: 12,
+                        background: '#FAFAFA',
+                        borderRadius: 8,
                       }}
                     >
-                      <span style={{ fontWeight: 600, color: '#1A8FE3', minWidth: 72 }}>{r.timeLabel}</span>
-                      <span style={{ flex: 1, marginLeft: 12, color: '#111827' }}>{r.medicationName}</span>
-                      <span style={{ color: '#6B7280', fontSize: 13 }}>{r.dosage}</span>
+                      <div style={{ width: 32, height: 32, background: '#fff', borderRadius: 8, border: '1px solid #E5E7EB', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                        <MedicineBoxOutlined style={{ color: '#6B7280', fontSize: 16 }} />
+                      </div>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <p style={{ margin: 0, fontSize: 14, fontWeight: 500, color: '#262626' }}>{r.medicationName}</p>
+                        <p style={{ margin: 0, marginTop: 2, fontSize: 12, color: '#6B7280' }}>{r.dosage}</p>
+                      </div>
+                      <span style={{ fontSize: 14, fontWeight: 500, color: '#262626', flexShrink: 0 }}>{r.timeLabel}</span>
+                      <Space size={4} style={{ flexShrink: 0 }}>
+                        {r.adherence === 'taken' ? (
+                          <Tag color="success" icon={<CheckCircleOutlined />}>Taken</Tag>
+                        ) : r.adherence === 'skipped' ? (
+                          <Tag color="default" icon={<CloseCircleOutlined />}>Skipped</Tag>
+                        ) : (
+                          <>
+                            <Button
+                              type="primary"
+                              size="small"
+                              style={{ fontSize: 12 }}
+                              loading={recordAdherenceMutation.isPending}
+                              onClick={() => r.prescriptionId && r.medicationName && r.scheduledDate && r.scheduledTime && recordAdherenceMutation.mutate({
+                                prescriptionId: r.prescriptionId,
+                                medicationName: r.medicationName,
+                                scheduledDate: r.scheduledDate,
+                                scheduledTime: r.scheduledTime,
+                                status: 'taken',
+                              })}
+                            >
+                              Taken
+                            </Button>
+                            <Button
+                              size="small"
+                              style={{ fontSize: 12 }}
+                              loading={recordAdherenceMutation.isPending}
+                              onClick={() => r.prescriptionId && r.medicationName && r.scheduledDate && r.scheduledTime && recordAdherenceMutation.mutate({
+                                prescriptionId: r.prescriptionId,
+                                medicationName: r.medicationName,
+                                scheduledDate: r.scheduledDate,
+                                scheduledTime: r.scheduledTime,
+                                status: 'skipped',
+                              })}
+                            >
+                              Skipped
+                            </Button>
+                          </>
+                        )}
+                      </Space>
                     </div>
                   ))}
                   {medicineReminders.length > 8 && (
-                    <Text type="secondary" style={{ fontSize: 13 }}>
-                      +{medicineReminders.length - 8} more today
-                    </Text>
+                    <Text type="secondary" style={{ fontSize: 13 }}>+{medicineReminders.length - 8} more</Text>
                   )}
-                </Space>
+                </div>
               </Card>
             )}
 
-            {/* Main Content Sections - Upcoming Appointments on first line, Prescriptions and Lab Results on second line */}
-            {/* Matching Figma: gap-4 = 16px, space-y-4 = 16px */}
-            <Space direction="vertical" size={16} style={{ width: '100%' }}>
-              {/* Upcoming Appointments - Full Width First Line - Matching Figma (p-4 = 16px, rounded-xl = 16px) */}
-              <div style={{ width: '100%' }}>
-                <Card
-                  variant="borderless"
-                  style={{ 
-                    borderRadius: 16, // Style guide: 16px
-                    boxShadow: '0 2px 8px rgba(0, 0, 0, 0.08)',
-                    border: '1px solid #E5E7EB',
-                    background: '#fff',
-                    marginBottom: 16, // space-y-4 = 16px
-                  }}
-                  styles={{
-                    body: {
-                      padding: 16, // p-4 = 16px from Figma
-                    }
-                  }}
-                  title={
-                    <Title level={5} style={{ margin: 0, color: '#111827', fontWeight: 600, fontSize: 18 }}> {/* text-lg = 18px */}
-                      Appointments
-                    </Title>
-                  }
-                  extra={
-                    <Button 
-                      type="link" 
-                      style={{ color: patientTheme.primary, fontWeight: 500, padding: 0, fontSize: 14, height: 'auto' }} 
+            {/* Set alarm times modal: morning 8/9am, noon 12/1pm, afternoon 2pm, night 8/9pm */}
+            <Modal
+              title="Set reminder alarm times"
+              open={reminderSettingsModalOpen}
+              onCancel={() => setReminderSettingsModalOpen(false)}
+              onOk={() => saveReminderSettingsMutation.mutate(reminderSettingsForm)}
+              confirmLoading={saveReminderSettingsMutation.isPending}
+              okText="Save"
+              destroyOnClose
+            >
+              <Space direction="vertical" style={{ width: '100%' }} size={16}>
+                <div>
+                  <Text strong>Morning</Text>
+                  <Select
+                    value={reminderSettingsForm.morningTime ?? '09:00'}
+                    onChange={(v) => setReminderSettingsForm((f) => ({ ...f, morningTime: v }))}
+                    style={{ width: '100%', marginTop: 4 }}
+                    options={[
+                      { label: '8:00 AM', value: '08:00' },
+                      { label: '9:00 AM', value: '09:00' },
+                    ]}
+                  />
+                </div>
+                <div>
+                  <Text strong>Noon</Text>
+                  <Select
+                    value={reminderSettingsForm.noonTime ?? '12:00'}
+                    onChange={(v) => setReminderSettingsForm((f) => ({ ...f, noonTime: v }))}
+                    style={{ width: '100%', marginTop: 4 }}
+                    options={[
+                      { label: '12:00 PM', value: '12:00' },
+                      { label: '1:00 PM', value: '13:00' },
+                    ]}
+                  />
+                </div>
+                <div>
+                  <Text strong>Afternoon</Text>
+                  <Select
+                    value={reminderSettingsForm.afternoonTime ?? '14:00'}
+                    onChange={(v) => setReminderSettingsForm((f) => ({ ...f, afternoonTime: v }))}
+                    style={{ width: '100%', marginTop: 4 }}
+                    options={[
+                      { label: '2:00 PM', value: '14:00' },
+                    ]}
+                  />
+                </div>
+                <div>
+                  <Text strong>Night</Text>
+                  <Select
+                    value={reminderSettingsForm.nightTime ?? '20:00'}
+                    onChange={(v) => setReminderSettingsForm((f) => ({ ...f, nightTime: v }))}
+                    style={{ width: '100%', marginTop: 4 }}
+                    options={[
+                      { label: '8:00 PM', value: '20:00' },
+                      { label: '9:00 PM', value: '21:00' },
+                    ]}
+                  />
+                </div>
+              </Space>
+            </Modal>
+
+            {/* Upcoming Appointments - Figma: card rounded-2xl p-6, "View all" + chevron #1A8FE3, items p-4 border rounded-lg, status rounded-full */}
+            <div style={{ width: '100%' }}>
+              <Card
+                variant="borderless"
+                style={{
+                  borderRadius: 16,
+                  boxShadow: '0 2px 8px rgba(0, 0, 0, 0.08)',
+                  border: '1px solid #E5E7EB',
+                  background: '#fff',
+                }}
+                styles={{ body: { padding: 24 } }}
+                title={
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <span style={{ color: '#262626', fontWeight: 600, fontSize: 16 }}>Upcoming Appointments</span>
+                    <Button
+                      type="link"
+                      style={{ color: '#1A8FE3', fontWeight: 500, padding: 0, fontSize: 14, height: 'auto', display: 'flex', alignItems: 'center', gap: 4 }}
                       onClick={() => setLocation('/dashboard/patient/appointments')}
                     >
-                      View All →
+                      View all
+                      <span style={{ fontSize: 16 }}>→</span>
                     </Button>
-                  }
-                >
+                  </div>
+                }
+              >
                   {appointmentTabs.length === 0 || appointmentsToShow.length === 0 ? (
                     <div style={{ textAlign: 'center', padding: '60px 20px' }}>
                       <CalendarOutlined style={{ fontSize: '48px', color: '#9CA3AF', marginBottom: '16px', display: 'block' }} />
@@ -1067,33 +1210,26 @@ export default function PatientDashboard() {
                 </Card>
               </div>
 
-              {/* Second Line - Prescriptions and Lab Results Side by Side */}
-              <Row gutter={[16, 16]}> {/* gap-4 = 16px */}
+              {/* Prescriptions & Lab Results - Figma: two cards rounded-2xl p-6, "View all" #1A8FE3, list items p-3 #FAFAFA rounded-lg */}
+              <Row gutter={[16, 16]}>
               <Col xs={24} lg={12}>
-                {/* Prescriptions - Matching Figma (p-4 = 16px, rounded-xl = 16px) */}
                 <Card
                   variant="borderless"
-                  style={{ 
-                    borderRadius: 16, // Style guide: 16px
+                  style={{
+                    borderRadius: 16,
                     boxShadow: '0 2px 8px rgba(0, 0, 0, 0.08)',
                     border: '1px solid #E5E7EB',
                     background: '#fff',
                     height: '100%',
                   }}
-                  styles={{
-                    body: {
-                      padding: 16, // p-4 = 16px from Figma
-                    }
-                  }}
-                  title={<Title level={5} style={{ margin: 0, color: '#111827', fontWeight: 600, fontSize: 18 }}>Prescriptions</Title>}
-                  extra={
-                      <Button
-                      type="link" 
-                      style={{ color: patientTheme.primary, fontWeight: 500, padding: 0, fontSize: 14, height: 'auto' }} 
-                      onClick={() => setLocation('/dashboard/patient/prescriptions')}
-                    >
-                      View All →
+                  styles={{ body: { padding: 24 } }}
+                  title={
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                      <span style={{ color: '#262626', fontWeight: 600, fontSize: 16 }}>Active Prescriptions</span>
+                      <Button type="link" style={{ color: '#1A8FE3', fontWeight: 500, padding: 0, fontSize: 14, height: 'auto', display: 'flex', alignItems: 'center', gap: 4 }} onClick={() => setLocation('/dashboard/patient/prescriptions')}>
+                        View all <span style={{ fontSize: 16 }}>→</span>
                       </Button>
+                    </div>
                   }
                 >
                   {prescriptionsLoading ? (
@@ -1134,27 +1270,20 @@ export default function PatientDashboard() {
               </Col>
 
               <Col xs={24} lg={12}>
-                {/* Lab Results - Matching Figma (p-4 = 16px, rounded-xl = 16px) */}
-                <Card 
+                <Card
                   variant="borderless"
-                  style={{ 
-                    borderRadius: 16, // Style guide: 16px
+                  style={{
+                    borderRadius: 16,
                     boxShadow: '0 2px 8px rgba(0, 0, 0, 0.08)',
                     border: '1px solid #E5E7EB',
                     background: '#fff',
                     height: '100%',
                   }}
-                  styles={{
-                    body: {
-                      padding: 16, // p-4 = 16px from Figma
-                    }
-                  }}
-                  title={<Title level={5} style={{ margin: 0, color: '#111827', fontWeight: 600, fontSize: 18 }}>Lab Results</Title>}
-                  extra={
-                    <Button 
-                      type="link" 
-                      style={{ color: patientTheme.primary, fontWeight: 500, padding: 0, fontSize: 14, height: 'auto' }} 
-                      onClick={() => {
+                  styles={{ body: { padding: 24 } }}
+                  title={
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                      <span style={{ color: '#262626', fontWeight: 600, fontSize: 16 }}>Lab Results</span>
+                      <Button type="link" style={{ color: '#1A8FE3', fontWeight: 500, padding: 0, fontSize: 14, height: 'auto', display: 'flex', alignItems: 'center', gap: 4 }} onClick={() => {
                         if (labReportsData.length > 0) {
                           setSelectedLabReport(labReportsData[0]);
                           setIsLabReportModalOpen(true);
@@ -1163,8 +1292,9 @@ export default function PatientDashboard() {
                         }
                       }}
                     >
-                      View All →
+                      View all <span style={{ fontSize: 16 }}>→</span>
                     </Button>
+                    </div>
                   }
                 >
                   {labReportsLoading ? (
@@ -1221,7 +1351,6 @@ export default function PatientDashboard() {
                 </Card>
               </Col>
             </Row>
-            </Space>
           </div>
         </Content>
       </Layout>
@@ -1347,7 +1476,7 @@ export default function PatientDashboard() {
             <PrescriptionPreview
               hospitalName={selectedPrescription.hospital?.name}
               hospitalAddress={selectedPrescription.hospital?.address}
-              doctorName={selectedPrescription.doctor?.fullName || 'Dr. Unknown'}
+              doctorName={selectedPrescription.doctor?.fullName ? `Dr. ${selectedPrescription.doctor.fullName}` : 'Dr. Unknown'}
               doctorQualification="M.S."
               doctorRegNo="MMC 2018"
               patientId={selectedPrescription.patientId}
@@ -1383,6 +1512,17 @@ export default function PatientDashboard() {
         }}
         report={selectedLabReport}
         loading={labReportsLoading}
+      />
+
+      {/* Book Appointment Modal (Figma flow: open modal, complete steps, no page navigation) */}
+      <BookAppointmentModal
+        open={bookAppointmentModalOpen}
+        onCancel={() => setBookAppointmentModalOpen(false)}
+        onSuccess={() => {
+          setBookAppointmentModalOpen(false);
+          queryClient.invalidateQueries({ queryKey: ['/api/appointments/my'] });
+          queryClient.invalidateQueries({ queryKey: ['patient-appointments'] });
+        }}
       />
     </Layout>
     </>

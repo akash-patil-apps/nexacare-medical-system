@@ -421,7 +421,7 @@ export default function PatientPrescriptionsPage() {
                 <PrescriptionPreview
                   hospitalName={selectedPrescription.hospital?.name}
                   hospitalAddress={selectedPrescription.hospital?.address}
-                  doctorName={selectedPrescription.doctor?.fullName || 'Dr. Unknown'}
+                  doctorName={selectedPrescription.doctor?.fullName ? `Dr. ${selectedPrescription.doctor.fullName}` : 'Dr. Unknown'}
                   doctorQualification="M.S."
                   doctorRegNo="MMC 2018"
                   patientId={selectedPrescription.patientId}

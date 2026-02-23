@@ -12,6 +12,7 @@
     "preview": "npm run build && cross-env NODE_ENV=production node dist/server/server/index.js",
     "db:generate": "drizzle-kit generate",
     "db:push": "drizzle-kit push",
+    "db:migrate:reminders": "tsx scripts/apply-reminder-adherence-migration.ts",
     "db:migrate": "tsx scripts/apply-patient-family-members-migration.ts",
     "seed": "tsx scripts/seed-test-data.ts",
     "seed:test": "tsx scripts/seed-test-data.ts",
