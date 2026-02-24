@@ -44,6 +44,7 @@ import analyticsRoutes from "./analytics.routes.js";
 import auditRoutes from "./audit.routes.js";
 import insuranceRoutes from "./insurance.routes.js";
 import presenceRoutes from "./presence.routes.js";
+import aiRoutes from "./ai.routes.js";
 
 
 const router = Router();
@@ -55,6 +56,8 @@ router.get("/health", (_, res) => {
 export default router;
 
 export async function registerRoutes(app: Express) {
+  // Mount /api/ai before the main /api router so it is matched (main router would otherwise take /api/* first)
+  app.use("/api/ai", aiRoutes);
   app.use("/api", router);  // Mount the health check router
   app.use("/api/test", testRoutes);
   app.use("/api/auth", authRoutes);

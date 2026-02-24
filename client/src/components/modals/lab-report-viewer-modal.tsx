@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   Modal,
   Descriptions,
@@ -18,10 +18,15 @@ import {
   UserOutlined,
   CheckCircleOutlined,
   ClockCircleOutlined,
+  BulbOutlined,
 } from '@ant-design/icons';
 import dayjs from 'dayjs';
+import ReactMarkdown from 'react-markdown';
 
 const { Title, Text, Paragraph } = Typography;
+
+const DISCLAIMER =
+  'This is for information only and is not medical advice. Please discuss your results with your doctor.';
 
 interface LabReportViewerModalProps {
   open: boolean;
@@ -36,7 +41,60 @@ export default function LabReportViewerModal({
   report,
   loading = false,
 }: LabReportViewerModalProps) {
+  const [interpretLoading, setInterpretLoading] = useState(false);
+  const [loadingReportId, setLoadingReportId] = useState<number | null>(null);
+  const [interpretationCache, setInterpretationCache] = useState<Record<number, { interpretation: string } | { error: string }>>({});
+
   if (!report) return null;
+
+  const cached = report.id ? interpretationCache[report.id] : undefined;
+  const interpretation = cached && 'interpretation' in cached ? cached.interpretation : null;
+  const interpretError = cached && 'error' in cached ? cached.error : null;
+  const isLoadingThisReport = loadingReportId === report.id;
+
+  const hasResults = report.results && report.results !== 'Pending - Awaiting lab processing';
+  const canInterpret = hasResults && report.id;
+
+  const handleExplainResults = async () => {
+    if (!report?.id) return;
+    setInterpretLoading(true);
+    setLoadingReportId(report.id);
+    try {
+      const token = localStorage.getItem('auth-token');
+      const res = await fetch('/api/ai/lab-interpretation', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({ reportId: report.id }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setInterpretationCache((prev) => ({
+          ...prev,
+          [report.id]: {
+            error: data?.message || 'Explanation could not be generated. Please try again or ask your doctor.',
+          },
+        }));
+      } else {
+        setInterpretationCache((prev) => ({
+          ...prev,
+          [report.id]: { interpretation: data.interpretation || '' },
+        }));
+      }
+    } catch {
+      setInterpretationCache((prev) => ({
+        ...prev,
+        [report.id]: {
+          error: 'Explanation could not be generated. Please try again or ask your doctor.',
+        },
+      }));
+    } finally {
+      setInterpretLoading(false);
+      setLoadingReportId(null);
+    }
+  };
 
   const handleDownload = () => {
     if (report.reportUrl) {
@@ -132,7 +190,7 @@ Generated on: ${dayjs().format('DD MMM YYYY, hh:mm A')}
           Download Report
         </Button>,
       ]}
-      destroyOnHidden
+      destroyOnClose
     >
       {loading ? (
         <div style={{ textAlign: 'center', padding: '40px 0' }}>
@@ -248,7 +306,87 @@ Generated on: ${dayjs().format('DD MMM YYYY, hh:mm A')}
                 showIcon
               />
             )}
+            {canInterpret && !interpretation && (
+              <div style={{ marginTop: 12 }}>
+                <Button
+                  type="default"
+                  icon={<BulbOutlined />}
+                  onClick={handleExplainResults}
+                  loading={interpretLoading}
+                  disabled={interpretLoading}
+                >
+                  What do these results mean?
+                </Button>
+              </div>
+            )}
           </div>
+
+          {/* AI Interpretation */}
+          {interpretError && (
+            <Alert
+              message="Could not generate explanation"
+              description={interpretError}
+              type="warning"
+              showIcon
+              style={{ marginTop: 8 }}
+            />
+          )}
+          {(interpretation || isLoadingThisReport) && (
+            <>
+              <Divider />
+              <div>
+                <Title level={5}>
+                  <BulbOutlined style={{ marginRight: 8 }} />
+                  AI explanation
+                </Title>
+                {isLoadingThisReport ? (
+                  <div style={{ padding: 16, textAlign: 'center' }}>
+                    <Spin />
+                  </div>
+                ) : interpretation ? (
+                  <div
+                    style={{
+                      padding: 16,
+                      backgroundColor: '#f0f9ff',
+                      borderRadius: 8,
+                    }}
+                    className="lab-interpretation-content"
+                  >
+                    {interpretation.endsWith(DISCLAIMER) ? (
+                      <>
+                        <ReactMarkdown
+                          components={{
+                            h1: ({ children }) => <Title level={5} style={{ margin: '0 0 8px' }}>{children}</Title>,
+                            h2: ({ children }) => <Title level={5} style={{ margin: '16px 0 8px' }}>{children}</Title>,
+                            h3: ({ children }) => <Text strong style={{ display: 'block', margin: '12px 0 4px' }}>{children}</Text>,
+                            p: ({ children }) => <Paragraph style={{ marginBottom: 8 }}>{children}</Paragraph>,
+                            strong: ({ children }) => <Text strong>{children}</Text>,
+                          }}
+                        >
+                          {interpretation.slice(0, -DISCLAIMER.length).trim()}
+                        </ReactMarkdown>
+                        <Paragraph style={{ margin: '12px 0 0', color: '#cf1322', fontWeight: 500 }}>
+                          {DISCLAIMER}
+                        </Paragraph>
+                      </>
+                    ) : (
+                      <ReactMarkdown
+                        components={{
+                          h1: ({ children }) => <Title level={5} style={{ margin: '0 0 8px' }}>{children}</Title>,
+                          h2: ({ children }) => <Title level={5} style={{ margin: '16px 0 8px' }}>{children}</Title>,
+                          h3: ({ children }) => <Text strong style={{ display: 'block', margin: '12px 0 4px' }}>{children}</Text>,
+                          p: ({ children }) => <Paragraph style={{ marginBottom: 8 }}>{children}</Paragraph>,
+                          strong: ({ children }) => <Text strong>{children}</Text>,
+                        }}
+                      >
+                        {interpretation}
+                      </ReactMarkdown>
+                    )}
+                  </div>
+                ) : null}
+              </div>
+            </>
+          )}
 
           {/* Normal Ranges */}
           {report.normalRanges && (
