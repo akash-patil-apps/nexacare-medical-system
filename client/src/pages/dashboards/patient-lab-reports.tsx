@@ -1,6 +1,7 @@
 import React, { useState, useMemo } from 'react';
-import { Layout, Card, Row, Col, Space, Typography, Drawer, Tag, message } from 'antd';
-import { ExperimentOutlined, MenuUnfoldOutlined } from '@ant-design/icons';
+import { Layout, Card, Row, Col, Space, Typography, Drawer, Tag, message, Button, Modal, Alert, Spin } from 'antd';
+import { ExperimentOutlined, MenuUnfoldOutlined, BulbOutlined } from '@ant-design/icons';
+import ReactMarkdown from 'react-markdown';
 import { useQuery } from '@tanstack/react-query';
 import { Redirect } from 'wouter';
 import { useAuth } from '../../hooks/use-auth';
@@ -12,6 +13,9 @@ import { formatDateTime } from '../../lib/utils';
 
 const { Content, Sider } = Layout;
 const { Title, Text } = Typography;
+
+const DISCLAIMER =
+  'This is for information only and is not medical advice. Please discuss your results with your doctor.';
 
 const fetchWithAuth = async <T,>(url: string): Promise<T> => {
   const token = localStorage.getItem('auth-token');
@@ -28,6 +32,10 @@ export default function PatientLabReportsPage() {
   const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false);
   const [selectedReport, setSelectedReport] = useState<any>(null);
   const [reportModalOpen, setReportModalOpen] = useState(false);
+  const [combinedModalOpen, setCombinedModalOpen] = useState(false);
+  const [combinedInterpretation, setCombinedInterpretation] = useState<string | null>(null);
+  const [combinedLoading, setCombinedLoading] = useState(false);
+  const [combinedError, setCombinedError] = useState<string | null>(null);
 
   const { data: reports = [], isLoading: reportsLoading } = useQuery({
     queryKey: ['patient-lab-reports'],
@@ -56,6 +64,57 @@ export default function PatientLabReportsPage() {
   }
 
   const siderWidth = isMobile ? 0 : 80;
+
+  const reportsWithResults = useMemo(
+    () =>
+      (reports || []).filter(
+        (r: any) =>
+          r.id &&
+          r.results &&
+          r.results !== 'Pending - Awaiting lab processing'
+      ),
+    [reports]
+  );
+
+  const recentReportsForCombined = useMemo(() => {
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - 30);
+    return reportsWithResults
+      .filter((r: any) => r.reportDate && new Date(r.reportDate) >= cutoff)
+      .sort((a: any, b: any) => new Date(b.reportDate).getTime() - new Date(a.reportDate).getTime())
+      .slice(0, 10);
+  }, [reportsWithResults]);
+
+  const handleCombinedExplain = async () => {
+    if (recentReportsForCombined.length === 0) return;
+    setCombinedModalOpen(true);
+    setCombinedInterpretation(null);
+    setCombinedError(null);
+    setCombinedLoading(true);
+    try {
+      const token = localStorage.getItem('auth-token');
+      const res = await fetch('/api/ai/lab-interpretation-combined', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({
+          reportIds: recentReportsForCombined.map((r: any) => r.id),
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setCombinedError(data?.message || 'Could not generate combined explanation.');
+        return;
+      }
+      setCombinedInterpretation(data.interpretation || '');
+    } catch {
+      setCombinedError('Could not generate combined explanation. Please try again.');
+    } finally {
+      setCombinedLoading(false);
+    }
+  };
 
   return (
     <Layout style={{ minHeight: '100vh', background: '#F7FBFF' }}>
@@ -141,7 +200,22 @@ export default function PatientLabReportsPage() {
             <Text type="secondary">View and download your lab test results</Text>
           </div>
 
-          <Card loading={reportsLoading} title="All reports">
+          <Card
+            loading={reportsLoading}
+            title="All reports"
+            extra={
+              recentReportsForCombined.length >= 2 ? (
+                <Button
+                  type="default"
+                  icon={<BulbOutlined />}
+                  onClick={handleCombinedExplain}
+                  style={{ borderRadius: 6 }}
+                >
+                  Explain recent results ({recentReportsForCombined.length} reports)
+                </Button>
+              ) : null
+            }
+          >
             {reports.length > 0 ? (
               <Space direction="vertical" size={12} style={{ width: '100%' }}>
                 {reports.map((report: any) => (
@@ -202,6 +276,75 @@ export default function PatientLabReportsPage() {
         report={selectedReport}
         loading={false}
       />
+
+      <Modal
+        title={
+          <Space>
+            <BulbOutlined style={{ color: 'var(--ant-color-primary)' }} />
+            <span>Combined AI explanation</span>
+          </Space>
+        }
+        open={combinedModalOpen}
+        onCancel={() => {
+          setCombinedModalOpen(false);
+          setCombinedError(null);
+          setCombinedInterpretation(null);
+        }}
+        footer={[
+          <Button
+            key="close"
+            onClick={() => {
+              setCombinedModalOpen(false);
+              setCombinedError(null);
+              setCombinedInterpretation(null);
+            }}
+          >
+            Close
+          </Button>,
+        ]}
+        width={640}
+        destroyOnClose
+      >
+        {combinedLoading ? (
+          <div style={{ textAlign: 'center', padding: '24px 0' }}>
+            <Spin size="large" />
+            <div style={{ marginTop: 12 }}>Generating explanation for {recentReportsForCombined.length} recent report(s)…</div>
+          </div>
+        ) : combinedError ? (
+          <Alert type="warning" showIcon message="Could not generate explanation" description={combinedError} />
+        ) : combinedInterpretation ? (
+          <div style={{ lineHeight: 1.6 }}>
+            {combinedInterpretation.endsWith(DISCLAIMER) ? (
+              <>
+                <ReactMarkdown
+                  components={{
+                    h1: ({ children }) => <Title level={4} style={{ margin: '0 0 12px' }}>{children}</Title>,
+                    h2: ({ children }) => <Title level={5} style={{ margin: '16px 0 8px' }}>{children}</Title>,
+                    h3: ({ children }) => <Text strong style={{ display: 'block', margin: '12px 0 4px' }}>{children}</Text>,
+                    p: ({ children }) => <Typography.Paragraph style={{ marginBottom: 8 }}>{children}</Typography.Paragraph>,
+                    strong: ({ children }) => <Text strong>{children}</Text>,
+                  }}
+                >
+                  {combinedInterpretation.slice(0, -DISCLAIMER.length).trim()}
+                </ReactMarkdown>
+                <div style={{ marginTop: 12, color: '#cf1322', fontWeight: 500 }}>{DISCLAIMER}</div>
+              </>
+            ) : (
+              <ReactMarkdown
+                components={{
+                  h1: ({ children }) => <Title level={4} style={{ margin: '0 0 12px' }}>{children}</Title>,
+                  h2: ({ children }) => <Title level={5} style={{ margin: '16px 0 8px' }}>{children}</Title>,
+                  h3: ({ children }) => <Text strong style={{ display: 'block', margin: '12px 0 4px' }}>{children}</Text>,
+                  p: ({ children }) => <Typography.Paragraph style={{ marginBottom: 8 }}>{children}</Typography.Paragraph>,
+                  strong: ({ children }) => <Text strong>{children}</Text>,
+                }}
+              >
+                {combinedInterpretation}
+              </ReactMarkdown>
+            )}
+          </div>
+        ) : null}
+      </Modal>
     </Layout>
   );
 }
