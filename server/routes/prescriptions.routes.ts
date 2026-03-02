@@ -2,17 +2,17 @@
 import { Router } from "express";
 import { z } from "zod";
 import { eq } from "drizzle-orm";
-import { authenticateToken, authorizeRoles } from "../middleware/auth";
-import type { AuthenticatedRequest } from "../types";
-import * as prescriptionService from "../services/prescription.service";
-import * as doctorsService from "../services/doctors.service";
-import * as patientsService from "../services/patients.service";
-import { insertPrescriptionSchema, prescriptions } from "../../shared/schema";
-import { db } from "../db";
-import { NotificationService } from "../services/localNotification.service";
-import * as medicineReminderService from "../services/medicine-reminder.service";
-import * as followupReminderService from "../services/followup-reminder.service";
-import { logAuditEvent } from "../services/audit.service";
+import { authenticateToken, authorizeRoles } from "../middleware/auth.js";
+import type { AuthenticatedRequest } from "../types.js";
+import * as prescriptionService from "../services/prescription.service.js";
+import * as doctorsService from "../services/doctors.service.js";
+import * as patientsService from "../services/patients.service.js";
+import { insertPrescriptionSchema, prescriptions } from "../../shared/schema.js";
+import { db } from "../db.js";
+import { NotificationService } from "../services/localNotification.service.js";
+import * as medicineReminderService from "../services/medicine-reminder.service.js";
+import * as followupReminderService from "../services/followup-reminder.service.js";
+import { logAuditEvent } from "../services/audit.service.js";
 
 const router = Router();
 

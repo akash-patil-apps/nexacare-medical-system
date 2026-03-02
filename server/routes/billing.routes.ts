@@ -1,7 +1,7 @@
 import express from 'express';
-import { authenticateToken, authorizeRoles, AuthenticatedRequest } from '../middleware/auth';
-import * as billingService from '../services/billing.service';
-import * as billingPdfService from '../services/billing-pdf.service';
+import { authenticateToken, authorizeRoles, AuthenticatedRequest } from '../middleware/auth.js';
+import * as billingService from '../services/billing.service.js';
+import * as billingPdfService from '../services/billing-pdf.service.js';
 
 const router = express.Router();
 

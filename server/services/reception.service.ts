@@ -1,7 +1,7 @@
 // server/services/reception.service.ts
 import { and, eq, isNull, asc, desc, ilike, or, count, sql } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
-import { db } from '../db';
+import { db } from '../db.js';
 import {
   appointments,
   doctors,
@@ -11,11 +11,11 @@ import {
   labReports,
   prescriptions,
   hospitals,
-} from '../../shared/schema';
-import type { InsertReceptionist } from '../../shared/schema-types';
-import { hashPassword } from './auth.service';
-import { createNotification } from './notifications.service';
-import { getDoctorsByHospital } from './doctors.service';
+} from '../../shared/schema.js';
+import type { InsertReceptionist } from '../../shared/schema-types.js';
+import { hashPassword } from './auth.service.js';
+import { createNotification } from './notifications.service.js';
+import { getDoctorsByHospital } from './doctors.service.js';
 
 /**
  * Add a new receptionist to a hospital.

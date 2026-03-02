@@ -1,12 +1,12 @@
-import { db } from '../db';
-import { opdQueueEntries, appointments, patients, doctors, users } from '../../shared/schema';
+import { db } from '../db.js';
+import { opdQueueEntries, appointments, patients, doctors, users } from '../../shared/schema.js';
 import { eq, and, sql, desc, ne, inArray, not } from 'drizzle-orm';
 import {
   parseTokenIdentifier,
   slotKeyToMinutes,
   isLateArrival,
   getSlotKeyFromAppointment,
-} from './opd-token';
+} from './opd-token.js';
 
 /**
  * Check-in appointment into OPD queue. Uses token_identifier from appointment (assigned at book).

@@ -1,7 +1,7 @@
 // Advanced Analytics service for NexaCare Medical System
 // Provides trend analysis, forecasting, and enhanced metrics
 
-import { db } from '../db';
+import { db } from '../db.js';
 import {
   appointments,
   invoices,
@@ -12,7 +12,7 @@ import {
   patients,
   doctors,
   users,
-} from '../../shared/schema';
+} from '../../shared/schema.js';
 import { eq, and, gte, lte, sql, desc, count, between } from 'drizzle-orm';
 
 export interface TrendDataPoint {

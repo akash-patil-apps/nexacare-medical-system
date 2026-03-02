@@ -3,8 +3,8 @@
  * at this hospital. Used for admin Patients page - privacy: do not expose all
  * onboarded patients, only those who have interacted with the hospital.
  */
-import { db } from '../db';
-import { appointments, patients, users, doctors, hospitals, prescriptions } from '../../shared/schema';
+import { db } from '../db.js';
+import { appointments, patients, users, doctors, hospitals, prescriptions } from '../../shared/schema.js';
 import { eq, and, desc, sql, or, ilike, like } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 

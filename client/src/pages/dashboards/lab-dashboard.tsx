@@ -35,6 +35,8 @@ import {
   MenuFoldOutlined,
   MenuUnfoldOutlined,
   SettingOutlined,
+  EditOutlined,
+  RightOutlined,
 } from '@ant-design/icons';
 import { useAuth } from '../../hooks/use-auth';
 import { useResponsive } from '../../hooks/use-responsive';
@@ -71,6 +73,7 @@ export default function LabDashboard() {
   const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
   const [selectedReport, setSelectedReport] = useState<any>(null);
   const [statusFilter, setStatusFilter] = useState<string>('all');
+  const [dateTab, setDateTab] = useState<'today' | 'yesterday' | 'all'>('today');
   const [location, setLocation] = useLocation();
   const urlView = useMemo(() => {
     const search = location.includes('?') ? location.split('?')[1] || '' : '';
@@ -377,6 +380,39 @@ export default function LabDashboard() {
     return relevantLabReports.filter((report: any) => report.status === statusFilter);
   }, [relevantLabReports, statusFilter]);
 
+  // Filter by date tab (Today / Yesterday / All) for queue table
+  const queueFilteredReports = useMemo(() => {
+    if (!filteredLabReports.length) return [];
+    if (dateTab === 'all') return filteredLabReports;
+    const todayStart = getISTStartOfDay();
+    const yesterdayStart = new Date(todayStart);
+    yesterdayStart.setDate(yesterdayStart.getDate() - 1);
+    return filteredLabReports.filter((report: any) => {
+      const d = report.reportDate ? new Date(report.reportDate) : report.date ? new Date(report.date) : null;
+      if (!d || isNaN(d.getTime())) return dateTab === 'today';
+      const reportDay = getISTStartOfDay(d);
+      if (dateTab === 'today') return reportDay.getTime() === todayStart.getTime();
+      if (dateTab === 'yesterday') return reportDay.getTime() === yesterdayStart.getTime();
+      return true;
+    });
+  }, [filteredLabReports, dateTab]);
+
+  // Date tab counts (from filteredLabReports for Today/Yesterday/All)
+  const dateTabCounts = useMemo(() => {
+    const todayStart = getISTStartOfDay();
+    const yesterdayStart = new Date(todayStart);
+    yesterdayStart.setDate(yesterdayStart.getDate() - 1);
+    let today = 0, yesterday = 0;
+    (filteredLabReports || []).forEach((r: any) => {
+      const d = r.reportDate ? new Date(r.reportDate) : r.date ? new Date(r.date) : null;
+      if (!d || isNaN(d.getTime())) return;
+      const reportDay = getISTStartOfDay(d);
+      if (reportDay.getTime() === todayStart.getTime()) today++;
+      else if (reportDay.getTime() === yesterdayStart.getTime()) yesterday++;
+    });
+    return { today, yesterday, all: (filteredLabReports || []).length };
+  }, [filteredLabReports]);
+
   // Separate doctor requests (pending with placeholder results) from regular reports
   const doctorRequests = useMemo(() => {
     return filteredLabReports.filter((report: any) => 
@@ -386,19 +422,20 @@ export default function LabDashboard() {
     );
   }, [filteredLabReports]);
 
-  // Transform lab reports for table display
+  // Transform lab reports for table display (use queueFilteredReports for date-tabbed queue)
   const labReports = useMemo(() => {
-    return filteredLabReports.map((report: any) => ({
+    return queueFilteredReports.map((report: any) => ({
       ...report,
       id: report.id,
       patient: report.patientName || report.patient || 'Unknown',
       testName: report.testName || 'Test',
+      hospital: report.hospitalName ?? '—',
       date: report.reportDate ? new Date(report.reportDate).toLocaleDateString() : 'N/A',
       result: report.result || (report.status === 'ready' ? 'Ready' : 'Pending'),
       priority: report.priority || 'Normal',
       status: report.status || 'pending',
     }));
-  }, [filteredLabReports]);
+  }, [queueFilteredReports]);
 
   const reportColumns = [
     {
@@ -424,6 +461,15 @@ export default function LabDashboard() {
       dataIndex: 'testName',
       key: 'testName',
       width: 180,
+    },
+    {
+      title: 'Hospital',
+      dataIndex: 'hospital',
+      key: 'hospital',
+      width: 180,
+      render: (hospital: string) => (
+        <Text>{hospital ?? '—'}</Text>
+      ),
     },
     {
       title: 'Date',
@@ -460,30 +506,15 @@ export default function LabDashboard() {
       title: 'Status',
       dataIndex: 'status',
       key: 'status',
-      width: 150,
-      render: (status: string, record: any) => (
-        <Space>
-          <Tag color={
-            status === 'completed' || status === 'ready' ? 'green' : 
-            status === 'processing' ? 'blue' : 
-            'orange'
-          }>
-            {status?.toUpperCase() || 'PENDING'}
+      width: 120,
+      render: (status: string) => (
+        <Tag color={
+          status === 'completed' || status === 'ready' ? 'green' :
+          status === 'processing' ? 'blue' :
+          'orange'
+        }>
+          {status?.toUpperCase() || 'PENDING'}
         </Tag>
-          {status !== 'completed' && status !== 'ready' && (
-            <Select
-              size="small"
-              value={status}
-              onChange={(newStatus) => updateStatusMutation.mutate({ reportId: record.id, status: newStatus })}
-              style={{ width: 120 }}
-            >
-              <Option value="pending">Pending</Option>
-              <Option value="processing">Processing</Option>
-              <Option value="ready">Ready</Option>
-              <Option value="completed">Completed</Option>
-            </Select>
-          )}
-        </Space>
       ),
     },
     {
@@ -492,16 +523,18 @@ export default function LabDashboard() {
       width: 100,
       fixed: 'right' as const,
       render: (_: any, record: any) => (
-          <Button
-            type="link"
-            size="small"
-            onClick={() => {
-              setSelectedReport(record);
-              setIsUploadModalOpen(true);
-            }}
-          >
-            Edit
-          </Button>
+        <Button
+          type="primary"
+          size="small"
+          onClick={() => {
+            setSelectedReport(record);
+            setIsUploadModalOpen(true);
+          }}
+          style={{ background: '#8B5CF6', borderColor: '#8B5CF6', borderRadius: 8 }}
+          icon={<EditOutlined style={{ fontSize: 14 }} />}
+        >
+          Edit
+        </Button>
       ),
     },
   ];
@@ -538,7 +571,7 @@ export default function LabDashboard() {
           background: '#fff',
           boxShadow: '0 2px 8px rgba(0, 0, 0, 0.06)',
         }}
-        bodyStyle={{ padding: 14 }}
+        styles={{ body: { padding: 14 } }}
       >
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
           <div style={{ minWidth: 0, flex: 1 }}>
@@ -566,32 +599,18 @@ export default function LabDashboard() {
         </div>
 
         <div style={{ marginTop: 12, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
-          <Space size={8} wrap>
-            <Tag color={statusColor} style={{ margin: 0, fontSize: 12 }}>
-              {status.toUpperCase()}
-            </Tag>
-            {status !== 'completed' && (
-              <Select
-                size="small"
-                value={status}
-                onChange={(newStatus) => updateStatusMutation.mutate({ reportId: record.id, status: newStatus })}
-                style={{ width: 140 }}
-              >
-                <Option value="pending">Pending</Option>
-                <Option value="processing">Processing</Option>
-                <Option value="ready">Ready</Option>
-                <Option value="completed">Completed</Option>
-              </Select>
-            )}
-          </Space>
+          <Tag color={statusColor} style={{ margin: 0, fontSize: 12 }}>
+            {status.toUpperCase()}
+          </Tag>
 
           <Button
             size="small"
-            type="link"
+            type="primary"
             onClick={() => {
               setSelectedReport(record);
               setIsUploadModalOpen(true);
             }}
+            style={{ background: '#8B5CF6', borderColor: '#8B5CF6', borderRadius: 8 }}
           >
             Edit
           </Button>
@@ -728,6 +747,12 @@ export default function LabDashboard() {
           width: 20px !important;
           height: 20px !important;
         }
+        .lab-reports-queue-table .ant-table-thead > tr > th {
+          background: #FAFAFA !important;
+          font-weight: 600;
+          color: #262626;
+          font-size: 14px;
+        }
       `}</style>
       <Layout className="lab-dashboard-wrapper" style={{ minHeight: '100vh', background: labTheme.background }}>
       {/* Desktop/Tablet Sidebar */}
@@ -791,10 +816,11 @@ export default function LabDashboard() {
           height: '100vh', // Fixed height to enable scrolling
         }}
       >
-        {/* TopHeader - Matching Patient Dashboard Design */}
+        {/* TopHeader - Figma Lab: purple accent #8B5CF6 */}
         <TopHeader
           userName={user?.fullName || 'Lab Admin'}
           userRole="Lab"
+          primaryColor="#8B5CF6"
           userId={useMemo(() => {
             if (user?.id) {
               const year = new Date().getFullYear();
@@ -862,114 +888,81 @@ export default function LabDashboard() {
             
             {/* Floating Notifications - Auto-dismiss after 10 seconds (handled by useEffect) */}
 
-            {/* KPI Cards - Matching Receptionist Dashboard Design */}
-            {isMobile ? (
-              <div style={{ 
-                display: 'flex', 
-                overflowX: 'auto', 
-                gap: 16, 
-                marginBottom: 24,
-                paddingBottom: 8,
-                scrollSnapType: 'x mandatory',
-                WebkitOverflowScrolling: 'touch',
-              }}>
+            {/* KPI Cards - Figma Lab design: icon left, tag right, label, value */}
+            {(() => {
+              const kpiData = [
+                { label: 'Samples Pending', value: stats?.pendingTests ?? 0, tag: 'Awaiting Analysis', tagStyle: { background: '#EDE9FE', color: '#7C3AED' }, iconBg: '#F5F3FF', iconColor: '#A78BFA', Icon: FileSearchOutlined },
+                { label: 'Reports Ready', value: stats?.completedTests ?? 0, tag: 'Completed Today', tagStyle: { background: '#D1FAE5', color: '#059669' }, iconBg: '#F9FAFB', iconColor: '#9CA3AF', Icon: CheckCircleOutlined },
+                { label: 'Critical Alerts', value: stats?.criticalResults ?? 0, tag: 'Requires Attention', tagStyle: { background: '#FEE2E2', color: '#DC2626' }, iconBg: '#F9FAFB', iconColor: '#9CA3AF', Icon: AlertOutlined },
+                { label: 'Total Tests', value: stats?.totalTests ?? 0, tag: 'All Time', tagStyle: { background: '#F3F4F6', color: '#6B7280' }, iconBg: '#F9FAFB', iconColor: '#9CA3AF', Icon: ExperimentOutlined },
+              ];
+              return isMobile ? (
+                <div style={{ display: 'flex', overflowX: 'auto', gap: 16, marginBottom: 24, paddingBottom: 8, scrollSnapType: 'x mandatory' }}>
+                  {kpiData.map((kpi, idx) => {
+                    const Icon = kpi.Icon;
+                    return (
+                      <Card key={idx} size="small" style={{ minWidth: 220, scrollSnapAlign: 'start', borderRadius: 16, border: '1px solid #E5E7EB', boxShadow: '0 2px 8px rgba(0,0,0,0.08)' }} styles={{ body: { padding: 24 } }} onClick={() => message.info('View')}>
+                        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 16 }}>
+                          <div style={{ width: 48, height: 48, borderRadius: 12, background: kpi.iconBg, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                            <Icon style={{ fontSize: 24, color: kpi.iconColor }} />
+                          </div>
+                          <span style={{ padding: '4px 12px', borderRadius: 9999, fontSize: 12, fontWeight: 500, ...kpi.tagStyle }}>{kpi.tag}</span>
+                        </div>
+                        <p style={{ margin: 0, fontSize: 14, color: '#6B7280', marginBottom: 4 }}>{kpi.label}</p>
+                        <p style={{ margin: 0, fontSize: 30, fontWeight: 600, color: '#262626' }}>{kpi.value}</p>
+                      </Card>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 16, marginBottom: 24 }}>
+                  {kpiData.map((kpi, idx) => {
+                    const Icon = kpi.Icon;
+                    return (
+                      <Card key={idx} size="small" style={{ borderRadius: 16, border: '1px solid #E5E7EB', boxShadow: '0 2px 8px rgba(0,0,0,0.08)', cursor: 'pointer' }} styles={{ body: { padding: 24 } }} onClick={() => message.info('View')}>
+                        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 16 }}>
+                          <div style={{ width: 48, height: 48, borderRadius: 12, background: kpi.iconBg, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                            <Icon style={{ fontSize: 24, color: kpi.iconColor }} />
+                          </div>
+                          <span style={{ padding: '4px 12px', borderRadius: 9999, fontSize: 12, fontWeight: 500, ...kpi.tagStyle }}>{kpi.tag}</span>
+                        </div>
+                        <p style={{ margin: 0, fontSize: 14, color: '#6B7280', marginBottom: 4 }}>{kpi.label}</p>
+                        <p style={{ margin: 0, fontSize: 30, fontWeight: 600, color: '#262626' }}>{kpi.value}</p>
+                      </Card>
+                    );
+                  })}
+                </div>
+              );
+            })()}
+
+          {/* Lab Status Bar - Figma: dot + label + count, dividers, Total, completed today */}
+          <Card
+            variant="borderless"
+            style={{ borderRadius: 16, boxShadow: '0 2px 8px rgba(0,0,0,0.08)', border: '1px solid #E5E7EB', background: '#fff', marginBottom: 24 }}
+            styles={{ body: { padding: 24 } }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 16 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 24, flexWrap: 'wrap' }}>
                 {[
-                  { label: "Samples Pending", value: stats?.pendingTests || 0, icon: <FileSearchOutlined style={{ fontSize: 24, color: '#0EA5E9' }} />, badgeText: "Awaiting Analysis", color: "blue" as const, onView: () => message.info('View pending tests') },
-                  { label: "Reports Ready", value: stats?.completedTests || 0, icon: <CheckCircleOutlined style={{ fontSize: 24, color: '#22C55E' }} />, badgeText: "Completed Today", color: "green" as const, onView: () => message.info('View completed tests') },
-                  { label: "Critical Alerts", value: stats?.criticalResults || 0, icon: <AlertOutlined style={{ fontSize: 24, color: '#F87171' }} />, badgeText: "Requires Attention", color: "orange" as const, onView: () => message.info('View critical alerts') },
-                  { label: "Total Tests", value: stats?.totalTests || 0, icon: <ExperimentOutlined style={{ fontSize: 24, color: '#0EA5E9' }} />, badgeText: "All Time", color: "blue" as const, onView: () => message.info('View all tests') },
-                ].map((kpi, idx) => (
-                  <div key={idx} style={{ minWidth: 220, scrollSnapAlign: 'start' }}>
-                    <KpiCard {...kpi} />
+                  { label: 'Pending', count: relevantLabReports?.filter((r: any) => r.status === 'pending').length || 0, dotColor: '#D1D5DB', textColor: '#6B7280' },
+                  { label: 'Processing', count: relevantLabReports?.filter((r: any) => r.status === 'processing').length || 0, dotColor: '#D1D5DB', textColor: '#6B7280' },
+                  { label: 'Ready', count: relevantLabReports?.filter((r: any) => r.status === 'ready').length || 0, dotColor: '#86EFAC', textColor: '#059669' },
+                  { label: 'Completed', count: relevantLabReports?.filter((r: any) => r.status === 'completed').length || 0, dotColor: '#86EFAC', textColor: '#059669' },
+                ].map((s, i) => (
+                  <div key={s.label} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <div style={{ width: 12, height: 12, borderRadius: '50%', background: s.dotColor }} />
+                    <span style={{ fontSize: 14, color: '#6B7280' }}>{s.label}</span>
+                    <span style={{ fontSize: 14, fontWeight: 600, color: s.textColor }}>{s.count}</span>
+                    {i < 3 && <div style={{ width: 1, height: 24, background: '#E5E7EB', marginLeft: 16 }} />}
                   </div>
                 ))}
               </div>
-            ) : (
-              <div style={{ display: 'flex', gap: 16, marginBottom: 24, width: '100%' }}>
-                <div style={{ flex: 1, minWidth: 0 }}>
-              <KpiCard
-                label="Samples Pending"
-                value={stats?.pendingTests || 0}
-                    icon={<FileSearchOutlined style={{ fontSize: 24, color: '#0EA5E9' }} />}
-                    badgeText="Awaiting Analysis"
-                    color="blue"
-                    onView={() => message.info('View pending tests')}
-              />
-                </div>
-                <div style={{ flex: 1, minWidth: 0 }}>
-              <KpiCard
-                label="Reports Ready"
-                value={stats?.completedTests || 0}
-                    icon={<CheckCircleOutlined style={{ fontSize: 24, color: '#22C55E' }} />}
-                    badgeText="Completed Today"
-                    color="green"
-                    onView={() => message.info('View completed tests')}
-              />
-                </div>
-                <div style={{ flex: 1, minWidth: 0 }}>
-              <KpiCard
-                label="Critical Alerts"
-                value={stats?.criticalResults || 0}
-                    icon={<AlertOutlined style={{ fontSize: 24, color: '#F87171' }} />}
-                    badgeText="Requires Attention"
-                    color="orange"
-                    onView={() => message.info('View critical alerts')}
-              />
-                </div>
-                <div style={{ flex: 1, minWidth: 0 }}>
-              <KpiCard
-                label="Total Tests"
-                value={stats?.totalTests || 0}
-                    icon={<ExperimentOutlined style={{ fontSize: 24, color: '#0EA5E9' }} />}
-                    badgeText="All Time"
-                    color="blue"
-                    onView={() => message.info('View all tests')}
-              />
-                </div>
-              </div>
-            )}
-
-          {/* Lab Status Summary - Similar to Receptionist Queue Status */}
-          <Card 
-            variant="borderless"
-            style={{ 
-              borderRadius: 16,
-              boxShadow: '0 2px 8px rgba(0, 0, 0, 0.08)',
-              border: '1px solid #E5E7EB',
-              background: '#fff',
-              marginBottom: 24,
-            }}
-          >
-            <div style={{ 
-              display: 'flex', 
-              justifyContent: 'space-between', 
-              alignItems: 'center',
-              flexWrap: isMobile ? 'wrap' : 'nowrap',
-              gap: isMobile ? 16 : 24,
-            }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flex: 1 }}>
-                <Text type="secondary" style={{ fontSize: 14, minWidth: 80 }}>Pending:</Text>
-                <Text strong style={{ fontSize: 16, color: '#F97316' }}>{relevantLabReports?.filter((r: any) => r.status === 'pending').length || 0}</Text>
-              </div>
-              <Divider type="vertical" style={{ height: 24, margin: 0 }} />
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flex: 1 }}>
-                <Text type="secondary" style={{ fontSize: 14, minWidth: 100 }}>Processing:</Text>
-                <Text strong style={{ fontSize: 16, color: '#0EA5E9' }}>{relevantLabReports?.filter((r: any) => r.status === 'processing').length || 0}</Text>
-              </div>
-              <Divider type="vertical" style={{ height: 24, margin: 0 }} />
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flex: 1 }}>
-                <Text type="secondary" style={{ fontSize: 14, minWidth: 120 }}>Ready:</Text>
-                <Text strong style={{ fontSize: 16, color: '#22C55E' }}>{relevantLabReports?.filter((r: any) => r.status === 'ready' || r.status === 'completed').length || 0}</Text>
-              </div>
-              <Divider type="vertical" style={{ height: 24, margin: 0 }} />
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flex: 1 }}>
-                <Text type="secondary" style={{ fontSize: 14, minWidth: 100 }}>Total:</Text>
-                <Text strong style={{ fontSize: 16, color: labTheme.primary }}>{relevantLabReports?.length || 0}</Text>
-              </div>
-              <div style={{ marginLeft: 'auto', textAlign: 'right' }}>
-                <Text type="secondary" style={{ fontSize: 12 }}>
-                  {relevantLabReports?.filter((r: any) => r.status === 'completed' || r.status === 'ready').length || 0} of {relevantLabReports?.length || 0} completed
-                </Text>
+              <div style={{ fontSize: 14 }}>
+                <span style={{ color: '#6B7280' }}>Total: </span>
+                <span style={{ fontWeight: 600, color: '#262626' }}>{relevantLabReports?.length || 0}</span>
+                <span style={{ color: '#6B7280', marginLeft: 16 }}>
+                  (<span style={{ fontWeight: 600, color: '#059669' }}>{relevantLabReports?.filter((r: any) => r.status === 'completed' || r.status === 'ready').length || 0}</span> completed today)
+                </span>
               </div>
             </div>
           </Card>
@@ -989,33 +982,73 @@ export default function LabDashboard() {
                   flex: 1,
                   minHeight: 0,
                 }}
-                title="Lab Reports Queue"
-                extra={
-                      <Space>
-                    <Select
-                      value={statusFilter}
-                      onChange={setStatusFilter}
-                      style={{ width: 120 }}
-                      size="small"
-                    >
-                      <Option value="all">All Status</Option>
-                      <Option value="pending">Pending</Option>
-                      <Option value="processing">Processing</Option>
-                      <Option value="ready">Ready</Option>
-                      <Option value="completed">Completed</Option>
-                    </Select>
-                    <Button type="link" onClick={() => { setSidebarView('report-release'); setLocation('/dashboard/lab?view=report-release'); }}>View All</Button>
-                      </Space>
-                    }
-                bodyStyle={{ 
-                  flex: 1, 
-                  minHeight: 0, 
-                  display: 'flex', 
-                  flexDirection: 'column',
-                  overflow: 'hidden',
-                  padding: 0,
+                styles={{ 
+                  body: { 
+                    flex: 1, 
+                    minHeight: 0, 
+                    display: 'flex', 
+                    flexDirection: 'column',
+                    overflow: 'hidden',
+                    padding: 0,
+                  },
                 }}
               >
+                {/* Figma: Header with title, subtitle, filters, date tabs */}
+                <div style={{ padding: '24px 24px 16px', borderBottom: '1px solid #E5E7EB' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 16, marginBottom: 16 }}>
+                    <div>
+                      <h3 style={{ margin: 0, fontSize: 18, fontWeight: 600, color: '#262626' }}>Lab Reports Queue</h3>
+                      <p style={{ margin: '4px 0 0', fontSize: 14, color: '#6B7280' }}>Manage and track lab test reports</p>
+                    </div>
+                    <Space size={12}>
+                      <Select
+                        value={statusFilter}
+                        onChange={setStatusFilter}
+                        style={{ width: 140 }}
+                        size="small"
+                        options={[
+                          { value: 'all', label: 'All Status' },
+                          { value: 'pending', label: 'Pending' },
+                          { value: 'processing', label: 'Processing' },
+                          { value: 'ready', label: 'Ready' },
+                          { value: 'completed', label: 'Completed' },
+                        ]}
+                      />
+                      <Button type="link" onClick={() => { setSidebarView('report-release'); setLocation('/dashboard/lab?view=report-release'); }} style={{ color: '#8B5CF6', fontWeight: 500, padding: 0 }}>
+                        View All <RightOutlined style={{ fontSize: 12, marginLeft: 4 }} />
+                      </Button>
+                    </Space>
+                  </div>
+                  {/* Date tabs - Figma */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    {[
+                      { id: 'today' as const, label: 'Today', count: dateTabCounts.today },
+                      { id: 'yesterday' as const, label: 'Yesterday', count: dateTabCounts.yesterday },
+                      { id: 'all' as const, label: 'All', count: dateTabCounts.all },
+                    ].map((tab) => (
+                      <button
+                        key={tab.id}
+                        type="button"
+                        onClick={() => setDateTab(tab.id)}
+                        style={{
+                          padding: '8px 16px',
+                          borderRadius: 8,
+                          fontSize: 14,
+                          fontWeight: 500,
+                          border: 'none',
+                          cursor: 'pointer',
+                          background: dateTab === tab.id ? '#EDE9FE' : 'transparent',
+                          color: dateTab === tab.id ? '#7C3AED' : '#6B7280',
+                        }}
+                      >
+                        {tab.label}
+                        <span style={{ marginLeft: 8, padding: '2px 8px', borderRadius: 9999, fontSize: 12, background: dateTab === tab.id ? '#7C3AED' : '#F3F4F6', color: dateTab === tab.id ? '#fff' : '#6B7280' }}>
+                          {tab.count}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
                 <div style={{ 
                   flex: 1, 
                   minHeight: 0, 
@@ -1024,56 +1057,28 @@ export default function LabDashboard() {
                   overflow: 'hidden',
                   padding: isMobile ? 12 : 16,
                 }}>
-                  {/* Doctor Requests Section */}
+                  {/* Doctor Requests table (when any) - show above main table */}
                   {doctorRequests.length > 0 && (
                     <div style={{ marginBottom: 16 }}>
                       <Space style={{ marginBottom: 12 }}>
-                        <ExperimentOutlined style={{ color: labTheme.accent }} />
+                        <ExperimentOutlined style={{ color: '#8B5CF6' }} />
                         <Text strong>Doctor Requests ({doctorRequests.length})</Text>
-                        <Tag color="orange">New</Tag>
+                        <Tag color="purple">New</Tag>
                       </Space>
-                    {isMobile ? (
-                      <Space direction="vertical" size={12} style={{ width: '100%' }}>
-                        {doctorRequests.map((report: any) => {
-                          const row = {
-                            ...report,
-                            id: report.id,
-                            patient: report.patientName || report.patient || 'Unknown',
-                            testName: report.testName || 'Test',
-                            date: report.reportDate ? new Date(report.reportDate).toLocaleDateString() : 'N/A',
-                            result: 'Requested',
-                            priority: report.priority || 'Normal',
-                            status: report.status || 'pending',
-                          };
-                          return renderMobileReportCard(row, { accentBorder: true, badgeText: 'New' });
-                        })}
-                      </Space>
-                    ) : (
+                      {isMobile ? (
+                        <Space direction="vertical" size={12} style={{ width: '100%' }}>
+                          {doctorRequests.map((report: any) => {
+                            const row = { ...report, id: report.id, patient: report.patientName || report.patient || 'Unknown', testName: report.testName || 'Test', date: report.reportDate ? new Date(report.reportDate).toLocaleDateString() : 'N/A', result: 'Requested', priority: report.priority || 'Normal', status: report.status || 'pending' };
+                            return renderMobileReportCard(row, { accentBorder: true, badgeText: 'New' });
+                          })}
+                        </Space>
+                      ) : (
                         <div style={{ overflowX: 'auto', marginBottom: 16 }}>
-                        <Table
-                          columns={reportColumns}
-                          dataSource={doctorRequests.map((report: any) => ({
-                            ...report,
-                            id: report.id,
-                            patient: report.patientName || report.patient || 'Unknown',
-                            testName: report.testName || 'Test',
-                            date: report.reportDate ? new Date(report.reportDate).toLocaleDateString() : 'N/A',
-                            result: 'Requested',
-                            priority: report.priority || 'Normal',
-                            status: report.status || 'pending',
-                          }))}
-                          pagination={false}
-                          rowKey="id"
-                          size={isMobile ? "small" : "middle"}
-                          scroll={isMobile ? { x: 'max-content' } : undefined}
-                          style={{
-                            backgroundColor: labTheme.background
-                          }}
-                        />
-                      </div>
-                    )}
+                          <Table columns={reportColumns} dataSource={doctorRequests.map((r: any) => ({ ...r, id: r.id, patient: r.patientName || r.patient || 'Unknown', testName: r.testName || 'Test', hospital: r.hospitalName ?? '—', date: r.reportDate ? new Date(r.reportDate).toLocaleDateString() : 'N/A', result: 'Requested', priority: r.priority || 'Normal', status: r.status || 'pending' }))} pagination={false} rowKey="id" size="small" scroll={{ x: 'max-content' }} style={{ backgroundColor: '#FAFAFA' }} />
+                        </div>
+                      )}
                     </div>
-                )}
+                  )}
 
                 {/* Regular Lab Reports */}
                   {isMobile ? (
@@ -1102,14 +1107,25 @@ export default function LabDashboard() {
                               ...(labReports.length > 3 ? { y: 'calc(100vh - 520px)' } : {}),
                             }}
                         loading={labReportsLoading}
-                        style={{
-                          backgroundColor: labTheme.background
-                        }}
+                        style={{ backgroundColor: '#fff' }}
+                        className="lab-reports-queue-table"
                       />
                         </div>
                       </div>
                     </div>
                   )}
+                </div>
+                {/* Figma: Doctor Requests footer bar */}
+                <div style={{ padding: '16px 24px', background: '#FAFAFA', borderTop: '1px solid #E5E7EB', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <span style={{ fontSize: 14, fontWeight: 600, color: '#262626' }}>Doctor Requests</span>
+                    <span style={{ padding: '2px 8px', background: '#8B5CF6', color: '#fff', fontSize: 12, fontWeight: 500, borderRadius: 9999 }}>New</span>
+                    <span style={{ fontSize: 14, color: '#6B7280' }}>({doctorRequests.length} pending)</span>
+                  </div>
+                  <Button type="link" size="small" style={{ color: '#8B5CF6', fontWeight: 500 }} onClick={() => message.info('View requests')}>
+                    View Requests
+                    <RightOutlined style={{ marginLeft: 4, fontSize: 12 }} />
+                  </Button>
                 </div>
               </Card>
             </Col>

@@ -1,8 +1,8 @@
 // server/storage/hospitals.ts
-import { db } from '../db';
-import { hospitals } from '../../shared/schema';
+import { db } from '../db.js';
+import { hospitals } from '../../shared/schema.js';
 import { eq } from 'drizzle-orm';
-import type { InsertHospital } from '../../shared/schema-types';
+import type { InsertHospital } from '../../shared/schema-types.js';
 
 export const createHospital = (hospital: InsertHospital) => {
   return db.insert(hospitals).values(hospital).returning();

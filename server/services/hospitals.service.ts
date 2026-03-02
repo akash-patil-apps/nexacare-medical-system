@@ -1,9 +1,9 @@
 // server/services/hospitals.service.ts
-import { db } from '../db';
-import { hospitals, doctors, nurses, receptionists, pharmacists, radiologyTechnicians, users, appointments, patients, payments, invoices, beds, rooms, wards } from '../../shared/schema';
+import { db } from '../db.js';
+import { hospitals, doctors, nurses, receptionists, pharmacists, radiologyTechnicians, users, appointments, patients, payments, invoices, beds, rooms, wards } from '../../shared/schema.js';
 import { eq, and, gte, sql } from 'drizzle-orm';
-import type { InsertHospital } from '../../shared/schema-types';
-import { labs } from '../../shared/schema';
+import type { InsertHospital } from '../../shared/schema-types.js';
+import { labs } from '../../shared/schema.js';
 
 
 /**
@@ -27,17 +27,42 @@ async function getBedCountByHospital(): Promise<Record<number, number>> {
 }
 
 /**
+ * Fetch min consultation fee per hospital (from doctors) for sorting.
+ */
+async function getMinConsultationFeeByHospital(): Promise<Record<number, number>> {
+  const rows = await db
+    .select({
+      hospitalId: doctors.hospitalId,
+      minFee: sql<string>`min(${doctors.consultationFee})::text`,
+    })
+    .from(doctors)
+    .where(sql`${doctors.hospitalId} is not null`)
+    .groupBy(doctors.hospitalId);
+  const map: Record<number, number> = {};
+  for (const row of rows) {
+    if (row.hospitalId != null && row.minFee != null) {
+      const n = parseFloat(row.minFee);
+      if (!Number.isNaN(n)) map[row.hospitalId] = n;
+    }
+  }
+  return map;
+}
+
+/**
  * Fetch all hospitals from DB. totalBeds is set from actual beds in IPD (added by admin), not from onboarding.
+ * minConsultationFee is set from the cheapest doctor at each hospital (for booking sort by cost).
  */
 export const getAllHospitals = async () => {
   try {
-    const [result, bedCountByHospital] = await Promise.all([
+    const [result, bedCountByHospital, minFeeByHospital] = await Promise.all([
       db.select().from(hospitals),
       getBedCountByHospital(),
+      getMinConsultationFeeByHospital(),
     ]);
     return result.map((h) => ({
       ...h,
       totalBeds: bedCountByHospital[h.id] ?? 0,
+      minConsultationFee: minFeeByHospital[h.id] ?? null,
     }));
   } catch (error) {
     console.error('❌ Error fetching hospitals:', error);

@@ -1,8 +1,8 @@
 // server/routes/messages.routes.ts
 // In-platform messaging API: send and receive messages between users
 import { Router } from 'express';
-import { authenticateToken } from '../middleware/auth';
-import type { AuthenticatedRequest } from '../types';
+import { authenticateToken } from '../middleware/auth.js';
+import type { AuthenticatedRequest } from '../types.js';
 import {
   sendMessage,
   getConversations,
@@ -10,7 +10,7 @@ import {
   markConversationAsRead,
   searchUsersToMessage,
   getUnreadMessageCount,
-} from '../services/messages.service';
+} from '../services/messages.service.js';
 import { z } from 'zod';
 
 const router = Router();

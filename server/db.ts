@@ -1,7 +1,7 @@
 // server/db.ts - Real database connection
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
-import * as schema from "../shared/schema";
+import * as schema from "../shared/schema.js";
 import * as dotenv from "dotenv";
 
 // Ensure DATABASE_URL from .env is available at runtime (drizzle-kit already loads .env in drizzle.config.ts)

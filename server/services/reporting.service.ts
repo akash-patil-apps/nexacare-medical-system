@@ -1,5 +1,5 @@
 // server/services/reporting.service.ts
-import { db } from '../db';
+import { db } from '../db.js';
 import {
   appointments,
   labOrders,
@@ -9,7 +9,7 @@ import {
   ipdEncounters,
   opdQueueEntries,
   bedAllocations,
-} from '../../shared/schema';
+} from '../../shared/schema.js';
 import { eq, and, gte, lte, sql, desc, count } from 'drizzle-orm';
 
 /**

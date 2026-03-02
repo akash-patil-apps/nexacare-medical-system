@@ -1,8 +1,8 @@
 // server/routes/audit.routes.ts
 import { Router } from 'express';
-import { authenticateToken, authorizeRoles, type AuthenticatedRequest } from '../middleware/auth';
-import { db } from '../db';
-import { auditLogs, users, hospitals } from '../../shared/schema';
+import { authenticateToken, authorizeRoles, type AuthenticatedRequest } from '../middleware/auth.js';
+import { db } from '../db.js';
+import { auditLogs, users, hospitals } from '../../shared/schema.js';
 import { and, eq, gte, lte, sql } from 'drizzle-orm';
 
 const router = Router();

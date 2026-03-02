@@ -10,6 +10,7 @@ import {
   uuid,
   unique,
   primaryKey,
+  jsonb,
 } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { createInsertSchema } from "drizzle-zod";
@@ -1134,6 +1135,20 @@ export const labTestCatalog = pgTable("lab_test_catalog", {
   updatedAt: timestamp("updated_at"),
 });
 
+// Lab Test Result Parameters - Template parameters per catalog test (for result entry)
+export const labTestResultParameters = pgTable("lab_test_result_parameters", {
+  id: serial("id").primaryKey(),
+  labTestCatalogId: integer("lab_test_catalog_id").references(() => labTestCatalog.id, { onDelete: "cascade" }).notNull(),
+  parameterName: text("parameter_name").notNull(),
+  unit: text("unit"),
+  normalRange: text("normal_range"),
+  sortOrder: integer("sort_order").default(0).notNull(),
+  isRequired: boolean("is_required").default(false),
+  referenceRangesByGroup: jsonb("reference_ranges_by_group").$type<Array<{ group: string; unit?: string; normalRange: string }>>(),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at"),
+});
+
 // Radiology/Imaging Test Catalog - Master list of imaging tests
 export const radiologyTestCatalog = pgTable("radiology_test_catalog", {
   id: serial("id").primaryKey(),
@@ -1418,6 +1433,8 @@ export type MedicineCatalog = InferSelectModel<typeof medicineCatalog>;
 
 export type InsertLabTestCatalog = InferInsertModel<typeof labTestCatalog>;
 export type LabTestCatalog = InferSelectModel<typeof labTestCatalog>;
+export type InsertLabTestResultParameter = InferInsertModel<typeof labTestResultParameters>;
+export type LabTestResultParameter = InferSelectModel<typeof labTestResultParameters>;
 
 export type InsertRadiologyTestCatalog = InferInsertModel<typeof radiologyTestCatalog>;
 export type RadiologyTestCatalog = InferSelectModel<typeof radiologyTestCatalog>;
@@ -1768,6 +1785,16 @@ export const labSamplesRelations = relations(labSamples, ({ one, many }) => ({
 export const labResultsRelations = relations(labResults, ({ one }) => ({
   labOrderItem: one(labOrderItems, { fields: [labResults.labOrderItemId], references: [labOrderItems.id] }),
   labSample: one(labSamples, { fields: [labResults.labSampleId], references: [labSamples.id] }),
+}));
+
+// Lab Test Catalog Relations
+export const labTestCatalogRelations = relations(labTestCatalog, ({ many }) => ({
+  resultParameters: many(labTestResultParameters),
+}));
+
+// Lab Test Result Parameters Relations
+export const labTestResultParametersRelations = relations(labTestResultParameters, ({ one }) => ({
+  labTestCatalog: one(labTestCatalog, { fields: [labTestResultParameters.labTestCatalogId], references: [labTestCatalog.id] }),
 }));
 
 // Radiology Orders Relations

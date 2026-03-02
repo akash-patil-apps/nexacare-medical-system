@@ -1,9 +1,9 @@
 import { Router } from 'express';
-import * as queueService from '../services/queue.service';
-import { authenticateToken, authorizeRoles, type AuthenticatedRequest } from '../middleware/auth';
-import { db } from '../db';
+import * as queueService from '../services/queue.service.js';
+import { authenticateToken, authorizeRoles, type AuthenticatedRequest } from '../middleware/auth.js';
+import { db } from '../db.js';
 import { eq } from 'drizzle-orm';
-import { receptionists, hospitals } from '../../shared/schema';
+import { receptionists, hospitals } from '../../shared/schema.js';
 
 const router = Router();
 

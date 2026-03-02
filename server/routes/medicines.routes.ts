@@ -1,9 +1,9 @@
 // server/routes/medicines.routes.ts
 // Medicine/Inventory API - Accessible to all dashboards that need medicine data
 import { Router } from 'express';
-import { authenticateToken, type AuthenticatedRequest } from '../middleware/auth';
-import { db } from '../db';
-import { prescriptions, medicationOrders, medicineCatalog } from '../../shared/schema';
+import { authenticateToken, type AuthenticatedRequest } from '../middleware/auth.js';
+import { db } from '../db.js';
+import { prescriptions, medicationOrders, medicineCatalog } from '../../shared/schema.js';
 import { eq, and, sql, desc, gte, lte, or, isNull, like, ilike } from 'drizzle-orm';
 
 const router = Router();

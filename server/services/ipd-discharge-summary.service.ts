@@ -1,5 +1,5 @@
 // server/services/ipd-discharge-summary.service.ts
-import { db } from "../db";
+import { db } from "../db.js";
 import {
   ipdEncounters,
   medicationOrders,
@@ -9,11 +9,11 @@ import {
   invoices,
   invoiceItems,
   payments,
-} from "../../shared/schema";
+} from "../../shared/schema.js";
 import { eq, and, desc } from "drizzle-orm";
-import * as ipdOrdersService from "./ipd-orders.service";
-import * as ipdRoundsService from "./ipd-rounds.service";
-import * as chargesService from "./hospital-charges.service";
+import * as ipdOrdersService from "./ipd-orders.service.js";
+import * as ipdRoundsService from "./ipd-rounds.service.js";
+import * as chargesService from "./hospital-charges.service.js";
 
 /**
  * Generate comprehensive discharge summary for IPD patient

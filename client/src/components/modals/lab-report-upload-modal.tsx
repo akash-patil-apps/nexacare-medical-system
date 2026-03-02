@@ -1,31 +1,165 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   Modal,
   Form,
   Input,
   Button,
   Select,
-  DatePicker,
   Space,
   Typography,
   Upload,
   message,
   Row,
   Col,
-  Tag,
+  Table,
 } from 'antd';
 import {
   UploadOutlined,
-  FileTextOutlined,
   ExperimentOutlined,
+  CloseOutlined,
 } from '@ant-design/icons';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import dayjs from 'dayjs';
-import type { Dayjs } from 'dayjs';
 
 const { TextArea } = Input;
-const { Title, Text } = Typography;
+const { Text } = Typography;
 const { Option } = Select;
+
+/** Parse "min-max" or "min - max" from range text; return null if not found. */
+function parseRange(rangeStr: string | undefined): { min: number; max: number } | null {
+  if (!rangeStr || typeof rangeStr !== 'string') return null;
+  const m = rangeStr.match(/(\d*\.?\d+)\s*[-–]\s*(\d*\.?\d+)/);
+  if (!m) return null;
+  const min = parseFloat(m[1]);
+  const max = parseFloat(m[2]);
+  if (Number.isNaN(min) || Number.isNaN(max)) return null;
+  return { min, max };
+}
+
+/** Return true if numeric value is outside the parsed range (or no range). */
+function isValueOutOfRange(value: string | number | undefined, rangeStr: string | undefined): boolean {
+  if (value === undefined || value === null || value === '') return false;
+  const num = typeof value === 'string' ? parseFloat(value.trim()) : value;
+  if (Number.isNaN(num)) return false;
+  const range = parseRange(rangeStr);
+  if (!range) return false;
+  return num < range.min || num > range.max;
+}
+
+function ValueInputWithRangeHighlight({
+  normalRange,
+  placeholder,
+  name,
+  ...rest
+}: { normalRange?: string; placeholder?: string; name?: any } & Omit<React.ComponentProps<typeof Input>, 'name'>) {
+  const form = Form.useFormInstance();
+  const value = Form.useWatch(name, form);
+  const outOfRange = isValueOutOfRange(value, normalRange);
+  return (
+    <Input
+      {...rest}
+      placeholder={placeholder}
+      style={{
+        ...rest.style,
+        backgroundColor: outOfRange ? '#FEE2E2' : undefined,
+        borderColor: outOfRange ? '#EF4444' : undefined,
+      }}
+    />
+  );
+}
+
+type ResultTemplateParam = {
+  id: number;
+  parameterName: string;
+  unit?: string;
+  normalRange?: string;
+  sortOrder: number;
+  isRequired: boolean;
+  referenceRangesByGroup?: Array<{ group: string; unit?: string; normalRange: string }>;
+};
+
+type ResultTemplate = {
+  labTest: { id: number; name: string; code?: string; category?: string };
+  parameters: ResultTemplateParam[];
+};
+
+/** Get reference range string for a parameter based on patient gender (from referenceRangesByGroup). */
+function getRangeForGender(
+  param: ResultTemplateParam,
+  gender: string | null | undefined
+): string | undefined {
+  const groups = param.referenceRangesByGroup;
+  if (!groups?.length || !gender) return param.normalRange;
+  const g = String(gender).trim().toLowerCase();
+  const match = groups.find(
+    (r) => String(r.group || '').trim().toLowerCase() === g
+  );
+  if (match) return match.normalRange;
+  return param.normalRange;
+}
+
+const STATUS_OPTIONS = [
+  { label: 'Pending', value: 'pending' },
+  { label: 'Processing', value: 'processing' },
+  { label: 'Ready', value: 'ready' },
+  { label: 'Completed', value: 'completed' },
+] as const;
+
+/** Segmented control with a sliding pill that moves to the selected option (Figma-style). */
+function StatusSegmentedWithPill({ value, onChange }: { value?: string; onChange?: (v: string) => void }) {
+  const status = value || 'pending';
+  const index = Math.max(0, STATUS_OPTIONS.findIndex((o) => o.value === status));
+  return (
+    <div
+      style={{
+        position: 'relative',
+        display: 'flex',
+        background: '#F9FAFB',
+        padding: 4,
+        borderRadius: 8,
+        width: '100%',
+      }}
+    >
+      {/* Sliding pill */}
+      <div
+        style={{
+          position: 'absolute',
+          top: 4,
+          bottom: 4,
+          left: `calc(${index * 25}% + 4px)`,
+          width: 'calc(25% - 8px)',
+          background: '#8B5CF6',
+          borderRadius: 6,
+          transition: 'left 0.25s ease',
+          pointerEvents: 'none',
+        }}
+      />
+      {STATUS_OPTIONS.map((opt) => (
+        <button
+          key={opt.value}
+          type="button"
+          onClick={() => onChange?.(opt.value)}
+          style={{
+            flex: 1,
+            padding: '8px 16px',
+            border: 'none',
+            background: 'transparent',
+            borderRadius: 6,
+            fontSize: 14,
+            fontWeight: 500,
+            color: status === opt.value ? '#fff' : '#6B7280',
+            cursor: 'pointer',
+            position: 'relative',
+            zIndex: 1,
+            transition: 'color 0.2s ease',
+          }}
+        >
+          {opt.label}
+        </button>
+      ))}
+    </div>
+  );
+}
 
 interface LabReportUploadModalProps {
   open: boolean;
@@ -43,6 +177,46 @@ export default function LabReportUploadModal({
   const [form] = Form.useForm();
   const queryClient = useQueryClient();
   const [fileList, setFileList] = useState<any[]>([]);
+
+  const watchedTestName = Form.useWatch('testName', form);
+  const watchedPatientId = Form.useWatch('patientId', form);
+  const testName = report?.testName ?? watchedTestName;
+  const testNameStr = typeof testName === 'string' ? testName.trim() : '';
+
+  // Fetch lab test catalog (to resolve test name -> catalog id for template)
+  const { data: labTestsList = [] } = useQuery({
+    queryKey: ['/api/lab-tests'],
+    queryFn: async () => {
+      const token = localStorage.getItem('auth-token');
+      const res = await fetch('/api/lab-tests', { headers: { Authorization: `Bearer ${token}` } });
+      if (!res.ok) return [];
+      const data = await res.json();
+      return Array.isArray(data) ? data : [];
+    },
+    enabled: open && !!testNameStr,
+  });
+
+  const catalogId = useMemo(() => {
+    if (!testNameStr) return null;
+    const match = (labTestsList as any[]).find((t: any) => (t.name || '').trim() === testNameStr);
+    return match?.id ?? null;
+  }, [labTestsList, testNameStr]);
+
+  const { data: resultTemplate, isLoading: templateLoading } = useQuery({
+    queryKey: ['/api/lab-tests', catalogId, 'result-template'],
+    queryFn: async (): Promise<ResultTemplate> => {
+      const token = localStorage.getItem('auth-token');
+      const res = await fetch(`/api/lab-tests/${catalogId}/result-template`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) throw new Error('Failed to fetch template');
+      return res.json();
+    },
+    enabled: open && !!catalogId,
+  });
+
+  const hasTemplate = !!(resultTemplate?.parameters?.length);
+  const templateParams = resultTemplate?.parameters ?? [];
 
   // Fetch patients for selection
   const { data: patientsData } = useQuery({
@@ -64,6 +238,14 @@ export default function LabReportUploadModal({
     : Array.isArray(patientsData) 
       ? patientsData 
       : [];
+
+  // Resolve patient gender for gender-specific reference ranges (must be after patients is defined)
+  const selectedPatient = useMemo(() => {
+    const id = report ? report.patientId : watchedPatientId;
+    if (id == null) return null;
+    return (patients as any[]).find((p: any) => p.id === id) ?? null;
+  }, [report?.patientId, watchedPatientId, patients]);
+  const patientGender = selectedPatient?.gender ?? null;
 
   // Fetch doctors for selection
   const { data: doctorsData } = useQuery({
@@ -89,8 +271,6 @@ export default function LabReportUploadModal({
   useEffect(() => {
     if (open) {
       if (report) {
-        // Edit mode - populate form with existing data
-        // Use patientName/doctorName from report if available, otherwise use IDs
         form.setFieldsValue({
           patientId: report.patientId,
           doctorId: report.doctorId,
@@ -101,7 +281,6 @@ export default function LabReportUploadModal({
           status: report.status || 'pending',
         });
       } else {
-        // New report - reset form
         form.resetFields();
         form.setFieldsValue({
           status: 'pending',
@@ -110,6 +289,28 @@ export default function LabReportUploadModal({
       setFileList([]);
     }
   }, [open, report, form]);
+
+  // When result template loads, set parameterResults initial values (and try to parse report.results when editing)
+  useEffect(() => {
+    if (!open || !hasTemplate || templateParams.length === 0) return;
+    const existing = form.getFieldValue('parameterResults');
+    if (Array.isArray(existing) && existing.length === templateParams.length) return;
+    const resultsStr = report?.results;
+    const parsed: Record<string, string> = {};
+    if (typeof resultsStr === 'string') {
+      resultsStr.split(/\n/).forEach((line) => {
+        const m = line.match(/^([^:]+):\s*(.+)$/);
+        if (m) parsed[m[1].trim()] = m[2].trim();
+      });
+    }
+    const next = templateParams.map((p, i) => ({
+      parameterName: p.parameterName,
+      resultValue: parsed[p.parameterName] ?? '',
+      unit: p.unit ?? '',
+      normalRange: p.normalRange ?? '',
+    }));
+    form.setFieldsValue({ parameterResults: next });
+  }, [open, hasTemplate, templateParams, report?.results, form]);
 
   const uploadMutation = useMutation({
     mutationFn: async (values: any) => {
@@ -187,7 +388,29 @@ export default function LabReportUploadModal({
   const handleSubmit = async () => {
     try {
       const values = await form.validateFields();
-      uploadMutation.mutate(values);
+      if (hasTemplate && values.parameterResults) {
+        const lines = (values.parameterResults as any[])
+          .filter((r: any) => r?.resultValue != null && String(r.resultValue).trim() !== '')
+          .map((r: any, idx: number) => {
+            const param = templateParams[idx];
+            const effectiveRange = param ? getRangeForGender(param, patientGender) : r.normalRange;
+            const u = r.unit ? ` ${r.unit}` : '';
+            const ref = effectiveRange ? ` (ref: ${effectiveRange})` : '';
+            return `${r.parameterName}: ${String(r.resultValue).trim()}${u}${ref}`;
+          });
+        if (lines.length === 0) {
+          message.warning('Enter at least one result value.');
+          return;
+        }
+        uploadMutation.mutate({
+          ...values,
+          results: lines.join('\n'),
+          normalRanges: templateParams.map((p) => getRangeForGender(p, patientGender) || '').filter(Boolean).join('; ') || values.normalRanges,
+          parameterResults: undefined,
+        });
+      } else {
+        uploadMutation.mutate(values);
+      }
     } catch (error) {
       console.error('Validation failed:', error);
     }
@@ -207,39 +430,63 @@ export default function LabReportUploadModal({
   };
 
 
+  const isEditing = !!report;
   return (
     <Modal
-      title={
-        <Space>
-          <ExperimentOutlined style={{ fontSize: '20px', color: '#0EA5E9' }} />
-          <span>{report ? 'Edit Lab Report' : 'Upload Lab Report'}</span>
-        </Space>
-      }
+      className="lab-report-upload-modal"
+      title={null}
       open={open}
       onCancel={onCancel}
-      width={700}
-      footer={[
-        <Button key="cancel" onClick={onCancel}>
-          Cancel
-        </Button>,
-        <Button
-          key="submit"
-          type="primary"
-          onClick={handleSubmit}
-          loading={uploadMutation.isPending}
-          icon={<UploadOutlined />}
-        >
-          {report ? 'Update Report' : 'Upload Report'}
-        </Button>,
-      ]}
+      width={1152}
+      footer={null}
       destroyOnHidden
+      closable={false}
+      styles={{
+        content: {
+          background: '#FFFFFF',
+          backgroundColor: '#FFFFFF',
+          padding: 0,
+          height: '90vh',
+          maxHeight: '90vh',
+          display: 'flex',
+          flexDirection: 'column',
+          overflow: 'hidden',
+        },
+        body: {
+          padding: 0,
+          flex: 1,
+          minHeight: 0,
+          display: 'flex',
+          flexDirection: 'column',
+          overflow: 'hidden',
+        },
+      }}
     >
+      {/* Figma: Custom header — fixed, no shrink */}
+      <div style={{ flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 12px 8px', borderBottom: '1px solid #E5E7EB' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <div style={{ width: 40, height: 40, background: '#F5F3FF', borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <ExperimentOutlined style={{ fontSize: 20, color: '#A78BFA' }} />
+          </div>
+          <div>
+            <h2 style={{ margin: 0, fontSize: 20, fontWeight: 600, color: '#262626' }}>
+              {isEditing ? 'Edit Lab Report' : 'Upload Lab Report'}
+            </h2>
+            <p style={{ margin: '2px 0 0', fontSize: 14, color: '#6B7280' }}>
+              {isEditing ? 'Update test results and status' : 'Create a new lab report'}
+            </p>
+          </div>
+        </div>
+        <Button type="text" onClick={onCancel} style={{ width: 40, height: 40 }} icon={<CloseOutlined style={{ fontSize: 18, color: '#6B7280' }} />} />
+      </div>
+      {/* Scrollable body — only this area scrolls */}
+      <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '24px' }}>
       <Form
         form={form}
         layout="vertical"
         requiredMark={false}
       >
-        <Row gutter={16}>
+        <Row gutter={24}>
           <Col span={12}>
             <Form.Item
               name="patientId"
@@ -316,83 +563,161 @@ export default function LabReportUploadModal({
           </Col>
         </Row>
 
-        <Form.Item
-          name="testName"
-          label="Test Name"
-          rules={[{ required: true, message: 'Please enter test name' }]}
-        >
-          <Input 
-            placeholder="e.g., Complete Blood Count" 
-            disabled={!!report} // Make read-only when editing - test name should not be changed
-            readOnly={!!report}
-          />
-        </Form.Item>
+        <Row gutter={24}>
+          <Col span={report ? 12 : 24}>
+            <Form.Item
+              name="testName"
+              label="Test Name"
+              rules={[{ required: true, message: 'Please enter test name' }]}
+            >
+              <Input 
+                placeholder="e.g., Complete Blood Count" 
+                disabled={!!report}
+                readOnly={!!report}
+                style={{ background: report ? '#F9FAFB' : undefined }}
+              />
+            </Form.Item>
+          </Col>
+          {report && (
+            <Col span={12}>
+              <Form.Item label="Report Date">
+                <Input 
+                  value={report.reportDate ? dayjs(report.reportDate).format('YYYY-MM-DD HH:mm') : 'N/A'} 
+                  disabled 
+                  readOnly
+                  style={{ background: '#F9FAFB' }}
+                />
+                <Text type="secondary" style={{ fontSize: 12, display: 'block', marginTop: 6 }}>
+                  Report date is set when submitted
+                </Text>
+              </Form.Item>
+            </Col>
+          )}
+        </Row>
 
-        <Form.Item
-          name="results"
-          label="Results"
-          rules={[{ required: true, message: 'Please enter test results' }]}
-        >
-          <TextArea
-            rows={4}
-            placeholder="Enter test results, values, and findings..."
-          />
-        </Form.Item>
-
-        <Form.Item
-          name="normalRanges"
-          label="Normal Ranges (Optional)"
-        >
-          <Input placeholder="e.g., 4.0-11.0 x 10^9/L" />
-        </Form.Item>
+        {templateLoading ? (
+          <div style={{ padding: '12px 0', color: '#8c8c8c' }}>Loading result template…</div>
+        ) : hasTemplate ? (
+          <>
+            {templateParams.map((p, index) => (
+              <Form.Item key={`hidden-${p.id}`} name={['parameterResults', index, 'parameterName']} hidden>
+                <Input />
+              </Form.Item>
+            ))}
+            {templateParams.map((p, index) => (
+              <Form.Item key={`unit-${p.id}`} name={['parameterResults', index, 'unit']} hidden>
+                <Input />
+              </Form.Item>
+            ))}
+            {templateParams.map((p, index) => (
+              <Form.Item key={`range-${p.id}`} name={['parameterResults', index, 'normalRange']} hidden>
+                <Input />
+              </Form.Item>
+            ))}
+            <Form.Item name="normalRanges" hidden><Input /></Form.Item>
+            <div className="lab-report-params-table-wrapper" style={{ marginBottom: 24, border: '1px solid #E5E7EB', borderRadius: 8, overflow: 'hidden' }}>
+            <Table
+              size="small"
+              pagination={false}
+              bordered={false}
+              rowKey={(_, i) => String(i)}
+              dataSource={templateParams.map((p, index) => ({ ...p, index }))}
+              style={{ border: 'none' }}
+              columns={[
+                {
+                  title: 'Parameter',
+                  key: 'parameter',
+                  width: 180,
+                  render: (_: any, row: ResultTemplateParam & { index: number }) => (
+                    <span>
+                      <Text strong>{row.parameterName}</Text>
+                      {row.unit && <Text type="secondary" style={{ marginLeft: 6, fontSize: 12 }}>({row.unit})</Text>}
+                    </span>
+                  ),
+                },
+                {
+                  title: 'Reference Range',
+                  key: 'range',
+                  width: 220,
+                  render: (_: any, row: ResultTemplateParam) => (
+                    <Text type="secondary" style={{ fontSize: 12 }}>
+                      {getRangeForGender(row, patientGender) || '—'}
+                    </Text>
+                  ),
+                },
+                {
+                  title: 'Value',
+                  key: 'value',
+                  render: (_: any, row: ResultTemplateParam & { index: number }) => {
+                    const index = row.index;
+                    const effectiveRange = getRangeForGender(row, patientGender);
+                    return (
+                      <Form.Item
+                        name={['parameterResults', index, 'resultValue']}
+                        rules={row.isRequired ? [{ required: true, message: `Enter ${row.parameterName}` }] : undefined}
+                        style={{ marginBottom: 0 }}
+                      >
+                        <ValueInputWithRangeHighlight
+                          name={['parameterResults', index, 'resultValue']}
+                          placeholder={row.unit ? `in ${row.unit}` : 'Enter value'}
+                          normalRange={effectiveRange}
+                        />
+                      </Form.Item>
+                    );
+                  },
+                },
+              ]}
+            />
+            </div>
+            <style>{`
+              .lab-report-params-table-wrapper .ant-table-thead > tr > th {
+                border-bottom: 1px solid #E5E7EB;
+                background: #F9FAFB;
+                border-inline: none !important;
+              }
+              .lab-report-params-table-wrapper .ant-table-tbody > tr > td {
+                border-bottom: 1px solid #E5E7EB;
+                border-inline: none !important;
+              }
+              .lab-report-params-table-wrapper .ant-table-tbody > tr:last-child > td {
+                border-bottom: none;
+              }
+              .lab-report-params-table-wrapper .ant-table-container {
+                border: none;
+              }
+              .lab-report-params-table-wrapper table {
+                border: none;
+              }
+            `}</style>
+          </>
+        ) : (
+          <>
+            <Form.Item
+              name="results"
+              label="Results"
+              rules={[{ required: true, message: 'Please enter test results' }]}
+            >
+              <TextArea
+                rows={4}
+                placeholder="Enter test results, values, and findings..."
+              />
+            </Form.Item>
+            <Form.Item
+              name="normalRanges"
+              label="Normal Ranges (Optional)"
+            >
+              <Input placeholder="e.g., 4.0-11.0 x 10^9/L" />
+            </Form.Item>
+          </>
+        )}
 
         <Form.Item
           name="status"
           label="Status"
           rules={[{ required: true, message: 'Please select status' }]}
-          tooltip="Status indicates the current stage of the lab report processing workflow"
-          extra={
-            <div style={{ marginTop: 4, fontSize: '12px', color: '#8c8c8c' }}>
-              <strong>Status Flow:</strong> Pending → Processing → Ready → Completed
-              <br />
-              <strong>Pending:</strong> Request received, awaiting processing
-              <br />
-              <strong>Processing:</strong> Sample is being analyzed
-              <br />
-              <strong>Ready:</strong> Results are ready for review
-              <br />
-              <strong>Completed:</strong> Report is finalized and sent to patient/doctor
-            </div>
-          }
         >
-          <Select>
-            <Option value="pending">
-              <Tag color="orange">Pending</Tag>
-            </Option>
-            <Option value="processing">
-              <Tag color="blue">Processing</Tag>
-            </Option>
-            <Option value="ready">
-              <Tag color="green">Ready</Tag>
-            </Option>
-            <Option value="completed">
-              <Tag color="green">Completed</Tag>
-            </Option>
-          </Select>
+          <StatusSegmentedWithPill />
         </Form.Item>
-        
-        {report && (
-          <Form.Item label="Report Date">
-            <Input 
-              value={report.reportDate ? dayjs(report.reportDate).format('YYYY-MM-DD HH:mm') : 'N/A'} 
-              disabled 
-              readOnly
-            />
-            <Text type="secondary" style={{ fontSize: '12px', display: 'block', marginTop: 4 }}>
-              Report date is automatically set when the report is submitted
-            </Text>
-          </Form.Item>
-        )}
 
         <Form.Item
           name="notes"
@@ -416,10 +741,26 @@ export default function LabReportUploadModal({
             <Button icon={<UploadOutlined />}>Select File</Button>
           </Upload>
           <Text type="secondary" style={{ display: 'block', marginTop: 8 }}>
-            Supported formats: PDF, JPG, PNG (Max 10MB)
+            PDF, JPG, PNG (max 10MB)
           </Text>
         </Form.Item>
       </Form>
+      </div>
+      {/* Figma: Footer — fixed, no shrink */}
+      <div style={{ flexShrink: 0, padding: '16px 24px', borderTop: '1px solid #E5E7EB', display: 'flex', justifyContent: 'flex-end', gap: 12 }}>
+        <Button onClick={onCancel} style={{ color: '#6B7280', fontWeight: 500 }}>
+          Cancel
+        </Button>
+        <Button
+          type="primary"
+          onClick={() => form.submit()}
+          loading={uploadMutation.isPending}
+          icon={<UploadOutlined />}
+          style={{ background: '#8B5CF6', borderColor: '#8B5CF6', borderRadius: 8, fontWeight: 500 }}
+        >
+          {isEditing ? 'Update Report' : 'Upload Report'}
+        </Button>
+      </div>
     </Modal>
   );
 }

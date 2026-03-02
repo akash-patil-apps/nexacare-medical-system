@@ -1,8 +1,8 @@
 // Simple auth service for demo - no database dependencies
 import jwt from 'jsonwebtoken';
 import bcrypt from 'bcrypt';
-import { generateOTP, isOtpExpired } from '../utils/otp';
-import { getJwtSecret } from '../env';
+import { generateOTP, isOtpExpired } from '../utils/otp.js';
+import { getJwtSecret } from '../env.js';
 
 const JWT_EXPIRES_IN = '7d';
 

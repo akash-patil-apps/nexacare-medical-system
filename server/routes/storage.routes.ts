@@ -1,8 +1,8 @@
 // server/routes/storage.routes.ts
 import { Router } from 'express';
-import { authenticateToken, authorizeRoles, type AuthenticatedRequest } from '../middleware/auth';
-import { storageService } from '../services/storage.service';
-import { upload } from '../services/fileUpload.service';
+import { authenticateToken, authorizeRoles, type AuthenticatedRequest } from '../middleware/auth.js';
+import { storageService } from '../services/storage.service.js';
+import { upload } from '../services/fileUpload.service.js';
 
 const router = Router();
 

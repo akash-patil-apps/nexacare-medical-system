@@ -1,4 +1,4 @@
-import { db } from '../db';
+import { db } from '../db.js';
 import {
   invoices,
   invoiceItems,
@@ -9,10 +9,10 @@ import {
   hospitals,
   patients,
   users,
-} from '../../shared/schema';
+} from '../../shared/schema.js';
 import { eq, and, sql, desc } from 'drizzle-orm';
-import * as auditService from './audit.service';
-import { retryDbOperation } from '../utils/db-retry';
+import * as auditService from './audit.service.js';
+import { retryDbOperation } from '../utils/db-retry.js';
 
 /**
  * Generate unique invoice number for hospital

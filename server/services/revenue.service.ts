@@ -1,5 +1,5 @@
-import { db } from '../db';
-import { payments, invoices, appointments, invoiceItems, patients, doctors, users } from '../../shared/schema';
+import { db } from '../db.js';
+import { payments, invoices, appointments, invoiceItems, patients, doctors, users } from '../../shared/schema.js';
 import { eq, and, gte, lte, or, desc, sql, inArray } from 'drizzle-orm';
 
 // Simple date utilities for IST

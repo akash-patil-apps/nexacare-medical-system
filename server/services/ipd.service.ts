@@ -1,4 +1,4 @@
-import { db } from '../db';
+import { db } from '../db.js';
 import {
   floors,
   wards,
@@ -11,9 +11,9 @@ import {
   hospitals,
   users,
   nurses,
-} from '../../shared/schema';
+} from '../../shared/schema.js';
 import { eq, and, sql, isNull, asc, desc, inArray, or } from 'drizzle-orm';
-import * as auditService from './audit.service';
+import * as auditService from './audit.service.js';
 
 /**
  * Create floor

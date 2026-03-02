@@ -7,7 +7,7 @@ import {
   type Appointment, type InsertAppointment, type Prescription, type InsertPrescription,
   type LabReport, type InsertLabReport, type OtpVerification, type InsertOtp
 } from "@shared/schema";
-import { db } from "../db";
+import { db } from "../db.js";
 import { eq, and, gte, lt, desc, asc } from "drizzle-orm";
 
 export interface IStorage {

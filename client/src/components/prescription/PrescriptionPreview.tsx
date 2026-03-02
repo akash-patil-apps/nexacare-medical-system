@@ -1,7 +1,9 @@
-import React from 'react';
-import { Typography, Divider, Table } from 'antd';
+import React, { useState } from 'react';
+import { Typography, Divider, Table, Button, Modal, Spin } from 'antd';
 import dayjs from 'dayjs';
+import { BookOutlined } from '@ant-design/icons';
 import type { Medication } from '../../../shared/schema';
+import { apiRequest } from '../../lib/queryClient';
 
 const { Text, Title } = Typography;
 
@@ -32,6 +34,8 @@ interface PrescriptionPreviewProps {
   labTests?: Array<{ testName: string; testType?: string }>;
   advice?: string[];
   followUpDate?: string | Date;
+  /** When true, show "Explain this" button for diagnosis (patient education). Default true. */
+  showExplainButton?: boolean;
 }
 
 export const PrescriptionPreview: React.FC<PrescriptionPreviewProps> = ({
@@ -311,6 +315,13 @@ export const PrescriptionPreview: React.FC<PrescriptionPreviewProps> = ({
             <Text strong style={{ fontSize: '14px' }}>Diagnosis:</Text>
             <br />
             <Text style={{ fontSize: '14px' }}>* {diagnosis.toUpperCase()}</Text>
+            {showExplainButton && (
+              <div style={{ marginTop: 8 }}>
+                <Button type="link" size="small" icon={<BookOutlined />} onClick={handleExplainClick}>
+                  What does this mean?
+                </Button>
+              </div>
+            )}
           </div>
         )}
 
@@ -367,6 +378,24 @@ export const PrescriptionPreview: React.FC<PrescriptionPreviewProps> = ({
       <div style={{ textAlign: 'center', marginTop: '30px', fontSize: '11px', color: '#666' }}>
         <Text>Substitute with equivalent Generics as required.</Text>
       </div>
+
+      {/* Patient education modal */}
+      <Modal
+        title="Condition explained"
+        open={explainModalOpen}
+        onCancel={() => setExplainModalOpen(false)}
+        footer={<Button type="primary" onClick={() => setExplainModalOpen(false)}>Close</Button>}
+        width={560}
+        destroyOnClose
+      >
+        {explainLoading && (
+          <div style={{ textAlign: 'center', padding: 24 }}>
+            <Spin />
+          </div>
+        )}
+        {explainError && <Text type="danger">{explainError}</Text>}
+        {!explainLoading && explanation != null && <Text style={{ whiteSpace: 'pre-wrap' }}>{explanation}</Text>}
+      </Modal>
     </div>
   );
 };

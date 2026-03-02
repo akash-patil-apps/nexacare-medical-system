@@ -1,9 +1,9 @@
 // server/services/followup-reminder.service.ts
 // Follow-up date reminder service for prescriptions
-import { db } from '../db';
-import { prescriptions, patients, users, notifications } from '../../shared/schema';
+import { db } from '../db.js';
+import { prescriptions, patients, users, notifications } from '../../shared/schema.js';
 import { eq, and, gte, lte, isNotNull } from 'drizzle-orm';
-import { NotificationService } from './localNotification.service';
+import { NotificationService } from './localNotification.service.js';
 import dayjs from 'dayjs';
 
 /**

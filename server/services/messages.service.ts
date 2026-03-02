@@ -1,9 +1,9 @@
 // server/services/messages.service.ts
 // In-platform messaging: send and receive messages between users (no external service)
-import { db } from '../db';
-import { messages, users, notifications } from '../../shared/schema';
+import { db } from '../db.js';
+import { messages, users, notifications } from '../../shared/schema.js';
 import { eq, or, and, desc, sql, inArray, ne, ilike, isNull } from 'drizzle-orm';
-import type { InsertMessage } from '../../shared/schema-types';
+import type { InsertMessage } from '../../shared/schema-types.js';
 
 /**
  * Send a message from sender to recipient. Optionally create an in-app notification for the recipient.

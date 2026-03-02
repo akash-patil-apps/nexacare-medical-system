@@ -1,5 +1,5 @@
-import { db } from '../db';
-import { patientAuditLogs, auditLogs } from '../../shared/schema';
+import { db } from '../db.js';
+import { patientAuditLogs, auditLogs } from '../../shared/schema.js';
 import { and, eq, gte, lte, sql } from 'drizzle-orm';
 
 export interface BaseAuditLogData {

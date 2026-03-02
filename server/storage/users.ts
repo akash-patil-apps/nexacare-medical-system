@@ -1,6 +1,6 @@
 // server/storage/users.ts
-import { db } from '../db';
-import { users } from '../../shared/schema';
+import { db } from '../db.js';
+import { users } from '../../shared/schema.js';
 import { eq } from 'drizzle-orm';
 
 export const createUser = async (data: Omit<typeof users.$inferInsert, 'id' | 'createdAt'>) => {

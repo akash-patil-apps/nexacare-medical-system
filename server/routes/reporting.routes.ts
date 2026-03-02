@@ -1,10 +1,10 @@
 // server/routes/reporting.routes.ts
 import { Router } from 'express';
-import { authenticateToken, authorizeRoles, type AuthenticatedRequest } from '../middleware/auth';
-import * as reportingService from '../services/reporting.service';
-import { db } from '../db';
+import { authenticateToken, authorizeRoles, type AuthenticatedRequest } from '../middleware/auth.js';
+import * as reportingService from '../services/reporting.service.js';
+import { db } from '../db.js';
 import { eq } from 'drizzle-orm';
-import { hospitals, receptionists, doctors } from '../../shared/schema';
+import { hospitals, receptionists, doctors } from '../../shared/schema.js';
 
 const router = Router();
 

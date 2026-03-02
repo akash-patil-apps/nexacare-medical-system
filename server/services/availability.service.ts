@@ -1,10 +1,10 @@
-import { db } from '../db';
+import { db } from '../db.js';
 import {
   doctorAvailabilityRules,
   doctorAvailabilityExceptions,
   doctors,
   appointments,
-} from '../../shared/schema';
+} from '../../shared/schema.js';
 import { eq, and, sql, or, gte, lte } from 'drizzle-orm';
 
 /**

@@ -153,6 +153,35 @@ body .ant-modal .ant-modal-body,
 .ant-modal .ant-modal-body {
   background: #F3F4F6 !important;
 }
+
+/* Lab Report Edit/Upload modal: white background, no outer scroll (override global grey + theme padding) */
+body .ant-modal-wrap .ant-modal.lab-report-upload-modal .ant-modal-content,
+body .ant-modal-wrap .ant-modal.lab-report-upload-modal .ant-modal-body {
+  background: #FFFFFF !important;
+}
+body .ant-modal-wrap .ant-modal.lab-report-upload-modal .ant-modal-content {
+  padding: 0 !important;
+}
+body .ant-modal-wrap:has(.lab-report-upload-modal) {
+  overflow: hidden !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  min-height: 100vh;
+  padding: 24px;
+  box-sizing: border-box;
+}
+body .ant-modal-wrap:has(.lab-report-upload-modal) .ant-modal {
+  top: auto !important;
+  padding-block: 0;
+  max-height: calc(100vh - 48px);
+  overflow: hidden;
+  margin: 0;
+}
+body .ant-modal-wrap:has(.lab-report-upload-modal) .ant-modal-content {
+  max-height: 100%;
+  overflow: hidden;
+}
 body .ant-drawer .ant-drawer-content,
 .ant-drawer .ant-drawer-content {
   background: #F3F4F6 !important;

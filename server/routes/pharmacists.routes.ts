@@ -1,7 +1,7 @@
 // server/routes/pharmacists.routes.ts
 import { Router } from 'express';
-import { authenticateToken, authorizeRoles, type AuthenticatedRequest } from '../middleware/auth';
-import * as pharmacistsService from '../services/pharmacists.service';
+import { authenticateToken, authorizeRoles, type AuthenticatedRequest } from '../middleware/auth.js';
+import * as pharmacistsService from '../services/pharmacists.service.js';
 
 const router = Router();
 

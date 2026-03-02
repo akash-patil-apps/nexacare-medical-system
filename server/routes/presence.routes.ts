@@ -2,7 +2,7 @@ import { Router } from "express";
 import { authenticateToken, authorizeRoles } from "../middleware/auth.js";
 import type { AuthenticatedRequest } from "../types/index.js";
 import * as presenceStore from "../presence/store.js";
-import { db } from "../db";
+import { db } from "../db.js";
 import {
   doctors,
   nurses,
@@ -11,7 +11,7 @@ import {
   radiologyTechnicians,
   hospitals,
   users,
-} from "../../shared/schema";
+} from "../../shared/schema.js";
 import { eq, inArray } from "drizzle-orm";
 
 const router = Router();

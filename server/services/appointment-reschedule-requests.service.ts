@@ -1,17 +1,17 @@
 // server/services/appointment-reschedule-requests.service.ts
-import { db } from '../db';
+import { db } from '../db.js';
 import { 
   appointmentReschedules, 
   appointments, 
   patients, 
   doctors, 
   users 
-} from '../../shared/schema';
+} from '../../shared/schema.js';
 import { eq, and, desc, ne, sql } from 'drizzle-orm';
-import { emitAppointmentChanged } from '../events/appointments.events';
-import { createNotification } from './notifications.service';
-import { logAuditEvent } from './audit.service';
-import * as appointmentService from './appointments.service';
+import { emitAppointmentChanged } from '../events/appointments.events.js';
+import { createNotification } from './notifications.service.js';
+import { logAuditEvent } from './audit.service.js';
+import * as appointmentService from './appointments.service.js';
 
 /**
  * Create a reschedule request (patient-initiated)

@@ -1,11 +1,11 @@
 // server/routes/reception.routes.ts
 import { Router } from 'express';
 import { z } from 'zod';
-import { authenticateToken, authorizeRoles } from '../middleware/auth';
-import type { AuthenticatedRequest } from '../types';
-import * as receptionService from '../services/reception.service';
-import { getReceptionistContext, getReceptionistByUserId } from '../services/reception.service';
-import { getRecommendedLabTestsForPatient, confirmLabRecommendation } from '../services/lab.service';
+import { authenticateToken, authorizeRoles } from '../middleware/auth.js';
+import type { AuthenticatedRequest } from '../types.js';
+import * as receptionService from '../services/reception.service.js';
+import { getReceptionistContext, getReceptionistByUserId } from '../services/reception.service.js';
+import { getRecommendedLabTestsForPatient, confirmLabRecommendation } from '../services/lab.service.js';
 
 const router = Router();
 

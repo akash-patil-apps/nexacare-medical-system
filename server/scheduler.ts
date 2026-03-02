@@ -1,8 +1,8 @@
 // server/scheduler.ts
 // In-process scheduler for medicine reminders, follow-up reminders, and duration-based prescription deactivation
-import * as medicineReminderService from './services/medicine-reminder.service';
-import * as followupReminderService from './services/followup-reminder.service';
-import * as prescriptionsService from './services/prescriptions.service';
+import * as medicineReminderService from './services/medicine-reminder.service.js';
+import * as followupReminderService from './services/followup-reminder.service.js';
+import * as prescriptionsService from './services/prescriptions.service.js';
 
 const REMINDER_CHECK_INTERVAL_MS = 30 * 60 * 1000; // 30 minutes
 

@@ -1,5 +1,5 @@
 // server/services/ipd-emar.service.ts
-import { db } from "../db";
+import { db } from "../db.js";
 import {
   medicationOrders,
   medicationAdministrations,
@@ -8,7 +8,7 @@ import {
   doctors,
   nurses,
   users,
-} from "../../shared/schema";
+} from "../../shared/schema.js";
 import { eq, and, desc, gte, lte, sql } from "drizzle-orm";
 
 /**

@@ -1,23 +1,23 @@
 // server/services/appointments.service.ts
-import { db } from '../db';
-import { retryDbOperation } from '../utils/db-retry';
-import { appointments, patients, doctors, hospitals, users, receptionists, invoices } from '../../shared/schema';
+import { db } from '../db.js';
+import { retryDbOperation } from '../utils/db-retry.js';
+import { appointments, patients, doctors, hospitals, users, receptionists, invoices } from '../../shared/schema.js';
 import { eq, and, desc, ne, gte, lte } from 'drizzle-orm';
 import { sql } from 'drizzle-orm';
-import type { InsertAppointment } from '../../shared/schema';
-import { emitAppointmentChanged } from '../events/appointments.events';
-import { createNotification } from './notifications.service';
-import { smsService } from './sms.service';
-import { emailService } from './email.service';
-import * as billingService from './billing.service';
-import { logAuditEvent } from './audit.service';
-import * as queueService from './queue.service';
+import type { InsertAppointment } from '../../shared/schema.js';
+import { emitAppointmentChanged } from '../events/appointments.events.js';
+import { createNotification } from './notifications.service.js';
+import { smsService } from './sms.service.js';
+import { emailService } from './email.service.js';
+import * as billingService from './billing.service.js';
+import { logAuditEvent } from './audit.service.js';
+import * as queueService from './queue.service.js';
 import {
   getSlotKeyFromAppointment,
   formatTokenIdentifier,
   getMaxPatientsPerSlot,
   type SlotKey,
-} from './opd-token';
+} from './opd-token.js';
 
 /** Parse appointmentTime (e.g. "09:00", "14:30", "02:30 PM") to minutes since midnight for ordering. */
 function parseAppointmentTimeToMinutes(t: string | null | undefined): number {

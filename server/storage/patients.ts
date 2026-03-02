@@ -1,6 +1,6 @@
-import { db } from "../db";
-import { patients } from "../../shared/schema";
-import { InsertPatient } from "../../shared/schema-types";
+import { db } from "../db.js";
+import { patients } from "../../shared/schema.js";
+import { InsertPatient } from "../../shared/schema-types.js";
 import { eq } from "drizzle-orm";
 
 // Insert a new patient

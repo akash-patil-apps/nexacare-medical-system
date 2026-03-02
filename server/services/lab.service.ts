@@ -1,9 +1,9 @@
-import { db } from '../db';
-import { labs, labReports, patients, doctors, users } from '../../shared/schema';
-import { eq, desc, and } from 'drizzle-orm';
-import { InsertLabReport } from '../../shared/schema-types';
-import { getDoctorByUserId } from './doctors.service';
-import { retryDbOperation } from '../utils/db-retry';
+import { db } from '../db.js';
+import { labs, labReports, patients, doctors, users, hospitals } from '../../shared/schema.js';
+import { eq, desc, and, inArray } from 'drizzle-orm';
+import { InsertLabReport } from '../../shared/schema-types.js';
+import { getDoctorByUserId } from './doctors.service.js';
+import { retryDbOperation } from '../utils/db-retry.js';
 
 export const getAllLabs = async () => {
   return db.select().from(labs);
@@ -116,7 +116,21 @@ export const getLabReportsForLab = async (labId: number) => {
   
   console.log(`📋 Found ${reports.length} lab reports for lab ${labId} (${filteredReports.length} after filtering out recommended)`);
   
-  // Enrich reports with patient and doctor names
+  // Batch-fetch hospital names via lab -> hospital
+  const labIds = [...new Set(filteredReports.map((r) => r.labId))];
+  const labsList = labIds.length
+    ? await db.select({ id: labs.id, hospitalId: labs.hospitalId }).from(labs).where(inArray(labs.id, labIds))
+    : [];
+  const hospitalIds = [...new Set(labsList.map((l) => l.hospitalId).filter((id): id is number => id != null))];
+  const hospitalsList = hospitalIds.length
+    ? await db.select({ id: hospitals.id, name: hospitals.name }).from(hospitals).where(inArray(hospitals.id, hospitalIds))
+    : [];
+  const hospitalById: Record<number, string> = Object.fromEntries(hospitalsList.map((h) => [h.id, h.name]));
+  const labToHospital: Record<number, string | null> = Object.fromEntries(
+    labsList.map((l) => [l.id, l.hospitalId ? hospitalById[l.hospitalId] ?? null : null])
+  );
+  
+  // Enrich reports with patient, doctor, and hospital names
   const enrichedReports = await Promise.all(
     filteredReports.map(async (report) => {
       let patientName = 'Unknown';
@@ -178,13 +192,15 @@ export const getLabReportsForLab = async (labId: number) => {
         }
       }
       
+      const hospitalName = labToHospital[report.labId] ?? null;
       const enriched = {
         ...report,
         patientName,
         doctorName,
+        hospitalName,
       };
       
-      console.log(`📄 Enriched report ${report.id}: patientName="${patientName}", doctorName="${doctorName}"`);
+      console.log(`📄 Enriched report ${report.id}: patientName="${patientName}", doctorName="${doctorName}", hospitalName="${hospitalName}"`);
       
       return enriched;
     })

@@ -17,7 +17,8 @@ import {
   App,
   InputNumber,
   DatePicker,
-  Tabs
+  Tabs,
+  Alert
 } from 'antd';
 import { 
   PlusOutlined, 
@@ -635,36 +636,78 @@ export default function PrescriptionForm({
     }
   };
 
-  const handleAddMedication = (values: Medication) => {
+  const handleAddMedication = async (values: Medication) => {
+    if (medications.some((m) => m.name === values.name)) {
+      message.error(`"${values.name}" is already in the list.`);
+      return;
+    }
+    const allergiesText = (patientData?.patient?.allergies || '').trim().toLowerCase();
+    if (allergiesText && values.name) {
+      const nameLower = values.name.toLowerCase();
+      const words = nameLower.split(/\s+/).filter((w) => w.length > 2);
+      if (words.some((w) => allergiesText.includes(w)) || allergiesText.includes(nameLower)) {
+        message.warning(`Possible allergy: patient allergies may include "${values.name}". Please confirm.`);
+      }
+    }
+    try {
+      const token = getAuthToken();
+      if (token) {
+        const res = await fetch('/api/ai/prescription-check', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+          body: JSON.stringify({
+            patientAllergies: patientData?.patient?.allergies || '',
+            currentMedications: medications.map((m) => m.name),
+            newMedicine: values.name,
+          }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (data.allergyWarning) message.warning(`Allergy: ${data.allergyWarning}`);
+        if (data.interactionWarning) message.warning(`Interaction: ${data.interactionWarning}`);
+      }
+    } catch {
+      // Non-blocking
+    }
     setMedications([...medications, values]);
     medicationForm.resetFields();
     setIsMedicationModalOpen(false);
     message.success('Medication added successfully!');
   };
   
-  // Handle inline medication addition
-  const handleAddMedicationInline = () => {
-    if (!currentMedication.name || !currentMedication.dosage || !currentMedication.frequency || !currentMedication.duration) {
-      message.error('Please fill in all required medication fields');
+  // Run allergy / interaction checks and add medication (duplicate check, client allergy hint, optional AI check)
+  const runPrescriptionChecksAndAdd = async (newMedication: Medication) => {
+    const name = newMedication.name;
+    if (medications.some((m) => m.name === name)) {
+      message.error(`"${name}" is already in the list.`);
       return;
     }
-    
-    // Format duration to include "days" if it's just a number
-    let durationValue = currentMedication.duration!;
-    if (/^\d+$/.test(durationValue)) {
-      durationValue = `${durationValue} days`;
+    const allergiesText = (patientData?.patient?.allergies || '').trim().toLowerCase();
+    if (allergiesText && name) {
+      const nameLower = name.toLowerCase();
+      const words = nameLower.split(/\s+/).filter((w) => w.length > 2);
+      if (words.some((w) => allergiesText.includes(w)) || allergiesText.includes(nameLower)) {
+        message.warning(`Possible allergy: patient allergies may include "${name}". Please confirm before adding.`);
+      }
     }
-    
-    const newMedication: Medication = {
-      name: currentMedication.name!,
-      dosage: currentMedication.dosage!,
-      unit: currentMedication.unit || 'mg',
-      frequency: currentMedication.frequency!,
-      duration: durationValue,
-      timing: currentMedication.timing || 'After meals',
-      instructions: currentMedication.instructions || '',
-    };
-    
+    try {
+      const token = getAuthToken();
+      if (token) {
+        const res = await fetch('/api/ai/prescription-check', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+          body: JSON.stringify({
+            patientAllergies: patientData?.patient?.allergies || '',
+            currentMedications: medications.map((m) => m.name),
+            newMedicine: name,
+          }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (data.allergyWarning) message.warning(`Allergy: ${data.allergyWarning}`);
+        if (data.interactionWarning) message.warning(`Interaction: ${data.interactionWarning}`);
+      }
+    } catch {
+      // Non-blocking: add even if check fails
+    }
     setMedications([...medications, newMedication]);
     setCurrentMedication({
       name: '',
@@ -676,6 +719,28 @@ export default function PrescriptionForm({
       instructions: '',
     });
     message.success('Medication added successfully!');
+  };
+
+  // Handle inline medication addition
+  const handleAddMedicationInline = () => {
+    if (!currentMedication.name || !currentMedication.dosage || !currentMedication.frequency || !currentMedication.duration) {
+      message.error('Please fill in all required medication fields');
+      return;
+    }
+    let durationValue = currentMedication.duration!;
+    if (/^\d+$/.test(durationValue)) {
+      durationValue = `${durationValue} days`;
+    }
+    const newMedication: Medication = {
+      name: currentMedication.name!,
+      dosage: currentMedication.dosage!,
+      unit: currentMedication.unit || 'mg',
+      frequency: currentMedication.frequency!,
+      duration: durationValue,
+      timing: currentMedication.timing || 'After meals',
+      instructions: currentMedication.instructions || '',
+    };
+    runPrescriptionChecksAndAdd(newMedication);
   };
   
 
@@ -1027,8 +1092,18 @@ export default function PrescriptionForm({
                 <MedicineBoxOutlined style={{ color: '#3B82F6', fontSize: '18px' }} />
                 <Text strong style={{ fontSize: '14px' }}>Medications ({medications.length})</Text>
               </div>
-              <Text type="secondary" style={{ fontSize: '12px' }}>Press Enter or select from dropdown to add</Text>
+              <Text type="secondary" style={{ fontSize: '12px' }}>Press Enter or select from dropdown to add. Allergy and drug–drug checks run when adding.</Text>
             </div>
+
+            {patientData?.patient?.allergies && (
+              <Alert
+                type="warning"
+                showIcon
+                message="Patient allergies"
+                description={patientData.patient.allergies}
+                style={{ marginBottom: 12 }}
+              />
+            )}
 
             {/* Inline Medication Form */}
             <Row gutter={8} style={{ marginBottom: '12px' }}>

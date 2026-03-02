@@ -1,9 +1,9 @@
 import { Router } from 'express';
-import { authenticateToken, authorizeRoles } from '../middleware/auth';
-import * as chargesService from '../services/hospital-charges.service';
-import type { AuthenticatedRequest } from '../types';
-import { db } from '../db';
-import { hospitals } from '../../shared/schema';
+import { authenticateToken, authorizeRoles } from '../middleware/auth.js';
+import * as chargesService from '../services/hospital-charges.service.js';
+import type { AuthenticatedRequest } from '../types.js';
+import { db } from '../db.js';
+import { hospitals } from '../../shared/schema.js';
 import { eq } from 'drizzle-orm';
 
 const router = Router();

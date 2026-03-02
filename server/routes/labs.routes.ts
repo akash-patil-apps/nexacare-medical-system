@@ -1,12 +1,13 @@
 // server/routes/labs.routes.ts
 import { Router } from "express";
-import { authenticateToken, authorizeRoles } from "../middleware/auth";
-import type { AuthenticatedRequest } from "../types";
-import { createLabReport as createLabReportRecord, updateLabReportStatus, getLabReportById, updateLabReport, getLabByUserId, createLabRequest } from "../services/lab.service";
-import { getLabReportsForLab, getLabReportsForPatient, getLabReportsForDoctor } from "../services/lab.service";
-import { NotificationService } from "../services/notification.service";
-import { getPatientById, getPatientByUserId } from "../services/patients.service";
-import { getDoctorById } from "../services/doctors.service";
+import { authenticateToken, authorizeRoles } from "../middleware/auth.js";
+import type { AuthenticatedRequest } from "../types.js";
+import { createLabReport as createLabReportRecord, updateLabReportStatus, getLabReportById, updateLabReport, getLabByUserId, createLabRequest } from "../services/lab.service.js";
+import { getLabReportsForLab, getLabReportsForPatient, getLabReportsForDoctor } from "../services/lab.service.js";
+import { NotificationService } from "../services/notification.service.js";
+import { getPatientById, getPatientByUserId } from "../services/patients.service.js";
+import { getDoctorById } from "../services/doctors.service.js";
+import { runCriticalValueCheckAndNotify } from "../services/critical-lab-values.service.js";
 
 const router = Router();
 
@@ -300,6 +301,15 @@ router.patch(
           // Don't fail the request if notifications fail
         }
       }
+
+      // Critical lab value alerts when status becomes ready/completed and report has results
+      if ((status === 'ready' || status === 'completed') && report.results) {
+        try {
+          await runCriticalValueCheckAndNotify({ ...report, status });
+        } catch (criticalErr) {
+          console.error('Critical lab value check/notify error:', criticalErr);
+        }
+      }
       
       res.json({ success: true, report: updated[0] });
     } catch (err) {
@@ -370,6 +380,16 @@ router.put(
         } catch (notifError) {
           console.error('Failed to send lab report notifications:', notifError);
           // Don't fail the request if notifications fail
+        }
+      }
+
+      // Critical lab value alerts: when report has results and status is ready/completed, check for critical values and notify
+      const updatedReport = updated[0];
+      if (updatedReport?.results && (newStatus === 'ready' || newStatus === 'completed')) {
+        try {
+          await runCriticalValueCheckAndNotify(updatedReport);
+        } catch (criticalErr) {
+          console.error('Critical lab value check/notify error:', criticalErr);
         }
       }
       

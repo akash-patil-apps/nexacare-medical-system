@@ -1,8 +1,8 @@
 // server/storage/appointments.ts
-import { db } from '../db';
-import { appointments } from '../../shared/schema';
+import { db } from '../db.js';
+import { appointments } from '../../shared/schema.js';
 import { eq } from 'drizzle-orm';
-import type { InsertAppointment } from '../../shared/schema-types';
+import type { InsertAppointment } from '../../shared/schema-types.js';
 
 /**
  * Insert a new appointment record into the DB.

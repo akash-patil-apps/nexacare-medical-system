@@ -1,6 +1,6 @@
 // server/services/pharmacy-purchase.service.ts
-import { db } from "../db";
-import { purchaseOrders, purchaseOrderItems, suppliers } from "../../shared/schema";
+import { db } from "../db.js";
+import { purchaseOrders, purchaseOrderItems, suppliers } from "../../shared/schema.js";
 import { eq, and, sql, desc } from "drizzle-orm";
 
 /**

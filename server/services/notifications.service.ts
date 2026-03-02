@@ -1,8 +1,8 @@
 // server/services/notifications.service.ts
-import { db } from '../db';
-import { notifications, appointments } from '../../shared/schema';
+import { db } from '../db.js';
+import { notifications, appointments } from '../../shared/schema.js';
 import { eq, desc } from 'drizzle-orm';
-import type { InsertNotification } from '../../shared/schema-types';
+import type { InsertNotification } from '../../shared/schema-types.js';
 
 /**
  * Create a new notification for a user.

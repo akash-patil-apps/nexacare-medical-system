@@ -1,8 +1,8 @@
 // server/services/prescriptions.service.ts
 import { eq, and, gte, lte } from 'drizzle-orm';
-import { db } from '../db';
-import { prescriptions } from '../../shared/schema';
-import type { InsertPrescription } from '../../shared/schema-types';
+import { db } from '../db.js';
+import { prescriptions } from '../../shared/schema.js';
+import type { InsertPrescription } from '../../shared/schema-types.js';
 
 /** Parse medication duration string to days (e.g. "5 days" -> 5, "1 week" -> 7, "2 (Tot: 0 Tab)" -> 2) */
 function parseDurationToDays(durationStr: string): number {

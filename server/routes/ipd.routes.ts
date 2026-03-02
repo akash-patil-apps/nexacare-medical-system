@@ -1,10 +1,10 @@
 import { Router } from 'express';
-import * as ipdService from '../services/ipd.service';
-import { authenticateToken, authorizeRoles, type AuthenticatedRequest } from '../middleware/auth';
-import { db } from '../db';
+import * as ipdService from '../services/ipd.service.js';
+import { authenticateToken, authorizeRoles, type AuthenticatedRequest } from '../middleware/auth.js';
+import { db } from '../db.js';
 import { eq } from 'drizzle-orm';
-import { receptionists, hospitals, doctors, nurses, rooms, beds, ipdEncounters } from '../../shared/schema';
-import { logAuditEvent } from '../services/audit.service';
+import { receptionists, hospitals, doctors, nurses, rooms, beds, ipdEncounters } from '../../shared/schema.js';
+import { logAuditEvent } from '../services/audit.service.js';
 
 const router = Router();
 
@@ -661,7 +661,7 @@ router.delete('/beds/:bedId', authorizeRoles('ADMIN', 'HOSPITAL'), async (req: A
 });
 
 // ===== NURSE ASSIGNMENT ENDPOINTS =====
-import * as nurseAssignmentService from '../services/nurse-assignment.service';
+import * as nurseAssignmentService from '../services/nurse-assignment.service.js';
 
 // Assign nurse to encounter
 router.post('/encounters/:encounterId/assign-nurse', authorizeRoles('DOCTOR', 'ADMIN', 'HOSPITAL'), async (req: AuthenticatedRequest, res) => {
@@ -733,7 +733,7 @@ router.get('/encounters/:encounterId/assignments', authenticateToken, async (req
 });
 
 // ===== MEDICATION ORDER ENDPOINTS =====
-import * as medicationOrderService from '../services/medication-order.service';
+import * as medicationOrderService from '../services/medication-order.service.js';
 
 // Create medication order
 router.post('/encounters/:encounterId/medication-orders', authorizeRoles('DOCTOR', 'ADMIN'), async (req: AuthenticatedRequest, res) => {

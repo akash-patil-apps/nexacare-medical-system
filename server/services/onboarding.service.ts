@@ -1,6 +1,6 @@
 // server/services/onboarding.service.ts
-import { db } from "../db";
-import { patients, users, hospitals, states, nurses, pharmacists, radiologyTechnicians } from "../../shared/schema";
+import { db } from "../db.js";
+import { patients, users, hospitals, states, nurses, pharmacists, radiologyTechnicians } from "../../shared/schema.js";
 import { eq, ilike } from "drizzle-orm";
 
 /**

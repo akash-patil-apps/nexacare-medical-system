@@ -1,6 +1,6 @@
 import { EventEmitter } from "events";
-import { db } from "../db";
-import { appointments, doctors, patients, users } from "../../drizzle/schema";
+import { db } from "../db.js";
+import { appointments, doctors, patients, users } from "../../drizzle/schema.js";
 import { eq } from "drizzle-orm";
 
 export type AppointmentEventAction =

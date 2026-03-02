@@ -1,6 +1,6 @@
-import { db } from "../db";
-import { labReports } from "../../shared/schema";
-import { InsertLabReport } from "../../shared/schema-types";
+import { db } from "../db.js";
+import { labReports } from "../../shared/schema.js";
+import { InsertLabReport } from "../../shared/schema-types.js";
 import { eq } from "drizzle-orm";
 
 export const createLabReport = async (report: InsertLabReport) => {

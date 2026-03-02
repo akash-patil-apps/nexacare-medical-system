@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { Modal, Form, Input, Select, Button, Space, message, Spin, Checkbox } from 'antd';
-import { ExclamationCircleOutlined } from '@ant-design/icons';
+import { ExclamationCircleOutlined, ThunderboltOutlined } from '@ant-design/icons';
 import { useQueryClient } from '@tanstack/react-query';
+import { getAuthToken } from '../../lib/auth';
 import type { IpdEncounter } from '../../types/ipd';
 
 const { TextArea } = Input;
@@ -22,6 +23,7 @@ export const DischargeModal: React.FC<DischargeModalProps> = ({
   const [form] = Form.useForm();
   const queryClient = useQueryClient();
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [aiSummaryLoading, setAiSummaryLoading] = useState(false);
 
   const handleSubmit = async (values: any) => {
     if (!encounter) {
@@ -149,8 +151,44 @@ export const DischargeModal: React.FC<DischargeModalProps> = ({
 
         <Form.Item
           name="dischargeSummaryText"
-          label="Additional Notes (Optional)"
-          tooltip="If auto-generate is enabled, this will be appended to the auto-generated summary. Otherwise, this is the main discharge summary."
+          label="Additional Notes / Discharge Summary (Optional)"
+          tooltip="If auto-generate is enabled, this will be appended to the auto-generated summary. Otherwise, this is the main discharge summary. Use 'Generate with AI' to create a summary from encounter data."
+          extra={
+            <Button
+              type="default"
+              size="small"
+              icon={<ThunderboltOutlined />}
+              loading={aiSummaryLoading}
+              onClick={async () => {
+                if (!encounter?.id) return;
+                setAiSummaryLoading(true);
+                try {
+                  const token = getAuthToken();
+                  const res = await fetch('/api/ai/discharge-summary', {
+                    method: 'POST',
+                    headers: {
+                      'Content-Type': 'application/json',
+                      Authorization: `Bearer ${token}`,
+                    },
+                    body: JSON.stringify({ encounterId: encounter.id }),
+                  });
+                  if (!res.ok) {
+                    const err = await res.json().catch(() => ({}));
+                    throw new Error(err.message || 'Failed to generate summary');
+                  }
+                  const data = await res.json();
+                  form.setFieldValue('dischargeSummaryText', data.summary ?? '');
+                  message.success('Summary generated. You can edit before discharging.');
+                } catch (e: any) {
+                  message.error(e?.message ?? 'Could not generate discharge summary');
+                } finally {
+                  setAiSummaryLoading(false);
+                }
+              }}
+            >
+              Generate summary with AI
+            </Button>
+          }
         >
           <TextArea
             rows={6}

@@ -14,7 +14,7 @@
  * - SEQUENCE: 2-3 digits (01, 001, etc.)
  */
 
-import { db } from '../db';
+import { db } from '../db.js';
 import { sql } from 'drizzle-orm';
 
 export type EntityType = 

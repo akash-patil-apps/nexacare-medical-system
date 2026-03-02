@@ -1,7 +1,7 @@
 // server/routes/cron.routes.ts
 // Cron job endpoints for scheduled tasks
 import { Router } from "express";
-import * as medicineReminderService from "../services/medicine-reminder.service";
+import * as medicineReminderService from "../services/medicine-reminder.service.js";
 
 const router = Router();
 

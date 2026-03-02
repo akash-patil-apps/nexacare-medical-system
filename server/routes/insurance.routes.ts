@@ -1,9 +1,9 @@
 // server/routes/insurance.routes.ts
 import { Router } from 'express';
-import { db } from '../db';
-import { authenticateToken, authorizeRoles, type AuthenticatedRequest } from '../middleware/auth';
-import { hospitals, patients } from '../../shared/schema';
-import * as insuranceService from '../services/insurance.service';
+import { db } from '../db.js';
+import { authenticateToken, authorizeRoles, type AuthenticatedRequest } from '../middleware/auth.js';
+import { hospitals, patients } from '../../shared/schema.js';
+import * as insuranceService from '../services/insurance.service.js';
 import { eq } from 'drizzle-orm';
 
 const router = Router();

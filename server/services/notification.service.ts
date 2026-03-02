@@ -1,7 +1,7 @@
 // Notification service for NexaCare Medical System
 // Handles all notification operations with database persistence
-import { db } from '../db';
-import { notifications } from '../../drizzle/schema';
+import { db } from '../db.js';
+import { notifications } from '../../drizzle/schema.js';
 import { eq, desc } from 'drizzle-orm';
 
 export interface NotificationData {

@@ -1,5 +1,5 @@
 // server/services/insurance.service.ts
-import { db } from '../db';
+import { db } from '../db.js';
 import {
   insuranceProviders,
   patientInsurancePolicies,
@@ -7,7 +7,7 @@ import {
   type InsertPatientInsurancePolicy,
   insurancePreauths,
   insuranceClaims,
-} from '../../shared/schema';
+} from '../../shared/schema.js';
 import { and, eq } from 'drizzle-orm';
 
 export const createInsuranceProvider = async (

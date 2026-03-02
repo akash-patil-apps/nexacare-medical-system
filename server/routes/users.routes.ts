@@ -1,7 +1,7 @@
 // server/routes/users.routes.ts
 import { Router } from 'express';
-import { registerUser, findUserById } from '../services/users.service';
-import { insertUserSchema } from '../../shared/schema';
+import { registerUser, findUserById } from '../services/users.service.js';
+import { insertUserSchema } from '../../shared/schema.js';
 import { z } from 'zod';
 
 const router = Router();

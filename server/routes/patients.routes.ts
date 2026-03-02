@@ -1,11 +1,11 @@
 // server/routes/patients.routes.ts
 import { Router } from "express";
 import { z } from "zod";
-import { authenticateToken, authorizeRoles } from "../middleware/auth";
-import type { AuthenticatedRequest } from "../types";
-import * as appointmentsService from "../services/appointments.service";
-import * as patientsService from "../services/patients.service";
-import { insertPatientSchema } from "../../shared/schema";
+import { authenticateToken, authorizeRoles } from "../middleware/auth.js";
+import type { AuthenticatedRequest } from "../types.js";
+import * as appointmentsService from "../services/appointments.service.js";
+import * as patientsService from "../services/patients.service.js";
+import { insertPatientSchema } from "../../shared/schema.js";
 
 const router = Router();
 const familyMemberBodySchema = z.object({

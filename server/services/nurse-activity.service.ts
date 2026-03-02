@@ -1,6 +1,6 @@
 // server/services/nurse-activity.service.ts
-import { db } from '../db';
-import { nurseActivityLogs, nurses, users, patients, ipdEncounters } from '../../shared/schema';
+import { db } from '../db.js';
+import { nurseActivityLogs, nurses, users, patients, ipdEncounters } from '../../shared/schema.js';
 import { eq, and, desc, sql } from 'drizzle-orm';
 
 /**

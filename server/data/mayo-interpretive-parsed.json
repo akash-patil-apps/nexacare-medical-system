@@ -1,0 +1,70 @@
+{
+  "source": "Mayo Interpretive Handbook (text extract)",
+  "parsedAt": "2026-02-25T19:59:40.699Z",
+  "tests": [
+    {
+      "number": "1",
+      "name": "Complete Blood Count (CBC)",
+      "parameters": [
+        {
+          "parameterName": "Hemoglobin",
+          "normalRange": "Male: 13.5-17.5 g/dL; Female: 12.0-15.5 g/dL",
+          "referenceRangesByGroup": [
+            {
+              "group": "Male",
+              "normalRange": "13.5-17.5",
+              "unit": "g/dL"
+            },
+            {
+              "group": "Female",
+              "normalRange": "12.0-15.5",
+              "unit": "g/dL"
+            }
+          ],
+          "sortOrder": 0,
+          "isRequired": false
+        },
+        {
+          "parameterName": "WBC",
+          "normalRange": "4.5-11.0 x 10^9/L",
+          "sortOrder": 1,
+          "isRequired": false
+        },
+        {
+          "parameterName": "RBC",
+          "normalRange": "Male: 4.5-5.5; Female: 4.0-5.0 x 10^12/L",
+          "referenceRangesByGroup": [
+            {
+              "group": "Male",
+              "normalRange": "4.5-5.5"
+            },
+            {
+              "group": "Female",
+              "normalRange": "4.0-5.0 x 10^12/L"
+            }
+          ],
+          "sortOrder": 2,
+          "isRequired": false
+        },
+        {
+          "parameterName": "Platelet count",
+          "normalRange": "150-400 x 10^9/L",
+          "sortOrder": 3,
+          "isRequired": false
+        }
+      ]
+    },
+    {
+      "number": "2",
+      "name": "Blood Glucose (Fasting)",
+      "parameters": [
+        {
+          "parameterName": "Blood Glucose (Fasting)",
+          "normalRange": "70-100 mg/dL",
+          "sortOrder": 0,
+          "isRequired": false
+        }
+      ]
+    }
+  ]
+}

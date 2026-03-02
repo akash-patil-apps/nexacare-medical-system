@@ -1,10 +1,10 @@
 // server/routes/lab-tests.routes.ts
 // Lab Test Catalog API - Accessible to all dashboards that need lab test data
 import { Router } from 'express';
-import { authenticateToken, type AuthenticatedRequest } from '../middleware/auth';
-import { db } from '../db';
-import { labTestCatalog } from '../../shared/schema';
-import { eq, or, ilike, and } from 'drizzle-orm';
+import { authenticateToken, type AuthenticatedRequest } from '../middleware/auth.js';
+import { db } from '../db.js';
+import { labTestCatalog, labTestResultParameters } from '../../shared/schema.js';
+import { eq, or, ilike, and, asc } from 'drizzle-orm';
 
 const router = Router();
 
@@ -46,6 +46,47 @@ router.get('/', async (req: AuthenticatedRequest, res) => {
   } catch (err: any) {
     console.error('❌ Get lab tests error:', err);
     res.status(500).json({ message: 'Failed to fetch lab tests' });
+  }
+});
+
+/**
+ * Get result template for a lab test (parameters with units and reference ranges)
+ */
+router.get('/:id/result-template', async (req: AuthenticatedRequest, res) => {
+  try {
+    const { id } = req.params;
+    const catalogId = +id;
+    const [test] = await db
+      .select()
+      .from(labTestCatalog)
+      .where(eq(labTestCatalog.id, catalogId))
+      .limit(1);
+
+    if (!test) {
+      return res.status(404).json({ message: 'Lab test not found' });
+    }
+
+    const parameters = await db
+      .select()
+      .from(labTestResultParameters)
+      .where(eq(labTestResultParameters.labTestCatalogId, catalogId))
+      .orderBy(asc(labTestResultParameters.sortOrder), asc(labTestResultParameters.id));
+
+    res.json({
+      labTest: { id: test.id, name: test.name, code: test.code, category: test.category },
+      parameters: parameters.map(p => ({
+        id: p.id,
+        parameterName: p.parameterName,
+        unit: p.unit,
+        normalRange: p.normalRange,
+        sortOrder: p.sortOrder,
+        isRequired: p.isRequired ?? false,
+        referenceRangesByGroup: p.referenceRangesByGroup ?? undefined,
+      })),
+    });
+  } catch (err: any) {
+    console.error('❌ Get result template error:', err);
+    res.status(500).json({ message: 'Failed to fetch result template' });
   }
 });
 

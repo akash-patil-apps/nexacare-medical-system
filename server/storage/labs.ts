@@ -1,6 +1,6 @@
-import { db } from "../db";
-import { labs } from "../../shared/schema";
-import { InsertLab } from "../../shared/schema-types";
+import { db } from "../db.js";
+import { labs } from "../../shared/schema.js";
+import { InsertLab } from "../../shared/schema-types.js";
 import { eq } from "drizzle-orm";
 
 export const createLab = async (lab: InsertLab) => {

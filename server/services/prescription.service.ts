@@ -1,8 +1,8 @@
 // server/services/prescription.service.ts
-import { db } from "../db";
-import { prescriptions, prescriptionAudits, doctors, users, hospitals } from "../../shared/schema";
+import { db } from "../db.js";
+import { prescriptions, prescriptionAudits, doctors, users, hospitals } from "../../shared/schema.js";
 import { eq, and, gte, lte } from "drizzle-orm";
-import { InsertPrescription } from "../../shared/schema-types";
+import { InsertPrescription } from "../../shared/schema-types.js";
 
 const addDays = (date: Date, days: number) => {
   const d = new Date(date);

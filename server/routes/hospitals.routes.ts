@@ -1,15 +1,15 @@
 // server/routes/hospitals.routes.ts
 import { Router } from 'express';
-import { createHospital, getAllHospitals, getHospitalStats, getHospitalById, getHospitalStaff, removeStaffMember, type StaffRole } from '../services/hospitals.service';
-import { insertHospitalSchema } from '../../shared/schema';
-import { approveLab, approveDoctor } from '../services/hospitals.service';
-import { authenticateToken, authorizeRoles } from '../middleware/auth';
-import { AuthenticatedRequest } from '../types';
-import { db } from '../db';
-import { hospitals } from '../../shared/schema';
+import { createHospital, getAllHospitals, getHospitalStats, getHospitalById, getHospitalStaff, removeStaffMember, type StaffRole } from '../services/hospitals.service.js';
+import { insertHospitalSchema } from '../../shared/schema.js';
+import { approveLab, approveDoctor } from '../services/hospitals.service.js';
+import { authenticateToken, authorizeRoles } from '../middleware/auth.js';
+import { AuthenticatedRequest } from '../types.js';
+import { db } from '../db.js';
+import { hospitals } from '../../shared/schema.js';
 import { eq } from 'drizzle-orm';
-import * as hospitalPatientsService from '../services/hospital-patients.service';
-import { getPatientInfo } from '../services/reception.service';
+import * as hospitalPatientsService from '../services/hospital-patients.service.js';
+import { getPatientInfo } from '../services/reception.service.js';
 
 const VALID_STAFF_ROLES: StaffRole[] = ['doctor', 'nurse', 'receptionist', 'pharmacist', 'radiology_technician'];
 

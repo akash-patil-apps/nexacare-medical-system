@@ -1,6 +1,6 @@
 // shared/schema-types.ts
 import { InferInsertModel } from "drizzle-orm";
-import { appointments, users, receptionists, doctors, hospitals, otpVerifications, notifications, labs, labReports, patients, prescriptions, messages } from "./schema";
+import { appointments, users, receptionists, doctors, hospitals, otpVerifications, notifications, labs, labReports, patients, prescriptions, messages } from "./schema.js";
 
 export type InsertUser = InferInsertModel<typeof users>;
 export type InsertAppointment = InferInsertModel<typeof appointments>;

@@ -1,9 +1,9 @@
 // server/routes/lab-workflow.routes.ts
 import { Router } from "express";
-import { authenticateToken, type AuthenticatedRequest } from "../middleware/auth";
-import * as labWorkflowService from "../services/lab-workflow.service";
-import { db } from "../db";
-import { doctors, nurses, labs } from "../../shared/schema";
+import { authenticateToken, type AuthenticatedRequest } from "../middleware/auth.js";
+import * as labWorkflowService from "../services/lab-workflow.service.js";
+import { db } from "../db.js";
+import { doctors, nurses, labs } from "../../shared/schema.js";
 import { eq } from "drizzle-orm";
 
 const router = Router();

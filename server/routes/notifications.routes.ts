@@ -1,12 +1,12 @@
 // server/routes/notifications.routes.ts
 import { Router } from 'express';
-import { authenticateToken } from '../middleware/auth';
-import type { AuthenticatedRequest } from '../types';
+import { authenticateToken } from '../middleware/auth.js';
+import type { AuthenticatedRequest } from '../types.js';
 import {
   getUserNotifications,
   markNotificationAsRead,
   markAllNotificationsAsRead,
-} from '../services/notifications.service';
+} from '../services/notifications.service.js';
 
 const router = Router();
 

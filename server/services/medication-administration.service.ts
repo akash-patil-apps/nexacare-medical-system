@@ -1,8 +1,8 @@
 // server/services/medication-administration.service.ts
-import { db } from '../db';
-import { medicationAdministrations, medicationOrders, ipdEncounters, nurses } from '../../shared/schema';
+import { db } from '../db.js';
+import { medicationAdministrations, medicationOrders, ipdEncounters, nurses } from '../../shared/schema.js';
 import { eq, and, sql, desc, gte, lte, between } from 'drizzle-orm';
-import * as nurseActivityService from './nurse-activity.service';
+import * as nurseActivityService from './nurse-activity.service.js';
 
 /**
  * Generate medication schedule from order

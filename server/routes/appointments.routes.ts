@@ -1,11 +1,11 @@
 // server/routes/appointments.routes.ts
 import { Router } from 'express';
-import * as appointmentService from '../services/appointments.service';
-import * as patientsService from '../services/patients.service';
-import { db } from '../db';
+import * as appointmentService from '../services/appointments.service.js';
+import * as patientsService from '../services/patients.service.js';
+import { db } from '../db.js';
 import { eq } from 'drizzle-orm';
-import { authenticateToken, authorizeRoles, type AuthenticatedRequest } from '../middleware/auth';
-import { patients, doctors, hospitals, receptionists } from '../../shared/schema';
+import { authenticateToken, authorizeRoles, type AuthenticatedRequest } from '../middleware/auth.js';
+import { patients, doctors, hospitals, receptionists } from '../../shared/schema.js';
 
 const router = Router();
 

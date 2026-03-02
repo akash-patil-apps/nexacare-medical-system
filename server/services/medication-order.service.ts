@@ -1,6 +1,6 @@
 // server/services/medication-order.service.ts
-import { db } from '../db';
-import { medicationOrders, ipdEncounters, doctors, patients } from '../../shared/schema';
+import { db } from '../db.js';
+import { medicationOrders, ipdEncounters, doctors, patients } from '../../shared/schema.js';
 import { eq, and, sql, desc, gte, lte, or, isNull } from 'drizzle-orm';
 
 /**

@@ -1,8 +1,8 @@
 // server/storage/receptionists.ts
-import { db } from '../db';
-import { receptionists } from '../../shared/schema';
+import { db } from '../db.js';
+import { receptionists } from '../../shared/schema.js';
 import { eq } from 'drizzle-orm';
-import type { InsertReceptionist } from '../../shared/schema-types';
+import type { InsertReceptionist } from '../../shared/schema-types.js';
 
 export const createReceptionist = (rec: InsertReceptionist) => {
   return db.insert(receptionists).values(rec).returning();

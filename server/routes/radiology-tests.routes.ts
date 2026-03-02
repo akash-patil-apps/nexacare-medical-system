@@ -1,9 +1,9 @@
 // server/routes/radiology-tests.routes.ts
 // Radiology Test Catalog API - Accessible to all dashboards that need radiology test data
 import { Router } from 'express';
-import { authenticateToken, type AuthenticatedRequest } from '../middleware/auth';
-import { db } from '../db';
-import { radiologyTestCatalog } from '../../shared/schema';
+import { authenticateToken, type AuthenticatedRequest } from '../middleware/auth.js';
+import { db } from '../db.js';
+import { radiologyTestCatalog } from '../../shared/schema.js';
 import { eq, or, ilike, and } from 'drizzle-orm';
 
 const router = Router();

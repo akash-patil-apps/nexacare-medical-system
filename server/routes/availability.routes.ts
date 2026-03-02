@@ -1,9 +1,9 @@
 import { Router } from 'express';
-import { authenticateToken, authorizeRoles, type AuthenticatedRequest } from '../middleware/auth';
-import * as availabilityService from '../services/availability.service';
-import { db } from '../db';
+import { authenticateToken, authorizeRoles, type AuthenticatedRequest } from '../middleware/auth.js';
+import * as availabilityService from '../services/availability.service.js';
+import { db } from '../db.js';
 import { eq } from 'drizzle-orm';
-import { receptionists, hospitals, doctors, nurses } from '../../shared/schema';
+import { receptionists, hospitals, doctors, nurses } from '../../shared/schema.js';
 
 const router = Router();
 

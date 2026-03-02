@@ -1,12 +1,12 @@
 // server/routes/ipd-workflow.routes.ts
 import { Router } from "express";
-import { authenticateToken, type AuthenticatedRequest } from "../middleware/auth";
-import * as ipdOrdersService from "../services/ipd-orders.service";
-import * as ipdOrdersExtendedService from "../services/ipd-orders-extended.service";
-import * as ipdRoundsService from "../services/ipd-rounds.service";
-import * as ipdEmarService from "../services/ipd-emar.service";
-import { db } from "../db";
-import { doctors, nurses } from "../../shared/schema";
+import { authenticateToken, type AuthenticatedRequest } from "../middleware/auth.js";
+import * as ipdOrdersService from "../services/ipd-orders.service.js";
+import * as ipdOrdersExtendedService from "../services/ipd-orders-extended.service.js";
+import * as ipdRoundsService from "../services/ipd-rounds.service.js";
+import * as ipdEmarService from "../services/ipd-emar.service.js";
+import { db } from "../db.js";
+import { doctors, nurses } from "../../shared/schema.js";
 import { eq } from "drizzle-orm";
 
 const router = Router();

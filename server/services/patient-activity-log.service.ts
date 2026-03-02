@@ -1,7 +1,7 @@
 // server/services/patient-activity-log.service.ts
 // Comprehensive activity logging for ALL patient operations
-import { db } from '../db';
-import { nurseActivityLogs, nurses, users, patients, ipdEncounters, doctors, medicationOrders, medicationAdministrations, vitalsChart, nursingNotes } from '../../shared/schema';
+import { db } from '../db.js';
+import { nurseActivityLogs, nurses, users, patients, ipdEncounters, doctors, medicationOrders, medicationAdministrations, vitalsChart, nursingNotes } from '../../shared/schema.js';
 import { eq, and, desc, sql } from 'drizzle-orm';
 
 export type ActivityActor = {

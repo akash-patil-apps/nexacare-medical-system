@@ -1,9 +1,9 @@
 // server/services/patients.service.ts
-import { db } from "../db";
-import { patients, users, patientFamilyMembers } from "../../shared/schema";
-import { InsertPatient } from "../../shared/schema-types";
+import { db } from "../db.js";
+import { patients, users, patientFamilyMembers } from "../../shared/schema.js";
+import { InsertPatient } from "../../shared/schema-types.js";
 import { eq, and, sql } from "drizzle-orm";
-import { hashPassword, verifyOtp } from "./auth.service";
+import { hashPassword, verifyOtp } from "./auth.service.js";
 
 /**
  * Get patient by ID.

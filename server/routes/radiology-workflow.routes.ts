@@ -1,9 +1,9 @@
 // server/routes/radiology-workflow.routes.ts
 import { Router } from "express";
-import { authenticateToken, type AuthenticatedRequest } from "../middleware/auth";
-import * as radiologyWorkflowService from "../services/radiology-workflow.service";
-import { db } from "../db";
-import { doctors, radiologyTechnicians } from "../../shared/schema";
+import { authenticateToken, type AuthenticatedRequest } from "../middleware/auth.js";
+import * as radiologyWorkflowService from "../services/radiology-workflow.service.js";
+import { db } from "../db.js";
+import { doctors, radiologyTechnicians } from "../../shared/schema.js";
 import { eq } from "drizzle-orm";
 
 const router = Router();

@@ -1,8 +1,8 @@
 // server/routes/doctors.routes.ts
 import { Router } from 'express';
-import { authenticateToken } from '../middleware/auth';
-import type { AuthenticatedRequest } from '../types';
-import * as doctorsService from '../services/doctors.service';
+import { authenticateToken } from '../middleware/auth.js';
+import type { AuthenticatedRequest } from '../types.js';
+import * as doctorsService from '../services/doctors.service.js';
 
 const router = Router();
 

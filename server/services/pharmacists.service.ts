@@ -1,7 +1,7 @@
 // server/services/pharmacists.service.ts
-import { db } from '../db';
-import { pharmacists, users, hospitals } from '../../shared/schema';
-import type { InsertPharmacist } from '../../shared/schema';
+import { db } from '../db.js';
+import { pharmacists, users, hospitals } from '../../shared/schema.js';
+import type { InsertPharmacist } from '../../shared/schema.js';
 import { eq, like, and, sql } from 'drizzle-orm';
 
 /**

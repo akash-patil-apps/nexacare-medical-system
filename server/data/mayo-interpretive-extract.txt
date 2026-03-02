@@ -1,0 +1,13 @@
+# Sample extract – replace with real text from Mayo Interpretive Handbook (pdftotext)
+# Format: "Test <number>: <Name>" then "Reference Values:" and ranges (e.g. Male: 13.5-17.5 g/dL; Female: 12.0-15.5 g/dL)
+
+Test 1: Complete Blood Count (CBC)
+Reference Values:
+Hemoglobin: Male: 13.5-17.5 g/dL; Female: 12.0-15.5 g/dL
+WBC: 4.5-11.0 x 10^9/L
+RBC: Male: 4.5-5.5; Female: 4.0-5.0 x 10^12/L
+Platelet count: 150-400 x 10^9/L
+
+Test 2: Blood Glucose (Fasting)
+Reference Values:
+70-100 mg/dL

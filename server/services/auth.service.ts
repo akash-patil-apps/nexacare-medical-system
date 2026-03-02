@@ -2,14 +2,14 @@
 import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
 import { eq, desc, and } from 'drizzle-orm';
-import { db } from '../db';
-import { users, otpVerifications } from '../../shared/schema';
-import { generateOTP, isOtpExpired } from '../utils/otp';
-import { smsService } from './sms.service';
-import { getJwtSecret } from '../env';
+import { db } from '../db.js';
+import { users, otpVerifications } from '../../shared/schema.js';
+import { generateOTP, isOtpExpired } from '../utils/otp.js';
+import { smsService } from './sms.service.js';
+import { getJwtSecret } from '../env.js';
 import type {
   InsertUser,
-} from '../../shared/schema-types';
+} from '../../shared/schema-types.js';
 
 const JWT_EXPIRES_IN = '7d';
 

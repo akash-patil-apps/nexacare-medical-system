@@ -1,4 +1,4 @@
-import { db } from '../db';
+import { db } from '../db.js';
 import { 
   clinicalNotes, 
   vitalsChart, 
@@ -7,7 +7,7 @@ import {
   type InsertClinicalNote,
   type InsertVitalsChart,
   type InsertNursingNote,
-} from '../../shared/schema';
+} from '../../shared/schema.js';
 import { eq, and, desc } from 'drizzle-orm';
 // Helper function for UTC timestamp
 const nowUtc = () => new Date();

@@ -1,7 +1,7 @@
 // server/services/doctors.service.ts
-import { db } from '../db';
-import { doctors, appointments, users, hospitals } from '../../shared/schema';
-import type { InsertDoctor } from '../../shared/schema-types';
+import { db } from '../db.js';
+import { doctors, appointments, users, hospitals } from '../../shared/schema.js';
+import type { InsertDoctor } from '../../shared/schema-types.js';
 import { eq, like, and, or, sql } from 'drizzle-orm';
 
 /**

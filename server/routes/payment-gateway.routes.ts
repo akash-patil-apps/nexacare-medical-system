@@ -1,10 +1,10 @@
 // server/routes/payment-gateway.routes.ts
 import { Router } from 'express';
-import { authenticateToken, authorizeRoles, type AuthenticatedRequest } from '../middleware/auth';
-import { paymentGatewayService } from '../services/payment-gateway.service';
-import * as billingService from '../services/billing.service';
-import { db } from '../db';
-import { invoices, patients, users } from '../../shared/schema';
+import { authenticateToken, authorizeRoles, type AuthenticatedRequest } from '../middleware/auth.js';
+import { paymentGatewayService } from '../services/payment-gateway.service.js';
+import * as billingService from '../services/billing.service.js';
+import { db } from '../db.js';
+import { invoices, patients, users } from '../../shared/schema.js';
 import { eq } from 'drizzle-orm';
 
 const router = Router();

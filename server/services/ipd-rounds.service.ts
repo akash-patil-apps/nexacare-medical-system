@@ -1,5 +1,5 @@
 // server/services/ipd-rounds.service.ts
-import { db } from "../db";
+import { db } from "../db.js";
 import {
   clinicalNotes,
   ipdEncounters,
@@ -7,7 +7,7 @@ import {
   doctors,
   users,
   vitalsChart,
-} from "../../shared/schema";
+} from "../../shared/schema.js";
 import { eq, and, desc, gte, lte } from "drizzle-orm";
 
 /**

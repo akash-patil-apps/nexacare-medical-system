@@ -1,7 +1,7 @@
 // server/services/radiology-technicians.service.ts
-import { db } from '../db';
-import { radiologyTechnicians, users, hospitals } from '../../shared/schema';
-import type { InsertRadiologyTechnician } from '../../shared/schema';
+import { db } from '../db.js';
+import { radiologyTechnicians, users, hospitals } from '../../shared/schema.js';
+import type { InsertRadiologyTechnician } from '../../shared/schema.js';
 import { eq, like, and, sql } from 'drizzle-orm';
 
 /**

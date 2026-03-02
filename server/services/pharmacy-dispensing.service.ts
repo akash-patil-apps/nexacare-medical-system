@@ -1,8 +1,8 @@
 // server/services/pharmacy-dispensing.service.ts
-import { db } from "../db";
-import { dispensations, dispensationItems, prescriptions, patients, doctors, users, hospitals } from "../../shared/schema";
+import { db } from "../db.js";
+import { dispensations, dispensationItems, prescriptions, patients, doctors, users, hospitals } from "../../shared/schema.js";
 import { eq, and, sql, desc } from "drizzle-orm";
-import { reduceStock } from "./pharmacy-inventory.service";
+import { reduceStock } from "./pharmacy-inventory.service.js";
 
 /**
  * Get pending prescriptions for dispensing

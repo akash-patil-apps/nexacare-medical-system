@@ -1,6 +1,6 @@
 // server/services/patient-transactions.service.ts
-import { db } from '../db';
-import { invoices, payments, invoiceItems, appointments, ipdEncounters } from '../../shared/schema';
+import { db } from '../db.js';
+import { invoices, payments, invoiceItems, appointments, ipdEncounters } from '../../shared/schema.js';
 import { eq, and, desc, or } from 'drizzle-orm';
 import { sql } from 'drizzle-orm';
 

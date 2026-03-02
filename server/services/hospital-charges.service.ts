@@ -1,5 +1,5 @@
-import { db } from '../db';
-import { hospitalCharges, bedTypePricing, ipdEncounters, bedAllocations, labOrders, radiologyOrders, medicationOrders, invoices, invoiceItems, beds } from '../../shared/schema';
+import { db } from '../db.js';
+import { hospitalCharges, bedTypePricing, ipdEncounters, bedAllocations, labOrders, radiologyOrders, medicationOrders, invoices, invoiceItems, beds } from '../../shared/schema.js';
 import { eq, and, isNull, desc, gte, lte, or } from 'drizzle-orm';
 
 // Simple date diff calculation (in days)

@@ -4,8 +4,8 @@ import {
   getUserByEmail,
   getUserById,
   getUserByMobile,
-} from '../storage/users';
-import { InsertUser } from '../../shared/schema-types';
+} from '../storage/users.js';
+import { InsertUser } from '../../shared/schema-types.js';
 
 export const registerUser = async (data: InsertUser) => {
   return await createUser(data);

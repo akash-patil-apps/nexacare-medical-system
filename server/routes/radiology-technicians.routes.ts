@@ -1,7 +1,7 @@
 // server/routes/radiology-technicians.routes.ts
 import { Router } from 'express';
-import { authenticateToken, authorizeRoles, type AuthenticatedRequest } from '../middleware/auth';
-import * as radiologyTechniciansService from '../services/radiology-technicians.service';
+import { authenticateToken, authorizeRoles, type AuthenticatedRequest } from '../middleware/auth.js';
+import * as radiologyTechniciansService from '../services/radiology-technicians.service.js';
 
 const router = Router();
 

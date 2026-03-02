@@ -80,6 +80,7 @@ interface Hospital {
   totalBeds: number;
   establishedYear: number;
   isVerified: boolean;
+  minConsultationFee?: number | null;
 }
 
 interface Doctor {
@@ -143,6 +144,10 @@ export default function BookAppointment(props: BookAppointmentProps = {}) {
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState<'googlepay' | 'phonepe' | 'card' | 'cash' | null>(null);
   const [showReceipt, setShowReceipt] = useState(false);
   const [receiptData, setReceiptData] = useState<any>(null);
+  const [nlSearchValue, setNlSearchValue] = useState('');
+  const [nlSearchLoading, setNlSearchLoading] = useState(false);
+  const [hospitalSort, setHospitalSort] = useState<'cost_asc' | 'cost_desc' | 'name_asc' | 'name_desc'>('name_asc');
+  const [doctorSort, setDoctorSort] = useState<'cost_asc' | 'cost_desc' | 'name_asc' | 'name_desc'>('cost_asc');
 
   const isPatient = user?.role?.toUpperCase() === 'PATIENT';
   const [actingPatientId, setActingPatientId] = useActingPatient();
@@ -689,6 +694,46 @@ export default function BookAppointment(props: BookAppointmentProps = {}) {
     applyHospitalFilters(hospitals, searchTerm, nextSpecialty);
   };
 
+  const sortedHospitals = React.useMemo(() => {
+    const list = [...filteredHospitals];
+    if (hospitalSort === 'name_asc') return list.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+    if (hospitalSort === 'name_desc') return list.sort((a, b) => (b.name || '').localeCompare(a.name || ''));
+    const fee = (h: Hospital) => h.minConsultationFee ?? 1e9;
+    if (hospitalSort === 'cost_asc') return list.sort((a, b) => fee(a) - fee(b));
+    if (hospitalSort === 'cost_desc') return list.sort((a, b) => fee(b) - fee(a));
+    return list;
+  }, [filteredHospitals, hospitalSort]);
+
+  const handleNaturalLanguageSearch = async () => {
+    const query = nlSearchValue.trim();
+    if (!query) return;
+    setNlSearchLoading(true);
+    try {
+      const res = await fetch('/api/ai/booking-search', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ query }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        message.warning(data?.message || 'Search could not be processed. Try using the filters below.');
+        return;
+      }
+      const { city, specialty, searchTerm: parsedSearch } = data;
+      if (city) setSelectedCity(city);
+      if (specialty !== undefined) setSelectedSpecialty(specialty || '');
+      if (parsedSearch !== undefined) setSearchTerm(parsedSearch || '');
+      if (!city) {
+        applyHospitalFilters(hospitals, parsedSearch || '', specialty || selectedSpecialty);
+      }
+      message.success('Filters updated from your search.');
+    } catch {
+      message.warning('Search could not be processed. Try using the filters below.');
+    } finally {
+      setNlSearchLoading(false);
+    }
+  };
+
   // Auto-advance functions - no manual Next/Previous needed
 
   const handleCancel = () => {
@@ -904,6 +949,35 @@ export default function BookAppointment(props: BookAppointmentProps = {}) {
       icon: <EnvironmentOutlined />,
       content: (
         <div>
+          {/* Natural language search */}
+          <Row gutter={[16, 16]} style={{ marginBottom: '20px' }}>
+            <Col xs={24}>
+              <Text strong style={{ marginBottom: '8px', display: 'block', fontSize: '14px', color: '#374151', fontWeight: 500 }}>
+                Search in plain language
+              </Text>
+              <Space.Compact style={{ width: '100%', maxWidth: 560 }}>
+                <Input
+                  placeholder="e.g. cardiologist in Mumbai, pediatrician for fever"
+                  value={nlSearchValue}
+                  onChange={(e) => setNlSearchValue(e.target.value)}
+                  onPressEnter={handleNaturalLanguageSearch}
+                  prefix={<ThunderboltOutlined style={{ color: PATIENT_PRIMARY }} />}
+                  allowClear
+                  style={{ borderRadius: '8px 0 0 8px', height: '40px' }}
+                  size="large"
+                />
+                <Button
+                  type="primary"
+                  loading={nlSearchLoading}
+                  onClick={handleNaturalLanguageSearch}
+                  style={{ borderRadius: '0 8px 8px 0', height: '40px', background: PATIENT_PRIMARY, borderColor: PATIENT_PRIMARY }}
+                >
+                  Search
+                </Button>
+              </Space.Compact>
+            </Col>
+          </Row>
+
           {/* Search and Filter Section */}
           <Row gutter={[16, 16]} style={{ marginBottom: '24px' }}>
             <Col xs={24} md={8}>
@@ -964,12 +1038,24 @@ export default function BookAppointment(props: BookAppointmentProps = {}) {
             </Col>
           </Row>
 
-          {/* Results Count */}
-          <div style={{ marginBottom: '24px' }}>
+          {/* Results Count and Sort */}
+          <div style={{ marginBottom: '16px', display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 16 }}>
             <Text style={{ fontSize: '14px', color: '#6B7280' }}>
               Showing {filteredHospitals.length} hospital{filteredHospitals.length !== 1 ? 's' : ''} in {selectedCity}
-              </Text>
-            </div>
+            </Text>
+            <Text style={{ fontSize: '14px', color: '#6B7280' }}>Sort by:</Text>
+            <Select
+              value={hospitalSort}
+              onChange={(v) => setHospitalSort(v)}
+              style={{ minWidth: 180, borderRadius: '8px' }}
+              options={[
+                { value: 'name_asc', label: 'Name: A–Z' },
+                { value: 'name_desc', label: 'Name: Z–A' },
+                { value: 'cost_asc', label: 'Cost: Low to high' },
+                { value: 'cost_desc', label: 'Cost: High to low' },
+              ]}
+            />
+          </div>
           
           <Form.Item
             name="hospitalId"
@@ -993,7 +1079,7 @@ export default function BookAppointment(props: BookAppointmentProps = {}) {
             </Card>
           ) : (
             <Row gutter={[24, 24]}>
-              {filteredHospitals.map(hospital => {
+              {sortedHospitals.map(hospital => {
                 const departments = typeof hospital.departments === 'string' 
                   ? JSON.parse(hospital.departments) 
                   : hospital.departments || [];
@@ -1067,6 +1153,14 @@ export default function BookAppointment(props: BookAppointmentProps = {}) {
                             Total Beds {hospital.totalBeds || 0}
                           </Text>
                         </div>
+                        {hospital.minConsultationFee != null && hospital.minConsultationFee > 0 && (
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                            <DollarOutlined style={{ color: '#9CA3AF', fontSize: '16px' }} />
+                            <Text style={{ fontSize: '14px', color: '#374151' }}>
+                              From ₹{Number(hospital.minConsultationFee).toLocaleString()}
+                            </Text>
+                          </div>
+                        )}
                       </div>
 
                       {/* Departments */}
@@ -1179,10 +1273,31 @@ export default function BookAppointment(props: BookAppointmentProps = {}) {
                 </div>
               ) : doctors.length > 0 ? (
                 <div>
+                  {/* Sort doctors */}
+                  <div style={{ marginBottom: 16, display: 'flex', alignItems: 'center', gap: 12 }}>
+                    <Text style={{ fontSize: '14px', color: '#6B7280' }}>Sort by:</Text>
+                    <Select
+                      value={doctorSort}
+                      onChange={(v) => setDoctorSort(v)}
+                      style={{ minWidth: 180, borderRadius: '8px' }}
+                      options={[
+                        { value: 'cost_asc', label: 'Cost: Low to high' },
+                        { value: 'cost_desc', label: 'Cost: High to low' },
+                        { value: 'name_asc', label: 'Name: A–Z' },
+                        { value: 'name_desc', label: 'Name: Z–A' },
+                      ]}
+                    />
+                  </div>
                   {/* Group doctors by specialty */}
                   {(() => {
-                    // Group doctors by specialty
-                    const doctorsBySpecialty = doctors.reduce((acc, doctor) => {
+                    const fee = (d: Doctor) => parseFloat(d.consultationFee || '0') || 0;
+                    const sorted = [...doctors].sort((a, b) => {
+                      if (doctorSort === 'name_asc') return (a.fullName || '').localeCompare(b.fullName || '');
+                      if (doctorSort === 'name_desc') return (b.fullName || '').localeCompare(a.fullName || '');
+                      if (doctorSort === 'cost_asc') return fee(a) - fee(b);
+                      return fee(b) - fee(a);
+                    });
+                    const doctorsBySpecialty = sorted.reduce((acc, doctor) => {
                       const specialty = doctor.specialty || 'General';
                       if (!acc[specialty]) {
                         acc[specialty] = [];

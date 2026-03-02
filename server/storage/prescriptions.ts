@@ -1,6 +1,6 @@
-import { db } from "../db";
-import { prescriptions } from "../../shared/schema";
-import { InsertPrescription } from "../../shared/schema-types";
+import { db } from "../db.js";
+import { prescriptions } from "../../shared/schema.js";
+import { InsertPrescription } from "../../shared/schema-types.js";
 import { eq } from "drizzle-orm";
 
 export const createPrescription = async (prescription: InsertPrescription) => {

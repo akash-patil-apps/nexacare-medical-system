@@ -1,10 +1,10 @@
 // server/routes/nurses.routes.ts
 import { Router } from 'express';
-import { authenticateToken, authorizeRoles, type AuthenticatedRequest } from '../middleware/auth';
-import * as nursesService from '../services/nurses.service';
-import { db } from '../db';
+import { authenticateToken, authorizeRoles, type AuthenticatedRequest } from '../middleware/auth.js';
+import * as nursesService from '../services/nurses.service.js';
+import { db } from '../db.js';
 import { eq } from 'drizzle-orm';
-import { users } from '../../shared/schema';
+import { users } from '../../shared/schema.js';
 
 const router = Router();
 

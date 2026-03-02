@@ -1,9 +1,9 @@
 // server/services/medicine-reminder.service.ts
 // Medicine reminder service for OPD prescriptions
-import { db } from '../db';
-import { prescriptions, patients, notifications, patientReminderSettings, medicineAdherence } from '../../shared/schema';
+import { db } from '../db.js';
+import { prescriptions, patients, notifications, patientReminderSettings, medicineAdherence } from '../../shared/schema.js';
 import { eq, and, gte, lte, sql, ilike, asc } from 'drizzle-orm';
-import { NotificationService } from './localNotification.service';
+import { NotificationService } from './localNotification.service.js';
 import dayjs from 'dayjs';
 
 export interface ReminderTimeSettings {

@@ -17,6 +17,8 @@ import {
   Drawer,
   List,
   Divider,
+  Modal,
+  Input,
 } from 'antd';
 import { 
   UserOutlined, 
@@ -32,7 +34,8 @@ import {
   PhoneOutlined,
   MessageOutlined,
   HomeOutlined,
-  LogoutOutlined
+  LogoutOutlined,
+  SendOutlined,
 } from '@ant-design/icons';
 import { useAuth } from '../../hooks/use-auth';
 import { getAuthToken } from '../../lib/auth';
@@ -185,6 +188,13 @@ export default function DoctorDashboard() {
   const [patientInfoLoading, setPatientInfoLoading] = useState(false);
   const [selectedLabReport, setSelectedLabReport] = useState<any>(null);
   const [isLabReportModalOpen, setIsLabReportModalOpen] = useState(false);
+  const [referralLetterModalOpen, setReferralLetterModalOpen] = useState(false);
+  const [referralLetterLoading, setReferralLetterLoading] = useState(false);
+  const [referralLetterResult, setReferralLetterResult] = useState<string | null>(null);
+  const [referralReason, setReferralReason] = useState('');
+  const [referralSpecialistType, setReferralSpecialistType] = useState('');
+  const [referralRecipientName, setReferralRecipientName] = useState('');
+  const [referralPatientId, setReferralPatientId] = useState<number | null>(null);
 
   // Map prescriptions by appointment ID for quick lookup
   // This tracks whether a doctor has given a prescription to a patient for a specific appointment
@@ -2218,6 +2228,27 @@ export default function DoctorDashboard() {
                     </Button>
                   </div>
                 )}
+
+                {/* Generate referral letter */}
+                {patientInfo?.patient?.id && (
+                  <div style={{ marginBottom: 16 }}>
+                    <Button
+                      type="default"
+                      icon={<SendOutlined />}
+                      onClick={() => {
+                        setReferralLetterResult(null);
+                        setReferralReason('');
+                        setReferralSpecialistType('');
+                        setReferralRecipientName('');
+                        setReferralPatientId(patientInfo.patient.id);
+                        setReferralLetterModalOpen(true);
+                      }}
+                      style={{ width: '100%' }}
+                    >
+                      Generate referral letter
+                    </Button>
+                  </div>
+                )}
                 
                 {/* IPD Admission Status */}
                 {patientInfo.ipdStatus?.isAdmitted && (
@@ -2657,6 +2688,113 @@ export default function DoctorDashboard() {
           <Text type="secondary">No patient information available</Text>
         )}
       </Drawer>
+
+      {/* Referral letter modal */}
+      <Modal
+        title="Referral letter"
+        open={referralLetterModalOpen}
+        onCancel={() => {
+          setReferralLetterModalOpen(false);
+          setReferralLetterResult(null);
+          setReferralPatientId(null);
+        }}
+        width={640}
+        footer={null}
+        destroyOnClose
+      >
+        {referralLetterResult == null ? (
+          <Space direction="vertical" style={{ width: '100%' }} size="middle">
+            <div>
+              <Text strong>Reason for referral</Text>
+              <span style={{ color: 'red' }}> *</span>
+              <Input.TextArea
+                placeholder="e.g. Persistent headache with MRI findings requiring neurological evaluation"
+                value={referralReason}
+                onChange={(e) => setReferralReason(e.target.value)}
+                rows={3}
+                style={{ marginTop: 8 }}
+              />
+            </div>
+            <div>
+              <Text type="secondary">Specialist type (optional)</Text>
+              <Input
+                placeholder="e.g. Cardiologist, Neurologist"
+                value={referralSpecialistType}
+                onChange={(e) => setReferralSpecialistType(e.target.value)}
+                style={{ marginTop: 4 }}
+              />
+            </div>
+            <div>
+              <Text type="secondary">Addressed to (optional)</Text>
+              <Input
+                placeholder="e.g. Dr. Smith, City Hospital"
+                value={referralRecipientName}
+                onChange={(e) => setReferralRecipientName(e.target.value)}
+                style={{ marginTop: 4 }}
+              />
+            </div>
+            <Space>
+              <Button
+                type="primary"
+                loading={referralLetterLoading}
+                disabled={!referralReason.trim()}
+                onClick={async () => {
+                  if (!referralReason.trim() || referralPatientId == null) return;
+                  setReferralLetterLoading(true);
+                  try {
+                    const token = getAuthToken();
+                    const res = await fetch('/api/ai/referral-letter', {
+                      method: 'POST',
+                      headers: {
+                        'Content-Type': 'application/json',
+                        Authorization: `Bearer ${token}`,
+                      },
+                      body: JSON.stringify({
+                        patientId: referralPatientId,
+                        reasonForReferral: referralReason.trim(),
+                        specialistType: referralSpecialistType.trim() || undefined,
+                        recipientName: referralRecipientName.trim() || undefined,
+                      }),
+                    });
+                    if (!res.ok) {
+                      const err = await res.json().catch(() => ({}));
+                      throw new Error(err.message || 'Failed to generate letter');
+                    }
+                    const data = await res.json();
+                    setReferralLetterResult(data.letter ?? '');
+                  } catch (e: any) {
+                    message.error(e?.message || 'Could not generate referral letter');
+                  } finally {
+                    setReferralLetterLoading(false);
+                  }
+                }}
+              >
+                Generate
+              </Button>
+              <Button onClick={() => setReferralLetterModalOpen(false)}>Cancel</Button>
+            </Space>
+          </Space>
+        ) : (
+          <Space direction="vertical" style={{ width: '100%' }}>
+            <pre style={{ whiteSpace: 'pre-wrap', fontFamily: 'inherit', fontSize: 13, maxHeight: 400, overflow: 'auto', padding: 12, background: '#fafafa', borderRadius: 8 }}>
+              {referralLetterResult}
+            </pre>
+            <Space>
+              <Button
+                onClick={() => {
+                  navigator.clipboard.writeText(referralLetterResult);
+                  message.success('Copied to clipboard');
+                }}
+              >
+                Copy
+              </Button>
+              <Button type="primary" onClick={() => { setReferralLetterModalOpen(false); setReferralLetterResult(null); setReferralPatientId(null); }}>
+                Close
+              </Button>
+            </Space>
+          </Space>
+        )}
+      </Modal>
 
       {/* Clinical Notes Editor Modal */}
       {patientInfo?.patient?.id && (

@@ -1,5 +1,5 @@
 // server/services/pharmacy-inventory.service.ts
-import { db } from "../db";
+import { db } from "../db.js";
 import {
   pharmacyInventory,
   pharmacyStockMovements,
@@ -9,7 +9,7 @@ import {
   dispensations,
   dispensationItems,
   medicineCatalog,
-} from "../../shared/schema";
+} from "../../shared/schema.js";
 import { eq, and, sql, desc, gte, lte, or, ilike } from "drizzle-orm";
 
 /**

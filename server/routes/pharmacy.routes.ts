@@ -1,10 +1,10 @@
 // server/routes/pharmacy.routes.ts
 import express from "express";
-import { authenticateToken, authorizeRoles } from "../middleware/auth";
-import type { AuthenticatedRequest } from "../middleware/auth";
-import * as inventoryService from "../services/pharmacy-inventory.service";
-import * as purchaseService from "../services/pharmacy-purchase.service";
-import * as dispensingService from "../services/pharmacy-dispensing.service";
+import { authenticateToken, authorizeRoles } from "../middleware/auth.js";
+import type { AuthenticatedRequest } from "../middleware/auth.js";
+import * as inventoryService from "../services/pharmacy-inventory.service.js";
+import * as purchaseService from "../services/pharmacy-purchase.service.js";
+import * as dispensingService from "../services/pharmacy-dispensing.service.js";
 
 const router = express.Router();
 

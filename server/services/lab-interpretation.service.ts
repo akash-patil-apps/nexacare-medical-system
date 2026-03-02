@@ -2,14 +2,14 @@
  * Lab result AI interpretation: aggregates patient + visit context and calls LLM
  * to produce a plain-language explanation with disclaimer.
  */
-import { db } from "../db";
-import { labReports, labOrders, patients } from "../../shared/schema";
+import { db } from "../db.js";
+import { labReports, labOrders, patients } from "../../shared/schema.js";
 import { eq } from "drizzle-orm";
-import { getLabReportById } from "./lab.service";
-import { getPatientById } from "./patients.service";
-import { getPrescriptionsByAppointment } from "./prescriptions.service";
-import { getVitalsForPatient, getClinicalNotes } from "./clinical.service";
-import { complete } from "./llm.service";
+import { getLabReportById } from "./lab.service.js";
+import { getPatientById } from "./patients.service.js";
+import { getPrescriptionsByAppointment } from "./prescriptions.service.js";
+import { getVitalsForPatient, getClinicalNotes } from "./clinical.service.js";
+import { complete } from "./llm.service.js";
 
 export interface InterpretationContext {
   patient: {

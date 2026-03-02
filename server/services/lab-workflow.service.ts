@@ -1,5 +1,5 @@
 // server/services/lab-workflow.service.ts
-import { db } from "../db";
+import { db } from "../db.js";
 import {
   labOrders,
   labOrderItems,
@@ -10,9 +10,9 @@ import {
   patients,
   doctors,
   users,
-} from "../../shared/schema";
+} from "../../shared/schema.js";
 import { eq, and, sql, desc, inArray } from "drizzle-orm";
-import { logAuditEvent } from "./audit.service";
+import { logAuditEvent } from "./audit.service.js";
 
 /**
  * Create lab order

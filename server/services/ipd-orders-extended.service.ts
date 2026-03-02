@@ -1,5 +1,5 @@
 // server/services/ipd-orders-extended.service.ts
-import { db } from "../db";
+import { db } from "../db.js";
 import {
   ivFluidOrders,
   dietOrders,
@@ -8,7 +8,7 @@ import {
   patients,
   doctors,
   users,
-} from "../../shared/schema";
+} from "../../shared/schema.js";
 import { eq, and, desc } from "drizzle-orm";
 import { sql } from "drizzle-orm";
 

@@ -1,8 +1,8 @@
 // server/storage/notifications.ts
-import { db } from '../db';
-import { notifications } from '../../shared/schema';
+import { db } from '../db.js';
+import { notifications } from '../../shared/schema.js';
 import { eq } from 'drizzle-orm';
-import type { InsertNotification } from '../../shared/schema-types';
+import type { InsertNotification } from '../../shared/schema-types.js';
 
 export const createNotification = (notif: Omit<InsertNotification, 'id' | 'createdAt' | 'isRead'>) => {
   return db.insert(notifications).values({ ...notif, isRead: false }).returning();

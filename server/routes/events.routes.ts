@@ -1,11 +1,11 @@
 import { Router } from "express";
 import jwt from "jsonwebtoken";
-import { getJwtSecret } from "../env";
-import { onAppointmentEvent } from "../events/appointments.events";
+import { getJwtSecret } from "../env.js";
+import { onAppointmentEvent } from "../events/appointments.events.js";
 import { setOnline, setOffline, heartbeat } from "../presence/store.js";
-import { db } from "../db";
+import { db } from "../db.js";
 import { eq } from "drizzle-orm";
-import { hospitals, receptionists } from "../../shared/schema";
+import { hospitals, receptionists } from "../../shared/schema.js";
 
 const router = Router();
 

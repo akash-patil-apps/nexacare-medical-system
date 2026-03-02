@@ -1,7 +1,7 @@
-import { db } from "../db";
-import { doctors } from "../../shared/schema";
+import { db } from "../db.js";
+import { doctors } from "../../shared/schema.js";
 import { eq } from "drizzle-orm";
-import { InsertDoctor } from "../../shared/schema-types";
+import { InsertDoctor } from "../../shared/schema-types.js";
 
 export const createDoctor = async (doctor: InsertDoctor) => {
   return await db.insert(doctors).values(doctor).returning();

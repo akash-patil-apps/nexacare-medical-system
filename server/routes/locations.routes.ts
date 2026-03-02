@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
 import { eq, and, ilike, sql, count } from "drizzle-orm";
-import { cities, states } from "../../shared/schema";
+import { cities, states } from "../../shared/schema.js";
 
 const router = Router();
 

@@ -1,8 +1,8 @@
 // server/routes/onboarding.routes.ts
 import { Router } from "express";
-import { authenticateToken, authorizeRoles } from "../middleware/auth";
-import type { AuthenticatedRequest } from "../types";
-import * as onboardingService from "../services/onboarding.service";
+import { authenticateToken, authorizeRoles } from "../middleware/auth.js";
+import type { AuthenticatedRequest } from "../types.js";
+import * as onboardingService from "../services/onboarding.service.js";
 
 const router = Router();
 

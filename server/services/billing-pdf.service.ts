@@ -1,6 +1,6 @@
 // server/services/billing-pdf.service.ts
 import PDFDocument from 'pdfkit';
-import { getInvoiceById } from './billing.service';
+import { getInvoiceById } from './billing.service.js';
 
 /**
  * Generate PDF for invoice

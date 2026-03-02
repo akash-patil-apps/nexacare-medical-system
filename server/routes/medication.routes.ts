@@ -1,10 +1,10 @@
 // server/routes/medication.routes.ts
 import { Router } from 'express';
-import { authenticateToken, authorizeRoles, type AuthenticatedRequest } from '../middleware/auth';
-import * as medicationAdminService from '../services/medication-administration.service';
-import * as medicationOrderService from '../services/medication-order.service';
-import { db } from '../db';
-import { nurses } from '../../shared/schema';
+import { authenticateToken, authorizeRoles, type AuthenticatedRequest } from '../middleware/auth.js';
+import * as medicationAdminService from '../services/medication-administration.service.js';
+import * as medicationOrderService from '../services/medication-order.service.js';
+import { db } from '../db.js';
+import { nurses } from '../../shared/schema.js';
 import { eq } from 'drizzle-orm';
 
 const router = Router();

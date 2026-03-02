@@ -1,10 +1,10 @@
 import { Router } from 'express';
-import * as clinicalService from '../services/clinical.service';
-import { authenticateToken, authorizeRoles, type AuthenticatedRequest } from '../middleware/auth';
-import { db } from '../db';
+import * as clinicalService from '../services/clinical.service.js';
+import { authenticateToken, authorizeRoles, type AuthenticatedRequest } from '../middleware/auth.js';
+import { db } from '../db.js';
 import { eq } from 'drizzle-orm';
-import { receptionists, hospitals, doctors, nurses, patients } from '../../shared/schema';
-import { logAuditEvent } from '../services/audit.service';
+import { receptionists, hospitals, doctors, nurses, patients } from '../../shared/schema.js';
+import { logAuditEvent } from '../services/audit.service.js';
 
 const router = Router();
 

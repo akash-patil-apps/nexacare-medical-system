@@ -27,117 +27,100 @@ export const LabTechnicianSidebar: React.FC<LabTechnicianSidebarProps> = ({
     }
   };
 
+  const labPrimary = '#8B5CF6';
+  const labPrimaryHover = '#7C3AED';
+  const activeBg = labPrimary;
+  const activeColor = '#fff';
+  const inactiveColor = '#6B7280';
+  const logoutColor = '#EF4444';
+
   return (
-    <div style={{ 
-      display: 'flex', 
-      flexDirection: 'column', 
+    <div style={{
+      display: 'flex',
+      flexDirection: 'column',
       height: '100%',
-      background: '#fff', // White background matching PatientSidebar
-      width: '80px', // Narrow vertical bar
+      background: '#fff',
+      width: 80,
       alignItems: 'center',
-      padding: '16px 0',
-      gap: '12px',
-      borderRight: '1px solid #E5E7EB', // Light border on right
+      padding: '24px 0',
+      borderRight: '1px solid #E5E7EB',
     }}>
-      {/* User Icon at Top */}
+      {/* Profile - top */}
       <Button
         type="text"
-        icon={<UserOutlined style={{ fontSize: '20px', color: '#1A8FE3' }} />}
+        icon={<UserOutlined style={{ fontSize: 24, color: inactiveColor }} />}
         style={{
-          width: '48px',
-          height: '48px',
+          width: 48,
+          height: 48,
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
-          background: '#E3F2FF', // Light blue background for active user icon
-          borderRadius: '8px',
+          background: 'transparent',
+          borderRadius: 8,
+          marginBottom: 16,
         }}
         onClick={() => setLocation('/dashboard/profile')}
+        title="Profile"
       />
 
-      {/* Navigation Icons - Vertical Stack */}
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', flex: 1, alignItems: 'center' }}>
-        <Button
-          type="text"
-          icon={<DashboardOutlined style={{ fontSize: '20px', color: selectedMenuKey === 'dashboard' ? '#1A8FE3' : '#6B7280' }} />}
-          style={{
-            width: '48px',
-            height: '48px',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            background: selectedMenuKey === 'dashboard' ? '#E3F2FF' : 'transparent',
-            borderRadius: '8px',
-          }}
-          onClick={() => handleMenuClick('dashboard')}
-          title="Dashboard"
-        />
-        
-        <Button
-          type="text"
-          icon={<ExperimentOutlined style={{ fontSize: '20px', color: selectedMenuKey === 'pending-orders' ? '#1A8FE3' : '#6B7280' }} />}
-          style={{
-            width: '48px',
-            height: '48px',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            background: selectedMenuKey === 'pending-orders' ? '#E3F2FF' : 'transparent',
-            borderRadius: '8px',
-          }}
-          onClick={() => handleMenuClick('pending-orders')}
-          title="Pending orders"
-        />
-        
-        <Button
-          type="text"
-          icon={<FileSearchOutlined style={{ fontSize: '20px', color: selectedMenuKey === 'result-entry' ? '#1A8FE3' : '#6B7280' }} />}
-          style={{
-            width: '48px',
-            height: '48px',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            background: selectedMenuKey === 'result-entry' ? '#E3F2FF' : 'transparent',
-            borderRadius: '8px',
-          }}
-          onClick={() => handleMenuClick('result-entry')}
-          title="Result entry"
-        />
-        
-        <Button
-          type="text"
-          icon={<CheckCircleOutlined style={{ fontSize: '20px', color: selectedMenuKey === 'report-release' ? '#1A8FE3' : '#6B7280' }} />}
-          style={{ 
-            width: '48px',
-            height: '48px',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            background: selectedMenuKey === 'report-release' ? '#E3F2FF' : 'transparent',
-            borderRadius: '8px',
-          }}
-          onClick={() => handleMenuClick('report-release')}
-          title="Report release"
-        />
-            </div>
-
-      {/* Bottom Icons */}
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', alignItems: 'center' }}>
-        <Button
-          type="text"
-          icon={<LogoutOutlined style={{ fontSize: '20px', color: '#EF4444' }} />}
-          style={{
-            width: '48px',
-            height: '48px',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-          }}
-          onClick={() => logout()}
-          title="Logout"
-        />
+      {/* Nav items */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 0, flex: 1, alignItems: 'center' }}>
+        {[
+          { key: 'dashboard', Icon: DashboardOutlined, label: 'Dashboard' },
+          { key: 'pending-orders', Icon: ExperimentOutlined, label: 'Pending Orders' },
+          { key: 'result-entry', Icon: FileSearchOutlined, label: 'Result Entry' },
+          { key: 'report-release', Icon: CheckCircleOutlined, label: 'Report Release' },
+        ].map(({ key, Icon, label }) => {
+          const isActive = selectedMenuKey === key;
+          return (
+            <Button
+              key={key}
+              type="text"
+              icon={<Icon style={{ fontSize: 24, color: isActive ? activeColor : inactiveColor }} />}
+              style={{
+                width: 48,
+                height: 48,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                background: isActive ? activeBg : 'transparent',
+                borderRadius: 8,
+                marginBottom: 16,
+              }}
+              onClick={() => handleMenuClick(key)}
+              onMouseEnter={(e) => {
+                if (!isActive) {
+                  e.currentTarget.style.background = '#F3F4F6';
+                  e.currentTarget.querySelector('.anticon')?.setAttribute('style', `font-size: 24px; color: ${inactiveColor}`);
+                }
+              }}
+              onMouseLeave={(e) => {
+                if (!isActive) e.currentTarget.style.background = 'transparent';
+              }}
+              title={label}
+            />
+          );
+        })}
       </div>
+
+      {/* Logout - bottom */}
+      <Button
+        type="text"
+        icon={<LogoutOutlined style={{ fontSize: 24, color: logoutColor }} />}
+        style={{
+          width: 48,
+          height: 48,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          background: 'transparent',
+          marginTop: 'auto',
+        }}
+        onClick={() => logout()}
+        title="Logout"
+        onMouseEnter={(e) => { e.currentTarget.style.background = '#FEF2F2'; }}
+        onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
+      />
     </div>
   );
 };
