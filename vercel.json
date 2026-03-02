@@ -1,5 +1,5 @@
 {
-  "buildCommand": "bash scripts/vercel-build-server.sh || bash ../scripts/vercel-build-server.sh",
+  "buildCommand": "npm run build",
   "installCommand": "npm install",
   "outputDirectory": "."
 }
