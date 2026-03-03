@@ -727,6 +727,7 @@ export default function BookAppointment(props: BookAppointmentProps = {}) {
         applyHospitalFilters(hospitals, parsedSearch || '', specialty || selectedSpecialty);
       }
       message.success('Filters updated from your search.');
+      if (hasForWhomStep && currentStep === 0 && city) setCurrentStep(1);
     } catch {
       message.warning('Search could not be processed. Try using the filters below.');
     } finally {
@@ -949,35 +950,6 @@ export default function BookAppointment(props: BookAppointmentProps = {}) {
       icon: <EnvironmentOutlined />,
       content: (
         <div>
-          {/* Natural language search */}
-          <Row gutter={[16, 16]} style={{ marginBottom: '20px' }}>
-            <Col xs={24}>
-              <Text strong style={{ marginBottom: '8px', display: 'block', fontSize: '14px', color: '#374151', fontWeight: 500 }}>
-                Search in plain language
-              </Text>
-              <Space.Compact style={{ width: '100%', maxWidth: 560 }}>
-                <Input
-                  placeholder="e.g. cardiologist in Mumbai, pediatrician for fever"
-                  value={nlSearchValue}
-                  onChange={(e) => setNlSearchValue(e.target.value)}
-                  onPressEnter={handleNaturalLanguageSearch}
-                  prefix={<ThunderboltOutlined style={{ color: PATIENT_PRIMARY }} />}
-                  allowClear
-                  style={{ borderRadius: '8px 0 0 8px', height: '40px' }}
-                  size="large"
-                />
-                <Button
-                  type="primary"
-                  loading={nlSearchLoading}
-                  onClick={handleNaturalLanguageSearch}
-                  style={{ borderRadius: '0 8px 8px 0', height: '40px', background: PATIENT_PRIMARY, borderColor: PATIENT_PRIMARY }}
-                >
-                  Search
-                </Button>
-              </Space.Compact>
-            </Col>
-          </Row>
-
           {/* Search and Filter Section */}
           <Row gutter={[16, 16]} style={{ marginBottom: '24px' }}>
             <Col xs={24} md={8}>
@@ -1979,6 +1951,36 @@ export default function BookAppointment(props: BookAppointmentProps = {}) {
               className="book-appointment-steps"
             />
           </div>
+          {/* Search in plain language - visible on all steps */}
+          <div style={{ padding: `0 ${FIGMA_PATIENT.contentPadding}px 20px`, background: FIGMA_PATIENT.pageBg }}>
+            <Row gutter={[16, 16]}>
+              <Col xs={24}>
+                <Text strong style={{ marginBottom: 8, display: 'block', fontSize: 14, color: '#374151', fontWeight: 500 }}>
+                  Search in plain language
+                </Text>
+                <Space.Compact style={{ width: '100%', maxWidth: 560 }}>
+                  <Input
+                    placeholder="e.g. Cardiologist in Mumbai this weekend, pediatrician for fever"
+                    value={nlSearchValue}
+                    onChange={(e) => setNlSearchValue(e.target.value)}
+                    onPressEnter={handleNaturalLanguageSearch}
+                    prefix={<ThunderboltOutlined style={{ color: PATIENT_PRIMARY }} />}
+                    allowClear
+                    style={{ borderRadius: '8px 0 0 8px', height: 40 }}
+                    size="large"
+                  />
+                  <Button
+                    type="primary"
+                    loading={nlSearchLoading}
+                    onClick={handleNaturalLanguageSearch}
+                    style={{ borderRadius: '0 8px 8px 0', height: 40, background: PATIENT_PRIMARY, borderColor: PATIENT_PRIMARY }}
+                  >
+                    Search
+                  </Button>
+                </Space.Compact>
+              </Col>
+            </Row>
+          </div>
           {/* Headers - same as page */}
           {currentStep === 0 && (
             <div style={{ background: FIGMA_PATIENT.pageBg, padding: `${FIGMA_PATIENT.contentPadding}px ${FIGMA_PATIENT.contentPadding + 8}px` }}>
@@ -2242,6 +2244,37 @@ export default function BookAppointment(props: BookAppointmentProps = {}) {
               style={{ marginBottom: 0 }}
               className="book-appointment-steps"
             />
+          </div>
+
+          {/* Search in plain language - visible on all steps */}
+          <div style={{ padding: `0 ${FIGMA_PATIENT.contentPadding}px 20px`, background: FIGMA_PATIENT.pageBg }}>
+            <Row gutter={[16, 16]}>
+              <Col xs={24}>
+                <Text strong style={{ marginBottom: 8, display: 'block', fontSize: 14, color: '#374151', fontWeight: 500 }}>
+                  Search in plain language
+                </Text>
+                <Space.Compact style={{ width: '100%', maxWidth: 560 }}>
+                  <Input
+                    placeholder="e.g. Cardiologist in Mumbai this weekend, pediatrician for fever"
+                    value={nlSearchValue}
+                    onChange={(e) => setNlSearchValue(e.target.value)}
+                    onPressEnter={handleNaturalLanguageSearch}
+                    prefix={<ThunderboltOutlined style={{ color: PATIENT_PRIMARY }} />}
+                    allowClear
+                    style={{ borderRadius: '8px 0 0 8px', height: 40 }}
+                    size="large"
+                  />
+                  <Button
+                    type="primary"
+                    loading={nlSearchLoading}
+                    onClick={handleNaturalLanguageSearch}
+                    style={{ borderRadius: '0 8px 8px 0', height: 40, background: PATIENT_PRIMARY, borderColor: PATIENT_PRIMARY }}
+                  >
+                    Search
+                  </Button>
+                </Space.Compact>
+              </Col>
+            </Row>
           </div>
 
           {/* Header - For Whom or Select Hospital step */}
