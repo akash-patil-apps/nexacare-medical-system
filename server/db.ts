@@ -87,9 +87,26 @@ async function ensureInvoicesMissingColumns() {
   }
 }
 
+async function ensurePatientChatMessagesTable() {
+  try {
+    await sql.unsafe(`
+      CREATE TABLE IF NOT EXISTS "patient_chat_messages" (
+        "id" serial PRIMARY KEY,
+        "patient_id" integer NOT NULL REFERENCES "patients"("id") ON DELETE CASCADE,
+        "role" varchar(20) NOT NULL,
+        "content" text NOT NULL,
+        "created_at" timestamp with time zone DEFAULT now()
+      );
+    `);
+  } catch (e) {
+    console.warn('⚠️ Could not ensure patient_chat_messages table (continuing):', e);
+  }
+}
+
 console.log('🗄️  Connected to real PostgreSQL database');
 console.log('📝 Using Neon database for production data');
 console.log('🧩 DB target:', redactDbUrl(connectionString));
 void ensureAppointmentRescheduleColumns();
 void ensurePatientAgeReferenceColumns();
 void ensureInvoicesMissingColumns();
+void ensurePatientChatMessagesTable();

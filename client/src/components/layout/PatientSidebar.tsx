@@ -1,6 +1,6 @@
 import React from 'react';
 import { Button } from 'antd';
-import { UserOutlined, LogoutOutlined, MessageOutlined } from '@ant-design/icons';
+import { UserOutlined, LogoutOutlined, MessageOutlined, RobotOutlined } from '@ant-design/icons';
 import { DashboardIcon } from '../../assets/icons/DashboardIcon';
 import { AppointmentIcon } from '../../assets/icons/AppointmentIcon';
 import { PrescriptionIcon } from '../../assets/icons/PrescriptionIcon';
@@ -40,6 +40,9 @@ export const PatientSidebar: React.FC<PatientSidebarProps> = ({
         break;
       case 'reports':
         setLocation('/dashboard/patient/reports');
+        break;
+      case 'chat':
+        setLocation('/dashboard/patient/chat');
         break;
       case 'messages':
         setLocation('/patient/messages');
@@ -105,6 +108,7 @@ export const PatientSidebar: React.FC<PatientSidebarProps> = ({
           { key: 'appointments', Icon: AppointmentIcon, label: 'Appointments' },
           { key: 'prescriptions', Icon: PrescriptionIcon, label: 'Prescriptions' },
           { key: 'reports', Icon: LabIcon, label: 'Lab Reports' },
+          { key: 'chat', Icon: RobotOutlined, label: 'Health Assistant' },
           { key: 'messages', Icon: MessageOutlined, label: 'Messages' },
         ].map(({ key, Icon, label }) => {
           const active = selectedMenuKey === key;
@@ -123,8 +127,8 @@ export const PatientSidebar: React.FC<PatientSidebarProps> = ({
               }}
             >
               <span style={active ? { display: 'flex', filter: 'brightness(0) invert(1)' } : undefined}>
-                {Icon === MessageOutlined ? (
-                  <MessageOutlined style={{ fontSize: SIDEBAR_ICON_SIZE, color: active ? '#fff' : FIGMA_PATIENT.sidebarInactiveText }} />
+                {Icon === MessageOutlined || Icon === RobotOutlined ? (
+                  <Icon style={{ fontSize: SIDEBAR_ICON_SIZE, color: active ? '#fff' : FIGMA_PATIENT.sidebarInactiveText }} />
                 ) : (
                   <Icon size={SIDEBAR_ICON_SIZE} color={active ? '#fff' : FIGMA_PATIENT.sidebarInactiveText} />
                 )}

@@ -7,8 +7,8 @@ const router = express.Router();
 
 // Helper to get hospital ID from user
 const getHospitalId = async (user: any): Promise<number> => {
-  const { hospitals, receptionists, doctors, nurses } = await import('../../shared/schema');
-  const { db } = await import('../db');
+  const { hospitals, receptionists, doctors, nurses } = await import('../../shared/schema.js');
+  const { db } = await import('../db.js');
   const { eq } = await import('drizzle-orm');
   
   if (user.role?.toUpperCase() === 'HOSPITAL' || user.role?.toUpperCase() === 'ADMIN') {
@@ -78,8 +78,8 @@ router.post('/opd/invoices', authenticateToken, authorizeRoles('ADMIN', 'HOSPITA
     }
     
     // Get patientId from appointment
-    const { appointments } = await import('../../shared/schema');
-    const { db } = await import('../db');
+    const { appointments } = await import('../../shared/schema.js');
+    const { db } = await import('../db.js');
     const { eq } = await import('drizzle-orm');
     
     const [appointment] = await db
@@ -288,8 +288,8 @@ router.get('/my/invoices', authenticateToken, async (req: AuthenticatedRequest, 
     }
     
     // Get patient ID from user
-    const { patients } = await import('../../shared/schema');
-    const { db } = await import('../db');
+    const { patients } = await import('../../shared/schema.js');
+    const { db } = await import('../db.js');
     const { eq } = await import('drizzle-orm');
     
     const [patient] = await db

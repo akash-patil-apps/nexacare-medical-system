@@ -682,7 +682,7 @@ export async function getPatientInfo(patientId: number) {
       .orderBy(desc(labReports.reportDate));
 
     // Get current IPD admission status
-    const { ipdEncounters } = await import('../../shared/schema');
+    const { ipdEncounters } = await import('../../shared/schema.js');
     const { isNull: isNullFn } = await import('drizzle-orm');
     const currentIpdEncounter = await db
       .select({
@@ -713,8 +713,8 @@ export async function getPatientInfo(patientId: number) {
       
       // Get attending and admitting doctors
       if (enc.attendingDoctorId) {
-        const { doctors } = await import('../../shared/schema');
-        const { users } = await import('../../shared/schema');
+        const { doctors } = await import('../../shared/schema.js');
+        const { users } = await import('../../shared/schema.js');
         const [attendingDoc] = await db
           .select({
             doctor: doctors,
@@ -733,8 +733,8 @@ export async function getPatientInfo(patientId: number) {
       }
       
       if (enc.admittingDoctorId) {
-        const { doctors } = await import('../../shared/schema');
-        const { users } = await import('../../shared/schema');
+        const { doctors } = await import('../../shared/schema.js');
+        const { users } = await import('../../shared/schema.js');
         const [admittingDoc] = await db
           .select({
             doctor: doctors,

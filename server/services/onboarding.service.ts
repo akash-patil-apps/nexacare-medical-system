@@ -670,7 +670,7 @@ export const completeDoctorOnboarding = async (userId: number, data: any) => {
   console.log(`🎯 Completing doctor onboarding for user ${userId}`);
   
   try {
-    const { doctors } = await import("../../shared/schema");
+    const { doctors } = await import("../../shared/schema.js");
     const existingDoctor = await db
       .select()
       .from(doctors)
@@ -721,7 +721,7 @@ export const completeDoctorOnboarding = async (userId: number, data: any) => {
  */
 export const getDoctorOnboardingStatus = async (userId: number) => {
   try {
-    const { doctors } = await import("../../shared/schema");
+    const { doctors } = await import("../../shared/schema.js");
     const doctor = await db
       .select()
       .from(doctors)
@@ -751,7 +751,7 @@ export const completeReceptionistOnboarding = async (userId: number, data: any) 
   console.log(`🎯 Completing receptionist onboarding for user ${userId}`);
   
   try {
-    const { receptionists } = await import("../../shared/schema");
+    const { receptionists } = await import("../../shared/schema.js");
     const existingReceptionist = await db
       .select()
       .from(receptionists)
@@ -796,7 +796,7 @@ export const completeReceptionistOnboarding = async (userId: number, data: any) 
  */
 export const getReceptionistOnboardingStatus = async (userId: number) => {
   try {
-    const { receptionists } = await import("../../shared/schema");
+    const { receptionists } = await import("../../shared/schema.js");
     const receptionist = await db
       .select()
       .from(receptionists)
@@ -826,7 +826,7 @@ export const completeLabOnboarding = async (userId: number, data: any) => {
   console.log(`🎯 Completing lab onboarding for user ${userId}`);
   
   try {
-    const { labs } = await import("../../shared/schema");
+    const { labs } = await import("../../shared/schema.js");
     const existingLab = await db
       .select()
       .from(labs)
@@ -877,7 +877,7 @@ export const completeLabOnboarding = async (userId: number, data: any) => {
  */
 export const getLabOnboardingStatus = async (userId: number) => {
   try {
-    const { labs } = await import("../../shared/schema");
+    const { labs } = await import("../../shared/schema.js");
     const lab = await db
       .select()
       .from(labs)

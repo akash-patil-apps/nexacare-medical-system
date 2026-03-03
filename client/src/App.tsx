@@ -18,6 +18,7 @@ import PatientPrescriptions from './pages/dashboards/patient-prescriptions';
 import PatientLabReports from './pages/dashboards/patient-lab-reports';
 import PatientDocuments from './pages/dashboards/patient-documents';
 import PatientHistory from './pages/dashboards/patient-history';
+import PatientChat from './pages/dashboards/patient-chat';
 import BookAppointment from './pages/book-appointment';
 import DoctorDashboard from './pages/dashboards/doctor-dashboard';
 import DoctorAppointments from './pages/dashboards/doctor-appointments';
@@ -183,6 +184,7 @@ function App() {
                   <Route path="/dashboard/patient/reports" component={PatientLabReports} />
                   <Route path="/dashboard/patient/documents" component={PatientDocuments} />
                   <Route path="/dashboard/patient/history" component={PatientHistory} />
+                  <Route path="/dashboard/patient/chat" component={PatientChat} />
                   <Route path="/dashboard/doctor" component={DoctorDashboard} />
                   <Route path="/dashboard/doctor/appointments" component={DoctorAppointments} />
                   <Route path="/dashboard/hospital" component={HospitalDashboard} />

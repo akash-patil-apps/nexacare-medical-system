@@ -16,8 +16,8 @@ const getHospitalId = async (req: AuthenticatedRequest): Promise<number> => {
   switch (user.role) {
     case "HOSPITAL":
     case "ADMIN":
-      const { hospitals } = await import("../../shared/schema");
-      const { db } = await import("../db");
+      const { hospitals } = await import("../../shared/schema.js");
+      const { db } = await import("../db.js");
       const { eq } = await import("drizzle-orm");
       const [hospital] = await db
         .select()
@@ -28,8 +28,8 @@ const getHospitalId = async (req: AuthenticatedRequest): Promise<number> => {
       return hospital.id;
 
     case "PHARMACIST":
-      const { pharmacists } = await import("../../shared/schema");
-      const { db: db2 } = await import("../db");
+      const { pharmacists } = await import("../../shared/schema.js");
+      const { db: db2 } = await import("../db.js");
       const { eq: eq2 } = await import("drizzle-orm");
       const [pharmacist] = await db2
         .select()
@@ -437,10 +437,10 @@ router.post(
       }
 
       // Create or find patient record for non-consulting patient
-      const { db } = await import("../db");
-      const { users, patients, dispensations } = await import("../../shared/schema");
+      const { db } = await import("../db.js");
+      const { users, patients, dispensations } = await import("../../shared/schema.js");
       const { eq, ilike } = await import("drizzle-orm");
-      const { hashPassword } = await import("../services/auth.service");
+      const { hashPassword } = await import("../services/auth.service.js");
 
       // Check if user exists with this mobile number
       const trimmedMobile = mobileNumber.trim().replace(/\D/g, '');

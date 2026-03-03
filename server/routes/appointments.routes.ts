@@ -222,8 +222,8 @@ router.patch('/:appointmentId', authenticateToken, async (req: AuthenticatedRequ
     const { appointmentId } = req.params;
     const updateData = req.body;
     
-    const { db } = await import('../db');
-    const { appointments } = await import('../../shared/schema');
+    const { db } = await import('../db.js');
+    const { appointments } = await import('../../shared/schema.js');
     const { eq } = await import('drizzle-orm');
     const { sql } = await import('drizzle-orm');
     

@@ -165,8 +165,8 @@ export const markMedicationAsGiven = async (data: {
 
   // Log activity - need to get nurse ID from user ID
   if (order) {
-    const { db } = await import('../db');
-    const { nurses } = await import('../../shared/schema');
+    const { db } = await import('../db.js');
+    const { nurses } = await import('../../shared/schema.js');
     const [nurse] = await db
       .select()
       .from(nurses)
@@ -238,8 +238,8 @@ export const updateMedicationStatus = async (data: {
 
   // Log activity - need to get nurse ID from user ID
   if (order) {
-    const { db } = await import('../db');
-    const { nurses } = await import('../../shared/schema');
+    const { db } = await import('../db.js');
+    const { nurses } = await import('../../shared/schema.js');
     const [nurse] = await db
       .select()
       .from(nurses)

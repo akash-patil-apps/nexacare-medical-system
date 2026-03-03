@@ -61,7 +61,7 @@ router.get("/appointments", async (req, res) => {
 
   if (role === "NURSE") {
     try {
-      const { nurses } = await import('../../shared/schema');
+      const { nurses } = await import('../../shared/schema.js');
       const nurse = await db
         .select({ hospitalId: nurses.hospitalId })
         .from(nurses)

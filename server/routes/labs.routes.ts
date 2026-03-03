@@ -143,8 +143,8 @@ router.post(
       
       if (userRole === 'RECEPTIONIST') {
         // Receptionist requesting lab test - get hospital name
-        const { db } = await import('../db');
-        const { receptionists, hospitals } = await import('../../shared/schema');
+        const { db } = await import('../db.js');
+        const { receptionists, hospitals } = await import('../../shared/schema.js');
         const { eq } = await import('drizzle-orm');
         
         const [receptionist] = await db
@@ -167,7 +167,7 @@ router.post(
         // If not provided, we'll use a default or get from appointment
         if (requestData.doctorId) {
           // Get doctor's userId from doctorId
-          const { doctors, users } = await import('../../shared/schema');
+          const { doctors, users } = await import('../../shared/schema.js');
           const [doctor] = await db
             .select({ userId: doctors.userId })
             .from(doctors)

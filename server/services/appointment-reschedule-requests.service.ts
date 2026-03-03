@@ -111,7 +111,7 @@ export const createRescheduleRequest = async (data: {
 
   // Notify receptionist (find receptionist for this hospital)
   try {
-    const { receptionists } = await import('../../shared/schema');
+    const { receptionists } = await import('../../shared/schema.js');
     const [receptionist] = await db
       .select()
       .from(receptionists)

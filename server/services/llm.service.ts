@@ -65,3 +65,40 @@ export async function complete(prompt: string, systemPrompt?: string): Promise<s
   }
   return content;
 }
+
+export type ChatMessage = { role: "system" | "user" | "assistant"; content: string };
+
+/**
+ * Call the LLM with a full conversation (for multi-turn chat).
+ * messages must include at least one user (or assistant) message.
+ */
+export async function completeWithMessages(messages: ChatMessage[]): Promise<string> {
+  const url = getCompletionUrl();
+  const headers = getHeaders();
+
+  if (!url || !OPENAI_API_KEY) {
+    throw new Error("LLM is not configured: set OPENAI_API_KEY and OPENAI_BASE_URL (and OPENAI_MODEL if needed).");
+  }
+
+  const body = USE_AZURE
+    ? { messages }
+    : { model: OPENAI_MODEL, messages };
+
+  const res = await fetch(url, {
+    method: "POST",
+    headers,
+    body: JSON.stringify(body),
+  });
+
+  if (!res.ok) {
+    const errText = await res.text();
+    throw new Error(`LLM request failed (${res.status}): ${errText.slice(0, 300)}`);
+  }
+
+  const data = (await res.json()) as { choices?: { message?: { content?: string } }[] };
+  const content = data.choices?.[0]?.message?.content;
+  if (content == null) {
+    throw new Error("LLM returned no content.");
+  }
+  return content;
+}

@@ -474,6 +474,15 @@ export const messages = pgTable("messages", {
   createdAt: timestamp("created_at").defaultNow(),
 });
 
+// AI patient chatbot conversation history (RAG §9.1)
+export const patientChatMessages = pgTable("patient_chat_messages", {
+  id: serial("id").primaryKey(),
+  patientId: integer("patient_id").references(() => patients.id, { onDelete: "cascade" }).notNull(),
+  role: varchar("role", { length: 20 }).notNull(), // 'user' | 'assistant'
+  content: text("content").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+});
+
 // RELATIONS
 export const usersRelations = relations(users, ({ one, many }) => ({
   hospital: one(hospitals, { fields: [users.id], references: [hospitals.userId] }),
@@ -527,6 +536,10 @@ export const radiologyTechniciansRelations = relations(radiologyTechnicians, ({ 
   hospital: one(hospitals, { fields: [radiologyTechnicians.hospitalId], references: [hospitals.id] }),
 }));
 
+export const patientChatMessagesRelations = relations(patientChatMessages, ({ one }) => ({
+  patient: one(patients, { fields: [patientChatMessages.patientId], references: [patients.id] }),
+}));
+
 export const patientsRelations = relations(patients, ({ one, many }) => ({
   user: one(users, { fields: [patients.userId], references: [users.id] }),
   appointments: many(appointments),
@@ -537,6 +550,7 @@ export const patientsRelations = relations(patients, ({ one, many }) => ({
   familyAsRelated: many(patientFamilyMembers, { relationName: "related" }),
   reminderSettings: one(patientReminderSettings),
   medicineAdherence: many(medicineAdherence),
+  chatMessages: many(patientChatMessages),
 }));
 
 export const patientFamilyMembersRelations = relations(patientFamilyMembers, ({ one }) => ({

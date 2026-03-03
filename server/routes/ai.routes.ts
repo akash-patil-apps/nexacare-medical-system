@@ -9,6 +9,7 @@ import { getPatientEducation } from "../services/patient-education.service.js";
 import { generateReferralLetter } from "../services/referral-letter.service.js";
 import { getDoctorByUserId } from "../services/doctors.service.js";
 import { generateDischargeSummary } from "../services/discharge-summary.service.js";
+import { getChatHistory, sendMessage } from "../services/patient-chat.service.js";
 
 const router = Router();
 
@@ -236,6 +237,62 @@ router.post(
       }
       console.error("Discharge summary error:", err);
       res.status(500).json({ message: "Discharge summary could not be generated. Please try again." });
+    }
+  }
+);
+
+/**
+ * GET /api/ai/patient-chat/history
+ * Returns: { messages: { id, role, content, createdAt }[] }
+ * Patient-only. Returns conversation history for the AI health assistant.
+ */
+router.get(
+  "/patient-chat/history",
+  authenticateToken,
+  authorizeRoles("patient"),
+  async (req: AuthenticatedRequest, res) => {
+    try {
+      const patient = await getPatientByUserId(req.user!.id);
+      if (!patient?.id) {
+        return res.status(403).json({ message: "Patient profile not found." });
+      }
+      const messages = await getChatHistory(patient.id);
+      res.json({ messages });
+    } catch (err: any) {
+      console.error("Patient chat history error:", err);
+      res.status(500).json({ message: "Could not load chat history." });
+    }
+  }
+);
+
+/**
+ * POST /api/ai/patient-chat
+ * Body: { message: string }
+ * Returns: { reply: string }
+ * Patient-only. Sends a message to the AI health assistant (RAG over patient data).
+ */
+router.post(
+  "/patient-chat",
+  authenticateToken,
+  authorizeRoles("patient"),
+  async (req: AuthenticatedRequest, res) => {
+    try {
+      const patient = await getPatientByUserId(req.user!.id);
+      if (!patient?.id) {
+        return res.status(403).json({ message: "Patient profile not found." });
+      }
+      const message = typeof req.body?.message === "string" ? req.body.message.trim() : "";
+      if (!message) {
+        return res.status(400).json({ message: "message is required." });
+      }
+      const { reply } = await sendMessage(patient.id, message);
+      res.json({ reply });
+    } catch (err: any) {
+      if (err.message?.includes("not configured")) {
+        return res.status(503).json({ message: "Health assistant is temporarily unavailable." });
+      }
+      console.error("Patient chat error:", err);
+      res.status(500).json({ message: "Could not get a response. Please try again." });
     }
   }
 );
