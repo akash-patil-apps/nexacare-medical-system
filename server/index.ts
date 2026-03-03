@@ -55,6 +55,15 @@ app.use(express.json());
 // Register API routes
 registerRoutes(app);
 
+// Root path: API-only backend has no UI; return a short message so "Cannot GET /" is not shown
+app.get("/", (_, res) => {
+  res.status(200).json({
+    name: "NexaCare API",
+    message: "Backend is running. Use /api/* for endpoints (e.g. /api/health, /api/auth/login).",
+    health: "/api/health",
+  });
+});
+
 // Error handling middleware - must be after all routes
 app.use(errorHandler);
 
