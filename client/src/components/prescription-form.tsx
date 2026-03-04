@@ -139,6 +139,13 @@ export default function PrescriptionForm({
   const [clinicalFindings, setClinicalFindings] = useState<string[]>(['']);
   const [advice, setAdvice] = useState<string[]>(['']);
   const [activeTab, setActiveTab] = useState<string>('form');
+
+  // Safety warning modal: show allergy/interaction warnings in front with OK so doctor confirms they've seen
+  const [safetyWarningModal, setSafetyWarningModal] = useState<{
+    messages: string[];
+    pendingMedication: Medication;
+    mode: 'add' | 'addInline';
+  } | null>(null);
   
   // Fetch lab tests for patient
   const { data: labTests } = useQuery({
@@ -678,17 +685,41 @@ export default function PrescriptionForm({
     }
   };
 
+  // Confirm safety warning and add the pending medication (doctor has seen the warning)
+  const confirmSafetyAndAdd = () => {
+    if (!safetyWarningModal) return;
+    const { pendingMedication, mode } = safetyWarningModal;
+    setMedications((prev) => [...prev, pendingMedication]);
+    if (mode === 'add') {
+      medicationForm.resetFields();
+      setIsMedicationModalOpen(false);
+    } else {
+      setCurrentMedication({
+        name: '',
+        dosage: '',
+        unit: 'mg',
+        frequency: '',
+        duration: '',
+        timing: 'After meals',
+        instructions: '',
+      });
+    }
+    message.success('Medication added successfully!');
+    setSafetyWarningModal(null);
+  };
+
   const handleAddMedication = async (values: Medication) => {
     if (medications.some((m) => m.name === values.name)) {
       message.error(`"${values.name}" is already in the list.`);
       return;
     }
+    const warnings: string[] = [];
     const allergiesText = (patientAllergies || '').trim().toLowerCase();
     if (allergiesText && values.name) {
       const nameLower = values.name.toLowerCase();
       const words = nameLower.split(/\s+/).filter((w) => w.length > 2);
       if (words.some((w) => allergiesText.includes(w)) || allergiesText.includes(nameLower)) {
-        message.warning(`Possible allergy: patient allergies may include "${values.name}". Please confirm.`);
+        warnings.push(`Possible allergy: patient allergies may include "${values.name}". Please confirm.`);
       }
     }
     try {
@@ -704,18 +735,22 @@ export default function PrescriptionForm({
           }),
         });
         const data = await res.json().catch(() => ({}));
-        if (data.allergyWarning) message.warning(`Allergy: ${data.allergyWarning}`);
-        if (data.interactionWarning) message.warning(`Interaction: ${data.interactionWarning}`);
+        if (data.allergyWarning) warnings.push(`Allergy: ${data.allergyWarning}`);
+        if (data.interactionWarning) warnings.push(`Interaction: ${data.interactionWarning}`);
       }
     } catch {
       // Non-blocking
+    }
+    if (warnings.length > 0) {
+      setSafetyWarningModal({ messages: warnings, pendingMedication: values, mode: 'add' });
+      return;
     }
     setMedications([...medications, values]);
     medicationForm.resetFields();
     setIsMedicationModalOpen(false);
     message.success('Medication added successfully!');
   };
-  
+
   // Run allergy / interaction checks and add medication (duplicate check, client allergy hint, optional AI check)
   const runPrescriptionChecksAndAdd = async (newMedication: Medication) => {
     const name = newMedication.name;
@@ -723,12 +758,13 @@ export default function PrescriptionForm({
       message.error(`"${name}" is already in the list.`);
       return;
     }
+    const warnings: string[] = [];
     const allergiesText = (patientAllergies || '').trim().toLowerCase();
     if (allergiesText && name) {
       const nameLower = name.toLowerCase();
       const words = nameLower.split(/\s+/).filter((w) => w.length > 2);
       if (words.some((w) => allergiesText.includes(w)) || allergiesText.includes(nameLower)) {
-        message.warning(`Possible allergy: patient allergies may include "${name}". Please confirm before adding.`);
+        warnings.push(`Possible allergy: patient allergies may include "${name}". Please confirm before adding.`);
       }
     }
     try {
@@ -744,11 +780,15 @@ export default function PrescriptionForm({
           }),
         });
         const data = await res.json().catch(() => ({}));
-        if (data.allergyWarning) message.warning(`Allergy: ${data.allergyWarning}`);
-        if (data.interactionWarning) message.warning(`Interaction: ${data.interactionWarning}`);
+        if (data.allergyWarning) warnings.push(`Allergy: ${data.allergyWarning}`);
+        if (data.interactionWarning) warnings.push(`Interaction: ${data.interactionWarning}`);
       }
     } catch {
-      // Non-blocking: add even if check fails
+      // Non-blocking
+    }
+    if (warnings.length > 0) {
+      setSafetyWarningModal({ messages: warnings, pendingMedication: newMedication, mode: 'addInline' });
+      return;
     }
     setMedications([...medications, newMedication]);
     setCurrentMedication({
@@ -1835,6 +1875,38 @@ export default function PrescriptionForm({
             </Space>
           </Form.Item>
         </Form>
+      </Modal>
+
+      {/* Prescription safety check: show allergy/interaction warnings in front; OK = doctor has seen and confirms */}
+      <Modal
+        title="Prescription safety check"
+        open={!!safetyWarningModal}
+        onCancel={() => setSafetyWarningModal(null)}
+        footer={[
+          <Button key="cancel" onClick={() => setSafetyWarningModal(null)}>
+            Cancel
+          </Button>,
+          <Button key="ok" type="primary" onClick={confirmSafetyAndAdd}>
+            OK — I have seen this
+          </Button>,
+        ]}
+        getContainer={() => document.body}
+        zIndex={3010}
+        width={480}
+        maskClosable={false}
+      >
+        {safetyWarningModal && (
+          <>
+            <p style={{ marginBottom: 12 }}>
+              The following safety warning(s) were raised for the medicine you are adding. Please confirm you have read them before adding to the prescription.
+            </p>
+            <ul style={{ margin: 0, paddingLeft: 20 }}>
+              {safetyWarningModal.messages.map((msg, i) => (
+                <li key={i} style={{ marginBottom: 8 }}>{msg}</li>
+              ))}
+            </ul>
+          </>
+        )}
       </Modal>
 
     </>
