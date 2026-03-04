@@ -130,6 +130,7 @@ export default function PrescriptionForm({
   
   // Patient data state
   const [patientData, setPatientData] = useState<any>(null);
+  const [patientAllergies, setPatientAllergies] = useState<string>('');
   const [isHeightEditable, setIsHeightEditable] = useState(false);
   
   // Prescription details state
@@ -186,10 +187,11 @@ export default function PrescriptionForm({
     enabled: !!patientId && isOpen,
   });
 
-  // Update patientData when fetchedPatientData changes
+  // Update patientData and patientAllergies when fetchedPatientData changes
   useEffect(() => {
     if (fetchedPatientData) {
       setPatientData(fetchedPatientData);
+      setPatientAllergies(fetchedPatientData.patient?.allergies ?? '');
       // Pre-fill height if available
       if (fetchedPatientData.patient?.height && !isHeightEditable) {
         setVitals(prev => ({
@@ -443,6 +445,27 @@ export default function PrescriptionForm({
     onSuccess: async (data: any) => {
       message.success('Prescription created successfully!');
       
+      // Save patient allergies to patient record when creating prescription
+      const pid = data.patientId ?? patientId;
+      if (pid) {
+        try {
+          const token = getAuthToken();
+          if (token) {
+            const res = await fetch(`/api/patients/staff-update/${pid}`, {
+              method: 'PATCH',
+              headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+              body: JSON.stringify({ allergies: patientAllergies.trim() || null }),
+            });
+            if (res.ok) {
+              setPatientData((prev: any) => prev?.patient ? { ...prev, patient: { ...prev.patient, allergies: patientAllergies.trim() || null } } : prev);
+              queryClient.invalidateQueries({ queryKey: ['/api/patients'] });
+            }
+          }
+        } catch (e) {
+          console.warn('Failed to save patient allergies', e);
+        }
+      }
+
       // Save vitals if any are provided
       if (vitals.bp || vitals.temp || vitals.pulse || vitals.spo2 || vitals.rr || vitals.weight || vitals.height) {
         try {
@@ -606,6 +629,24 @@ export default function PrescriptionForm({
     },
     onSuccess: async () => {
       message.success('Prescription updated successfully!');
+      // Save patient allergies to patient record when updating prescription
+      if (patientId) {
+        try {
+          const token = getAuthToken();
+          if (token) {
+            const res = await fetch(`/api/patients/staff-update/${patientId}`, {
+              method: 'PATCH',
+              headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+              body: JSON.stringify({ allergies: patientAllergies.trim() || null }),
+            });
+            if (res.ok) {
+              queryClient.invalidateQueries({ queryKey: ['/api/patients'] });
+            }
+          }
+        } catch (e) {
+          console.warn('Failed to save patient allergies', e);
+        }
+      }
       // Invalidate all prescription-related queries to ensure all dashboards update
       queryClient.invalidateQueries({ queryKey: ['/api/prescriptions'] });
       queryClient.invalidateQueries({ queryKey: ['/api/prescriptions/doctor'] }); // Doctor dashboard
@@ -641,7 +682,7 @@ export default function PrescriptionForm({
       message.error(`"${values.name}" is already in the list.`);
       return;
     }
-    const allergiesText = (patientData?.patient?.allergies || '').trim().toLowerCase();
+    const allergiesText = (patientAllergies || '').trim().toLowerCase();
     if (allergiesText && values.name) {
       const nameLower = values.name.toLowerCase();
       const words = nameLower.split(/\s+/).filter((w) => w.length > 2);
@@ -656,7 +697,7 @@ export default function PrescriptionForm({
           method: 'POST',
           headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
           body: JSON.stringify({
-            patientAllergies: patientData?.patient?.allergies || '',
+            patientAllergies: patientAllergies || '',
             currentMedications: medications.map((m) => m.name),
             newMedicine: values.name,
           }),
@@ -681,7 +722,7 @@ export default function PrescriptionForm({
       message.error(`"${name}" is already in the list.`);
       return;
     }
-    const allergiesText = (patientData?.patient?.allergies || '').trim().toLowerCase();
+    const allergiesText = (patientAllergies || '').trim().toLowerCase();
     if (allergiesText && name) {
       const nameLower = name.toLowerCase();
       const words = nameLower.split(/\s+/).filter((w) => w.length > 2);
@@ -696,7 +737,7 @@ export default function PrescriptionForm({
           method: 'POST',
           headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
           body: JSON.stringify({
-            patientAllergies: patientData?.patient?.allergies || '',
+            patientAllergies: patientAllergies || '',
             currentMedications: medications.map((m) => m.name),
             newMedicine: name,
           }),
@@ -929,6 +970,22 @@ export default function PrescriptionForm({
             </Col>
           </Row>
 
+          {/* Patient allergies: editable so doctor can add/update when creating or editing prescription */}
+          {(patientId || patientData?.patient) && (
+            <Form.Item
+              label={<Text strong>Patient allergies</Text>}
+              help="Add or update known allergies. Saved to the patient record when you save the prescription."
+            >
+              <TextArea
+                rows={2}
+                placeholder="e.g., Penicillin, NSAIDs, Latex"
+                value={patientAllergies}
+                onChange={(e) => setPatientAllergies(e.target.value)}
+                style={{ resize: 'vertical' }}
+              />
+            </Form.Item>
+          )}
+
             {hideHospitalSelect || hospitalId ? (
               <Form.Item name="hospitalId" initialValue={hospitalId} hidden>
                 <Input />
@@ -1094,16 +1151,6 @@ export default function PrescriptionForm({
               </div>
               <Text type="secondary" style={{ fontSize: '12px' }}>Press Enter or select from dropdown to add. Allergy and drug–drug checks run when adding.</Text>
             </div>
-
-            {patientData?.patient?.allergies && (
-              <Alert
-                type="warning"
-                showIcon
-                message="Patient allergies"
-                description={patientData.patient.allergies}
-                style={{ marginBottom: 12 }}
-              />
-            )}
 
             {/* Inline Medication Form */}
             <Row gutter={8} style={{ marginBottom: '12px' }}>
