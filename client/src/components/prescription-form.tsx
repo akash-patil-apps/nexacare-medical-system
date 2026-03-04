@@ -6,6 +6,7 @@ import {
   Input, 
   Button, 
   Select, 
+  AutoComplete,
   Space, 
   Typography, 
   Divider,
@@ -1156,19 +1157,13 @@ export default function PrescriptionForm({
             <Row gutter={8} style={{ marginBottom: '12px' }}>
               <Col span={6}>
                 <Text type="secondary" style={{ fontSize: '12px', display: 'block', marginBottom: '4px' }}>Medicine Name *</Text>
-                <Select
-                  showSearch
-                  placeholder="e.g., Amoxicillin"
+                <AutoComplete
+                  placeholder="Type or select (e.g., Amoxicillin 500 mg)"
                   value={currentMedication.name}
-                  onChange={(value) => {
-                    // Just update the name, dosage will be auto-filled onSelect
-                    setCurrentMedication({ ...currentMedication, name: value });
-                  }}
+                  onChange={(value) => setCurrentMedication({ ...currentMedication, name: value })}
                   onSelect={(value) => {
-                    // When medicine is selected from dropdown, check if we can auto-add
                     const selectedMedicine = medicines.find((m: any) => m.name === value);
                     let updatedMedication = { ...currentMedication, name: value };
-                    
                     if (selectedMedicine) {
                       const strengthMatch = selectedMedicine.strength?.match(/(\d+)/);
                       const dosageValue = strengthMatch ? strengthMatch[1] : selectedMedicine.strength || '';
@@ -1177,18 +1172,10 @@ export default function PrescriptionForm({
                         const unitMatch = selectedMedicine.strength.match(/([a-zA-Z]+)/);
                         unitValue = unitMatch ? unitMatch[1] : selectedMedicine.dosageForm || '';
                       }
-                      if (!unitValue) {
-                        unitValue = selectedMedicine.dosageForm || '';
-                      }
-                      updatedMedication = {
-                        ...updatedMedication,
-                        dosage: dosageValue,
-                        unit: unitValue,
-                      };
+                      if (!unitValue) unitValue = selectedMedicine.dosageForm || '';
+                      updatedMedication = { ...updatedMedication, dosage: dosageValue, unit: unitValue };
                     }
-                    
                     setCurrentMedication(updatedMedication);
-                    // Try to add medication if all required fields are filled
                     if (updatedMedication.name && updatedMedication.dosage && updatedMedication.frequency && updatedMedication.duration) {
                       handleAddMedicationInline();
                     }
@@ -1199,16 +1186,6 @@ export default function PrescriptionForm({
                       handleAddMedicationInline();
                     }
                   }}
-                  loading={isLoadingMedicines}
-                  filterOption={(input, option) => {
-                    const label = String(option?.label || '').toLowerCase();
-                    const value = String(option?.value || '').toLowerCase();
-                    const searchTerm = input.toLowerCase().trim();
-                    if (!searchTerm) return true;
-                    if (label.includes(searchTerm) || value.includes(searchTerm)) return true;
-                    return fuzzyMatch(searchTerm, label) || fuzzyMatch(searchTerm, value);
-                  }}
-                  optionFilterProp="label"
                   options={medicines.map((medicine: any) => {
                     const molecule = medicine.genericName || medicine.name;
                     const nameStrength = `${medicine.name}${medicine.strength ? ` (${medicine.strength})` : ''}`;
@@ -1218,6 +1195,14 @@ export default function PrescriptionForm({
                       label: `${molecule} | ${nameStrength}${brand}`,
                     };
                   })}
+                  filterOption={(input, option) => {
+                    const label = String(option?.label || '').toLowerCase();
+                    const val = String(option?.value || '').toLowerCase();
+                    const searchTerm = input.toLowerCase().trim();
+                    if (!searchTerm) return true;
+                    if (label.includes(searchTerm) || val.includes(searchTerm)) return true;
+                    return fuzzyMatch(searchTerm, label) || fuzzyMatch(searchTerm, val);
+                  }}
                   style={{ width: '100%' }}
                 />
               </Col>
