@@ -138,6 +138,8 @@ export default function BookAppointment(props: BookAppointmentProps = {}) {
   const [availableCities, setAvailableCities] = useState<string[]>([]);
   const [searchTerm, setSearchTerm] = useState<string>('');
   const [selectedSpecialty, setSelectedSpecialty] = useState<string>('');
+  // Additional filters for doctor step (can filter by multiple specialties even after hospital is chosen)
+  const [selectedDoctorSpecialties, setSelectedDoctorSpecialties] = useState<string[]>([]);
   const [filteredHospitals, setFilteredHospitals] = useState<Hospital[]>([]);
   const [allSpecialties, setAllSpecialties] = useState<string[]>([]);
   const [selectedPriority, setSelectedPriority] = useState<string>('normal');
@@ -276,9 +278,17 @@ export default function BookAppointment(props: BookAppointmentProps = {}) {
       }
       
       const data = await response.json();
-      
       const doctorsList = Array.isArray(data) ? data : [];
       setDoctors(doctorsList);
+
+      // When coming from a hospital filtered by specialty, pre-select that specialty in doctor filters
+      if (selectedSpecialty) {
+        const hasSpecialty = doctorsList.some((d: Doctor) => (d.specialty || 'General') === selectedSpecialty);
+        setSelectedDoctorSpecialties(hasSpecialty ? [selectedSpecialty] : []);
+      } else {
+        // Reset doctor specialty filters when no hospital-level specialty is active
+        setSelectedDoctorSpecialties([]);
+      }
       
       // Auto-advance to doctor selection step after doctors are loaded
       if (doctorsList.length > 0) {
@@ -1245,25 +1255,59 @@ export default function BookAppointment(props: BookAppointmentProps = {}) {
                 </div>
               ) : doctors.length > 0 ? (
                 <div>
-                  {/* Sort doctors */}
-                  <div style={{ marginBottom: 16, display: 'flex', alignItems: 'center', gap: 12 }}>
-                    <Text style={{ fontSize: '14px', color: '#6B7280' }}>Sort by:</Text>
-                    <Select
-                      value={doctorSort}
-                      onChange={(v) => setDoctorSort(v)}
-                      style={{ minWidth: 180, borderRadius: '8px' }}
-                      options={[
-                        { value: 'cost_asc', label: 'Cost: Low to high' },
-                        { value: 'cost_desc', label: 'Cost: High to low' },
-                        { value: 'name_asc', label: 'Name: A–Z' },
-                        { value: 'name_desc', label: 'Name: Z–A' },
-                      ]}
-                    />
+                  {/* Filters + sort for doctors */}
+                  <div style={{ marginBottom: 16, display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 16 }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                      <Text style={{ fontSize: '14px', color: '#374151', fontWeight: 500 }}>
+                        Filter by Specialty
+                      </Text>
+                      <Select
+                        mode="multiple"
+                        allowClear
+                        placeholder="All specialties"
+                        value={selectedDoctorSpecialties}
+                        onChange={(values) => setSelectedDoctorSpecialties(values)}
+                        style={{ minWidth: 260, maxWidth: 360, borderRadius: 8 }}
+                        size="middle"
+                      >
+                        {Array.from(new Set(doctors.map((d) => d.specialty || 'General')))
+                          .sort()
+                          .map((spec) => (
+                            <Select.Option key={spec} value={spec}>
+                              {spec}
+                            </Select.Option>
+                          ))}
+                      </Select>
+                    </div>
+
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <Text style={{ fontSize: '14px', color: '#6B7280' }}>Sort by:</Text>
+                      <Select
+                        value={doctorSort}
+                        onChange={(v) => setDoctorSort(v)}
+                        style={{ minWidth: 180, borderRadius: '8px' }}
+                        options={[
+                          { value: 'cost_asc', label: 'Cost: Low to high' },
+                          { value: 'cost_desc', label: 'Cost: High to low' },
+                          { value: 'name_asc', label: 'Name: A–Z' },
+                          { value: 'name_desc', label: 'Name: Z–A' },
+                        ]}
+                      />
+                    </div>
                   </div>
                   {/* Group doctors by specialty */}
                   {(() => {
                     const fee = (d: Doctor) => parseFloat(d.consultationFee || '0') || 0;
-                    const sorted = [...doctors].sort((a, b) => {
+                    // Apply specialty filter for this step (if none selected, show all)
+                    const activeSpecialties =
+                      selectedDoctorSpecialties && selectedDoctorSpecialties.length > 0
+                        ? selectedDoctorSpecialties
+                        : null;
+                    const visibleDoctors = activeSpecialties
+                      ? doctors.filter((d) => activeSpecialties.includes(d.specialty || 'General'))
+                      : doctors;
+
+                    const sorted = [...visibleDoctors].sort((a, b) => {
                       if (doctorSort === 'name_asc') return (a.fullName || '').localeCompare(b.fullName || '');
                       if (doctorSort === 'name_desc') return (b.fullName || '').localeCompare(a.fullName || '');
                       if (doctorSort === 'cost_asc') return fee(a) - fee(b);

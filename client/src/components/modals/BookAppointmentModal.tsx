@@ -52,21 +52,23 @@ export default function BookAppointmentModal({ open, onCancel, onSuccess }: Book
       open={open}
       onCancel={onCancel}
       footer={null}
-      width={920}
+      width={1060}
       destroyOnClose
       getContainer={document.body}
       maskClosable={false}
       centered
       styles={{
         wrapper: { overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center' },
-        body: { maxHeight: '85vh', overflowY: 'auto', paddingTop: 8 },
+        body: { maxHeight: '85vh', overflowY: 'auto', padding: 0, background: '#ffffff' },
       }}
     >
-      <BookAppointment
-        embeddedInModal
-        onSuccess={handleSuccess}
-        onCancel={onCancel}
-      />
+      <div style={{ background: '#ffffff', borderRadius: 16, padding: 8 }}>
+        <BookAppointment
+          embeddedInModal
+          onSuccess={handleSuccess}
+          onCancel={onCancel}
+        />
+      </div>
     </Modal>
   );
 }
