@@ -281,10 +281,17 @@ export default function BookAppointment(props: BookAppointmentProps = {}) {
       const doctorsList = Array.isArray(data) ? data : [];
       setDoctors(doctorsList);
 
-      // When coming from a hospital filtered by specialty, pre-select that specialty in doctor filters
+      // When coming from a hospital filtered by specialty, pre-select matching doctor specialties
       if (selectedSpecialty) {
-        const hasSpecialty = doctorsList.some((d: Doctor) => (d.specialty || 'General') === selectedSpecialty);
-        setSelectedDoctorSpecialties(hasSpecialty ? [selectedSpecialty] : []);
+        const base = selectedSpecialty.trim().toLowerCase();
+        const uniqueSpecs = Array.from(
+          new Set(doctorsList.map((d: Doctor) => (d.specialty || 'General').trim()))
+        );
+        const matchingSpecs = uniqueSpecs.filter((spec) => {
+          const s = spec.toLowerCase();
+          return s === base || s.includes(base) || base.includes(s);
+        });
+        setSelectedDoctorSpecialties(matchingSpecs.length > 0 ? matchingSpecs : []);
       } else {
         // Reset doctor specialty filters when no hospital-level specialty is active
         setSelectedDoctorSpecialties([]);
@@ -730,12 +737,22 @@ export default function BookAppointment(props: BookAppointmentProps = {}) {
         return;
       }
       const { city, specialty, searchTerm: parsedSearch } = data;
-      if (city) setSelectedCity(city);
-      if (specialty !== undefined) setSelectedSpecialty(specialty || '');
-      if (parsedSearch !== undefined) setSearchTerm(parsedSearch || '');
-      if (!city) {
-        applyHospitalFilters(hospitals, parsedSearch || '', specialty || selectedSpecialty);
+
+      // Compute next filter values from parsed result
+      const nextSpecialty = specialty || '';
+      const nextSearch = parsedSearch || '';
+
+      if (city) {
+        setSelectedCity(city);
       }
+
+      // Update local filter state for hospitals
+      setSelectedSpecialty(nextSpecialty);
+      setSearchTerm(nextSearch);
+
+      // Immediately apply filters on the currently loaded hospitals list
+      applyHospitalFilters(hospitals, nextSearch, nextSpecialty);
+
       message.success('Filters updated from your search.');
       if (hasForWhomStep && currentStep === 0 && city) setCurrentStep(1);
     } catch {

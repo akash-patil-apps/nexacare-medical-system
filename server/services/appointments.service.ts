@@ -395,7 +395,7 @@ export const getAppointmentsByDoctor = async (doctorId: number) => {
     // Now enrich with patient names, hospital names, and doctor names
     const enrichedAppointments = await Promise.all(
       appointmentsData.map(async (apt) => {
-        // Get patient name, phone, DOB, blood group, gender, weight, height, age-at-reference
+        // Get patient name, phone, DOB, blood group, gender, weight, height, allergies, age-at-reference
         const [patient] = await db
           .select({ 
             userId: patients.userId,
@@ -404,6 +404,7 @@ export const getAppointmentsByDoctor = async (doctorId: number) => {
             gender: patients.gender,
             weight: patients.weight,
             height: patients.height,
+            allergies: patients.allergies,
             ageAtReference: patients.ageAtReference,
             ageReferenceDate: patients.ageReferenceDate,
           })
@@ -417,6 +418,7 @@ export const getAppointmentsByDoctor = async (doctorId: number) => {
         let patientGender: string | null = null;
         let patientWeight: string | null = null;
         let patientHeight: string | null = null;
+        let patientAllergies: string | null = null;
         let patientPhone: string | null = null;
         let patientAge: number | null = null;
         
@@ -426,6 +428,7 @@ export const getAppointmentsByDoctor = async (doctorId: number) => {
           patientGender = patient.gender ?? null;
           patientWeight = patient.weight ?? null;
           patientHeight = patient.height ?? null;
+          patientAllergies = patient.allergies ?? null;
           // Compute age: from DOB, or from age_at_reference + years since age_reference_date
           const now = new Date();
           if (patient.dateOfBirth) {
@@ -492,6 +495,7 @@ export const getAppointmentsByDoctor = async (doctorId: number) => {
           patientGender,
           patientWeight,
           patientHeight,
+          patientAllergies,
           patientPhone,
           hospitalName,
           doctorName,

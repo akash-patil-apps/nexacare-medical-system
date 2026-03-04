@@ -190,7 +190,7 @@ export default function DoctorAppointments() {
         symptoms: apt.symptoms || '',
         notes: apt.notes || '',
         medicalHistory: '', // Not available in API response
-        allergies: '', // Not available in API response
+        allergies: apt.patientAllergies ?? apt.allergies ?? '',
         createdAt: apt.createdAt || new Date().toISOString(),
         completedAt: apt.completedAt
       };
